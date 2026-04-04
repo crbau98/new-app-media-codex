@@ -1,24 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#081018" />
-  <title>Codex Research Radar</title>
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="manifest" href="/manifest.json" />
-  <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
-  <style>
-    /* Critical inline CSS - avoids FOUC */
-    html { background: #081018; color: #e5e7eb; }
-    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
-    #root { min-height: 100vh; }
-    .sr-only { position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);border:0; }
-  </style>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="module" src="/src/main.tsx"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codex Research Radar</title>
+    <link rel="manifest" href="/static/dist/manifest.json">
+    <meta name="theme-color" content="#0a0e17">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/dist/icons/icon.svg">
+    <link rel="stylesheet" href="/static/dist/app.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      ;(async () => {
+        try {
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations()
+            await Promise.allSettled(regs.map((reg) => reg.unregister()))
+          }
+          if ('caches' in window) {
+            const keys = await caches.keys()
+            await Promise.allSettled(keys.map((key) => caches.delete(key)))
+          }
+        } catch {}
+        const script = document.createElement('script')
+        script.type = 'module'
+        script.src = '/src/main.tsx?v=sw-reset'
+        document.body.appendChild(script)
+      })()
+    </script>
+  </body>
 </html>
