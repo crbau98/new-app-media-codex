@@ -26,7 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/requirements.txt
-RUN pip install -r /app/requirements.txt
+RUN pip install -r /app/requirements.txt \
+    && apt-get purge -y --auto-remove gcc python3-dev \
+    && rm -rf /var/lib/apt/lists/* /root/.cache
 
 COPY app /app/app
 COPY README.md /app/README.md
@@ -39,6 +41,10 @@ EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"
+
+# PERF FIX: limit default thread pool to 4 (Python default=32, each 8MB stack=256MB)
+ENV PYTHONMALLOC=pymalloc \
+    UV_THREADPOOL_SIZE=4
 
 # PERF FIX: added --loop uvloop for faster async event loop.
 # NOTE: --workers is intentionally kept at 1 because the Render starter plan
