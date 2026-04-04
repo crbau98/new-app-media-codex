@@ -1,180 +1,64 @@
-import { useEffect, useRef, useState } from "react"
-import { useAppStore } from "../store"
+import { useEffect, useSyncExternalStore } from 'react'
 
-const PING_INTERVAL = 300_000 // 5 min (was 60s) Ã¢ÂÂ reduce unnecessary network chatter
-const PING_TIMEOUT_MS = 5_000
+/* ââ Constants ââââââââââââââââââââââââââââââââââââââââââââââââââââ */
+const PING_INTERVAL = 300_000          // 5 min between pings
+const PING_TIMEOUT  = 8_000            // abort after 8 s
+const PING_URL      = '/healthz'
 
-export function useConnectivity() {
-  const setOnline = useAppStore((s) => s.setOnline)
-  const isOnline = useAppStore((s) => s.isOnline)
-  const [lastPingAt, setLastPingAt] = useState<number | null>(null)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+/* ââ Shared external store ââââââââââââââââââââââââââââââââââââââââ */
+let online = navigator.onLine
+const listeners = new Set<() => void>()
 
-  // Browser online/offline events
-  useEffect(() => {
-    function handleOnline() {
-      setOnline(true)
-    }
-    function handleOffline() {
-      setOnline(false)
-    }
-    window.addEventListener("online", handleOnline)
-    window.addEventListener("offline", handleOffline)
-    return () => {
-      window.removeEventListener("online", handleOnline)
-      window.removeEventListener("offline", handleOffline)
-    }
-  }, [setOnline])
-
-  // Periodic /healthz ping
-  useEffect(() => {
-    async function ping() {
-      const controller = new AbortController()
-      const timeoutId = window.setTimeout(() => controller.abort(), PING_TIMEOUT_MS)
-      try {
-        const res = await fetch("/healthz", {
-          method: "HEAD",
-          cache: "no-store",
-          signal: controller.signal,
-        })
-        setOnline(res.ok)
-        setLastPingAt(Date.now())
-      } catch {
-        setOnline(false)
-        setLastPingAt(Date.now())
-      } finally {
-        window.clearTimeout(timeoutId)
-      }
-    }
-
-    // Initial ping
-    ping()
-
-    intervalRef.current = setInterval(ping, PING_INTERVAL)
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-  }, [setOnline])
-
-  return { isOnline, lastPingAt }
+function subscribe(cb: () => void) {
+  listeners.add(cb)
+  return () => { listeners.delete(cb) }
 }
-import { useEffect, useRef, useState } from "react"
-import { useAppStore } from "../store"
+function getSnapshot() { return online }
 
-const PING_INTERVAL = 300_000 // 5 min (was 60s) â reduce unnecessary network chatter
-const PING_TIMEOUT_MS = 5_000
-
-export function useConnectivity() {
-  const setOnline = useAppStore((s) => s.setOnline)
-  const isOnline = useAppStore((s) => s.isOnline)
-  const [lastPingAt, setLastPingAt] = useState<number | null>(null)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  // Browser online/offline events
-  useEffect(() => {
-    function handleOnline() {
-      setOnline(true)
-    }
-    function handleOffline() {
-      setOnline(false)
-    }
-    window.addEventListener("online", handleOnline)
-    window.addEventListener("offline", handleOffline)
-    return () => {
-      window.removeEventListener("online", handleOnline)
-      window.removeEventListener("offline", handleOffline)
-    }
-  }, [setOnline])
-
-  // Periodic /healthz ping
-  useEffect(() => {
-    async function ping() {
-      const controller = new AbortController()
-      const timeoutId = window.setTimeout(() => controller.abort(), PING_TIMEOUT_MS)
-      try {
-        const res = await fetch("/healthz", {
-          method: "HEAD",
-          cache: "no-store",
-          signal: controller.signal,
-        })
-        setOnline(res.ok)
-        setLastPingAt(Date.now())
-      } catch {
-        setOnline(false)
-        setLastPingAt(Date.now())
-      } finally {
-        window.clearTimeout(timeoutId)
-      }
-    }
-
-    // Initial ping
-    ping()
-
-    intervalRef.current = setInterval(ping, PING_INTERVAL)
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-  }, [setOnline])
-
-  return { isOnline, lastPingAt }
+function setOnline(v: boolean) {
+  if (v === online) return
+  online = v
+  listeners.forEach((l) => l())
 }
-import { useEffect, useRef, useState } from "react"
-import { useAppStore } from "../store"
 
-const PING_INTERVAL = 60_000 // 60s
-const PING_TIMEOUT_MS = 5_000
+/* ââ Lightweight HEAD ping ââââââââââââââââââââââââââââââââââââââââ */
+async function ping() {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), PING_TIMEOUT)
+  try {
+    const res = await fetch(PING_URL, {
+      method: 'HEAD',
+      cache: 'no-store',
+      signal: ctrl.signal,
+    })
+    setOnline(res.ok)
+  } catch {
+    setOnline(false)
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
+/* ââ Hook âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
 export function useConnectivity() {
-  const setOnline = useAppStore((s) => s.setOnline)
-  const isOnline = useAppStore((s) => s.isOnline)
-  const [lastPingAt, setLastPingAt] = useState<number | null>(null)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const isOnline = useSyncExternalStore(subscribe, getSnapshot)
 
-  // Browser online/offline events
   useEffect(() => {
-    function handleOnline() {
-      setOnline(true)
-    }
-    function handleOffline() {
-      setOnline(false)
-    }
-    window.addEventListener("online", handleOnline)
-    window.addEventListener("offline", handleOffline)
+    const onOn  = () => { setOnline(true);  ping() }
+    const onOff = () => { setOnline(false) }
+    window.addEventListener('online',  onOn)
+    window.addEventListener('offline', onOff)
+
+    // Periodic background ping
+    const id = setInterval(ping, PING_INTERVAL)
+    ping() // initial
+
     return () => {
-      window.removeEventListener("online", handleOnline)
-      window.removeEventListener("offline", handleOffline)
+      window.removeEventListener('online',  onOn)
+      window.removeEventListener('offline', onOff)
+      clearInterval(id)
     }
-  }, [setOnline])
+  }, [])
 
-  // Periodic /healthz ping
-  useEffect(() => {
-    async function ping() {
-      const controller = new AbortController()
-      const timeoutId = window.setTimeout(() => controller.abort(), PING_TIMEOUT_MS)
-      try {
-        const res = await fetch("/healthz", {
-          method: "HEAD",
-          cache: "no-store",
-          signal: controller.signal,
-        })
-        setOnline(res.ok)
-        setLastPingAt(Date.now())
-      } catch {
-        setOnline(false)
-        setLastPingAt(Date.now())
-      } finally {
-        window.clearTimeout(timeoutId)
-      }
-    }
-
-    // Initial ping
-    ping()
-
-    intervalRef.current = setInterval(ping, PING_INTERVAL)
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-  }, [setOnline])
-
-  return { isOnline, lastPingAt }
+  return isOnline
 }
