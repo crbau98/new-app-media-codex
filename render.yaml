@@ -19,6 +19,42 @@ services:
       - key: IMAGE_DIR
         value: /app/data/images
       - key: SQLITE_TIMEOUT_SECONDS
+        value: 5
+      - key: SQLITE_BUSY_TIMEOUT_MS
+        value: 5000
+      - key: RUN_STARTUP_CRAWL
+        value: false
+
+  # PERF FIX: keep-alive cron — pings /healthz every 14 minutes so Render
+  # never spins the service down (starter plan cold starts = 30-90s delays)
+  - type: cron
+    name: keep-alive-ping
+    runtime: image
+    image:
+      url: docker.io/curlimages/curl:latest
+    schedule: "*/14 * * * *"
+    startCommand: "curl -fsS https://codex-research-radar.onrender.com/healthz"
+services:
+  - type: web
+    name: codex-research-radar
+    runtime: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /healthz
+    disk:
+      name: codex-research-data
+      mountPath: /app/data
+      sizeGB: 10
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        value: 8080
+      - key: DATABASE_PATH
+        value: /app/data/research.db
+      - key: IMAGE_DIR
+        value: /app/data/images
+      - key: SQLITE_TIMEOUT_SECONDS
         value: 10
       - key: SQLITE_BUSY_TIMEOUT_MS
         value: 10000
