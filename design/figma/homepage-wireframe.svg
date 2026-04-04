@@ -1,0 +1,136 @@
+<svg width="1440" height="3200" viewBox="0 0 1440 3200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgLinear" x1="720" y1="0" x2="720" y2="3200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7EEDF"/>
+      <stop offset="1" stop-color="#ECDFCB"/>
+    </linearGradient>
+    <radialGradient id="warmGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1220 240) rotate(90) scale(420 420)">
+      <stop stop-color="#8F4428" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#8F4428" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="greenGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(180 2820) rotate(90) scale(380 380)">
+      <stop stop-color="#2F6B57" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#2F6B57" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="accentButton" x1="951" y1="190" x2="1091" y2="232" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8F4428"/>
+      <stop offset="1" stop-color="#CF8552"/>
+    </linearGradient>
+    <filter id="panelShadow" x="-40" y="-40" width="1600" height="3400" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="26" stdDeviation="40" flood-color="#56321E" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1440" height="3200" fill="#EFE4D2"/>
+  <rect width="1440" height="3200" fill="url(#bgLinear)"/>
+  <rect width="1440" height="3200" fill="url(#warmGlow)"/>
+  <rect width="1440" height="3200" fill="url(#greenGlow)"/>
+
+  <g filter="url(#panelShadow)">
+    <rect x="60" y="32" width="839" height="270" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="919" y="32" width="461" height="270" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="60" y="324" width="1320" height="118" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="60" y="464" width="1320" height="330" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+
+    <rect x="60" y="816" width="208" height="138" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="282" y="816" width="208" height="138" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="504" y="816" width="208" height="138" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="726" y="816" width="208" height="138" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="948" y="816" width="432" height="138" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+
+    <rect x="60" y="976" width="755" height="820" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="833" y="976" width="547" height="250" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="833" y="1244" width="547" height="250" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="833" y="1512" width="547" height="250" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+
+    <rect x="60" y="1818" width="1320" height="460" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="60" y="2300" width="1320" height="470" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <rect x="60" y="2792" width="1320" height="328" rx="24" fill="#FFFBF5" fill-opacity="0.88" stroke="#1D2A33" stroke-opacity="0.12"/>
+  </g>
+
+  <text x="92" y="76" fill="#8F4428" font-family="IBM Plex Sans, Arial, sans-serif" font-size="12" font-weight="600" letter-spacing="1.6">CONTINUOUS SOURCE MONITOR</text>
+  <text x="92" y="150" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="64" font-weight="600">Desire Research</text>
+  <text x="92" y="214" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="64" font-weight="600">Radar</text>
+  <text x="92" y="254" fill="#60707A" font-family="IBM Plex Sans, Arial, sans-serif" font-size="18">Hero copy, app purpose, and status chips</text>
+
+  <text x="951" y="78" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="22" font-weight="600">Controls</text>
+  <text x="951" y="116" fill="#60707A" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14">Refresh, run crawl, token field, saved views, exports</text>
+  <rect x="951" y="138" width="160" height="42" rx="21" fill="#FFFFFF" fill-opacity="0.76" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <text x="978" y="165" fill="#1D2A33" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14" font-weight="600">Command palette</text>
+  <rect x="951" y="190" width="140" height="42" rx="21" fill="url(#accentButton)"/>
+  <text x="986" y="217" fill="#FFFFFF" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14" font-weight="700">Run crawl now</text>
+
+  <text x="92" y="368" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="22" font-weight="600">Workspace</text>
+  <text x="92" y="398" fill="#60707A" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14">Sticky mode switcher and quick jumps</text>
+  <g>
+    <rect x="92" y="410" width="68" height="34" rx="17" fill="#8F4428"/>
+    <text x="116" y="432" fill="#FFFFFF" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14" font-weight="700">All</text>
+    <rect x="170" y="410" width="102" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.78" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <text x="197" y="432" fill="#1D2A33" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14" font-weight="600">Overview</text>
+    <rect x="282" y="410" width="84" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.78" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <text x="310" y="432" fill="#1D2A33" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14" font-weight="600">Topics</text>
+    <rect x="376" y="410" width="84" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.78" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <text x="406" y="432" fill="#1D2A33" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14" font-weight="600">Review</text>
+    <rect x="470" y="410" width="74" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.78" stroke="#1D2A33" stroke-opacity="0.12"/>
+    <text x="496" y="432" fill="#1D2A33" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14" font-weight="600">Media</text>
+  </g>
+
+  <text x="92" y="510" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="22" font-weight="600">Topic workspace</text>
+  <text x="92" y="540" fill="#60707A" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14">Saved topics, recent pivots, boards, notebook, compare</text>
+  <rect x="92" y="566" width="380" height="90" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="488" y="566" width="380" height="90" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="884" y="566" width="464" height="188" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="92" y="672" width="380" height="82" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="488" y="672" width="380" height="82" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+
+  <text x="92" y="860" fill="#1D2A33" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14" font-weight="600">Stats strip</text>
+  <text x="94" y="900" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="32" font-weight="600">Items</text>
+  <text x="316" y="900" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="32" font-weight="600">Images</text>
+  <text x="534" y="900" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="32" font-weight="600">Hypotheses</text>
+  <text x="746" y="900" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="32" font-weight="600">Saved</text>
+  <text x="980" y="888" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="28" font-weight="600">Last completed crawl</text>
+
+  <text x="92" y="1020" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="22" font-weight="600">Research hypotheses</text>
+  <text x="92" y="1050" fill="#60707A" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14">Primary analysis column</text>
+  <rect x="92" y="1074" width="691" height="146" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="92" y="1234" width="691" height="146" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="92" y="1394" width="691" height="146" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+
+  <text x="865" y="1020" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="22" font-weight="600">Review queue</text>
+  <rect x="865" y="1058" width="483" height="58" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="865" y="1126" width="483" height="58" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+
+  <text x="865" y="1288" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="22" font-weight="600">Run history</text>
+  <rect x="865" y="1326" width="483" height="58" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="865" y="1394" width="483" height="58" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+
+  <text x="865" y="1556" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="22" font-weight="600">Coverage and signals</text>
+  <rect x="865" y="1594" width="483" height="58" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="865" y="1662" width="483" height="58" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+
+  <text x="92" y="1862" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="22" font-weight="600">Topic explorer</text>
+  <text x="92" y="1892" fill="#60707A" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14">Context row, baseline chips, related signals, spotlight cards</text>
+  <rect x="92" y="1916" width="220" height="32" rx="16" fill="#FFFFFF" fill-opacity="0.62" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="322" y="1916" width="180" height="32" rx="16" fill="#2F6B57" fill-opacity="0.12" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="92" y="1964" width="124" height="32" rx="16" fill="#FFFFFF" fill-opacity="0.62" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="226" y="1964" width="138" height="32" rx="16" fill="#FFFFFF" fill-opacity="0.62" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="374" y="1964" width="146" height="32" rx="16" fill="#FFFFFF" fill-opacity="0.62" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="92" y="2020" width="404" height="210" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="518" y="2020" width="404" height="210" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="944" y="2020" width="404" height="210" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+
+  <text x="92" y="2344" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="22" font-weight="600">Source captures</text>
+  <text x="92" y="2374" fill="#60707A" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14">Filter toolbar, active filters, bulk actions, card grid</text>
+  <rect x="92" y="2398" width="1240" height="46" rx="16" fill="#FFFFFF" fill-opacity="0.82" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="92" y="2464" width="280" height="250" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="390" y="2464" width="280" height="250" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="688" y="2464" width="280" height="250" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="986" y="2464" width="280" height="250" rx="18" fill="#FFFFFF" fill-opacity="0.58" stroke="#1D2A33" stroke-opacity="0.12"/>
+
+  <text x="92" y="2836" fill="#1D2A33" font-family="IBM Plex Serif, Georgia, serif" font-size="22" font-weight="600">Image stream</text>
+  <text x="92" y="2866" fill="#60707A" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14">4-column gallery with image-type filter</text>
+  <rect x="92" y="2894" width="280" height="180" rx="18" fill="#FFFFFF" fill-opacity="0.42" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="390" y="2894" width="280" height="180" rx="18" fill="#FFFFFF" fill-opacity="0.42" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="688" y="2894" width="280" height="180" rx="18" fill="#FFFFFF" fill-opacity="0.42" stroke="#1D2A33" stroke-opacity="0.12"/>
+  <rect x="986" y="2894" width="280" height="180" rx="18" fill="#FFFFFF" fill-opacity="0.42" stroke="#1D2A33" stroke-opacity="0.12"/>
+</svg>

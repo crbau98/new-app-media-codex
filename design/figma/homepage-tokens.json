@@ -1,0 +1,112 @@
+{
+  "meta": {
+    "name": "Homepage Tokens",
+    "source_files": [
+      "/Users/chasebauman/Documents/App research codex/app/templates/index.html",
+      "/Users/chasebauman/Documents/App research codex/app/static/styles.css"
+    ]
+  },
+  "colors": {
+    "bg": "#EFE4D2",
+    "paper": "rgba(255, 251, 245, 0.88)",
+    "paperStrong": "rgba(255, 251, 245, 0.96)",
+    "ink": "#1D2A33",
+    "muted": "#60707A",
+    "accent": "#8F4428",
+    "accentSoft": "#CF8552",
+    "accentDeep": "#6D321C",
+    "green": "#2F6B57",
+    "greenSoft": "rgba(47, 107, 87, 0.12)",
+    "red": "#9F4034",
+    "redSoft": "rgba(159, 64, 52, 0.12)",
+    "line": "rgba(29, 42, 51, 0.12)",
+    "lineStrong": "rgba(29, 42, 51, 0.2)"
+  },
+  "gradients": {
+    "pageLinear": {
+      "type": "linear",
+      "angle": 180,
+      "stops": [
+        { "color": "#F7EEDF", "position": 0 },
+        { "color": "#ECDFCB", "position": 1 }
+      ]
+    },
+    "pageWarmGlow": {
+      "type": "radial",
+      "stops": [
+        { "color": "rgba(143, 68, 40, 0.2)", "position": 0 },
+        { "color": "rgba(143, 68, 40, 0)", "position": 1 }
+      ]
+    },
+    "pageGreenGlow": {
+      "type": "radial",
+      "stops": [
+        { "color": "rgba(47, 107, 87, 0.18)", "position": 0 },
+        { "color": "rgba(47, 107, 87, 0)", "position": 1 }
+      ]
+    },
+    "buttonPrimary": {
+      "type": "linear",
+      "angle": 135,
+      "stops": [
+        { "color": "#8F4428", "position": 0 },
+        { "color": "#CF8552", "position": 1 }
+      ]
+    }
+  },
+  "typography": {
+    "families": {
+      "display": "IBM Plex Serif",
+      "body": "IBM Plex Sans"
+    },
+    "styles": {
+      "h1": { "fontFamily": "IBM Plex Serif", "fontWeight": 600, "fontSize": 76, "lineHeight": 74 },
+      "h2": { "fontFamily": "IBM Plex Serif", "fontWeight": 600, "fontSize": 22, "lineHeight": 28 },
+      "h3": { "fontFamily": "IBM Plex Serif", "fontWeight": 600, "fontSize": 16, "lineHeight": 22 },
+      "eyebrow": { "fontFamily": "IBM Plex Sans", "fontWeight": 600, "fontSize": 12, "lineHeight": 16, "letterSpacingPercent": 14 },
+      "body": { "fontFamily": "IBM Plex Sans", "fontWeight": 400, "fontSize": 16, "lineHeight": 25 },
+      "meta": { "fontFamily": "IBM Plex Sans", "fontWeight": 400, "fontSize": 14, "lineHeight": 22 },
+      "chip": { "fontFamily": "IBM Plex Sans", "fontWeight": 600, "fontSize": 14, "lineHeight": 18 }
+    }
+  },
+  "spacing": {
+    "base": 4,
+    "scale": [4, 6, 8, 10, 12, 14, 18, 20, 22, 24, 28, 32, 56]
+  },
+  "radius": {
+    "panel": 24,
+    "card": 18,
+    "field": 16,
+    "pill": 999
+  },
+  "effects": {
+    "panelShadow": {
+      "type": "dropShadow",
+      "x": 0,
+      "y": 26,
+      "blur": 80,
+      "spread": 0,
+      "color": "rgba(86, 50, 30, 0.12)"
+    }
+  },
+  "layout": {
+    "desktop": {
+      "frame": { "width": 1440, "height": 3200 },
+      "containerWidth": 1320,
+      "margin": 60,
+      "topPadding": 32,
+      "bottomPadding": 56,
+      "grid": { "columns": 12, "gutter": 20 }
+    },
+    "tablet": {
+      "frame": { "width": 1024, "height": 3200 },
+      "margin": 32,
+      "grid": { "columns": 8, "gutter": 16 }
+    },
+    "mobile": {
+      "frame": { "width": 390, "height": 3600 },
+      "margin": 10,
+      "grid": { "columns": 4, "gutter": 12 }
+    }
+  }
+}

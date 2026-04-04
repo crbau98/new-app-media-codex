@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codex Research Radar</title>
+    <link rel="manifest" href="/static/dist/manifest.json">
+    <meta name="theme-color" content="#0a0e17">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/dist/icons/icon.svg">
+    <link rel="stylesheet" href="/static/dist/app.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      ;(async () => {
+        try {
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations()
+            await Promise.allSettled(regs.map((reg) => reg.unregister()))
+          }
+          if ('caches' in window) {
+            const keys = await caches.keys()
+            await Promise.allSettled(keys.map((key) => caches.delete(key)))
+          }
+        } catch {}
+        const script = document.createElement('script')
+        script.type = 'module'
+        script.src = '/src/main.tsx?v=sw-reset'
+        document.body.appendChild(script)
+      })()
+    </script>
+  </body>
+</html>

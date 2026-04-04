@@ -1,0 +1,64 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source .venv/bin/activate)",
+      "Bash(python -c \"import dotenv; import fastapi; import uvicorn; import jinja2; import requests; import trafilatura; import bs4; import apscheduler; print\\(''All imports OK''\\)\")",
+      "Bash(python -m py_compile app/config.py app/db.py app/models.py app/ai.py app/service.py app/sources.py app/main.py)",
+      "Bash(timeout 10 python -c \":*)",
+      "Bash(python -c \":*)",
+      "Bash(curl -s http://localhost:8080/healthz)",
+      "Bash(curl -s \"http://localhost:8080/api/dashboard\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''items:'', len\\(d.get\\(''items'',[]\\)\\), ''hypotheses:'', len\\(d.get\\(''hypotheses'',[]\\)\\), ''images:'', len\\(d.get\\(''images'',[]\\)\\)\\)\")",
+      "Bash(curl -s \"http://localhost:8080/api/items?limit=5\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''items list len:'', len\\(d\\)\\)\")",
+      "Bash(curl -s \"http://localhost:8080/api/hypotheses?limit=5\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''hypotheses len:'', len\\(d\\)\\)\")",
+      "Bash(curl -s \"http://localhost:8080/api/runs?limit=5\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''runs len:'', len\\(d\\)\\)\")",
+      "Bash(curl -s \"http://localhost:8080/api/browse/items?limit=5\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''browse items total:'', d.get\\(''total''\\), ''returned:'', len\\(d.get\\(''items'',[]\\)\\)\\)\")",
+      "Bash(curl -s \"http://localhost:8080/api/browse/images?limit=5\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''browse images total:'', d.get\\(''total''\\), ''returned:'', len\\(d.get\\(''images'',[]\\)\\)\\)\")",
+      "Bash(curl -v http://localhost:8080/healthz)",
+      "Bash(curl -s http://localhost:8080/api/dashboard)",
+      "Bash(curl -s \"http://localhost:8080/api/items?limit=3\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''OK items:'', len\\(d[''items'']\\)\\)\")",
+      "Bash(curl -v http://localhost:8080/api/dashboard)",
+      "Bash(curl -s \"http://localhost:8080/api/hypotheses?limit=3\")",
+      "Bash(curl -s \"http://localhost:8080/api/runs?limit=3\")",
+      "Bash(lsof -i :8080)",
+      "Bash(lsof -i :8081)",
+      "Bash(python -W all -c \":*)",
+      "Bash(pip show python-dotenv lxml)",
+      "Bash(curl -s http://localhost:8000/*)",
+      "Bash(curl -s \"http://localhost:8000/*\")",
+      "Bash(lsof -i :8000)",
+      "Bash(lsof -ti :8000)",
+      "Bash(cd frontend && npx tsc --noEmit*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; print(json.load(sys.stdin).get('file_path',''))\" 2>/dev/null); case \"$FILE\" in *.ts|*.tsx) cd \"/Users/chasebauman/Documents/App research codex/frontend\" && npx tsc --noEmit 2>&1 | head -20 ;; esac; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import sys,json,os; t=json.loads(os.environ.get('CLAUDE_TOOL_INPUT','{}') or '{}'); f=t.get('file_path',''); n=os.path.basename(f); sys.exit(1 if n == '.env' else 0)\" && exit 0 || (echo 'BLOCKED: Direct edits to .env are not allowed. Use .env.example or set values manually.' && exit 2)"
+          }
+        ]
+      }
+    ]
+  }
+}

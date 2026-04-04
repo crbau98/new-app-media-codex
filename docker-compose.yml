@@ -1,0 +1,16 @@
+services:
+  desire-research-radar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    volumes:
+      - app_data:/app/data
+
+volumes:
+  app_data:
