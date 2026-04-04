@@ -101,7 +101,7 @@ def items_queue_count() -> JSONResponse:
 
 
 _suggest_cache: dict[str, tuple[float, list[str]]] = {}
-_SUGGEST_TTL = 60.0
+_SUGGEST_TTL = 300.0  # 5 minutes (was 60s — compounds/mechanisms change rarely)
 
 
 def _build_suggest_values(db, col: str) -> list[str]:
