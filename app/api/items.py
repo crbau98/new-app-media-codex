@@ -87,55 +87,15 @@ def update_items_bulk(
 
 
 @router.get("/queue")
-def items_queue(limit: int = Query(default=100, ge=1, le=500)) -> JSONResponse:
-    # PERF FIX: previously unbounded — could dump entire queue table as JSON
+def items_queue() -> JSONResponse:
     from app.main import db
-    rows = db.get_queue()
-    return JSONResponse(rows[:limit])
+    return JSONResponse(db.get_queue())
 
 
 @router.get("/queue/count")
 def items_queue_count() -> JSONResponse:
     from app.main import db
     return JSONResponse({"count": db.get_queue_count()})
-
-
-_suggest_cache: dict[str, tuple[float, list[str]]] = {}
-_SUGGEST_TTL = 300.0  # 5 minutes (was 60s — compounds/mechanisms change rarely)
-
-
-def _build_suggest_values(db, col: str) -> list[str]:
-    """Shared helper: fetch all distinct values from a JSON-array column."""
-    with db.connect() as conn:
-        rows = conn.execute(
-            f"SELECT DISTINCT {col} FROM items WHERE {col} IS NOT NULL AND {col} != '[]'"
-        ).fetchall()
-    seen: set[str] = set()
-    for row in rows:
-        try:
-            arr = json.loads(row[0])
-            for val in arr:
-                if isinstance(val, str):
-                    seen.add(val)
-        except (json.JSONDecodeError, TypeError):
-            pass
-    return sorted(seen)
-
-
-def _warm_suggest_cache(db) -> None:
-    """Pre-warm the suggest cache at startup so the first user request hits
-    the in-memory cache rather than triggering a full table scan."""
-    import time as _time
-    now = _time.monotonic()
-    for col in ("compounds_json", "mechanisms_json"):
-        cached = _suggest_cache.get(col)
-        if cached and now < cached[0]:
-            continue
-        try:
-            _suggest_cache[col] = (now + _SUGGEST_TTL, _build_suggest_values(db, col))
-            print(f"[suggest-warmup] {col}: cached")
-        except Exception as exc:
-            print(f"[suggest-warmup] {col}: {exc}")
 
 
 @router.get("/suggest")
@@ -153,17 +113,23 @@ def suggest(
     else:
         return JSONResponse({"suggestions": []})
 
-    import time as _time
-    now = _time.monotonic()
-    cached = _suggest_cache.get(col)
-    if cached and now < cached[0]:
-        all_values = cached[1]
-    else:
-        all_values = _build_suggest_values(db, col)
-        _suggest_cache[col] = (now + _SUGGEST_TTL, all_values)
+    with db.connect() as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT {col} FROM items WHERE {col} IS NOT NULL AND {col} != '[]'"
+        ).fetchall()
+
+    seen: set[str] = set()
+    for row in rows:
+        try:
+            arr = json.loads(row[0])
+            for val in arr:
+                if isinstance(val, str):
+                    seen.add(val)
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     q_lower = q.lower()
-    matches = [s for s in all_values if q_lower in s.lower()][:20]
+    matches = sorted([s for s in seen if q_lower in s.lower()])[:20]
     return JSONResponse({"suggestions": matches})
 
 
