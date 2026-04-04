@@ -12,7 +12,3 @@ imagehash>=4.3.1
 pyrogram==2.0.106
 tgcrypto==1.2.5
 yt-dlp>=2026.3.0
-httpx>=0.27.0
-# PERF FIX: uvloop replaces the default asyncio event loop with a much faster
-# libuv-based implementation. Drop-in replacement, ~2-4x faster I/O throughput.
-uvloop>=0.21.0
