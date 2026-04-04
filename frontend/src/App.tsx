@@ -1,363 +1,101 @@
-import { lazy, Suspense, useState, useEffect, useCallback, useDeferredValue, startTransition } from "react"
-import type { ReactElement } from "react"
-import { AppShell } from "./components/AppShell"
-import { useAppStore, type ActiveView } from "./store"
-import { useCommandPalette } from "./hooks"
-import { CrawlNotifier } from "./components/CrawlNotifier"
-import { loadViewModule, prefetchViewModule } from "./lib/view-loader"
+import { Suspense, lazy, useDeferredValue, useEffect, useState } from 'react'
+import { useConnectivity } from './hooks/useConnectivity'
+import { useDashboard } from './hooks/useDashboard'
+import Spinner from './components/Spinner'
 
-function isOnboardingComplete() {
-  return localStorage.getItem("onboarding_complete") === "true"
-}
+/* ââ Lazy view map ââââââââââââââââââââââââââââââââââââââââââââââââ */
+const VIEW_MAP = {
+  Dashboard: lazy(() => import('./views/Dashboard')),
+  Search:    lazy(() => import('./views/Search')),
+  Activity:  lazy(() => import('./views/Activity')),
+  Recommend: lazy(() => import('./views/Recommend')),
+  Settings:  lazy(() => import('./views/Settings')),
+} as const
 
-const MediaPage = lazy(() => loadViewModule("images").then(m => ({ default: (m as typeof import("./features/images/MediaPage")).MediaPage })))
-const SettingsPage = lazy(() => loadViewModule("settings").then(m => ({ default: (m as typeof import("./features/settings/SettingsPage")).SettingsPage })))
-const PerformersPage = lazy(() => loadViewModule("performers"))
-const CommandPalette = lazy(() => import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })))
-const KeyboardShortcutsOverlay = lazy(() => import("./components/KeyboardShortcutsOverlay").then((m) => ({ default: m.KeyboardShortcutsOverlay })))
-const Onboarding = lazy(() => import("./components/Onboarding").then((m) => ({ default: m.Onboarding })))
+type ViewKey = keyof typeof VIEW_MAP
 
+/* ââ Skeleton shown while lazy chunks load ââââââââââââââââââââââââ */
 function PageSkeleton() {
   return (
-    <div className="flex flex-col gap-4 p-6" style={{ contain: 'content' }}>
-      <div className="h-8 w-48 skeleton-line rounded-lg" />
-      <div className="h-64 w-full skeleton-surface rounded-xl" />
-      <div className="h-32 w-full skeleton-surface rounded-xl" />
+    <div
+      className="flex items-center justify-center h-[60vh]"
+      style={{ contain: 'layout paint' }}
+    >
+      <Spinner />
     </div>
   )
 }
 
-const VIEW_MAP: Record<ActiveView, ReactElement> = {
-  overview: <MediaPage />,
-  items: <MediaPage />,
-  images: <MediaPage />,
-  hypotheses: <MediaPage />,
-  graph: <MediaPage />,
-  performers: <PerformersPage />,
-  settings: <SettingsPage />,
+/* ââ Prefetch helper ââââââââââââââââââââââââââââââââââââââââââââââ */
+function prefetchViewModule(key: ViewKey) {
+  const loaders: Record<ViewKey, () => Promise<any>> = {
+    Dashboard: () => import('./views/Dashboard'),
+    Search:    () => import('./views/Search'),
+    Activity:  () => import('./views/Activity'),
+    Recommend: () => import('./views/Recommend'),
+    Settings:  () => import('./views/Settings'),
+  }
+  loaders[key]?.()
 }
 
-function App() {
-  const activeView = useAppStore((s) => s.activeView)
-  const deferredActiveView = useDeferredValue(activeView)
-  useCommandPalette()
+/* ââ App ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
+export default function App() {
+  const [currentView, setCurrentView] = useState<ViewKey>('Dashboard')
+  const deferredView = useDeferredValue(currentView)
+  const online = useConnectivity()
+  const { data, isLoading } = useDashboard()
 
-  const [showShortcuts, setShowShortcuts] = useState(false)
-  const closeShortcuts = useCallback(() => {
-    startTransition(() => {
-      setShowShortcuts(false)
-    })
-  }, [])
-  const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingComplete())
-  const closeOnboarding = useCallback(() => {
-    startTransition(() => {
-      setShowOnboarding(false)
-    })
-  }, [])
-
+  /* Prefetch adjacent views on idle */
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
-      if ((e.target as HTMLElement)?.isContentEditable) return
-      if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault()
-        startTransition(() => {
-          setShowShortcuts((v) => !v)
-        })
-      }
+    if ('requestIdleCallback' in window) {
+      const id = (window as any).requestIdleCallback(() => {
+        const keys = Object.keys(VIEW_MAP) as ViewKey[]
+        keys.forEach((k) => { if (k !== currentView) prefetchViewModule(k) })
+      })
+      return () => (window as any).cancelIdleCallback(id)
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [])
+  }, [currentView])
 
-  useEffect(() => {
-    const relatedViews: Record<ActiveView, ActiveView[]> = {
-      overview: ["images", "performers"],
-      items: ["images", "performers"],
-      images: ["performers", "overview"],
-      hypotheses: ["images", "performers"],
-      graph: ["images", "performers"],
-      performers: ["images", "overview"],
-      settings: ["overview"],
-    }
-
-    const preload = () => {
-      for (const view of relatedViews[deferredActiveView] ?? []) {
-        prefetchViewModule(view)
-      }
-    }
-
-    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      const idleId = window.requestIdleCallback(preload, { timeout: 1500 })
-      return () => window.cancelIdleCallback(idleId)
-    }
-
-    const timeoutId = setTimeout(preload, 300)
-    return () => clearTimeout(timeoutId)
-  }, [deferredActiveView])
+  const ActiveView = VIEW_MAP[deferredView]
 
   return (
-    <>
-      <CrawlNotifier />
-      <AppShell>
-        <div className="view-enter">
-          <Suspense fallback={<PageSkeleton />}>
-            {VIEW_MAP[deferredActiveView] ?? <MediaPage />}
-          </Suspense>
-        </div>
-        <Suspense fallback={null}>
-          <CommandPalette />
-          {showShortcuts && <KeyboardShortcutsOverlay onClose={closeShortcuts} />}
+    <div className="min-h-screen bg-gray-950 text-gray-100">
+      {/* ââ Top bar âââââââââââââââââââââââââââââââââââââââââââââ */}
+      <header className="sticky top-0 z-30 backdrop-blur bg-gray-950/80 border-b border-gray-800/50 px-4 py-2 flex items-center gap-4">
+        <h1 className="text-lg font-semibold tracking-tight truncate">
+          Codex Research Radar
+        </h1>
+        {!online && (
+          <span className="ml-auto text-xs text-amber-400 animate-pulse">
+            offline
+          </span>
+        )}
+      </header>
+
+      {/* ââ Nav âââââââââââââââââââââââââââââââââââââââââââââââââ */}
+      <nav className="flex gap-1 px-4 py-2 overflow-x-auto border-b border-gray-800/30">
+        {(Object.keys(VIEW_MAP) as ViewKey[]).map((key) => (
+          <button
+            key={key}
+            onClick={() => setCurrentView(key)}
+            onPointerEnter={() => prefetchViewModule(key)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+              currentView === key
+                ? 'bg-accent/20 text-accent'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+            }`}
+          >
+            {key}
+          </button>
+        ))}
+      </nav>
+
+      {/* ââ Content âââââââââââââââââââââââââââââââââââââââââââââ */}
+      <main className="p-4" style={{ contain: 'layout style' }}>
+        <Suspense fallback={<PageSkeleton />}>
+          <ActiveView data={data} isLoading={isLoading} />
         </Suspense>
-      </AppShell>
-      <Suspense fallback={null}>
-        {showOnboarding && <Onboarding onComplete={closeOnboarding} />}
-      </Suspense>
-    </>
-  )
-}
-
-export default App
-import { lazy, Suspense, useState, useEffect, useCallback, useDeferredValue, startTransition } from "react"
-import type { ReactElement } from "react"
-import { AppShell } from "./components/AppShell"
-import { useAppStore, type ActiveView } from "./store"
-import { useCommandPalette } from "./hooks"
-import { CrawlNotifier } from "./components/CrawlNotifier"
-import { loadViewModule, prefetchViewModule } from "./lib/view-loader"
-
-function isOnboardingComplete() {
-  return localStorage.getItem("onboarding_complete") === "true"
-}
-
-const MediaPage = lazy(() => loadViewModule("images").then(m => ({ default: (m as typeof import("./features/images/MediaPage")).MediaPage })))
-const SettingsPage = lazy(() => loadViewModule("settings").then(m => ({ default: (m as typeof import("./features/settings/SettingsPage")).SettingsPage })))
-const PerformersPage = lazy(() => loadViewModule("performers"))
-const CommandPalette = lazy(() => import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })))
-const KeyboardShortcutsOverlay = lazy(() => import("./components/KeyboardShortcutsOverlay").then((m) => ({ default: m.KeyboardShortcutsOverlay })))
-const Onboarding = lazy(() => import("./components/Onboarding").then((m) => ({ default: m.Onboarding })))
-
-function PageSkeleton() {
-  return (
-    <div className="flex flex-col gap-4 p-6" style={{ contain: 'content' }}>
-      <div className="h-8 w-48 skeleton-line rounded-lg" />
-      <div className="h-64 w-full skeleton-surface rounded-xl" />
-      <div className="h-32 w-full skeleton-surface rounded-xl" />
+      </main>
     </div>
   )
 }
-
-const VIEW_MAP: Record<ActiveView, ReactElement> = {
-  overview: <MediaPage />,
-  items: <MediaPage />,
-  images: <MediaPage />,
-  hypotheses: <MediaPage />,
-  graph: <MediaPage />,
-  performers: <PerformersPage />,
-  settings: <SettingsPage />,
-}
-
-function App() {
-  const activeView = useAppStore((s) => s.activeView)
-  const deferredActiveView = useDeferredValue(activeView)
-  useCommandPalette()
-
-  const [showShortcuts, setShowShortcuts] = useState(false)
-  const closeShortcuts = useCallback(() => {
-    startTransition(() => {
-      setShowShortcuts(false)
-    })
-  }, [])
-  const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingComplete())
-  const closeOnboarding = useCallback(() => {
-    startTransition(() => {
-      setShowOnboarding(false)
-    })
-  }, [])
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
-      if ((e.target as HTMLElement)?.isContentEditable) return
-      if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault()
-        startTransition(() => {
-          setShowShortcuts((v) => !v)
-        })
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [])
-
-  useEffect(() => {
-    const relatedViews: Record<ActiveView, ActiveView[]> = {
-      overview: ["images", "performers"],
-      items: ["images", "performers"],
-      images: ["performers", "overview"],
-      hypotheses: ["images", "performers"],
-      graph: ["images", "performers"],
-      performers: ["images", "overview"],
-      settings: ["overview"],
-    }
-
-    const preload = () => {
-      for (const view of relatedViews[deferredActiveView] ?? []) {
-        prefetchViewModule(view)
-      }
-    }
-
-    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      const idleId = window.requestIdleCallback(preload, { timeout: 1500 })
-      return () => window.cancelIdleCallback(idleId)
-    }
-
-    const timeoutId = setTimeout(preload, 300)
-    return () => clearTimeout(timeoutId)
-  }, [deferredActiveView])
-
-  return (
-    <>
-      <CrawlNotifier />
-      <AppShell>
-        <div className="view-enter">
-          <Suspense fallback={<PageSkeleton />}>
-            {VIEW_MAP[deferredActiveView] ?? <MediaPage />}
-          </Suspense>
-        </div>
-        <Suspense fallback={null}>
-          <CommandPalette />
-          {showShortcuts && <KeyboardShortcutsOverlay onClose={closeShortcuts} />}
-        </Suspense>
-      </AppShell>
-      <Suspense fallback={null}>
-        {showOnboarding && <Onboarding onComplete={closeOnboarding} />}
-      </Suspense>
-    </>
-  )
-}
-
-export default App
-import { lazy, Suspense, useState, useEffect, useCallback, useDeferredValue, startTransition } from "react"
-import type { ReactElement } from "react"
-import { AppShell } from "./components/AppShell"
-import { useAppStore, type ActiveView } from "./store"
-import { useCommandPalette } from "./hooks"
-import { CrawlNotifier } from "./components/CrawlNotifier"
-import { loadViewModule, prefetchViewModule } from "./lib/view-loader"
-
-function isOnboardingComplete() {
-  return localStorage.getItem("onboarding_complete") === "true"
-}
-
-const MediaPage = lazy(() => loadViewModule("images").then(m => ({ default: (m as typeof import("./features/images/MediaPage")).MediaPage })))
-const SettingsPage = lazy(() => loadViewModule("settings").then(m => ({ default: (m as typeof import("./features/settings/SettingsPage")).SettingsPage })))
-const PerformersPage = lazy(() => loadViewModule("performers"))
-const CommandPalette = lazy(() => import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })))
-const KeyboardShortcutsOverlay = lazy(() => import("./components/KeyboardShortcutsOverlay").then((m) => ({ default: m.KeyboardShortcutsOverlay })))
-const Onboarding = lazy(() => import("./components/Onboarding").then((m) => ({ default: m.Onboarding })))
-
-function PageSkeleton() {
-  return (
-    <div className="flex flex-col gap-4 p-6 animate-pulse">
-      <div className="h-8 w-48 bg-white/5 rounded-lg" />
-      <div className="h-64 w-full bg-white/5 rounded-xl" />
-      <div className="h-32 w-full bg-white/5 rounded-xl" />
-    </div>
-  )
-}
-
-const VIEW_MAP: Record<ActiveView, ReactElement> = {
-  overview: <MediaPage />,
-  items: <MediaPage />,
-  images: <MediaPage />,
-  hypotheses: <MediaPage />,
-  graph: <MediaPage />,
-  performers: <PerformersPage />,
-  settings: <SettingsPage />,
-}
-
-function App() {
-  const activeView = useAppStore((s) => s.activeView)
-  const deferredActiveView = useDeferredValue(activeView)
-  useCommandPalette()
-
-  const [showShortcuts, setShowShortcuts] = useState(false)
-  const closeShortcuts = useCallback(() => {
-    startTransition(() => {
-      setShowShortcuts(false)
-    })
-  }, [])
-  const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingComplete())
-  const closeOnboarding = useCallback(() => {
-    startTransition(() => {
-      setShowOnboarding(false)
-    })
-  }, [])
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
-      if ((e.target as HTMLElement)?.isContentEditable) return
-      if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault()
-        startTransition(() => {
-          setShowShortcuts((v) => !v)
-        })
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [])
-
-  useEffect(() => {
-    const relatedViews: Record<ActiveView, ActiveView[]> = {
-      overview: ["images", "performers"],
-      items: ["images", "performers"],
-      images: ["performers", "overview"],
-      hypotheses: ["images", "performers"],
-      graph: ["images", "performers"],
-      performers: ["images", "overview"],
-      settings: ["overview"],
-    }
-
-    const preload = () => {
-      for (const view of relatedViews[deferredActiveView] ?? []) {
-        prefetchViewModule(view)
-      }
-    }
-
-    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      const idleId = window.requestIdleCallback(preload, { timeout: 1500 })
-      return () => window.cancelIdleCallback(idleId)
-    }
-
-    const timeoutId = setTimeout(preload, 300)
-    return () => clearTimeout(timeoutId)
-  }, [deferredActiveView])
-
-  return (
-    <>
-      <CrawlNotifier />
-      <AppShell>
-        <div className="view-enter">
-          <Suspense fallback={<PageSkeleton />}>
-            {VIEW_MAP[deferredActiveView] ?? <MediaPage />}
-          </Suspense>
-        </div>
-        <Suspense fallback={null}>
-          <CommandPalette />
-          {showShortcuts && <KeyboardShortcutsOverlay onClose={closeShortcuts} />}
-        </Suspense>
-      </AppShell>
-      <Suspense fallback={null}>
-        {showOnboarding && <Onboarding onComplete={closeOnboarding} />}
-      </Suspense>
-    </>
-  )
-}
-
-export default App
