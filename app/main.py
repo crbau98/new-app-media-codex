@@ -10,7 +10,6 @@ import time
 import uuid
 
 os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "__all__")
-
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -65,6 +64,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = db
     app.state.settings = settings
     app.state.service = service
+    db.init()  # ensure schema exists before path repair
     repaired_paths = db.repair_moved_repo_paths(settings.base_dir)
     if repaired_paths:
         print(f"[startup] repaired {repaired_paths} moved local media paths")
@@ -178,7 +178,7 @@ _APP_SHELL_SUMMARY_CACHE_EXPIRES_AT = 0.0
 
 def _get_frontend_index_html() -> str | None:
     global _FRONTEND_INDEX_CACHE, _FRONTEND_INDEX_CACHE_MTIME_NS
-    dist_index = _FRONTEND_DIST / "index.html"
+    dist_index = _FRONTEND_DIST / "index.html
     if not dist_index.exists():
         return None
     mtime_ns = dist_index.stat().st_mtime_ns
