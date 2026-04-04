@@ -21,34 +21,25 @@ def unified_search(
     needle = f"%{q.strip()}%"
     per_type = max(1, limit // 2)
 
+    fts_term = q.strip().replace('"', '""')
+
     with db.connect() as conn:
-        # Search items: title, summary, content
-        # Score by position of match in title (lower INSTR = better = lower sort key)
+        # Search items using FTS5 index for fast matching
         try:
             rows = conn.execute(
                 """
                 SELECT
-                    id, title, summary, source_type, theme, first_seen_at AS created_at,
-                    CASE
-                        WHEN INSTR(LOWER(title), LOWER(?)) > 0
-                            THEN INSTR(LOWER(title), LOWER(?))
-                        WHEN INSTR(LOWER(summary), LOWER(?)) > 0
-                            THEN 1000 + INSTR(LOWER(summary), LOWER(?))
-                        ELSE 9999
-                    END AS _score
-                FROM items
-                WHERE
-                    theme != 'community_visuals'
-                    AND source_type NOT LIKE '%_visual%'
-                    AND (
-                        LOWER(title) LIKE LOWER(?)
-                        OR LOWER(summary) LIKE LOWER(?)
-                        OR LOWER(content) LIKE LOWER(?)
-                    )
-                ORDER BY _score ASC
+                    i.id, i.title, i.summary, i.source_type, i.theme, i.first_seen_at AS created_at,
+                    items_fts.rank AS _score
+                FROM items_fts
+                JOIN items i ON i.id = items_fts.rowid
+                WHERE items_fts MATCH ?
+                    AND i.theme != 'community_visuals'
+                    AND i.source_type NOT LIKE '%_visual%'
+                ORDER BY items_fts.rank
                 LIMIT ?
                 """,
-                (q.strip(), q.strip(), q.strip(), q.strip(), needle, needle, needle, per_type),
+                (f'"{fts_term}"', per_type),
             ).fetchall()
             for row in rows:
                 results.append(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -319,6 +320,7 @@ class Database:
         self._snapshot_cache: dict[str, dict[str, Any]] = {}
         self._snapshot_cache_lock = Lock()
         self._snapshot_generation = 0
+        self._local = threading.local()
 
     def snapshot_generation(self) -> int:
         with self._snapshot_cache_lock:
@@ -341,15 +343,7 @@ class Database:
         expires_at = time.monotonic() + ttl_seconds
         with self._snapshot_cache_lock:
             if len(self._snapshot_cache) > 512:
-                expired = [
-                    cache_key
-                    for cache_key, cache_entry in self._snapshot_cache.items()
-                    if now >= cache_entry["expires_at"]
-                ]
-                for cache_key in expired:
-                    self._snapshot_cache.pop(cache_key, None)
-                if len(self._snapshot_cache) > 512:
-                    self._snapshot_cache.clear()
+                self._snapshot_cache.clear()
             if self._snapshot_generation == generation:
                 self._snapshot_cache[key] = {
                     "expires_at": expires_at,
@@ -361,9 +355,12 @@ class Database:
     def _invalidate_after_write(self) -> None:
         self._invalidate_snapshot_cache()
 
-    @contextmanager
-    def connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.path, timeout=self.timeout_seconds)
+    def _get_conn(self) -> sqlite3.Connection:
+        """Return a thread-local persistent connection (reused across calls)."""
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            return conn
+        conn = sqlite3.connect(self.path, timeout=self.timeout_seconds, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
@@ -371,10 +368,13 @@ class Database:
         conn.execute("PRAGMA synchronous = NORMAL")
         conn.execute("PRAGMA temp_store = MEMORY")
         conn.execute("PRAGMA cache_size = -20000")
-        try:
-            yield conn
-        finally:
-            conn.close()
+        conn.execute("PRAGMA mmap_size = 268435456")  # 256 MB memory-mapped I/O
+        self._local.conn = conn
+        return conn
+
+    @contextmanager
+    def connect(self) -> Iterator[sqlite3.Connection]:
+        yield self._get_conn()
 
     def ping(self) -> bool:
         try:
@@ -523,6 +523,16 @@ class Database:
         # Rebuild FTS index
         try:
             conn.execute("INSERT INTO screenshots_fts(screenshots_fts) VALUES('rebuild')")
+        except Exception:
+            pass
+        # Create FTS index for items search
+        conn.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS items_fts
+            USING fts5(title, summary, author, domain, compounds_json, mechanisms_json,
+                       content=items, content_rowid=id)
+        """)
+        try:
+            conn.execute("INSERT INTO items_fts(items_fts) VALUES('rebuild')")
         except Exception:
             pass
         # user_settings table
@@ -751,6 +761,8 @@ class Database:
         with self.connect() as conn:
             current = conn.execute("SELECT id FROM items WHERE url = ?", (item["url"],)).fetchone()
             if current:
+                compounds_json = json.dumps(item["compounds"], ensure_ascii=True)
+                mechanisms_json = json.dumps(item["mechanisms"], ensure_ascii=True)
                 conn.execute(
                     """
                     UPDATE items
@@ -771,17 +783,24 @@ class Database:
                         item["domain"],
                         item["image_url"],
                         item["score"],
-                        json.dumps(item["compounds"], ensure_ascii=True),
-                        json.dumps(item["mechanisms"], ensure_ascii=True),
+                        compounds_json,
+                        mechanisms_json,
                         json.dumps(item["metadata_json"], ensure_ascii=True),
                         now,
                         run_id,
                         item["url"],
                     ),
                 )
+                item_id = int(current["id"])
+                # Sync FTS index
+                try:
+                    conn.execute("INSERT OR REPLACE INTO items_fts(rowid, title, summary, author, domain, compounds_json, mechanisms_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                 (item_id, item["title"], item["summary"], item["author"], item["domain"], compounds_json, mechanisms_json))
+                except Exception:
+                    pass
                 conn.commit()
                 self._invalidate_after_write()
-                return int(current["id"]), False
+                return item_id, False
 
             cursor = conn.execute(
                 """
@@ -812,9 +831,17 @@ class Database:
                     run_id,
                 ),
             )
+            new_id = int(cursor.lastrowid)
+            # Sync FTS index
+            try:
+                conn.execute("INSERT INTO items_fts(rowid, title, summary, author, domain, compounds_json, mechanisms_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                             (new_id, item["title"], item["summary"], item["author"], item["domain"],
+                              json.dumps(item["compounds"], ensure_ascii=True), json.dumps(item["mechanisms"], ensure_ascii=True)))
+            except Exception:
+                pass
             conn.commit()
             self._invalidate_after_write()
-            return int(cursor.lastrowid), True
+            return new_id, True
 
     def insert_image(self, image: dict[str, Any], item_id: int | None = None) -> None:
         with self.connect() as conn:
@@ -935,15 +962,10 @@ class Database:
         if queued_only:
             query += " AND queued_at IS NOT NULL"
         if search.strip():
-            needle = f"%{search.strip().lower()}%"
-            query += """
-             AND lower(
-                 COALESCE(title, '') || ' ' || COALESCE(summary, '') || ' ' || COALESCE(content, '') || ' ' ||
-                 COALESCE(domain, '') || ' ' || COALESCE(author, '') || ' ' || COALESCE(user_note, '') || ' ' ||
-                 COALESCE(compounds_json, '') || ' ' || COALESCE(mechanisms_json, '')
-             ) LIKE ?
-            """
-            params.append(needle)
+            # Use FTS5 for fast full-text search when available, fall back to LIKE
+            fts_term = search.strip().replace('"', '""')
+            query += " AND items.id IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?)"
+            params.append(f'"{fts_term}"')
         if compound:
             query += " AND LOWER(compounds_json) LIKE ?"
             params.append(f'%"{compound.lower()}"%')

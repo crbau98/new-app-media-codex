@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
-    "build": "node ./scripts/build-prod.mjs",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -35,14 +35,12 @@ def _get_cached_performers_payload(app_state, key: str, ttl_seconds: float, buil
     cache, lock = _performers_cache_bucket(app_state)
     now = time.monotonic()
     with lock:
-        expired_keys = [cache_key for cache_key, entry in cache.items() if now >= entry["expires_at"]]
-        for cache_key in expired_keys:
-            cache.pop(cache_key, None)
-        if len(cache) > 512:
-            cache.clear()
         entry = cache.get(key)
         if entry and now < entry["expires_at"]:
             return entry["payload"]
+        # Only evict when cache is large; skip per-request full scan
+        if len(cache) > 512:
+            cache.clear()
 
     payload = builder()
     with lock:

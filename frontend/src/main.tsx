@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import './index.css'
 import App from './App'
 import { useAppStore, getViewFromHash } from './store'
 import type { ApiError } from './lib/api'
@@ -51,12 +52,12 @@ function isRetryableQueryError(error: unknown): boolean {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 60_000,
-      gcTime: 10 * 60_000,
+      staleTime: 2 * 60_000,
+      gcTime: 15 * 60_000,
       retry: (failureCount, error) => isRetryableQueryError(error) && failureCount < 2,
       retryDelay: (attempt) => Math.min(750 * 2 ** attempt, 10_000),
       refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
+      refetchOnReconnect: 'always',
       refetchOnMount: false,
       refetchIntervalInBackground: false,
     },

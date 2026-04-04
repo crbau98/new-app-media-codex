@@ -9,11 +9,12 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="/static/dist/icons/icon.svg">
-    <link rel="stylesheet" href="/static/dist/app.css">
+    <!-- CSS injected by Vite build -->
   </head>
   <body>
     <div id="root"></div>
     <script>
+      // Clean up stale service workers and caches
       ;(async () => {
         try {
           if ('serviceWorker' in navigator) {
@@ -25,11 +26,8 @@
             await Promise.allSettled(keys.map((key) => caches.delete(key)))
           }
         } catch {}
-        const script = document.createElement('script')
-        script.type = 'module'
-        script.src = '/src/main.tsx?v=sw-reset'
-        document.body.appendChild(script)
       })()
     </script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
