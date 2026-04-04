@@ -2,64 +2,67 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
-import './index.css'
+import { useAppStore, getViewFromHash } from './store'
+import type { ApiError } from './lib/api'
 
-/* ââ Query client with sensible defaults ââââââââââââââââââââââââââ */
+function safeLocalStorageGet(key: string): string | null {
+  try { return window.localStorage.getItem(key) } catch { return null }
+}
+
+// Restore saved theme on startup
+const savedTheme = safeLocalStorageGet('theme') || 'dark'
+document.documentElement.dataset.theme = savedTheme
+
+// Restore saved accent color on startup
+const savedAccent = safeLocalStorageGet("accent-color")
+if (savedAccent) {
+  document.documentElement.style.setProperty("--color-accent", savedAccent)
+  document.documentElement.style.setProperty("--color-accent-glow", savedAccent + "50")
+}
+const savedAccentSecondary = safeLocalStorageGet("accent-color-secondary")
+if (savedAccentSecondary) {
+  document.documentElement.style.setProperty("--color-accent-secondary", savedAccentSecondary)
+}
+
+// Sync hash changes (back/forward navigation) into the store
+window.addEventListener('hashchange', () => {
+  const view = getViewFromHash()
+  if (useAppStore.getState().activeView !== view) {
+    useAppStore.setState({ activeView: view })
+  }
+})
+
+function isRetryableQueryError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const candidate = error as ApiError & { name?: string; message?: string }
+  if (candidate.name === "AbortError") return false
+  if (candidate.retryable != null) return candidate.retryable
+  if (typeof candidate.status === "number") {
+    return candidate.status === 408 || candidate.status === 429 || candidate.status >= 500
+  }
+  const message = String(candidate.message ?? "")
+  return /Failed to fetch|NetworkError|timed out/i.test(message)
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60_000,          // data fresh for 5 min
-      gcTime: 10 * 60_000,            // keep unused data 10 min
+      staleTime: 60_000,
+      gcTime: 10 * 60_000,
+      retry: (failureCount, error) => isRetryableQueryError(error) && failureCount < 2,
+      retryDelay: (attempt) => Math.min(750 * 2 ** attempt, 10_000),
       refetchOnWindowFocus: false,
-      retry(failureCount, error: any) {
-        if (error?.status === 404) return false
-        return failureCount < 2
-      },
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      refetchIntervalInBackground: false,
     },
   },
 })
 
-/* ââ Accent-color restore (batched read+write) ââââââââââââââââââââ */
-const stored = localStorage.getItem('accentColor')
-if (stored) {
-  requestAnimationFrame(() => {
-    document.documentElement.style.setProperty('--color-accent', stored)
-  })
-}
-
-/* ââ Register service-worker on idle ââââââââââââââââââââââââââââââ */
-if ('serviceWorker' in navigator) {
-  const registerSW = () =>
-    navigator.serviceWorker
-      .register('/sw.js')
-      .catch(() => {/* SW optional */})
-
-  if ('requestIdleCallback' in window) {
-    ;(window as any).requestIdleCallback(registerSW)
-  } else {
-    window.addEventListener('load', registerSW)
-  }
-}
-
-/* ââ Mount ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <App />
     </QueryClientProvider>
-  </StrictMode>,
+  </StrictMode>
 )
-
-/* ââ Web-Vitals (lazy, non-blocking) ââââââââââââââââââââââââââââââ */
-import('web-vitals')
-  .then(({ onCLS, onFID, onLCP }) => {
-    onCLS(console.debug)
-    onFID(console.debug)
-    onLCP(console.debug)
-  })
-  .catch(() => {})
-
-/* ââ HMR acceptance (dev only) ââââââââââââââââââââââââââââââââââââ */
-if (import.meta.hot) {
-  import.meta.hot.accept()
-}
