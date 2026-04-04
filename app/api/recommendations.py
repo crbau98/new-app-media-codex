@@ -1,6 +1,114 @@
 from __future__ import annotations
 
 import json
+import time
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+
+router = APIRouter(prefix="/api", tags=["recommendations"])
+
+# Cache recommendations for 120s â they don't change fast
+_reco_cache: dict | None = None
+_reco_cache_expires = 0.0
+
+
+@router.get("/recommendations")
+def get_recommendations(request: Request) -> JSONResponse:
+    """Return up to 5 recommended items based on compound/mechanism overlap with saved items."""
+    global _reco_cache, _reco_cache_expires
+
+    now = time.monotonic()
+    if _reco_cache is not None and now < _reco_cache_expires:
+        return JSONResponse(_reco_cache)
+
+    db = request.app.state.db
+
+    with db.connect() as conn:
+        # 1. Get compounds and mechanisms from saved/promoted items
+        saved_rows = conn.execute(
+            "SELECT compounds_json, mechanisms_json FROM items WHERE is_saved = 1"
+        ).fetchall()
+
+        if not saved_rows:
+            payload = {"items": [], "reason": "no_saved_items"}
+            _reco_cache = payload
+            _reco_cache_expires = now + 120.0
+            return JSONResponse(payload)
+
+        saved_compounds: set[str] = set()
+        saved_mechanisms: set[str] = set()
+        for row in saved_rows:
+            for c in json.loads(row["compounds_json"] or "[]"):
+                if c:
+                    saved_compounds.add(c)
+            for m in json.loads(row["mechanisms_json"] or "[]"):
+                if m:
+                    saved_mechanisms.add(m)
+
+        if not saved_compounds and not saved_mechanisms:
+            payload = {"items": [], "reason": "no_signals"}
+            _reco_cache = payload
+            _reco_cache_expires = now + 120.0
+            return JSONResponse(payload)
+
+        # 2. Get unreviewed items â LIMIT to 500 most recent to cap memory
+        candidates = conn.execute(
+            """SELECT id, title, url, summary, source_type, theme, score,
+                      compounds_json, mechanisms_json, first_seen_at
+               FROM items
+               WHERE is_saved = 0
+                 AND review_status IN ('new', 'reviewing')
+                 AND (compounds_json != '[]' OR mechanisms_json != '[]')
+               ORDER BY first_seen_at DESC
+               LIMIT 500
+            """
+        ).fetchall()
+
+        # 3. Score each candidate by overlap count
+        scored: list[tuple[dict, int, list[str], list[str]]] = []
+        for row in candidates:
+            compounds = json.loads(row["compounds_json"] or "[]")
+            mechanisms = json.loads(row["mechanisms_json"] or "[]")
+
+            overlapping_compounds = [c for c in compounds if c in saved_compounds]
+            overlapping_mechanisms = [m for m in mechanisms if m in saved_mechanisms]
+            overlap_count = len(overlapping_compounds) + len(overlapping_mechanisms)
+
+            if overlap_count > 0:
+                scored.append((
+                    dict(row),
+                    overlap_count,
+                    overlapping_compounds,
+                    overlapping_mechanisms,
+                ))
+
+        # 4. Sort by overlap count DESC, then score DESC
+        scored.sort(key=lambda x: (x[1], x[0].get("score", 0)), reverse=True)
+
+        # 5. Return top 5
+        results = []
+        for row_dict, overlap_count, oc, om in scored[:5]:
+            results.append({
+                "id": row_dict["id"],
+                "title": row_dict["title"],
+                "url": row_dict["url"],
+                "summary": (row_dict["summary"] or "")[:200],
+                "source_type": row_dict["source_type"],
+                "theme": row_dict["theme"],
+                "score": row_dict["score"],
+                "overlap_count": overlap_count,
+                "overlapping_compounds": oc,
+                "overlapping_mechanisms": om,
+            })
+
+        payload = {"items": results, "reason": "ok"}
+        _reco_cache = payload
+        _reco_cache_expires = now + 120.0
+        return JSONResponse(payload)
+from __future__ import annotations
+
+import json
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
