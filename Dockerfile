@@ -40,4 +40,9 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
+# PERF FIX: added --loop uvloop for faster async event loop.
+# NOTE: --workers is intentionally kept at 1 because the Render starter plan
+# has limited RAM (~512MB) and APScheduler runs in every worker process,
+# which would cause duplicate crawl jobs. If you upgrade to a plan with
+# 2GB+ RAM and refactor the scheduler to use a DB-backed lock, bump to --workers 2.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --loop uvloop"]
