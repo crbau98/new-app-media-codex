@@ -17,8 +17,6 @@ export function useBrowseHypotheses(params: Record<string, string | number | boo
   return useQuery({
     queryKey: ['hypotheses', params],
     queryFn: () => api.browseHypotheses(params),
-    // PERF FIX: removed staleTime: 30_000 — it was shorter than the global
-    // QueryClient default of 2 minutes set in main.tsx, causing unnecessary
-    // refetches every 30s. Now inherits the global 2-min staleTime.
+    staleTime: 30_000,
   })
 }
