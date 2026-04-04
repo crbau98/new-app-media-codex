@@ -342,8 +342,14 @@ class Database:
         payload = builder()
         expires_at = time.monotonic() + ttl_seconds
         with self._snapshot_cache_lock:
-            if len(self._snapshot_cache) > 512:
-                self._snapshot_cache.clear()
+            if len(self._snapshot_cache) > 128:
+                # LRU eviction: drop 64 oldest instead of clearing all
+                sorted_keys = sorted(
+                    self._snapshot_cache,
+                    key=lambda k: self._snapshot_cache[k]["expires_at"],
+                )
+                for k in sorted_keys[:64]:
+                    del self._snapshot_cache[k]
             if self._snapshot_generation == generation:
                 self._snapshot_cache[key] = {
                     "expires_at": expires_at,
@@ -367,8 +373,8 @@ class Database:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA synchronous = NORMAL")
         conn.execute("PRAGMA temp_store = MEMORY")
-        conn.execute("PRAGMA cache_size = -20000")
-        conn.execute("PRAGMA mmap_size = 268435456")  # 256 MB memory-mapped I/O
+        conn.execute("PRAGMA cache_size = -4096")  # ~16MB (was 80MB)
+        conn.execute("PRAGMA mmap_size = 33554432")  # 32MB mmap (was 256MB)
         self._local.conn = conn
         return conn
 
@@ -1557,7 +1563,7 @@ class Database:
                     FROM items
                     WHERE theme != 'community_visuals' AND source_type NOT LIKE '%_visual%'
                     ORDER BY last_seen_at DESC
-                    LIMIT 100
+                    LIMIT 30
                     """
                 ).fetchall()
                 mechanisms = conn.execute(
@@ -1566,7 +1572,7 @@ class Database:
                     FROM items
                     WHERE theme != 'community_visuals' AND source_type NOT LIKE '%_visual%'
                     ORDER BY last_seen_at DESC
-                    LIMIT 100
+                    LIMIT 30
                     """
                 ).fetchall()
                 sources = conn.execute(
@@ -1639,7 +1645,7 @@ class Database:
                 "theme_summaries": [dict(row) for row in theme_summaries],
             }
 
-        return self._cached_snapshot("stats", 15.0, build)
+        return self._cached_snapshot("stats", 60.0, build)
 
     def get_compound_cache(self, name: str) -> dict | None:
         with self.connect() as conn:
