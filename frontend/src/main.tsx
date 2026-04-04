@@ -6,7 +6,11 @@ import { useAppStore, getViewFromHash } from './store'
 import type { ApiError } from './lib/api'
 
 function safeLocalStorageGet(key: string): string | null {
-  try { return window.localStorage.getItem(key) } catch { return null }
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
 }
 
 // Restore saved theme on startup
