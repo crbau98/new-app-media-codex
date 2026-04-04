@@ -24,3 +24,13 @@ services:
         value: 10000
       - key: RUN_STARTUP_CRAWL
         value: false
+
+  # PERF FIX: keep-alive cron — pings /healthz every 14 minutes so Render
+  # never spins the service down (starter plan cold starts = 30-90s delays)
+  - type: cron
+    name: keep-alive-ping
+    runtime: image
+    image:
+      url: docker.io/curlimages/curl:latest
+    schedule: "*/14 * * * *"
+    startCommand: "curl -fsS https://codex-research-radar.onrender.com/healthz"
