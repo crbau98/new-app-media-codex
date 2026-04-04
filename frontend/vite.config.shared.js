@@ -1,12 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react-swc'
+import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
 
 const backendTarget = process.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000'
 const wsTarget = backendTarget.replace(/^http/, 'ws')
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   resolve: {
     alias: { '@': resolve(__dirname, 'src') },
   },
