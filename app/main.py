@@ -178,7 +178,7 @@ _APP_SHELL_SUMMARY_CACHE_EXPIRES_AT = 0.0
 
 def _get_frontend_index_html() -> str | None:
     global _FRONTEND_INDEX_CACHE, _FRONTEND_INDEX_CACHE_MTIME_NS
-    dist_index = _FRONTEND_DIST / "index.html
+    dist_index = _FRONTEND_DIST / "index.html"
     if not dist_index.exists():
         return None
     mtime_ns = dist_index.stat().st_mtime_ns
