@@ -1,6 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "../lib/api"
 
+// NOTE: staleTime (2 min), gcTime (15 min), refetchOnWindowFocus (false),
+// refetchOnMount (false) are all set as global defaults in main.tsx QueryClient.
+// Individual hooks here intentionally inherit those settings — do NOT add
+// shorter per-query staleTime overrides as that causes unnecessary refetches.
+
 export function useBrowseItems(params: Record<string, string | number | boolean>) {
   return useQuery({
     queryKey: ["items", params],
