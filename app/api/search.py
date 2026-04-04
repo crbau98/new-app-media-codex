@@ -1,5 +1,141 @@
 from __future__ import annotations
 
+import re
+
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse
+
+router = APIRouter(prefix="/api/search", tags=["search"])
+
+# FTS5 special chars that need escaping
+_FTS5_SPECIAL = re.compile(r'(["\*\(\)\:])')
+
+
+@router.get("")
+def unified_search(
+    request: Request,
+    q: str = Query(default="", min_length=1),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> JSONResponse:
+    db = request.app.state.db
+    results: list[dict] = []
+
+    raw = q.strip()
+    if not raw:
+        return JSONResponse([])
+
+    needle = f"%{raw}%"
+    per_type = max(1, limit // 2)
+
+    # Properly escape FTS5 special characters and wrap in quotes
+    fts_term = _FTS5_SPECIAL.sub(r"\\\1", raw)
+
+    with db.connect() as conn:
+        # Search items using FTS5 index for fast matching
+        try:
+            rows = conn.execute(
+                """
+                SELECT
+                    i.id, i.title, i.summary, i.source_type, i.theme, i.first_seen_at AS created_at,
+                    items_fts.rank AS _score
+                FROM items_fts
+                JOIN items i ON i.id = items_fts.rowid
+                WHERE items_fts MATCH ?
+                    AND i.theme != 'community_visuals'
+                    AND i.source_type NOT LIKE '%_visual%'
+                ORDER BY items_fts.rank
+                LIMIT ?
+                """,
+                (f'"{fts_term}"', per_type),
+            ).fetchall()
+            for row in rows:
+                results.append(
+                    {
+                        "result_type": "item",
+                        "id": row["id"],
+                        "title": row["title"],
+                        "body": (row["summary"] or "")[:200],
+                        "source_type": row["source_type"],
+                        "theme": row["theme"],
+                        "score": row["_score"],
+                        "created_at": row["created_at"],
+                    }
+                )
+        except Exception:
+            pass
+
+        # Search hypotheses: title, rationale, evidence, body
+        try:
+            rows = conn.execute(
+                """
+                SELECT
+                    id, title, rationale, body, created_at,
+                    CASE
+                        WHEN INSTR(LOWER(title), LOWER(?)) > 0
+                            THEN INSTR(LOWER(title), LOWER(?))
+                        WHEN INSTR(LOWER(rationale), LOWER(?)) > 0
+                            THEN 1000 + INSTR(LOWER(rationale), LOWER(?))
+                        WHEN INSTR(LOWER(body), LOWER(?)) > 0
+                            THEN 2000 + INSTR(LOWER(body), LOWER(?))
+                        ELSE 9999
+                    END AS _score
+                FROM hypotheses
+                WHERE
+                    LOWER(title) LIKE LOWER(?)
+                    OR LOWER(rationale) LIKE LOWER(?)
+                    OR LOWER(evidence) LIKE LOWER(?)
+                    OR LOWER(body) LIKE LOWER(?)
+                ORDER BY _score ASC
+                LIMIT ?
+                """,
+                (raw, raw, raw, raw, raw, raw, needle, needle, needle, needle, per_type),
+            ).fetchall()
+            for row in rows:
+                results.append(
+                    {
+                        "result_type": "hypothesis",
+                        "id": row["id"],
+                        "title": row["title"],
+                        "body": ((row["body"] or row["rationale"]) or "")[:200],
+                        "score": row["_score"],
+                        "created_at": row["created_at"],
+                    }
+                )
+        except Exception:
+            pass
+
+        # Search screenshots by term
+        try:
+            rows = conn.execute(
+                """
+                SELECT id, term, source, captured_at AS created_at
+                FROM screenshots
+                WHERE LOWER(term) LIKE LOWER(?)
+                ORDER BY captured_at DESC
+                LIMIT ?
+                """,
+                (needle, max(1, limit // 4)),
+            ).fetchall()
+            for row in rows:
+                results.append(
+                    {
+                        "result_type": "screenshot",
+                        "id": row["id"],
+                        "title": row["term"],
+                        "body": f"Screenshot from {row['source']}",
+                        "source_type": row["source"],
+                        "score": 5000,
+                        "created_at": row["created_at"],
+                    }
+                )
+        except Exception:
+            pass
+
+    # Sort combined results by score ascending (lower = better match position)
+    results.sort(key=lambda r: r.get("score") or 9999)
+    return JSONResponse(results[:limit])
+from __future__ import annotations
+
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
