@@ -238,7 +238,10 @@ export const useAppStore = create<AppState>((set) => ({
     persistNotifications([])
     set({ notifications: [] })
   },
-  unreadCount: () => useAppStore.getState().notifications.filter((n) => !n.read).length,
+  unreadCount: (): number => {
+    const state = useAppStore.getState()
+    return (state.notifications as Notification[]).filter((n: Notification) => !n.read).length
+  },
   // Connectivity
   isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
   setOnline: (isOnline) => set({ isOnline }),
