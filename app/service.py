@@ -106,7 +106,7 @@ class ResearchService:
         self._queue_stop_event = threading.Event()
         self._queue_thread: threading.Thread | None = None
         self._seed_thread: threading.Thread | None = None
-        self._dashboard_cache_ttl_seconds = 30.0  # was 5s — too short, hammers DB
+        self._dashboard_cache_ttl_seconds = 5.0
         self._dashboard_cache_expires_at = 0.0
         self._dashboard_cache_payload: dict[str, Any] | None = None
         self._dashboard_cache_lock = Lock()
@@ -274,16 +274,6 @@ class ResearchService:
             name="default-performer-seed",
         )
         self._seed_thread.start()
-
-        # PERF FIX: pre-warm the suggest autocomplete cache at startup.
-        # Without this the first user request triggers a full-table scan + JSON
-        # parse loop in the request thread. service.start() already runs in
-        # asyncio.to_thread() so blocking here is safe.
-        try:
-            from app.api.items import _warm_suggest_cache
-            _warm_suggest_cache(self.db)
-        except Exception as exc:
-            print(f"[service] suggest warmup failed: {exc}")
 
     def stop(self) -> None:
         self._queue_stop_event.set()
@@ -623,8 +613,8 @@ class ResearchService:
             "last_completed_run": last_completed_run,
             "recent_runs": self.db.get_recent_runs(limit=8),
             "review_queue": self.db.get_review_queue(limit=8),
-            "items": self.db.get_recent_items(limit=20),
-            "images": self.serialize_images(self.db.get_recent_images(limit=12)),
+            "items": self.db.get_recent_items(limit=36),
+            "images": self.serialize_images(self.db.get_recent_images(limit=24)),
             "hypotheses": self.db.get_recent_hypotheses(limit=8),
             "themes": [{"slug": theme.slug, "label": theme.label} for theme in self.settings.themes],
             "source_types": ["literature", "anecdote", "reddit", "x", "lpsg", "pubmed", "biorxiv", "arxiv", "firecrawl"],
