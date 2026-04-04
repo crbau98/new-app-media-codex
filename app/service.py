@@ -275,6 +275,16 @@ class ResearchService:
         )
         self._seed_thread.start()
 
+        # PERF FIX: pre-warm the suggest autocomplete cache at startup.
+        # Without this the first user request triggers a full-table scan + JSON
+        # parse loop in the request thread. service.start() already runs in
+        # asyncio.to_thread() so blocking here is safe.
+        try:
+            from app.api.items import _warm_suggest_cache
+            _warm_suggest_cache(self.db)
+        except Exception as exc:
+            print(f"[service] suggest warmup failed: {exc}")
+
     def stop(self) -> None:
         self._queue_stop_event.set()
         if self.running and self.scheduler is not None:
