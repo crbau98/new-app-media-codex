@@ -411,7 +411,8 @@ class Database:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_items_ai_summary "
                 "ON items(id) WHERE ai_summary IS NOT NULL"
-            )        conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_name_lower ON tags(LOWER(name))")
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_name_lower ON tags(LOWER(name))")
             conn.commit()
 
     def repair_moved_repo_paths(self, current_base_dir: Path, project_name: str = "App research codex") -> int:
