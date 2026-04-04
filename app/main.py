@@ -184,16 +184,6 @@ def _get_frontend_index_html() -> str | None:
     mtime_ns = dist_index.stat().st_mtime_ns
     if _FRONTEND_INDEX_CACHE is None or _FRONTEND_INDEX_CACHE_MTIME_NS != mtime_ns:
         html = dist_index.read_text(encoding="utf-8")
-        html = re.sub(
-            r'\n\s*<link rel="modulepreload" crossorigin href="/assets/vendor-recharts-[^"]+">',
-            "",
-            html,
-        )
-        html = re.sub(
-            r'\n\s*<link rel="modulepreload" crossorigin href="/assets/vendor-d3-[^"]+">',
-            "",
-            html,
-        )
         _FRONTEND_INDEX_CACHE = html
         _FRONTEND_INDEX_CACHE_MTIME_NS = mtime_ns
     return _FRONTEND_INDEX_CACHE
