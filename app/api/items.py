@@ -87,9 +87,11 @@ def update_items_bulk(
 
 
 @router.get("/queue")
-def items_queue() -> JSONResponse:
+def items_queue(limit: int = Query(default=100, ge=1, le=500)) -> JSONResponse:
+    # PERF FIX: previously unbounded — could dump entire queue table as JSON
     from app.main import db
-    return JSONResponse(db.get_queue())
+    rows = db.get_queue()
+    return JSONResponse(rows[:limit])
 
 
 @router.get("/queue/count")
@@ -100,6 +102,40 @@ def items_queue_count() -> JSONResponse:
 
 _suggest_cache: dict[str, tuple[float, list[str]]] = {}
 _SUGGEST_TTL = 60.0
+
+
+def _build_suggest_values(db, col: str) -> list[str]:
+    """Shared helper: fetch all distinct values from a JSON-array column."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT {col} FROM items WHERE {col} IS NOT NULL AND {col} != '[]'"
+        ).fetchall()
+    seen: set[str] = set()
+    for row in rows:
+        try:
+            arr = json.loads(row[0])
+            for val in arr:
+                if isinstance(val, str):
+                    seen.add(val)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return sorted(seen)
+
+
+def _warm_suggest_cache(db) -> None:
+    """Pre-warm the suggest cache at startup so the first user request hits
+    the in-memory cache rather than triggering a full table scan."""
+    import time as _time
+    now = _time.monotonic()
+    for col in ("compounds_json", "mechanisms_json"):
+        cached = _suggest_cache.get(col)
+        if cached and now < cached[0]:
+            continue
+        try:
+            _suggest_cache[col] = (now + _SUGGEST_TTL, _build_suggest_values(db, col))
+            print(f"[suggest-warmup] {col}: cached")
+        except Exception as exc:
+            print(f"[suggest-warmup] {col}: {exc}")
 
 
 @router.get("/suggest")
@@ -123,21 +159,7 @@ def suggest(
     if cached and now < cached[0]:
         all_values = cached[1]
     else:
-        with db.connect() as conn:
-            rows = conn.execute(
-                f"SELECT DISTINCT {col} FROM items WHERE {col} IS NOT NULL AND {col} != '[]'"
-            ).fetchall()
-
-        seen: set[str] = set()
-        for row in rows:
-            try:
-                arr = json.loads(row[0])
-                for val in arr:
-                    if isinstance(val, str):
-                        seen.add(val)
-            except (json.JSONDecodeError, TypeError):
-                pass
-        all_values = sorted(seen)
+        all_values = _build_suggest_values(db, col)
         _suggest_cache[col] = (now + _SUGGEST_TTL, all_values)
 
     q_lower = q.lower()
