@@ -108,15 +108,6 @@ function viewAction(view: ActiveView): FabAction {
           if (btn) btn.click()
         },
       }
-    default:
-      return {
-        icon: <RefreshIcon />,
-        label: "Refresh",
-        action: async (ctx) => {
-          await ctx.queryClient.invalidateQueries()
-          ctx.addToast("Refreshed", "info")
-        },
-      }
   }
 }
 
