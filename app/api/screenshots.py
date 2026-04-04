@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import hashlib
 import json
 import re
@@ -52,12 +53,12 @@ def _get_cached_screenshots_payload(app_state, key: str, ttl_seconds: float, bui
     with lock:
         entry = cache.get(key)
         if entry and now < entry["expires_at"]:
-            return json.loads(json.dumps(entry["payload"])) if copy_payload else entry["payload"]
+            return copy.deepcopy(entry["payload"]) if copy_payload else entry["payload"]
 
     payload = builder()
     with lock:
         cache[key] = {
-            "payload": json.loads(json.dumps(payload)) if copy_payload else payload,
+            "payload": copy.deepcopy(payload) if copy_payload else payload,
             "expires_at": time.monotonic() + ttl_seconds,
         }
     return payload
@@ -278,11 +279,7 @@ def _warm_preview_generation(app_state, local_path: Path) -> str | None:
 
     with lock:
         if len(cache) > 5000:
-            expired_keys = [k for k, v in cache.items() if now >= v["expires_at"]]
-            for expired_key in expired_keys:
-                cache.pop(expired_key, None)
-            if len(cache) > 5000:
-                cache.clear()
+            cache.clear()
         cache[cache_key] = {"status": "ready", "url": preview_url, "path": str(preview_path), "expires_at": now + 3600.0}
     return preview_url
 
@@ -293,11 +290,7 @@ def _cached_local_media_exists(app_state, local_path: Path, ttl_seconds: float =
     now = time.monotonic()
     with lock:
         if len(cache) > 5000:
-            expired_keys = [k for k, v in cache.items() if now >= v["expires_at"]]
-            for expired_key in expired_keys:
-                cache.pop(expired_key, None)
-            if len(cache) > 5000:
-                cache.clear()
+            cache.clear()
         entry = cache.get(key)
         if entry and now < entry["expires_at"]:
             return entry["exists"]

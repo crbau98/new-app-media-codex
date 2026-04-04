@@ -31,11 +31,13 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined
+          if (id.includes('/react-dom/') || id.includes('/react/') || id.includes('/scheduler/')) return 'vendor-react'
           if (id.includes('@tanstack/react-query')) return 'vendor-query'
           if (id.includes('/recharts/')) return 'vendor-recharts'
           if (id.includes('/d3-') || id.includes('/d3/')) return 'vendor-d3'
           if (id.includes('/lucide-react/')) return 'vendor-icons'
           if (id.includes('/dompurify/')) return 'vendor-sanitize'
+          if (id.includes('/zustand/')) return 'vendor-state'
           return undefined
         },
       },

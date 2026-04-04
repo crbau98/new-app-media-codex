@@ -108,9 +108,16 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
 
+_STATIC_PREFIXES = ("/assets/", "/cached-images/", "/cached-screenshots/", "/cached-previews/", "/static/")
+
+
 @app.middleware("http")
 async def apply_response_headers(request: Request, call_next):
     response = await call_next(request)
+    path = request.url.path
+    # Skip expensive header work for static assets (they already have Cache-Control)
+    if any(path.startswith(p) for p in _STATIC_PREFIXES):
+        return response
     request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
     response.headers.setdefault("X-Request-ID", request_id)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -120,7 +127,7 @@ async def apply_response_headers(request: Request, call_next):
         "Permissions-Policy",
         "camera=(), microphone=(), geolocation=(), fullscreen=(self)",
     )
-    if request.url.path.startswith("/api/") or request.url.path == "/healthz":
+    if path.startswith("/api/") or path == "/healthz":
         response.headers.setdefault("Cache-Control", "no-store")
     return response
 

@@ -98,6 +98,10 @@ def items_queue_count() -> JSONResponse:
     return JSONResponse({"count": db.get_queue_count()})
 
 
+_suggest_cache: dict[str, tuple[float, list[str]]] = {}
+_SUGGEST_TTL = 60.0
+
+
 @router.get("/suggest")
 def suggest(
     q: str = Query(default=""),
@@ -113,23 +117,31 @@ def suggest(
     else:
         return JSONResponse({"suggestions": []})
 
-    with db.connect() as conn:
-        rows = conn.execute(
-            f"SELECT DISTINCT {col} FROM items WHERE {col} IS NOT NULL AND {col} != '[]'"
-        ).fetchall()
+    import time as _time
+    now = _time.monotonic()
+    cached = _suggest_cache.get(col)
+    if cached and now < cached[0]:
+        all_values = cached[1]
+    else:
+        with db.connect() as conn:
+            rows = conn.execute(
+                f"SELECT DISTINCT {col} FROM items WHERE {col} IS NOT NULL AND {col} != '[]'"
+            ).fetchall()
 
-    seen: set[str] = set()
-    for row in rows:
-        try:
-            arr = json.loads(row[0])
-            for val in arr:
-                if isinstance(val, str):
-                    seen.add(val)
-        except (json.JSONDecodeError, TypeError):
-            pass
+        seen: set[str] = set()
+        for row in rows:
+            try:
+                arr = json.loads(row[0])
+                for val in arr:
+                    if isinstance(val, str):
+                        seen.add(val)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        all_values = sorted(seen)
+        _suggest_cache[col] = (now + _SUGGEST_TTL, all_values)
 
     q_lower = q.lower()
-    matches = sorted([s for s in seen if q_lower in s.lower()])[:20]
+    matches = [s for s in all_values if q_lower in s.lower()][:20]
     return JSONResponse({"suggestions": matches})
 
 
