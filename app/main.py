@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
-app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 
 
 _STATIC_PREFIXES = ("/assets/", "/cached-images/", "/cached-screenshots/", "/cached-previews/", "/static/")
@@ -250,7 +250,7 @@ def app_shell_summary() -> JSONResponse:
 
 
 @app.get("/api/compounds/{name}")
-def compound_detail(name: str, request: Request) -> JSONResponse:
+async def compound_detail(name: str, request: Request) -> JSONResponse:
     import requests
     from app.sources.pubchem import lookup_compound
 
@@ -259,8 +259,13 @@ def compound_detail(name: str, request: Request) -> JSONResponse:
     if cached:
         return JSONResponse(cached)
 
-    session = requests.Session()
-    data = lookup_compound(session, name)
+    # PERF FIX: run blocking requests.Session in thread pool so it doesn't
+    # block the uvloop event loop and stall all other async handlers
+    def _sync_lookup():
+        session = requests.Session()
+        return lookup_compound(session, name)
+
+    data = await asyncio.to_thread(_sync_lookup)
     if data:
         try:
             db.set_compound_cache(name, data)
