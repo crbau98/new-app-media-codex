@@ -106,7 +106,7 @@ class ResearchService:
         self._queue_stop_event = threading.Event()
         self._queue_thread: threading.Thread | None = None
         self._seed_thread: threading.Thread | None = None
-        self._dashboard_cache_ttl_seconds = 5.0
+        self._dashboard_cache_ttl_seconds = 30.0  # was 5s — too short, hammers DB
         self._dashboard_cache_expires_at = 0.0
         self._dashboard_cache_payload: dict[str, Any] | None = None
         self._dashboard_cache_lock = Lock()
