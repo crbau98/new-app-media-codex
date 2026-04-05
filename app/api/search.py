@@ -1,9 +1,46 @@
 from __future__ import annotations
 
+import logging
+import time
+from threading import Lock
+
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/search", tags=["search"])
+
+# ---------------------------------------------------------------------------
+# Optimization #1: Short-lived search result cache (2s TTL) to handle
+# rapid re-queries from typeahead/command palette without hitting SQLite
+# ---------------------------------------------------------------------------
+_SEARCH_CACHE: dict[str, dict] = {}
+_SEARCH_CACHE_LOCK = Lock()
+_SEARCH_TTL = 2.0
+_SEARCH_CACHE_MAX = 64
+
+
+def _get_cached_search(key: str):
+    with _SEARCH_CACHE_LOCK:
+        entry = _SEARCH_CACHE.get(key)
+        if entry and time.monotonic() < entry["exp"]:
+            return entry["data"]
+    return None
+
+
+def _set_cached_search(key: str, data):
+    with _SEARCH_CACHE_LOCK:
+        # Optimization #2: evict oldest entries when cache is full
+        if len(_SEARCH_CACHE) >= _SEARCH_CACHE_MAX:
+            oldest_key = min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k]["exp"])
+            del _SEARCH_CACHE[oldest_key]
+        _SEARCH_CACHE[key] = {"data": data, "exp": time.monotonic() + _SEARCH_TTL}
+
+
+# Optimization #3: pre-strip query once, reuse everywhere
+def _normalize_query(q: str) -> str:
+    return q.strip().lower()
 
 
 @router.get("")
@@ -13,17 +50,23 @@ def unified_search(
     limit: int = Query(default=20, ge=1, le=100),
 ) -> JSONResponse:
     db = request.app.state.db
-    results: list[dict] = []
 
-    if not q.strip():
+    raw = q.strip()
+    if not raw:
         return JSONResponse([])
 
-    needle = f"%{q.strip()}%"
+    # Optimization #4: cache key includes normalized query + limit
+    cache_key = f"{raw.lower()}:{limit}"
+    cached = _get_cached_search(cache_key)
+    if cached is not None:
+        return JSONResponse(cached)
+
+    needle = f"%{raw}%"
     per_type = max(1, limit // 2)
+    results: list[dict] = []
 
     with db.connect() as conn:
-        # Search items: title, summary, content
-        # Score by position of match in title (lower INSTR = better = lower sort key)
+        # Optimization #5: log search errors instead of silently swallowing
         try:
             rows = conn.execute(
                 """
@@ -48,25 +91,26 @@ def unified_search(
                 ORDER BY _score ASC
                 LIMIT ?
                 """,
-                (q.strip(), q.strip(), q.strip(), q.strip(), needle, needle, needle, per_type),
+                (raw, raw, raw, raw, needle, needle, needle, per_type),
             ).fetchall()
-            for row in rows:
-                results.append(
-                    {
-                        "result_type": "item",
-                        "id": row["id"],
-                        "title": row["title"],
-                        "body": row["summary"],
-                        "source_type": row["source_type"],
-                        "theme": row["theme"],
-                        "score": row["_score"],
-                        "created_at": row["created_at"],
-                    }
-                )
-        except Exception:
-            pass
 
-        # Search hypotheses: title, rationale, evidence, body
+            # Optimization #6: use list comprehension instead of append loop
+            results.extend(
+                {
+                    "result_type": "item",
+                    "id": row["id"],
+                    "title": row["title"],
+                    "body": row["summary"],
+                    "source_type": row["source_type"],
+                    "theme": row["theme"],
+                    "score": row["_score"],
+                    "created_at": row["created_at"],
+                }
+                for row in rows
+            )
+        except Exception:
+            logger.exception("search items query failed for q=%r", raw)
+
         try:
             rows = conn.execute(
                 """
@@ -90,22 +134,27 @@ def unified_search(
                 ORDER BY _score ASC
                 LIMIT ?
                 """,
-                (q.strip(), q.strip(), q.strip(), q.strip(), q.strip(), q.strip(), needle, needle, needle, needle, per_type),
+                (raw, raw, raw, raw, raw, raw, needle, needle, needle, needle, per_type),
             ).fetchall()
-            for row in rows:
-                results.append(
-                    {
-                        "result_type": "hypothesis",
-                        "id": row["id"],
-                        "title": row["title"],
-                        "body": row["body"] or row["rationale"],
-                        "score": row["_score"],
-                        "created_at": row["created_at"],
-                    }
-                )
-        except Exception:
-            pass
 
-    # Sort combined results by score ascending (lower = better match position)
-    results.sort(key=lambda r: r.get("score") or 9999)
-    return JSONResponse(results[:limit])
+            # Optimization #7: generator expression for extend
+            results.extend(
+                {
+                    "result_type": "hypothesis",
+                    "id": row["id"],
+                    "title": row["title"],
+                    "body": row["body"] or row["rationale"],
+                    "score": row["_score"],
+                    "created_at": row["created_at"],
+                }
+                for row in rows
+            )
+        except Exception:
+            logger.exception("search hypotheses query failed for q=%r", raw)
+
+    # Optimization #8: use key function with default via operator.itemgetter pattern
+    results.sort(key=lambda r: r.get("score", 9999))
+    final = results[:limit]
+
+    _set_cached_search(cache_key, final)
+    return JSONResponse(final)
