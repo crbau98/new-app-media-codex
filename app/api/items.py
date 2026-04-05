@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import time
+from threading import Lock
 
 import httpx
 from fastapi import APIRouter, Header, HTTPException, Query
@@ -12,6 +14,11 @@ from app.config import settings
 router = APIRouter(prefix="/api/items", tags=["items"])
 _OEMBED_HEADERS = {"User-Agent": "Mozilla/5.0"}
 _OEMBED_TIMEOUT = httpx.Timeout(8.0, connect=3.0)
+
+# ── Suggest cache ────────────────────────────────────────────────────
+_SUGGEST_CACHE: dict[str, tuple[float, set[str]]] = {}
+_SUGGEST_CACHE_LOCK = Lock()
+_SUGGEST_TTL = 300.0  # 5 minutes
 
 
 class ItemUpdateRequest(BaseModel):
@@ -44,6 +51,9 @@ class AddItemTagRequest(BaseModel):
     color: str = "#6b7280"
 
 
+_ALLOWED_STATUSES = frozenset({"new", "reviewing", "shortlisted", "archived"})
+
+
 @router.get("")
 def items(
     theme: str | None = Query(default=None),
@@ -74,8 +84,7 @@ def update_items_bulk(
     from app.main import db
     if settings.admin_token and x_admin_token != settings.admin_token:
         raise HTTPException(status_code=401, detail="Missing or invalid admin token")
-    allowed_statuses = {"new", "reviewing", "shortlisted", "archived"}
-    if payload.review_status is not None and payload.review_status not in allowed_statuses:
+    if payload.review_status is not None and payload.review_status not in _ALLOWED_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid review status")
     if not payload.item_ids:
         raise HTTPException(status_code=400, detail="No item ids supplied")
@@ -98,24 +107,17 @@ def items_queue_count() -> JSONResponse:
     return JSONResponse({"count": db.get_queue_count()})
 
 
-@router.get("/suggest")
-def suggest(
-    q: str = Query(default=""),
-    field: str = Query(default="compound"),
-) -> JSONResponse:
-    """Autocomplete suggestions for compounds or mechanisms."""
-    from app.main import db
-
-    if field == "compound":
-        col = "compounds_json"
-    elif field == "mechanism":
-        col = "mechanisms_json"
-    else:
-        return JSONResponse({"suggestions": []})
+def _get_suggest_values(db, col: str) -> set[str]:
+    """Get all distinct values for a JSON array column, with TTL caching."""
+    now = time.monotonic()
+    with _SUGGEST_CACHE_LOCK:
+        entry = _SUGGEST_CACHE.get(col)
+        if entry and now - entry[0] < _SUGGEST_TTL:
+            return entry[1]
 
     with db.connect() as conn:
         rows = conn.execute(
-            f"SELECT DISTINCT {col} FROM items WHERE {col} IS NOT NULL AND {col} != '[]'"
+            f"SELECT DISTINCT {col} FROM items WHERE {col} IS NOT NULL AND {col} != '[]' LIMIT 5000"
         ).fetchall()
 
     seen: set[str] = set()
@@ -128,8 +130,28 @@ def suggest(
         except (json.JSONDecodeError, TypeError):
             pass
 
+    with _SUGGEST_CACHE_LOCK:
+        _SUGGEST_CACHE[col] = (time.monotonic(), seen)
+
+    return seen
+
+
+@router.get("/suggest")
+def suggest(
+    q: str = Query(default=""),
+    field: str = Query(default="compound"),
+) -> JSONResponse:
+    """Autocomplete suggestions for compounds or mechanisms (cached 5 min)."""
+    from app.main import db
+
+    col_map = {"compound": "compounds_json", "mechanism": "mechanisms_json"}
+    col = col_map.get(field)
+    if not col:
+        return JSONResponse({"suggestions": []})
+
+    values = _get_suggest_values(db, col)
     q_lower = q.lower()
-    matches = sorted([s for s in seen if q_lower in s.lower()])[:20]
+    matches = sorted([s for s in values if q_lower in s.lower()])[:20]
     return JSONResponse({"suggestions": matches})
 
 
@@ -174,8 +196,7 @@ def update_item(
     from app.main import db
     if settings.admin_token and x_admin_token != settings.admin_token:
         raise HTTPException(status_code=401, detail="Missing or invalid admin token")
-    allowed_statuses = {"new", "reviewing", "shortlisted", "archived"}
-    if payload.review_status is not None and payload.review_status not in allowed_statuses:
+    if payload.review_status is not None and payload.review_status not in _ALLOWED_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid review status")
     item = db.update_item_state(
         item_id,
@@ -220,7 +241,7 @@ def item_oembed(item_id: int) -> JSONResponse:
         return JSONResponse({"error": "fetch_failed"})
 
 
-# ── Tag endpoints ────────────────────────────────────────────────────────────
+# ── Tag endpoints ────────────────────────────────────────────────────
 
 tags_router = APIRouter(prefix="/api/tags", tags=["tags"])
 
@@ -234,10 +255,11 @@ def list_tags() -> JSONResponse:
 @tags_router.post("")
 def create_tag(payload: CreateTagRequest) -> JSONResponse:
     from app.main import db
-    if not payload.name.strip():
+    name = payload.name.strip()
+    if not name:
         raise HTTPException(status_code=400, detail="Tag name cannot be empty")
     try:
-        tag = db.create_tag(payload.name, payload.color)
+        tag = db.create_tag(name, payload.color)
     except Exception:
         raise HTTPException(status_code=409, detail="Tag already exists")
     return JSONResponse(tag, status_code=201)
