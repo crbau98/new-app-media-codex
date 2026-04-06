@@ -605,6 +605,7 @@ class ResearchService:
                     local_path=result.get("local_path"),
                     performer_id=performer_id,
                     source_url=result.get("source_url"),
+                    thumbnail_url=result.get("thumbnail_url"),
                 )
                 captured += 1
 

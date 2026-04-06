@@ -529,6 +529,8 @@ class Database:
             conn.execute("ALTER TABLE screenshots ADD COLUMN user_tags TEXT DEFAULT NULL")
         if "source_url" not in screenshot_columns:
             conn.execute("ALTER TABLE screenshots ADD COLUMN source_url TEXT")
+        if "thumbnail_url" not in screenshot_columns:
+            conn.execute("ALTER TABLE screenshots ADD COLUMN thumbnail_url TEXT")
         # Performer subscription tracking columns
         performer_columns = {row["name"] for row in conn.execute("PRAGMA table_info(performers)").fetchall()}
         if "subscription_price" not in performer_columns:
@@ -1661,13 +1663,13 @@ class Database:
                   data.get("molecular_weight"), data.get("pharmacology",""), "", utcnow()))
             conn.commit()
 
-    def insert_screenshot(self, term: str, source: str, page_url: str, local_path: str | None = None, performer_id: int | None = None, source_url: str | None = None) -> bool:
+    def insert_screenshot(self, term: str, source: str, page_url: str, local_path: str | None = None, performer_id: int | None = None, source_url: str | None = None, thumbnail_url: str | None = None) -> bool:
         """Insert screenshot record. Returns True if inserted, False if duplicate."""
         with self.connect() as conn:
             try:
                 conn.execute(
-                    "INSERT INTO screenshots (term, source, page_url, local_path, captured_at, performer_id, source_url) VALUES (?,?,?,?,?,?,?)",
-                    (term, source, page_url, local_path or "", utcnow(), performer_id, source_url)
+                    "INSERT INTO screenshots (term, source, page_url, local_path, captured_at, performer_id, source_url, thumbnail_url) VALUES (?,?,?,?,?,?,?,?)",
+                    (term, source, page_url, local_path or "", utcnow(), performer_id, source_url, thumbnail_url)
                 )
                 conn.commit()
                 self._invalidate_after_write()

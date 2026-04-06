@@ -1418,6 +1418,7 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 page_url = f"https://redgifs.com/watch/{gif.get('id', '')}"
                 if _page_url_exists(page_url):
                     continue
+                poster_url = (gif.get("urls") or {}).get("poster") or None
                 db.insert_screenshot(
                     term=display_name or username,
                     source="redgifs",
@@ -1425,6 +1426,7 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                     local_path=None,
                     performer_id=performer_id,
                     source_url=video_url,
+                    thumbnail_url=poster_url,
                 )
                 _mark_page_url(page_url)
                 captured += 1
@@ -1445,6 +1447,7 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 page_url = f"https://redgifs.com/watch/{gif.get('id', '')}"
                 if _page_url_exists(page_url):
                     continue
+                poster_url = (gif.get("urls") or {}).get("poster") or None
                 db.insert_screenshot(
                     term=display_name or username,
                     source="redgifs",
@@ -1452,6 +1455,7 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                     local_path=None,
                     performer_id=performer_id,
                     source_url=video_url,
+                    thumbnail_url=poster_url,
                 )
                 _mark_page_url(page_url)
                 captured += 1

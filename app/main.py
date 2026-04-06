@@ -261,8 +261,29 @@ def index(request: Request) -> HTMLResponse:
         # Embed initial API data to eliminate HTML->JS->API waterfall
         try:
             browse_result = db.browse_screenshots(limit=24, offset=0)
+            _vid_exts = {"mp4", "webm", "mov"}
+            _vid_sources = {"redgifs", "ytdlp"}
+            _img_exts = {"jpg", "jpeg", "png", "gif", "webp"}
+            shots = []
+            for s in browse_result.get("screenshots", []):
+                local_p = s.get("local_path") or ""
+                media_url = s.get("source_url") or s.get("page_url") or ""
+                if local_p and (Path(settings.image_dir).parent / "screenshots" / Path(local_p).name).exists():
+                    s["local_url"] = f"/cached-screenshots/{Path(local_p).name}"
+                elif media_url.startswith(("http://", "https://")):
+                    ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
+                    src = s.get("source", "")
+                    is_vid = ext in _vid_exts or src in _vid_sources
+                    s["local_url"] = media_url
+                    s["source_url"] = media_url
+                    s["preview_url"] = s.get("thumbnail_url") or (None if is_vid else media_url)
+                else:
+                    continue
+                for k in ("ai_summary", "ai_tags", "user_tags"):
+                    s.pop(k, None)
+                shots.append(s)
             screenshots_payload = {
-                "screenshots": browse_result.get("screenshots", []),
+                "screenshots": shots,
                 "total": browse_result.get("total", 0),
                 "offset": 0,
                 "limit": 24,

@@ -551,7 +551,7 @@ def browse_screenshots(
                     # Let browser load directly from source CDN (faster, no proxy overhead)
                     s["local_url"] = media_url
                     s["source_url"] = media_url
-                    s["preview_url"] = None if is_vid else media_url
+                    s["preview_url"] = s.get("thumbnail_url") or (None if is_vid else media_url)
                     valid.append(s)
                 if len(valid) >= effective_limit:
                     break
@@ -641,6 +641,7 @@ def _run_capture(app_state):
                 local_path=result.get("local_path"),
                 performer_id=performer_id,
                 source_url=result.get("source_url"),
+                thumbnail_url=result.get("thumbnail_url"),
             )
             if result.get("local_path"):
                 try:

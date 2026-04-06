@@ -565,15 +565,12 @@ const MediaCard = memo(function MediaCard({
     >
       <div style={{  }}>
       {!previewSrc || broken ? (
-        vid && src && !broken ? (
-          <video
-            src={src}
-            muted
-            playsInline
-            preload="metadata"
-            onError={() => setBroken(true)}
-            className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
-          />
+        vid ? (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500/20 to-blue-500/20">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="white" opacity="0.5">
+              <polygon points="5,3 19,12 5,21" />
+            </svg>
+          </div>
         ) : previewPending ? (
           <MediaUnavailableTile
             title={shot.term}
@@ -763,16 +760,12 @@ const MosaicCard = memo(function MosaicCard({
     >
       <div style={{  }}>
       {!previewSrc || broken ? (
-        vid && src && !broken ? (
-          <video
-            src={src}
-            muted
-            playsInline
-            preload="metadata"
-            onError={() => setBroken(true)}
-            className="w-full transition-[filter] duration-200 group-hover:brightness-110"
-            style={{ display: "block" }}
-          />
+        vid ? (
+          <div className="flex w-full items-center justify-center bg-gradient-to-br from-purple-500/20 to-blue-500/20 min-h-[10rem]">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="white" opacity="0.5">
+              <polygon points="5,3 19,12 5,21" />
+            </svg>
+          </div>
         ) : previewPending ? (
           <MediaUnavailableTile
             title={shot.term}

@@ -48,15 +48,12 @@ export const MediaListItem = memo(function MediaListItem({ shot, onClick, favori
       {/* Thumbnail */}
       <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-white/[0.06]">
         {!previewSrc || broken ? (
-          vid && mediaSrc && !broken ? (
-            <video
-              src={mediaSrc}
-              muted
-              playsInline
-              preload="none"
-              onError={() => setBroken(true)}
-              className="h-full w-full object-cover"
-            />
+          vid ? (
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500/20 to-blue-500/20">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="white" opacity="0.5">
+                <polygon points="5,3 19,12 5,21" />
+              </svg>
+            </div>
           ) : previewPending ? (
             <div className="flex h-full w-full items-center justify-center bg-sky-500/10 text-[8px] font-medium uppercase tracking-[0.18em] text-sky-300">
               Wait
@@ -105,7 +102,7 @@ export const MediaListItem = memo(function MediaListItem({ shot, onClick, favori
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           {!previewSrc || broken ? (
-            vid && mediaSrc && !broken ? (
+            vid ? (
               shot.ai_summary ? (
                 <p className="text-[11px] text-[var(--color-text-muted)] truncate max-w-sm">{shot.ai_summary}</p>
               ) : (

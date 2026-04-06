@@ -1065,7 +1065,8 @@ def capture_screenshots(
                 progress_cb(term, "redgifs", done, len(redgifs_jobs))
             yield {"term": term, "source": "redgifs", "page_url": job["page_url"],
                    "local_path": None, "ok": ok,
-                   "source_url": job["url"]}
+                   "source_url": job["url"],
+                   "thumbnail_url": job.get("poster_url") or None}
 
     # ── Creator-specific DDG image capture ─────────────────────────────────
     for creator_name, creator_query in CREATOR_QUERIES.items():
