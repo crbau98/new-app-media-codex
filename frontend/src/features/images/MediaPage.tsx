@@ -364,7 +364,7 @@ const TermBrowser = memo(function TermBrowser({
   const hasMore = filtered.length > 60 && !expanded
 
   return (
-    <div className="border-b border-white/5 px-4 py-2 space-y-1.5" style={{ contentVisibility: "auto", containIntrinsicSize: "96px" }}>
+    <div className="border-b border-white/5 px-4 py-2 space-y-1.5" style={{  }}>
       <div className="flex items-center gap-2">
         <span className="shrink-0 text-[10px] text-[var(--color-text-muted)]">Categories:</span>
         <div className="relative">
@@ -463,7 +463,7 @@ const CreatorCard = memo(function CreatorCard({
       className="group relative flex flex-col items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] p-4 transition-colors hover:bg-white/[0.06] hover:border-white/15"
       onMouseEnter={onHover}
       onFocus={onHover}
-      style={{ contentVisibility: "auto", containIntrinsicSize: "160px" }}
+      style={{  }}
     >
       <button onClick={onClick} className="flex flex-col items-center gap-2 w-full">
         <div className="relative h-16 w-16 overflow-hidden rounded-full bg-white/10">
@@ -576,7 +576,7 @@ const MediaCard = memo(function MediaCard({
       )}
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
     >
-      <div style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
+      <div style={{  }}>
       {!previewSrc || broken ? (
         vid && src && !broken ? (
           <video
@@ -774,7 +774,7 @@ const MosaicCard = memo(function MosaicCard({
       className="group relative mb-1 cursor-pointer overflow-hidden rounded-lg bg-black/20 break-inside-avoid"
       style={{ breakInside: "avoid" }}
     >
-      <div style={{ contentVisibility: "auto", containIntrinsicSize: "220px" }}>
+      <div style={{  }}>
       {!previewSrc || broken ? (
         vid && src && !broken ? (
           <video
@@ -872,7 +872,7 @@ const AIDescribedSection = memo(function AIDescribedSection({
   if (described.length === 0) return null
 
   return (
-    <div className="border-b border-white/10 px-4 py-3" style={{ contentVisibility: "auto", containIntrinsicSize: "150px" }}>
+    <div className="border-b border-white/10 px-4 py-3" style={{  }}>
       <div className="flex items-center justify-between">
         <button
           onClick={() => setCollapsed(!collapsed)}
