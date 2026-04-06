@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+import json
 import os
 from pathlib import Path
 import re
@@ -202,6 +203,15 @@ def _get_frontend_index_html() -> str | None:
             "",
             html,
         )
+        # Preconnect hints for external CDNs to reduce media load latency
+        _preconnect_hints = (
+            '<link rel="preconnect" href="https://coomer.st" crossorigin>\n'
+            '    <link rel="dns-prefetch" href="https://coomer.st">\n'
+            '    <link rel="preconnect" href="https://thumbs44.redgifs.com" crossorigin>\n'
+            '    <link rel="dns-prefetch" href="https://thumbs44.redgifs.com">\n'
+            "    "
+        )
+        html = html.replace("</head>", _preconnect_hints + "</head>", 1)
         _FRONTEND_INDEX_CACHE = html
         _FRONTEND_INDEX_CACHE_MTIME_NS = mtime_ns
     return _FRONTEND_INDEX_CACHE
@@ -248,6 +258,28 @@ if (_FRONTEND_DIST / "assets").exists():
 def index(request: Request) -> HTMLResponse:
     dist_index_html = _get_frontend_index_html()
     if dist_index_html is not None:
+        # Embed initial API data to eliminate HTML->JS->API waterfall
+        try:
+            browse_result = db.browse_screenshots(limit=24, offset=0)
+            screenshots_payload = {
+                "screenshots": browse_result.get("screenshots", []),
+                "total": browse_result.get("total", 0),
+                "offset": 0,
+                "limit": 24,
+                "has_more": browse_result.get("has_more", False),
+                "next_offset": browse_result.get("next_offset", 24),
+            }
+            running = getattr(request.app.state, "screenshot_running", False)
+            progress = getattr(request.app.state, "screenshot_progress", None)
+            status_payload = {"running": running, **(progress or {})}
+            initial_data = json.dumps(
+                {"screenshots": screenshots_payload, "status": status_payload},
+                separators=(",", ":"),
+            )
+            inject_script = f"<script>window.__INITIAL_DATA__={initial_data}</script>"
+            dist_index_html = dist_index_html.replace("</head>", inject_script + "</head>")
+        except Exception:
+            pass  # Serve HTML without embedded data on any error
         return HTMLResponse(dist_index_html, headers={"Cache-Control": "no-cache"})
     # Fallback: legacy Jinja2 template
     return _get_templates().TemplateResponse(

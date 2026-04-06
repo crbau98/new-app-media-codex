@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -266,6 +267,17 @@ class ResearchService:
                     id="screenshot-capture",
                     replace_existing=True,
                     max_instances=1,
+                )
+            # Self-ping keepalive to prevent Render cold starts
+            if not self.scheduler.get_job("keepalive-ping"):
+                self.scheduler.add_job(
+                    self._keepalive_ping,
+                    "interval",
+                    minutes=10,
+                    id="keepalive-ping",
+                    replace_existing=True,
+                    max_instances=1,
+                    coalesce=True,
                 )
             if not self.scheduler.running:
                 self.scheduler.start()
@@ -535,6 +547,17 @@ class ResearchService:
             if session is not None:
                 session.close()
             self.lock.release()
+
+    @staticmethod
+    def _keepalive_ping() -> None:
+        """Ping the local healthz endpoint to prevent Render cold starts."""
+        try:
+            import requests
+
+            port = int(os.environ.get("PORT", 8000))
+            requests.get(f"http://127.0.0.1:{port}/healthz", timeout=5)
+        except Exception:
+            pass
 
     def _run_screenshot_capture(self) -> None:
         """Run screenshot capture for explicit terms + per-performer targeted capture."""

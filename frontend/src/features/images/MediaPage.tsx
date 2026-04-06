@@ -1360,6 +1360,9 @@ export function MediaPage() {
     staleTime: 15_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    initialData: typeof window !== "undefined" && (window as any).__INITIAL_DATA__?.status
+      ? (window as any).__INITIAL_DATA__.status
+      : undefined,
   })
   const capturing = statusData?.running ?? false
 
@@ -1401,8 +1404,8 @@ export function MediaPage() {
   const { data: screenshotTermsData } = useQuery<ScreenshotTerm[]>({
     queryKey: ["screenshot-terms"],
     queryFn: api.screenshotTerms,
-    staleTime: 5 * 60_000,
-    gcTime: 15 * 60_000,
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
     enabled: shouldLoadTermData,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -1447,8 +1450,8 @@ export function MediaPage() {
   const { data: mediaStatsData } = useQuery({
     queryKey: ["media-stats"],
     queryFn: api.mediaStats,
-    staleTime: 2 * 60_000,
-    gcTime: 10 * 60_000,
+    staleTime: 5 * 60_000,
+    gcTime: 15 * 60_000,
     enabled: mediaStatsEnabled,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -1471,6 +1474,12 @@ export function MediaPage() {
     return p
   }, [advancedFilters, activeTagFilter])
 
+  // Use server-embedded initial data only for the default unfiltered first page
+  const _canUseEmbeddedData = !term && !sourceForQuery && mediaCreatorId == null
+    && Object.keys(advQueryParams).length === 0
+    && (tab === "all" || tab == null)
+    && typeof window !== "undefined" && (window as any).__INITIAL_DATA__?.screenshots
+
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error: mediaError, refetch: mediaRefetch } = useInfiniteQuery({
     queryKey: ["screenshots", term, sourceForQuery, advQueryParams, mediaCreatorId, tab],
     queryFn: ({ pageParam = 0 }) =>
@@ -1486,8 +1495,11 @@ export function MediaPage() {
       }),
     getNextPageParam: (last) => (last.has_more ? (last.next_offset ?? (last.offset + last.screenshots.length)) : undefined),
     initialPageParam: 0,
+    initialData: _canUseEmbeddedData
+      ? { pages: [(window as any).__INITIAL_DATA__.screenshots], pageParams: [0] }
+      : undefined,
     enabled: tab !== "creators",
-    staleTime: 30_000,
+    staleTime: 60_000,
     gcTime: 10 * 60_000,
     maxPages: 6,
     refetchOnWindowFocus: false,
