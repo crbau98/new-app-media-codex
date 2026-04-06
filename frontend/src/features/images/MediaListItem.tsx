@@ -54,7 +54,6 @@ export const MediaListItem = memo(function MediaListItem({ shot, onClick, favori
               muted
               playsInline
               preload="none"
-              decoding="async"
               onError={() => setBroken(true)}
               className="h-full w-full object-cover"
             />
