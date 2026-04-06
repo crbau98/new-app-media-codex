@@ -3,14 +3,14 @@
   "configurations": [
     {
       "name": "FastAPI backend",
-      "runtimeExecutable": "python3",
+      "runtimeExecutable": "/usr/local/bin/python3.13",
       "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"],
       "port": 8000
     },
     {
       "name": "Vite frontend",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeArgs": ["/usr/local/bin/npx", "vite", "--port", "5173"],
       "cwd": "frontend",
       "port": 5173
     },

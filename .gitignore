@@ -7,3 +7,4 @@ data/images/*
 !.gitkeep
 .env
 app/static/dist/
+.claude/worktrees/
