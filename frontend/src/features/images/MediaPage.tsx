@@ -3,13 +3,16 @@ import { useWindowVirtualizer } from "@tanstack/react-virtual"
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api, type Screenshot, type ScreenshotTerm, type Performer, type Playlist, type MediaStatsPayload, type UserTagCount, type DiscoveredCreator } from "@/lib/api"
 
-const AUTO_DESCRIBE_KEY = "auto-describe-screenshots"
 import { useAppStore } from "@/store"
 import { Spinner } from "@/components/Spinner"
 import { SkeletonGrid } from "@/components/Skeleton"
 import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
 import { getMediaDebugLabel, getScreenshotMediaSrc, getScreenshotPreviewSrc } from "@/lib/media"
+
+const AUTO_DESCRIBE_KEY = "auto-describe-screenshots"
+const MEDIA_NAVIGATION_INTENT_KEY = "codex:media-navigation-intent"
+const MEDIA_NAVIGATION_EVENT = "codex:media-navigation"
 
 const loadMediaAnalyticsDashboard = () =>
   import("./MediaAnalyticsDashboard").then((m) => ({ default: m.MediaAnalyticsDashboard }))
@@ -47,6 +50,26 @@ function writeTermToHash(term: string | null) {
   const basePath = window.location.hash.split("?")[0] || "#/media"
   if (term) window.location.hash = `${basePath}?term=${encodeURIComponent(term)}`
   else window.location.hash = basePath
+}
+
+function consumeMediaNavigationIntent(): { query?: string; term?: string; tag?: string } | null {
+  try {
+    const raw = window.sessionStorage.getItem(MEDIA_NAVIGATION_INTENT_KEY)
+    if (!raw) return null
+    window.sessionStorage.removeItem(MEDIA_NAVIGATION_INTENT_KEY)
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === "object" ? parsed as { query?: string; term?: string; tag?: string } : null
+  } catch {
+    return null
+  }
+}
+
+function clearMediaNavigationIntent() {
+  try {
+    window.sessionStorage.removeItem(MEDIA_NAVIGATION_INTENT_KEY)
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 type ShotClientMeta = {
@@ -1316,6 +1339,41 @@ export function MediaPage() {
   const screenshotRunning = useAppStore((s) => s.screenshotRunning)
   const [statusPollingEnabled, setStatusPollingEnabled] = useState(true)
   const qc = useQueryClient()
+
+  const applyMediaNavigationIntent = useCallback((intent: { query?: string; term?: string; tag?: string }) => {
+    const nextQuery = intent.query?.trim() ?? ""
+    const nextTerm = intent.term?.trim() ?? ""
+    const nextTag = intent.tag?.trim() ?? ""
+    if (!nextQuery && !nextTerm && !nextTag) return
+
+    setSearch(nextQuery)
+    setTerm(nextTerm || null)
+    setActiveTagFilter(nextTag || null)
+    setTab("all")
+    setAdvancedFilters(EMPTY_FILTERS)
+    setAdvancedOpen(false)
+    setDiscoveryOpen(false)
+    setActivePlaylistId(null)
+    setFilterDescribed(false)
+    setOnlyUnlinked(false)
+    setOnlyUnrated(false)
+    setOnlyRecent(false)
+    setMediaCreator(null)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }, [setMediaCreator])
+
+  useEffect(() => {
+    const pendingIntent = consumeMediaNavigationIntent()
+    if (pendingIntent) applyMediaNavigationIntent(pendingIntent)
+
+    const listener: EventListener = (event) => {
+      applyMediaNavigationIntent((event as CustomEvent<{ query?: string; term?: string; tag?: string }>).detail ?? {})
+      clearMediaNavigationIntent()
+    }
+
+    window.addEventListener(MEDIA_NAVIGATION_EVENT, listener)
+    return () => window.removeEventListener(MEDIA_NAVIGATION_EVENT, listener)
+  }, [applyMediaNavigationIntent])
 
   // On mount: if the global store has a pending date filter (set from heatmap click),
   // pre-populate advancedFilters and open the panel, then clear the store filters.

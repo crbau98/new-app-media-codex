@@ -694,9 +694,9 @@ export function Sidebar() {
             <div className={cn("flex items-start gap-3", collapsed ? "justify-center" : "justify-between")}>
               <div className={cn("min-w-0", collapsed && "hidden")}>
                 <p className="eyebrow mb-2">Media Control</p>
-                <h1 className="hero-title hero-gradient text-xl leading-none">Creator Capture</h1>
+                <h1 className="hero-title hero-gradient text-xl leading-none">Media Studio</h1>
                 <p className="mt-2 text-sm text-text-secondary">
-                  Browse media fast, manage creators, and capture new content without extra clutter.
+                  Browse the library fast, jump into creators, and keep capture one click away.
                 </p>
               </div>
               <div className={cn("rounded-2xl border border-white/10 bg-white/6 p-3 text-accent glow-accent", collapsed && "mx-auto")}>
@@ -717,7 +717,7 @@ export function Sidebar() {
             )}
           </div>
           <div className={cn("mt-3 flex items-center gap-2", collapsed ? "justify-center" : "justify-between")}>
-            {!collapsed && <p className="text-xs text-text-muted">Core workflow</p>}
+            {!collapsed && <p className="text-xs text-text-muted">Workspace</p>}
             <div className="flex items-center gap-2">
               <button
                 onClick={toggleCollapse}
@@ -740,7 +740,7 @@ export function Sidebar() {
         </div>
 
         <nav className="hide-scrollbar flex-1 overflow-y-auto px-2 py-4" aria-label="Views">
-          <NavGroup label="Media" items={MEDIA_ITEMS} activeView={activeView} setActiveView={setActiveView} collapsed={collapsed} counts={counts} newCounts={{ images: newImageCount > 0 ? newImageCount : undefined }} warnings={{ performers: perfStats?.stale_count }} queueActive={{ performers: captureQueueActive }} closeMobile={closeMobile} />
+          <NavGroup label="Library" items={MEDIA_ITEMS} activeView={activeView} setActiveView={setActiveView} collapsed={collapsed} counts={counts} newCounts={{ images: newImageCount > 0 ? newImageCount : undefined }} warnings={{ performers: perfStats?.stale_count }} queueActive={{ performers: captureQueueActive }} closeMobile={closeMobile} />
           <NavGroup label="System" items={SETTINGS_ITEMS} activeView={activeView} setActiveView={setActiveView} collapsed={collapsed} closeMobile={closeMobile} />
         </nav>
 

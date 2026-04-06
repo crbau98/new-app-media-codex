@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense, startTransition } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, startTransition } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useAppStore } from "../store"
 import { useAppShellSummary } from "@/hooks/useAppShellSummary"
-import { api, type Performer } from "../lib/api"
+import { api, type Performer, type ScreenshotTerm, type UserTagCount } from "../lib/api"
 import { Button } from "./Button"
 import { Spinner } from "./Spinner"
 import { cn } from "@/lib/cn"
@@ -10,7 +11,7 @@ const ShortcutModal = lazy(() => import("./ShortcutModal").then((m) => ({ defaul
 const NotificationCenter = lazy(() => import("./NotificationCenter").then((m) => ({ default: m.NotificationCenter })))
 
 const VIEW_LABELS: Record<string, string> = {
-  overview: "Overview",
+  overview: "Media",
   items: "Media",
   images: "Media",
   hypotheses: "Media",
@@ -20,17 +21,24 @@ const VIEW_LABELS: Record<string, string> = {
 }
 
 const VIEW_DESCRIPTIONS: Record<string, string> = {
-  overview: "Quick pulse for the media workspace",
-  items: "Legacy routes now resolve into the main media workflow",
+  overview: "Browse, search, and expand the media library",
+  items: "Browse, search, and expand the media library",
   images: "Browse, filter, rate, and review captured media",
-  hypotheses: "Legacy routes now resolve into the main media workflow",
-  graph: "Legacy routes now resolve into the main media workflow",
+  hypotheses: "Browse, search, and expand the media library",
+  graph: "Browse, search, and expand the media library",
   performers: "Manage creators, discovery, and capture",
   settings: "Operational controls and system preferences",
 }
 
 const RECENT_SEARCHES_KEY = "codex_recent_searches"
 const MAX_RECENT = 8
+const MEDIA_NAVIGATION_INTENT_KEY = "codex:media-navigation-intent"
+const MEDIA_NAVIGATION_EVENT = "codex:media-navigation"
+
+type CreatorSuggestionItem = { kind: "creator"; id: string; label: string; meta: string; performer: Performer }
+type TermSuggestionItem = { kind: "term"; id: string; label: string; meta: string; value: string }
+type TagSuggestionItem = { kind: "tag"; id: string; label: string; meta: string; value: string }
+type SearchSuggestionItem = CreatorSuggestionItem | TermSuggestionItem | TagSuggestionItem
 
 function loadRecentSearches(): string[] {
   try {
@@ -52,6 +60,16 @@ function saveRecentSearch(query: string) {
 
 function clearRecentSearches() {
   localStorage.removeItem(RECENT_SEARCHES_KEY)
+}
+
+function queueMediaNavigationIntent(intent: { query?: string; term?: string; tag?: string }) {
+  try {
+    window.sessionStorage.setItem(MEDIA_NAVIGATION_INTENT_KEY, JSON.stringify(intent))
+  } catch {
+    // Ignore storage failures and still dispatch the event.
+  }
+
+  window.dispatchEvent(new CustomEvent(MEDIA_NAVIGATION_EVENT, { detail: intent }))
 }
 
 function highlightMatch(text: string, query: string): React.ReactNode {
@@ -79,8 +97,6 @@ export function TopBar() {
   const mobileNavOpen = useAppStore((s) => s.mobileNavOpen)
   const setMobileNavOpen = useAppStore((s) => s.setMobileNavOpen)
   const addToast = useAppStore((s) => s.addToast)
-  const setFilter = useAppStore((s) => s.setFilter)
-  const resetFilters = useAppStore((s) => s.resetFilters)
   const setActiveView = useAppStore((s) => s.setActiveView)
   const setPendingPerformer = useAppStore((s) => s.setPendingPerformer)
 
@@ -100,6 +116,73 @@ export function TopBar() {
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const requestIdRef = useRef(0)
+  const trimmedSearch = searchVal.trim()
+  const suggestionsEnabled = dropdownOpen && trimmedSearch.length >= 2
+
+  const { data: screenshotTerms = [], isFetching: termsFetching } = useQuery<ScreenshotTerm[]>({
+    queryKey: ["topbar-screenshot-terms"],
+    queryFn: api.screenshotTerms,
+    enabled: suggestionsEnabled,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  })
+
+  const { data: screenshotTags = [], isFetching: tagsFetching } = useQuery<UserTagCount[]>({
+    queryKey: ["topbar-screenshot-tags"],
+    queryFn: api.screenshotAllTags,
+    enabled: suggestionsEnabled,
+    staleTime: 2 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  })
+
+  const creatorSuggestions = useMemo<CreatorSuggestionItem[]>(() => {
+    return creatorResults.map((performer) => ({
+      kind: "creator",
+      id: `creator-${performer.id}`,
+      label: performer.display_name || performer.username,
+      meta: `${performer.platform}${performer.username !== (performer.display_name || performer.username) ? ` · @${performer.username}` : ""}`,
+      performer,
+    }))
+  }, [creatorResults])
+
+  const termSuggestions = useMemo<TermSuggestionItem[]>(() => {
+    if (trimmedSearch.length < 2) return []
+    const lc = trimmedSearch.toLowerCase()
+    return screenshotTerms
+      .filter((term) => term.term.toLowerCase().includes(lc))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4)
+      .map((term) => ({
+        kind: "term",
+        id: `term-${term.term}`,
+        label: term.term,
+        meta: `${term.count.toLocaleString()} shots`,
+        value: term.term,
+      }))
+  }, [screenshotTerms, trimmedSearch])
+
+  const tagSuggestions = useMemo<TagSuggestionItem[]>(() => {
+    if (trimmedSearch.length < 2) return []
+    const lc = trimmedSearch.toLowerCase()
+    return screenshotTags
+      .filter((tag) => tag.tag.toLowerCase().includes(lc))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4)
+      .map((tag) => ({
+        kind: "tag",
+        id: `tag-${tag.tag}`,
+        label: `#${tag.tag}`,
+        meta: `${tag.count.toLocaleString()} tagged`,
+        value: tag.tag,
+      }))
+  }, [screenshotTags, trimmedSearch])
+
+  const resultEntries = useMemo(
+    () => [...creatorSuggestions, ...termSuggestions, ...tagSuggestions],
+    [creatorSuggestions, tagSuggestions, termSuggestions],
+  )
 
   useEffect(() => {
     function openFromShortcut() {
@@ -134,8 +217,7 @@ export function TopBar() {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
 
-    const q = searchVal.trim()
-    if (q.length < 2) {
+    if (trimmedSearch.length < 2) {
       setCreatorResults([])
       setSearchLoading(false)
       return
@@ -145,7 +227,7 @@ export function TopBar() {
     debounceRef.current = setTimeout(async () => {
       const requestId = ++requestIdRef.current
       try {
-        const result = await api.searchPerformers(q, 6)
+        const result = await api.searchPerformers(trimmedSearch, 6)
         if (requestId === requestIdRef.current) {
           setCreatorResults(result.performers ?? [])
         }
@@ -163,7 +245,7 @@ export function TopBar() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [searchVal])
+  }, [trimmedSearch])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -179,7 +261,7 @@ export function TopBar() {
 
   useEffect(() => {
     setActiveIndex(-1)
-  }, [creatorResults.length, searchVal, recentSearches.length])
+  }, [recentSearches.length, resultEntries.length, trimmedSearch])
 
   async function handleRunCrawl() {
     if (crawlRunning || triggering) return
@@ -195,14 +277,12 @@ export function TopBar() {
     }
   }
 
-  function handleSearch(e: React.FormEvent) {
-    e.preventDefault()
-    const q = searchVal.trim()
-    if (!q) return
-    const updated = saveRecentSearch(q)
+  function runMediaSearch(query: string) {
+    const nextQuery = query.trim()
+    if (!nextQuery) return
+    const updated = saveRecentSearch(nextQuery)
     setRecentSearches(updated)
-    resetFilters()
-    setFilter("search", q)
+    queueMediaNavigationIntent({ query: nextQuery })
     startTransition(() => {
       setActiveView("images")
     })
@@ -210,9 +290,13 @@ export function TopBar() {
     setDropdownOpen(false)
   }
 
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault()
+    runMediaSearch(trimmedSearch)
+  }
+
   function handleSelectRecent(query: string) {
-    setSearchVal(query)
-    inputRef.current?.focus()
+    runMediaSearch(query)
   }
 
   function handleClearRecent() {
@@ -221,9 +305,8 @@ export function TopBar() {
   }
 
   function handleSelectCreator(performer: Performer) {
-    const q = searchVal.trim()
-    if (q) {
-      const updated = saveRecentSearch(q)
+    if (trimmedSearch) {
+      const updated = saveRecentSearch(trimmedSearch)
       setRecentSearches(updated)
     }
     setPendingPerformer(performer.id)
@@ -234,11 +317,34 @@ export function TopBar() {
     setDropdownOpen(false)
   }
 
+  function handleSelectTerm(term: string) {
+    queueMediaNavigationIntent({ term })
+    startTransition(() => {
+      setActiveView("images")
+    })
+    setSearchVal("")
+    setDropdownOpen(false)
+  }
+
+  function handleSelectTag(tag: string) {
+    queueMediaNavigationIntent({ tag })
+    startTransition(() => {
+      setActiveView("images")
+    })
+    setSearchVal("")
+    setDropdownOpen(false)
+  }
+
+  function executeSuggestion(item: SearchSuggestionItem) {
+    if (item.kind === "creator") handleSelectCreator(item.performer)
+    if (item.kind === "term") handleSelectTerm(item.value)
+    if (item.kind === "tag") handleSelectTag(item.value)
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
     if (!dropdownOpen) return
 
-    const q = searchVal.trim()
-    if (!q) {
+    if (!trimmedSearch) {
       if (e.key === "ArrowDown") {
         e.preventDefault()
         setActiveIndex((prev) => Math.min(prev + 1, recentSearches.length - 1))
@@ -257,29 +363,30 @@ export function TopBar() {
 
     if (e.key === "ArrowDown") {
       e.preventDefault()
-      setActiveIndex((prev) => Math.min(prev + 1, creatorResults.length - 1))
+      setActiveIndex((prev) => Math.min(prev + 1, resultEntries.length - 1))
     } else if (e.key === "ArrowUp") {
       e.preventDefault()
       setActiveIndex((prev) => Math.max(prev - 1, -1))
-    } else if (e.key === "Enter" && activeIndex >= 0 && activeIndex < creatorResults.length) {
+    } else if (e.key === "Enter" && activeIndex >= 0 && activeIndex < resultEntries.length) {
       e.preventDefault()
-      handleSelectCreator(creatorResults[activeIndex])
+      executeSuggestion(resultEntries[activeIndex])
     } else if (e.key === "Escape") {
       setDropdownOpen(false)
       inputRef.current?.blur()
     }
   }
 
-  const showRecent = dropdownOpen && !searchVal.trim() && recentSearches.length > 0
-  const showResults = dropdownOpen && searchVal.trim().length > 0
+  const showRecent = dropdownOpen && !trimmedSearch && recentSearches.length > 0
+  const showResults = dropdownOpen && trimmedSearch.length > 0
   const showDropdown = showRecent || showResults
+  const suggestionsLoading = searchLoading || termsFetching || tagsFetching
 
   return (
     <>
       <header
         className={cn(
           "fixed inset-x-0 top-0 z-20 px-3 pt-3 transition-[left] duration-200 sm:px-5 lg:px-6",
-          leftOffset
+          leftOffset,
         )}
       >
         <div className="panel-surface glass mx-auto flex max-w-[1600px] items-center gap-3 rounded-[22px] px-3 py-2.5 sm:px-4">
@@ -306,7 +413,7 @@ export function TopBar() {
               <input
                 ref={inputRef}
                 type="search"
-                placeholder="Search media or jump to a creator..."
+                placeholder="Search media, tags, or jump to a creator..."
                 value={searchVal}
                 onChange={(e) => {
                   setSearchVal(e.target.value)
@@ -337,23 +444,23 @@ export function TopBar() {
                       </button>
                     </div>
                     <ul>
-                      {recentSearches.map((q, i) => (
-                        <li key={q}>
+                      {recentSearches.map((query, idx) => (
+                        <li key={query}>
                           <button
                             type="button"
-                            onClick={() => handleSelectRecent(q)}
+                            onClick={() => handleSelectRecent(query)}
                             className={cn(
                               "flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-bg-subtle",
-                              activeIndex === i && "bg-bg-subtle text-text-primary"
+                              activeIndex === idx && "bg-bg-subtle text-text-primary",
                             )}
                             role="option"
-                            aria-selected={activeIndex === i}
+                            aria-selected={activeIndex === idx}
                           >
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-text-muted" aria-hidden="true">
                               <polyline points="1 4 1 10 7 10" />
                               <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                             </svg>
-                            {q}
+                            {query}
                           </button>
                         </li>
                       ))}
@@ -364,72 +471,145 @@ export function TopBar() {
 
                 {showResults && (
                   <div className="max-h-72 overflow-y-auto">
-                    {searchLoading && creatorResults.length === 0 && (
+                    {suggestionsLoading && resultEntries.length === 0 && (
                       <div className="flex items-center justify-center py-4">
-                        <Spinner size={14} label="Searching creators..." />
+                        <Spinner size={14} label="Searching media..." />
                       </div>
                     )}
 
-                    {!searchLoading && creatorResults.length === 0 && (
+                    {!suggestionsLoading && resultEntries.length === 0 && (
                       <div className="px-3 py-4 text-center">
                         <p className="text-xs text-text-muted">
-                          Press Enter to search media for &ldquo;{searchVal.trim()}&rdquo;.
+                          Press Enter to search the media library for &ldquo;{trimmedSearch}&rdquo;.
                         </p>
                       </div>
                     )}
 
-                    {creatorResults.length > 0 && (
+                    {creatorSuggestions.length > 0 && (
                       <div>
                         <div className="px-3 pt-2 pb-1">
                           <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Creators</span>
                         </div>
                         <ul>
-                          {creatorResults.map((performer, idx) => (
-                            <li key={performer.id}>
+                          {creatorSuggestions.map((item, idx) => (
+                            <li key={item.id}>
                               <button
                                 type="button"
-                                onClick={() => handleSelectCreator(performer)}
+                                onClick={() => handleSelectCreator(item.performer)}
                                 className={cn(
                                   "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors",
-                                  activeIndex === idx ? "bg-bg-subtle" : "hover:bg-bg-subtle/50"
+                                  activeIndex === idx ? "bg-bg-subtle" : "hover:bg-bg-subtle/50",
                                 )}
                                 role="option"
                                 aria-selected={activeIndex === idx}
                               >
-                                {performer.avatar_local || performer.avatar_url ? (
+                                {item.performer.avatar_local || item.performer.avatar_url ? (
                                   <img
-                                    src={performer.avatar_local || performer.avatar_url || ""}
+                                    src={item.performer.avatar_local || item.performer.avatar_url || ""}
                                     alt=""
                                     className="h-7 w-7 shrink-0 rounded-full bg-white/5 object-cover"
                                   />
                                 ) : (
                                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/12 text-[11px] font-semibold text-accent">
-                                    {(performer.display_name || performer.username || "?").charAt(0).toUpperCase()}
+                                    {(item.label || "?").charAt(0).toUpperCase()}
                                   </span>
                                 )}
                                 <span className="min-w-0 flex-1">
                                   <span className="block truncate text-xs font-medium text-text-primary">
-                                    {highlightMatch(performer.display_name || performer.username, searchVal)}
+                                    {highlightMatch(item.label, searchVal)}
                                   </span>
-                                  <span className="block truncate text-[10px] text-text-muted">
-                                    {performer.platform}{performer.username !== (performer.display_name || performer.username) ? ` · @${performer.username}` : ""}
-                                  </span>
+                                  <span className="block truncate text-[10px] text-text-muted">{item.meta}</span>
                                 </span>
                               </button>
                             </li>
                           ))}
                         </ul>
-                        <div className="h-px bg-border" />
-                        <div className="flex items-center justify-between px-3 py-1.5">
-                          <span className="text-[10px] text-text-muted">
-                            <kbd className="rounded border border-border bg-bg-subtle px-1 py-0.5 font-mono text-[9px]">Enter</kbd> search media
-                          </span>
-                          <span className="text-[10px] text-text-muted">
-                            <kbd className="rounded border border-border bg-bg-subtle px-1 py-0.5 font-mono text-[9px]">Esc</kbd> close
-                          </span>
-                        </div>
                       </div>
                     )}
+
+                    {termSuggestions.length > 0 && (
+                      <div>
+                        <div className="px-3 pt-2 pb-1">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Media terms</span>
+                        </div>
+                        <ul>
+                          {termSuggestions.map((item, idx) => {
+                            const entryIndex = creatorSuggestions.length + idx
+                            return (
+                              <li key={item.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectTerm(item.value)}
+                                  className={cn(
+                                    "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors",
+                                    activeIndex === entryIndex ? "bg-bg-subtle" : "hover:bg-bg-subtle/50",
+                                  )}
+                                  role="option"
+                                  aria-selected={activeIndex === entryIndex}
+                                >
+                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/5 text-[11px] font-semibold text-text-muted">
+                                    T
+                                  </span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-xs font-medium text-text-primary">
+                                      {highlightMatch(item.label, searchVal)}
+                                    </span>
+                                    <span className="block truncate text-[10px] text-text-muted">{item.meta}</span>
+                                  </span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+                    )}
+
+                    {tagSuggestions.length > 0 && (
+                      <div>
+                        <div className="px-3 pt-2 pb-1">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Tags</span>
+                        </div>
+                        <ul>
+                          {tagSuggestions.map((item, idx) => {
+                            const entryIndex = creatorSuggestions.length + termSuggestions.length + idx
+                            return (
+                              <li key={item.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectTag(item.value)}
+                                  className={cn(
+                                    "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors",
+                                    activeIndex === entryIndex ? "bg-bg-subtle" : "hover:bg-bg-subtle/50",
+                                  )}
+                                  role="option"
+                                  aria-selected={activeIndex === entryIndex}
+                                >
+                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/5 text-[11px] font-semibold text-text-muted">
+                                    #
+                                  </span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-xs font-medium text-text-primary">
+                                      {highlightMatch(item.label, searchVal)}
+                                    </span>
+                                    <span className="block truncate text-[10px] text-text-muted">{item.meta}</span>
+                                  </span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="h-px bg-border" />
+                    <div className="flex items-center justify-between px-3 py-1.5">
+                      <span className="text-[10px] text-text-muted">
+                        <kbd className="rounded border border-border bg-bg-subtle px-1 py-0.5 font-mono text-[9px]">Enter</kbd> search all media
+                      </span>
+                      <span className="text-[10px] text-text-muted">
+                        <kbd className="rounded border border-border bg-bg-subtle px-1 py-0.5 font-mono text-[9px]">Esc</kbd> close
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -443,7 +623,7 @@ export function TopBar() {
           <div
             className={cn(
               "flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5",
-              crawlRunning ? "border-green/30 bg-green/10" : "border-border bg-bg-subtle"
+              crawlRunning ? "border-green/30 bg-green/10" : "border-border bg-bg-subtle",
             )}
             role="status"
             aria-live="polite"
