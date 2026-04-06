@@ -47,23 +47,7 @@ export const MediaListItem = memo(function MediaListItem({ shot, onClick, favori
     >
       {/* Thumbnail */}
       <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-white/[0.06]">
-        {!previewSrc || broken ? (
-          vid ? (
-            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500/20 to-blue-500/20">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="white" opacity="0.5">
-                <polygon points="5,3 19,12 5,21" />
-              </svg>
-            </div>
-          ) : previewPending ? (
-            <div className="flex h-full w-full items-center justify-center bg-sky-500/10 text-[8px] font-medium uppercase tracking-[0.18em] text-sky-300">
-              Wait
-            </div>
-          ) : (
-          <div className="flex h-full w-full items-center justify-center bg-amber-500/10 text-[8px] font-medium uppercase tracking-[0.18em] text-amber-300">
-            Error
-          </div>
-          )
-        ) : (
+        {previewSrc && !broken ? (
           <img
             src={previewSrc}
             alt={shot.term}
@@ -73,6 +57,10 @@ export const MediaListItem = memo(function MediaListItem({ shot, onClick, favori
             onError={() => setBroken(true)}
             className="h-full w-full object-cover"
           />
+        ) : vid && mediaSrc ? (
+          <video src={mediaSrc} muted playsInline preload="metadata" onError={() => setBroken(true)} className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-white/5 text-[8px] text-white/30">—</div>
         )}
         {vid && (
           <div className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-0.5 text-[7px] text-white/80">

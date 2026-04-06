@@ -276,7 +276,10 @@ def index(request: Request) -> HTMLResponse:
                     is_vid = ext in _vid_exts or src in _vid_sources
                     s["local_url"] = media_url
                     s["source_url"] = media_url
-                    s["preview_url"] = s.get("thumbnail_url") or (None if is_vid else media_url)
+                    thumb = s.get("thumbnail_url")
+                    if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
+                        thumb = media_url.replace(".mp4", "-poster.jpg")
+                    s["preview_url"] = thumb or (None if is_vid else media_url)
                 else:
                     continue
                 for k in ("ai_summary", "ai_tags", "user_tags"):

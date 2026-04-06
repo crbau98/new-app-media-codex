@@ -564,27 +564,7 @@ const MediaCard = memo(function MediaCard({
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
     >
       <div style={{  }}>
-      {!previewSrc || broken ? (
-        vid ? (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500/20 to-blue-500/20">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="white" opacity="0.5">
-              <polygon points="5,3 19,12 5,21" />
-            </svg>
-          </div>
-        ) : previewPending ? (
-          <MediaUnavailableTile
-            title={shot.term}
-            detail={`Loading preview: ${mediaLabel}`}
-            statusLabel="Preparing preview"
-          />
-        ) : (
-          <MediaUnavailableTile
-            title={shot.term}
-            detail={mediaLabel}
-            statusLabel="Media unavailable"
-          />
-        )
-      ) : (
+      {previewSrc && !broken ? (
         <img
           src={previewSrc}
           alt={shot.ai_summary || `${vid ? "Video" : "Screenshot"}: ${shot.term} from ${sourceLabel(shot.source)}`}
@@ -593,6 +573,21 @@ const MediaCard = memo(function MediaCard({
           fetchPriority="low"
           onError={() => setBroken(true)}
           className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
+        />
+      ) : vid && src ? (
+        <video
+          src={src}
+          muted
+          playsInline
+          preload="metadata"
+          onError={() => setBroken(true)}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <MediaUnavailableTile
+          title={shot.term}
+          detail={mediaLabel}
+          statusLabel={broken ? "Media unavailable" : "Loading"}
         />
       )}
 
@@ -759,29 +754,7 @@ const MosaicCard = memo(function MosaicCard({
       style={{ breakInside: "avoid" }}
     >
       <div style={{  }}>
-      {!previewSrc || broken ? (
-        vid ? (
-          <div className="flex w-full items-center justify-center bg-gradient-to-br from-purple-500/20 to-blue-500/20 min-h-[10rem]">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="white" opacity="0.5">
-              <polygon points="5,3 19,12 5,21" />
-            </svg>
-          </div>
-        ) : previewPending ? (
-          <MediaUnavailableTile
-            title={shot.term}
-            detail={`Loading preview: ${mediaLabel}`}
-            statusLabel="Preparing preview"
-            className="min-h-[10rem]"
-          />
-        ) : (
-          <MediaUnavailableTile
-            title={shot.term}
-            detail={mediaLabel}
-            statusLabel="Media unavailable"
-            className="min-h-[10rem]"
-          />
-        )
-      ) : (
+      {previewSrc && !broken ? (
         <img
           src={previewSrc}
           alt={shot.ai_summary || `${shot.term} — ${sourceLabel(shot.source)}`}
@@ -791,6 +764,22 @@ const MosaicCard = memo(function MosaicCard({
           onError={() => setBroken(true)}
           className="w-full transition-[filter] duration-200 group-hover:brightness-110"
           style={{ display: "block" }}
+        />
+      ) : vid && src ? (
+        <video
+          src={src}
+          muted
+          playsInline
+          preload="metadata"
+          onError={() => setBroken(true)}
+          className="w-full object-cover min-h-[10rem]"
+        />
+      ) : (
+        <MediaUnavailableTile
+          title={shot.term}
+          detail={mediaLabel}
+          statusLabel={broken ? "Media unavailable" : "Loading"}
+          className="min-h-[10rem]"
         />
       )}
 

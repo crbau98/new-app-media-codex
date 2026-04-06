@@ -551,7 +551,11 @@ def browse_screenshots(
                     # Let browser load directly from source CDN (faster, no proxy overhead)
                     s["local_url"] = media_url
                     s["source_url"] = media_url
-                    s["preview_url"] = s.get("thumbnail_url") or (None if is_vid else media_url)
+                    # Derive poster thumbnail for Redgifs videos: {Slug}.mp4 → {Slug}-poster.jpg
+                    thumb = s.get("thumbnail_url")
+                    if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
+                        thumb = media_url.replace(".mp4", "-poster.jpg")
+                    s["preview_url"] = thumb or (None if is_vid else media_url)
                     valid.append(s)
                 if len(valid) >= effective_limit:
                     break
