@@ -36,18 +36,32 @@ router = APIRouter(prefix="/api/screenshots", tags=["screenshots"])
 
 @router.get("/proxy-media")
 async def proxy_media(url: str = Query(...), request: Request = None):
-    """Proxy a remote image/video URL to avoid CORS and hotlink issues."""
+    """Proxy a remote image/video URL via streaming to avoid CORS and hotlink issues."""
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "Invalid URL")
-    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-        try:
-            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0", "Referer": url})
-            resp.raise_for_status()
-        except Exception:
-            raise HTTPException(502, "Could not fetch media")
+    from starlette.responses import StreamingResponse
+    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=60, write=10, pool=10), follow_redirects=True)
+    try:
+        resp = await client.send(
+            client.build_request("GET", url, headers={"User-Agent": "Mozilla/5.0", "Referer": url}),
+            stream=True,
+        )
+        resp.raise_for_status()
+    except Exception:
+        await client.aclose()
+        raise HTTPException(502, "Could not fetch media")
     content_type = resp.headers.get("content-type", "application/octet-stream")
-    return Response(
-        content=resp.content,
+
+    async def stream_and_close():
+        try:
+            async for chunk in resp.aiter_bytes(chunk_size=65536):
+                yield chunk
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        stream_and_close(),
         media_type=content_type,
         headers={"Cache-Control": "public, max-age=86400"},
     )
@@ -429,9 +443,15 @@ def browse_screenshots(
                     if len(valid) >= effective_limit:
                         break
                 elif not _looks_like_female_content(s) and s.get("page_url"):
-                    # File not on disk - proxy from source URL
-                    from urllib.parse import quote
-                    s["local_url"] = f"/api/screenshots/proxy-media?url={quote(s.get('page_url', ''), safe='')}"
+                    # File not on disk - use source URL directly or proxy
+                    page_url = s["page_url"]
+                    if page_url.split("?")[0].rsplit(".", 1)[-1].lower() in ("mp4", "webm", "mov"):
+                        # Videos: use direct URL (browsers handle video natively)
+                        s["local_url"] = page_url
+                    else:
+                        # Images: proxy to avoid CORS/hotlink issues
+                        from urllib.parse import quote
+                        s["local_url"] = f"/api/screenshots/proxy-media?url={quote(page_url, safe='')}"
                     s["preview_url"] = None
                     valid.append(s)
                     if len(valid) >= effective_limit:
