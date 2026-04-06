@@ -543,24 +543,31 @@ def browse_screenshots(
                     s["preview_url"] = preview_url
                     valid.append(s)
                 else:
-                    # Remote-only entry — serve source URL directly to browser
-                    media_url = s.get("source_url") or s.get("page_url") or ""
+                    # Remote-only entry — must have a direct media URL (not a webpage)
+                    media_url = s.get("source_url") or ""
                     if not media_url or not media_url.startswith(("http://", "https://")):
+                        # No source_url — skip (page_url is a webpage, not loadable media)
                         if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
                             break
                         continue
                     ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
+                    # Only accept known media file extensions
+                    if ext not in ("mp4", "webm", "mov", "jpg", "jpeg", "png", "gif", "webp"):
+                        src = s.get("source", "")
+                        if src not in ("redgifs", "coomer"):
+                            # Unknown extension from unknown source — skip
+                            if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
+                                break
+                            continue
                     src = s.get("source", "")
                     is_vid = ext in ("mp4", "webm", "mov") or src in ("redgifs", "ytdlp")
-                    # Coomer.st uses DDoS-Guard which blocks direct video loading;
-                    # proxy coomer URLs through our backend, serve others directly
+                    # Coomer.st uses DDoS-Guard; proxy through backend
                     if "coomer.st" in media_url:
                         from urllib.parse import quote
                         s["local_url"] = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
                         s["preview_url"] = None if is_vid else s["local_url"]
                     else:
                         s["local_url"] = media_url
-                        # Derive poster thumbnail for Redgifs videos
                         thumb = s.get("thumbnail_url")
                         if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
                             thumb = media_url.replace(".mp4", "-poster.jpg")

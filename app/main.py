@@ -265,16 +265,19 @@ def index(request: Request) -> HTMLResponse:
             _vid_exts = {"mp4", "webm", "mov"}
             _vid_sources = {"redgifs", "ytdlp"}
             _img_exts = {"jpg", "jpeg", "png", "gif", "webp"}
+            _media_exts = _vid_exts | _img_exts
             shots = []
             for s in browse_result.get("screenshots", []):
                 local_p = s.get("local_path") or ""
-                media_url = s.get("source_url") or s.get("page_url") or ""
+                media_url = s.get("source_url") or ""
                 if local_p and (Path(settings.image_dir).parent / "screenshots" / Path(local_p).name).exists():
                     s["local_url"] = f"/cached-screenshots/{Path(local_p).name}"
                 elif media_url.startswith(("http://", "https://")):
                     from urllib.parse import quote
                     ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
                     src = s.get("source", "")
+                    if ext not in _media_exts and src not in ("redgifs", "coomer"):
+                        continue
                     is_vid = ext in _vid_exts or src in _vid_sources
                     if "coomer.st" in media_url:
                         s["local_url"] = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
