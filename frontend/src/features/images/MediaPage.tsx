@@ -1310,6 +1310,7 @@ export function MediaPage() {
   const deferredSearch = useDeferredValue(search)
   const deferredCreatorSearch = useDeferredValue(creatorSearch)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const virtualizerContainerRef = useRef<HTMLDivElement>(null)
 
   const addToast = useAppStore((s) => s.addToast)
   const setActiveView = useAppStore((s) => s.setActiveView)
@@ -1843,10 +1844,13 @@ export function MediaPage() {
     return rows
   }, [visibleShots, viewMode, showGrouped, colCount])
 
+  const scrollMargin = virtualizerContainerRef.current?.offsetTop ?? 0
+
   const flatGridVirtualizer = useWindowVirtualizer({
     count: flatGridRows.length,
     estimateSize: () => GRID_ROW_SIZE_ESTIMATE[gridDensity],
     overscan: 3,
+    scrollMargin,
   })
 
   // ── Tab counts ───────────────────────────────────────────────────────────
@@ -2401,12 +2405,14 @@ export function MediaPage() {
     estimateSize: (index) =>
       estimateGridSectionHeight(activeSectionEntries[index]?.shots.length ?? 1, colCount, gridDensity),
     overscan: 2,
+    scrollMargin,
   })
 
   const listVirtualizer = useWindowVirtualizer({
     count: viewMode === "list" ? visibleShots.length : 0,
     estimateSize: () => 86,
     overscan: 8,
+    scrollMargin,
   })
 
   const visibleMosaicShots = useMemo(
@@ -3523,6 +3529,9 @@ export function MediaPage() {
         </div>
       )}
 
+      {/* ── Virtualizer scroll-margin anchor ──────────────────────────── */}
+      <div ref={virtualizerContainerRef} />
+
       {/* ── Grid view: grouped by term ─────────────────────────────────── */}
       {tab !== "creators" && !isLoading && visibleShots.length > 0 && viewMode === "grid" && showGrouped && (
         <div
@@ -3546,7 +3555,7 @@ export function MediaPage() {
                 top: 0,
                 left: 0,
                 width: "100%",
-                transform: `translateY(${virtualSection.start}px)`,
+                transform: `translateY(${virtualSection.start - sectionVirtualizer.options.scrollMargin}px)`,
               }}
             >
               <button
@@ -3586,7 +3595,7 @@ export function MediaPage() {
                   top: 0,
                   left: 0,
                   width: "100%",
-                  transform: `translateY(${virtualRow.start}px)`,
+                  transform: `translateY(${virtualRow.start - flatGridVirtualizer.options.scrollMargin}px)`,
                 }}
                 className={cn("grid", gridClass)}
               >
@@ -3619,7 +3628,7 @@ export function MediaPage() {
                   top: 0,
                   left: 0,
                   width: "100%",
-                  transform: `translateY(${virtualRow.start}px)`,
+                  transform: `translateY(${virtualRow.start - listVirtualizer.options.scrollMargin}px)`,
                 }}
               >
                 {renderListItem(shot)}
@@ -3652,7 +3661,7 @@ export function MediaPage() {
                 top: 0,
                 left: 0,
                 width: "100%",
-                transform: `translateY(${virtualSection.start}px)`,
+                transform: `translateY(${virtualSection.start - sectionVirtualizer.options.scrollMargin}px)`,
               }}
             >
               <div className="flex items-center gap-3 px-4 py-2">
