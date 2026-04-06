@@ -145,6 +145,10 @@ a {
 }
 
 @layer base {
+  html, body {
+    background-color: var(--color-bg-base);
+    color: var(--color-text-primary);
+  }
   #root {
     min-height: 100vh;
   }
