@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense, startTransition } from "react"
+import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense, startTransition, memo } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { QueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/cn"
 import { api, type Performer, type DiscoveredCreator, type CaptureQueueEntry } from "@/lib/api"
 import { useAppStore } from "@/store"
+import { useDebounce } from "@/hooks/useDebounce"
 import { Skeleton } from "@/components/Skeleton"
 import { EmptyState } from "@/components/EmptyState"
 import { PerformerProfile } from "./PerformerProfile"
@@ -129,7 +130,7 @@ function AddCreatorForm({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: ["performer-stats"] })
       qc.invalidateQueries({ queryKey: ["capture-queue"] })
       addToast("Creator added — capture queued", "success")
-      api.enrichPerformer(p.id).then(() => qc.invalidateQueries({ queryKey: ["performers"] })).catch(() => {})
+      api.enrichPerformer(p.id).then(() => qc.invalidateQueries({ queryKey: ["performers"] })).catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
       onClose()
     },
     onError: () => addToast("Failed to add creator", "error"),
@@ -279,7 +280,7 @@ function DiscoveryModal({ onClose }: { onClose: () => void }) {
         if (createdPerformer) {
           api.enrichPerformer(createdPerformer.id)
             .then(() => qc.invalidateQueries({ queryKey: ["performers"] }))
-            .catch(() => {})
+            .catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
         }
         return
       }
@@ -460,7 +461,7 @@ function ImportUrlPanel({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: ["performer-stats"] })
       qc.invalidateQueries({ queryKey: ["capture-queue"] })
       addToast(`Imported @${p.username} — capture queued`, "success")
-      api.enrichPerformer(p.id).then(() => qc.invalidateQueries({ queryKey: ["performers"] })).catch(() => {})
+      api.enrichPerformer(p.id).then(() => qc.invalidateQueries({ queryKey: ["performers"] })).catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
       onClose()
     },
     onError: () => addToast("Import failed -- check the URL format", "error"),
@@ -511,7 +512,7 @@ function BulkImportPanel({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: ["capture-queue"] })
       addToast(`Created ${result.created}, skipped ${result.skipped} — capture queued for new creators`, "success")
       result.performers.forEach((p) => {
-        api.enrichPerformer(p.id).catch(() => {})
+        api.enrichPerformer(p.id).catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
       })
       onClose()
     },
@@ -665,7 +666,7 @@ function CaptureQueuePanel({ queueData }: { queueData?: { queue: CaptureQueueEnt
 
 /* ── Performer Card ────────────────────────────────────────────────────── */
 
-function PerformerCard({
+const PerformerCard = memo(function PerformerCard({
   performer,
   onSelect,
   onTagClick,
@@ -832,8 +833,8 @@ function PerformerCard({
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="truncate text-sm font-semibold text-text-primary">@{performer.username}</span>
+            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+              <span className="min-w-0 max-w-full truncate text-sm font-semibold text-text-primary">@{performer.username}</span>
               {performer.is_verified === 1 && (
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 text-accent">
                   <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
@@ -1094,7 +1095,20 @@ function PerformerCard({
       </div>
     </div>
   )
-}
+}, (prev, next) =>
+  prev.performer.id === next.performer.id &&
+  prev.selected === next.selected &&
+  prev.isInQueue === next.isInQueue &&
+  prev.isFocused === next.isFocused &&
+  prev.selectMode === next.selectMode &&
+  prev.performer.is_favorite === next.performer.is_favorite &&
+  prev.performer.is_subscribed === next.performer.is_subscribed &&
+  prev.performer.media_count === next.performer.media_count &&
+  prev.performer.screenshots_count === next.performer.screenshots_count &&
+  prev.performer.last_checked_at === next.performer.last_checked_at &&
+  prev.performer.avatar_url === next.performer.avatar_url &&
+  prev.performer.notes === next.performer.notes
+)
 
 /* ── Analytics Panel ───────────────────────────────────────────────────── */
 
@@ -1629,7 +1643,6 @@ export default function PerformersPage() {
     queryKey: ["performer-analytics"],
     queryFn: () => api.performerAnalytics(),
     staleTime: 5 * 60_000,
-    enabled: showAnalytics,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
@@ -1696,13 +1709,7 @@ export default function PerformersPage() {
   const [visibleLimit, setVisibleLimit] = useState(24)
 
   // Debounce search to avoid firing a query on every keystroke
-  const [debouncedSearch, setDebouncedSearch] = useState(search)
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => {
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
-    searchDebounceRef.current = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current) }
-  }, [search])
+  const debouncedSearch = useDebounce(search, 300)
 
   const activeFilterSummary = useMemo(() => {
     const labels: string[] = []
@@ -1745,8 +1752,10 @@ export default function PerformersPage() {
     if (favOnly) params.is_favorite = true
     if (dueOnly) params.stale_days = 7
     if (renewingOnly) params.renewing_only = true
+    if (subscribedOnly) params.is_subscribed = true
+    if (tagFilter) params.tags = tagFilter
     return params
-  }, [debouncedSearch, platformFilter, sort, favOnly, dueOnly, renewingOnly])
+  }, [debouncedSearch, platformFilter, sort, favOnly, dueOnly, renewingOnly, subscribedOnly, tagFilter])
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["performers", queryParams],
@@ -1771,6 +1780,15 @@ export default function PerformersPage() {
   const handleTagClick = useCallback((tag: string) => {
     runUiTransition(() => setTagFilter(tag))
   }, [runUiTransition])
+
+  const handleCardSelect = useCallback((id: number, idx: number) => {
+    setFocusedIdx(idx)
+    if (selectMode) {
+      toggleSelect(id)
+    } else {
+      runUiTransition(() => setSelectedPerformerId(id))
+    }
+  }, [selectMode, runUiTransition])
 
   useEffect(() => {
     const el = loadMoreRef.current
@@ -1835,7 +1853,7 @@ export default function PerformersPage() {
             qcMain.invalidateQueries({ queryKey: ["performers"] })
             qcMain.invalidateQueries({ queryKey: ["performer-stats"] })
           })
-          .catch(() => {})
+          .catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
       } else if (e.key === "c" && focusedIdx >= 0 && performers[focusedIdx]) {
         e.preventDefault()
         const p = performers[focusedIdx]
@@ -2210,7 +2228,7 @@ export default function PerformersPage() {
               </button>
               <button
                 onClick={() => {
-                  Array.from(selectedIds).forEach((id) => api.enrichPerformer(id).catch(() => {}))
+                  Array.from(selectedIds).forEach((id) => api.enrichPerformer(id).catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error")))
                   addToast(`Refreshing avatars for ${selectedIds.size} creator${selectedIds.size !== 1 ? "s" : ""}…`, "info")
                   clearSelect()
                 }}
@@ -2239,13 +2257,31 @@ export default function PerformersPage() {
         tableView ? (
           <div className="overflow-hidden rounded-2xl border border-white/8">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} variant="card" height="44px" />
+              <div key={i} className="animate-[fade-in-up_300ms_ease-out_both]" style={{ animationDelay: `${i * 50}ms` }}>
+                <Skeleton variant="card" height="44px" />
+              </div>
             ))}
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} variant="card" height="140px" />
+            {Array.from({ length: 9 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-40 rounded-xl border border-white/8 bg-white/[0.03] animate-[fade-in-up_300ms_ease-out_both]"
+                style={{ animationDelay: `${i * 50}ms` }}
+              >
+                <div className="flex gap-3 p-4">
+                  <div className="h-14 w-14 shrink-0 animate-pulse rounded-xl bg-white/10" />
+                  <div className="flex-1 space-y-2 pt-1">
+                    <div className="h-3.5 w-24 animate-pulse rounded bg-white/10" />
+                    <div className="h-3 w-16 animate-pulse rounded bg-white/[0.06]" />
+                    <div className="flex gap-1.5 pt-1">
+                      <div className="h-4 w-14 animate-pulse rounded-full bg-white/[0.06]" />
+                      <div className="h-4 w-10 animate-pulse rounded-full bg-white/[0.06]" />
+                    </div>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         )
@@ -2290,7 +2326,7 @@ export default function PerformersPage() {
             <PerformerRow
               key={p.id}
               performer={p}
-              onSelect={(id) => { setFocusedIdx(idx); selectMode ? toggleSelect(id) : runUiTransition(() => setSelectedPerformerId(id)) }}
+              onSelect={(id) => handleCardSelect(id, idx)}
               selected={selectedIds.has(p.id)}
               onToggleSelect={toggleSelect}
               selectMode={selectMode}
@@ -2301,18 +2337,23 @@ export default function PerformersPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {performers.map((p, idx) => (
-            <PerformerCard
+            <div
               key={p.id}
-              performer={p}
-              onSelect={(id) => { setFocusedIdx(idx); selectMode ? toggleSelect(id) : runUiTransition(() => setSelectedPerformerId(id)) }}
-              onTagClick={handleTagClick}
-              selected={selectedIds.has(p.id)}
-              onToggleSelect={toggleSelect}
-              selectMode={selectMode}
-              isInQueue={activePerformerIds.has(p.id)}
-              isFocused={focusedIdx === idx}
-              cardRef={focusedIdx === idx ? focusedCardRef : undefined}
-            />
+              className="animate-[fade-in-up_300ms_ease-out_both]"
+              style={{ animationDelay: `${Math.min(idx * 30, 600)}ms` }}
+            >
+              <PerformerCard
+                performer={p}
+                onSelect={(id) => handleCardSelect(id, idx)}
+                onTagClick={handleTagClick}
+                selected={selectedIds.has(p.id)}
+                onToggleSelect={toggleSelect}
+                selectMode={selectMode}
+                isInQueue={activePerformerIds.has(p.id)}
+                isFocused={focusedIdx === idx}
+                cardRef={focusedIdx === idx ? focusedCardRef : undefined}
+              />
+            </div>
           ))}
         </div>
       )}

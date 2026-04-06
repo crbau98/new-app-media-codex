@@ -14,9 +14,10 @@ from pathlib import Path
 from threading import Event, Lock, Thread
 from urllib.parse import urlparse
 
+import httpx
 import requests as http_requests
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from PIL import Image, ImageOps
 
 _logger = logging.getLogger(__name__)
@@ -31,6 +32,26 @@ def _disk_has_space(path: str, min_free_mb: int = 500) -> bool:
         return True  # Don't block on check failure
 
 router = APIRouter(prefix="/api/screenshots", tags=["screenshots"])
+
+
+@router.get("/proxy-media")
+async def proxy_media(url: str = Query(...), request: Request = None):
+    """Proxy a remote image/video URL to avoid CORS and hotlink issues."""
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "Invalid URL")
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        try:
+            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0", "Referer": url})
+            resp.raise_for_status()
+        except Exception:
+            raise HTTPException(502, "Could not fetch media")
+    content_type = resp.headers.get("content-type", "application/octet-stream")
+    return Response(
+        content=resp.content,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
 
 _FEMALE_METADATA_KEYWORDS = {
     "female", "woman", "women", "girl", "girls", "lesbian", "straight",
@@ -404,6 +425,14 @@ def browse_screenshots(
                         else:
                             _queue_preview_generation(request.app.state, local)
                     s["preview_url"] = preview_url
+                    valid.append(s)
+                    if len(valid) >= effective_limit:
+                        break
+                elif not _looks_like_female_content(s) and s.get("page_url"):
+                    # File not on disk - proxy from source URL
+                    from urllib.parse import quote
+                    s["local_url"] = f"/api/screenshots/proxy-media?url={quote(s.get('page_url', ''), safe='')}"
+                    s["preview_url"] = None
                     valid.append(s)
                     if len(valid) >= effective_limit:
                         break
@@ -1728,6 +1757,55 @@ def delete_screenshot(screenshot_id: int, request: Request):
         conn.commit()
     _invalidate_screenshots_cache(request.app.state)
     return {"ok": True}
+
+
+@router.get("/disk-usage")
+def get_disk_usage(request: Request):
+    """Get disk usage breakdown for media storage."""
+    base = Path(request.app.state.settings.image_dir).parent
+    dirs = {}
+    for subdir in ["screenshots", "images", "previews"]:
+        d = base / subdir
+        if d.exists():
+            total = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+            count = sum(1 for f in d.rglob("*") if f.is_file())
+            dirs[subdir] = {"size_mb": round(total / (1024 * 1024), 1), "file_count": count}
+        else:
+            dirs[subdir] = {"size_mb": 0, "file_count": 0}
+
+    try:
+        usage = shutil.disk_usage(base)
+        disk = {"total_mb": usage.total // (1024**2), "used_mb": usage.used // (1024**2), "free_mb": usage.free // (1024**2)}
+    except Exception:
+        disk = None
+
+    return {"directories": dirs, "disk": disk}
+
+
+@router.post("/cleanup")
+def cleanup_media(request: Request, max_age_days: int = Query(30, ge=1, le=365)):
+    """Delete screenshot files older than max_age_days to free disk space."""
+    base = Path(request.app.state.settings.image_dir).parent / "screenshots"
+    if not base.exists():
+        return {"deleted": 0, "freed_mb": 0}
+
+    cutoff = time.time() - (max_age_days * 86400)
+    deleted = 0
+    freed = 0
+    for f in base.iterdir():
+        if f.is_file() and f.stat().st_mtime < cutoff:
+            freed += f.stat().st_size
+            f.unlink()
+            deleted += 1
+
+    # Also clean previews for deleted files
+    preview_dir = base.parent / "previews"
+    if preview_dir.exists():
+        for f in preview_dir.iterdir():
+            if f.is_file() and f.stat().st_mtime < cutoff:
+                f.unlink()
+
+    return {"deleted": deleted, "freed_mb": round(freed / (1024**2), 1)}
 
 
 @router.post("/backfill-performers")

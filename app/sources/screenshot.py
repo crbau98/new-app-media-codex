@@ -368,6 +368,9 @@ def _disk_has_space(path: str, min_free_mb: int = 500) -> bool:
 
 def _download_file(session: requests.Session, url: str, dest: Path, allowed_prefixes: tuple[str, ...]) -> bool:
     """Download a file to dest if its content-type starts with one of allowed_prefixes."""
+    import os
+    if os.getenv("SKIP_MEDIA_DOWNLOADS", "").lower() in ("1", "true", "yes"):
+        return False
     if _should_skip_download(url):
         return False
     if not _disk_has_space(str(dest.parent)):

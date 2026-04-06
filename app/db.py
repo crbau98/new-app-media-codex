@@ -2227,6 +2227,8 @@ class Database:
         is_favorite: bool | None = None,
         stale_days: int | None = None,
         renewing_only: bool | None = None,
+        is_subscribed: bool | None = None,
+        tags: str | None = None,
         sort: str = "created_at",
         compact: bool = False,
         limit: int = 40,
@@ -2250,6 +2252,14 @@ class Database:
         if stale_days is not None:
             where.append("(last_checked_at IS NULL OR last_checked_at < datetime('now', ?))")
             params.append(f"-{stale_days} days")
+        if is_subscribed is not None:
+            if is_subscribed:
+                where.append("is_subscribed = 1")
+            else:
+                where.append("(is_subscribed IS NULL OR is_subscribed = 0)")
+        if tags:
+            where.append("tags LIKE ?")
+            params.append(f"%{tags}%")
         if renewing_only:
             where.append(
                 "is_subscribed = 1 AND subscription_renewed_at IS NOT NULL "
@@ -2281,7 +2291,7 @@ class Database:
         search_norm = search.strip().lower() if search else ""
         cache_key = (
             "browse_performers:"
-            f"{limit}:{offset}:{search_norm}:{platform}:{status}:{sort}:{is_favorite}:{stale_days}:{renewing_only}:{compact}"
+            f"{limit}:{offset}:{search_norm}:{platform}:{status}:{sort}:{is_favorite}:{stale_days}:{renewing_only}:{is_subscribed}:{tags}:{compact}"
         )
 
         def build():

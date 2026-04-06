@@ -875,6 +875,141 @@ function ManageThemesSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Storage section
+// ---------------------------------------------------------------------------
+
+interface DiskUsageDir {
+  size_mb: number
+  file_count: number
+}
+
+interface DiskUsageData {
+  directories: Record<string, DiskUsageDir>
+  disk: { total_mb: number; used_mb: number; free_mb: number } | null
+}
+
+function StorageSection() {
+  const [usage, setUsage] = useState<DiskUsageData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [cleaning, setCleaning] = useState(false)
+  const [cleanResult, setCleanResult] = useState<{ deleted: number; freed_mb: number } | null>(null)
+  const [maxAgeDays, setMaxAgeDays] = useState(30)
+  const addToast = useAppStore((s) => s.addToast)
+
+  const fetchUsage = useCallback(async () => {
+    try {
+      const res = await fetch("/api/screenshots/disk-usage")
+      if (res.ok) setUsage(await res.json())
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchUsage() }, [fetchUsage])
+
+  async function handleCleanup() {
+    if (cleaning) return
+    setCleaning(true)
+    try {
+      const res = await fetch(`/api/screenshots/cleanup?max_age_days=${maxAgeDays}`, { method: "POST" })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setCleanResult(data)
+      addToast(`Deleted ${data.deleted} files, freed ${data.freed_mb} MB`, "success")
+      fetchUsage()
+      setTimeout(() => setCleanResult(null), 5000)
+    } catch {
+      addToast("Cleanup failed", "error")
+    } finally {
+      setCleaning(false)
+    }
+  }
+
+  const totalMedia = usage
+    ? Object.values(usage.directories).reduce((a, d) => a + d.size_mb, 0)
+    : 0
+
+  return (
+    <Section title="Storage">
+      <div className="bg-bg-surface border border-border rounded-xl p-5 space-y-5">
+        {loading ? (
+          <p className="text-sm text-text-muted animate-pulse">Loading disk usage...</p>
+        ) : usage ? (
+          <>
+            {/* Directory breakdown */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {Object.entries(usage.directories).map(([name, info]) => (
+                <div key={name} className="rounded-lg bg-bg-subtle border border-border px-4 py-3 text-center">
+                  <p className="text-lg font-bold text-text-primary">{info.size_mb} MB</p>
+                  <p className="text-xs text-text-muted capitalize">{name}</p>
+                  <p className="text-[10px] text-text-muted">{info.file_count.toLocaleString()} files</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Disk bar */}
+            {usage.disk && (
+              <div>
+                <div className="flex justify-between text-xs text-text-muted mb-1">
+                  <span>Disk: {usage.disk.used_mb.toLocaleString()} / {usage.disk.total_mb.toLocaleString()} MB used</span>
+                  <span>{usage.disk.free_mb.toLocaleString()} MB free</span>
+                </div>
+                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-accent transition-all"
+                    style={{ width: `${Math.min((usage.disk.used_mb / usage.disk.total_mb) * 100, 100)}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-text-muted mt-1">
+                  Media storage: {totalMedia.toFixed(1)} MB
+                </p>
+              </div>
+            )}
+
+            {/* Cleanup controls */}
+            <div className="flex items-center gap-3 pt-2 border-t border-border">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-text-primary">Cleanup old screenshots</p>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Delete screenshot files older than the specified number of days.
+                </p>
+              </div>
+              <label className="shrink-0 flex items-center gap-1.5 text-xs text-text-muted">
+                Older than
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={maxAgeDays}
+                  onChange={(e) => setMaxAgeDays(Math.max(1, Math.min(365, Number(e.target.value))))}
+                  className="w-16 rounded-lg border border-border bg-bg-subtle px-2 py-1 text-sm text-text-primary text-center outline-none focus:border-accent/50"
+                />
+                days
+              </label>
+              <button
+                onClick={handleCleanup}
+                disabled={cleaning}
+                className={cn(
+                  "shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                  "border border-border text-text-primary hover:bg-white/5 hover:border-white/20",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+              >
+                {cleaning ? "Cleaning..." : cleanResult ? `Freed ${cleanResult.freed_mb} MB` : "Run Cleanup"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-text-muted">Could not load disk usage.</p>
+        )}
+      </div>
+    </Section>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -938,6 +1073,7 @@ export function SettingsPage() {
       <ManageThemesSection />
       <DisplaySection />
       <DataExportSection />
+      <StorageSection />
       <DataManagementSection />
     </div>
   )
