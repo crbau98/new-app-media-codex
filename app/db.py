@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -309,6 +310,18 @@ CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist ON playlist_items(playlis
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def check_disk_space(path: Path, min_free_mb: int = 500) -> dict:
+    """Check available disk space. Returns dict with total, used, free in MB."""
+    usage = shutil.disk_usage(path)
+    return {
+        "total_mb": usage.total // (1024 * 1024),
+        "used_mb": usage.used // (1024 * 1024),
+        "free_mb": usage.free // (1024 * 1024),
+        "percent_used": round(usage.used / usage.total * 100, 1),
+        "low_space": usage.free < min_free_mb * 1024 * 1024,
+    }
 
 
 class Database:

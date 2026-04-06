@@ -1,7 +1,9 @@
 """Image and short-video collector for explicit terms using DDG image API + Redgifs."""
 from __future__ import annotations
 
+import logging
 import re
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -352,9 +354,24 @@ def _search_ddg_images(
         return []
 
 
+_dl_logger = logging.getLogger(__name__)
+
+
+def _disk_has_space(path: str, min_free_mb: int = 500) -> bool:
+    """Return True if *path*'s filesystem has at least *min_free_mb* MB free."""
+    try:
+        usage = shutil.disk_usage(path)
+        return usage.free >= min_free_mb * 1024 * 1024
+    except Exception:
+        return True  # Don't block on check failure
+
+
 def _download_file(session: requests.Session, url: str, dest: Path, allowed_prefixes: tuple[str, ...]) -> bool:
     """Download a file to dest if its content-type starts with one of allowed_prefixes."""
     if _should_skip_download(url):
+        return False
+    if not _disk_has_space(str(dest.parent)):
+        _dl_logger.warning("Skipping download of %s: disk space below 500 MB", url)
         return False
     try:
         with session.get(url, timeout=(4, 15), stream=True, headers=_DOWNLOAD_HEADERS) as r:

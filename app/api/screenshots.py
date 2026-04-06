@@ -4,7 +4,9 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import re
+import shutil
 import time
 import uuid
 from queue import Empty, Full, Queue
@@ -16,6 +18,17 @@ import requests as http_requests
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from PIL import Image, ImageOps
+
+_logger = logging.getLogger(__name__)
+
+
+def _disk_has_space(path: str, min_free_mb: int = 500) -> bool:
+    """Return True if *path*'s filesystem has at least *min_free_mb* MB free."""
+    try:
+        usage = shutil.disk_usage(path)
+        return usage.free >= min_free_mb * 1024 * 1024
+    except Exception:
+        return True  # Don't block on check failure
 
 router = APIRouter(prefix="/api/screenshots", tags=["screenshots"])
 
@@ -421,6 +434,11 @@ def _run_capture(app_state):
     settings = app_state.settings
     image_dir = Path(settings.image_dir).parent / "screenshots"
 
+    # Pre-flight disk space check
+    if not _disk_has_space(str(image_dir.parent)):
+        _logger.warning("Skipping screenshot capture: disk space below 500 MB threshold")
+        return
+
     # Apply DB-configured vision settings so capture_screenshots uses the right key
     user_settings = db.get_all_settings()
     if user_settings.get("vision_api_key"):
@@ -450,6 +468,11 @@ def _run_capture(app_state):
             performer_lookup[row["username"].lower()] = row["id"]
 
     for result in capture_screenshots(image_dir, db=db, settings=settings):
+        # Abort capture loop if disk is nearly full
+        if not _disk_has_space(str(image_dir.parent)):
+            _logger.warning("Stopping screenshot capture mid-run: disk space below 500 MB threshold")
+            break
+
         term = result.get("term", "")
         if term != current_term:
             if current_term:
@@ -1324,6 +1347,9 @@ def capture_from_url(request: Request, body: dict = Body(...)):
     db = request.app.state.db
     image_dir = Path(request.app.state.settings.image_dir).parent / "screenshots"
     image_dir.mkdir(parents=True, exist_ok=True)
+
+    if not _disk_has_space(str(image_dir.parent)):
+        raise HTTPException(status_code=507, detail="Insufficient disk space (< 500 MB free)")
 
     download_url = url
     source = "url"

@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.db import Database
+from app.db import Database, check_disk_space
 from app.service import ResearchService
 
 
@@ -282,13 +282,23 @@ def compound_detail(name: str, request: Request) -> JSONResponse:
 @app.head("/healthz")
 def healthz() -> JSONResponse:
     db_ok = db.ping()
-    status = "ok" if db_ok else "starting"
+    try:
+        disk = check_disk_space(settings.database_path.parent)
+    except Exception:
+        disk = None
+    if not db_ok:
+        status = "starting"
+    elif disk and disk["low_space"]:
+        status = "low_disk"
+    else:
+        status = "ok"
     return JSONResponse(
         {
             "status": status,
             "running": service.lock.locked(),
             "db_ok": db_ok,
             "scheduler_running": service.running,
+            "disk": disk,
         },
         status_code=200,
     )

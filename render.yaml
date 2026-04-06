@@ -15,9 +15,9 @@ services:
       - key: PORT
         value: 8080
       - key: DATABASE_PATH
-        value: /app/data/research.db
+        value: /tmp/research.db
       - key: IMAGE_DIR
-        value: /app/data/images
+        value: /tmp/images
       - key: SQLITE_TIMEOUT_SECONDS
         value: 10
       - key: SQLITE_BUSY_TIMEOUT_MS
