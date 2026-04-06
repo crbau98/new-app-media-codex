@@ -48,53 +48,53 @@ function StatsBar({ onRenewingClick }: { onRenewingClick?: () => void }) {
   const stats = data
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
-        <p className="text-[11px] text-text-muted">Total Creators</p>
-        <p className="mt-1 text-2xl font-semibold text-text-primary">{stats?.total ?? 0}</p>
+    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-7">
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
+        <p className="text-[10px] text-text-muted">Total</p>
+        <p className="mt-0.5 font-mono text-lg font-semibold text-text-primary">{stats?.total ?? 0}</p>
       </div>
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
-        <p className="text-[11px] text-text-muted">Watchlist</p>
-        <p className="mt-1 text-2xl font-semibold text-text-primary">{stats?.favorites ?? 0}</p>
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
+        <p className="text-[10px] text-text-muted">Watchlist</p>
+        <p className="mt-0.5 font-mono text-lg font-semibold text-text-primary">{stats?.favorites ?? 0}</p>
       </div>
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
-        <p className="text-[11px] text-text-muted">With Media</p>
-        <p className="mt-1 text-2xl font-semibold text-text-primary">{stats?.with_media ?? 0}</p>
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
+        <p className="text-[10px] text-text-muted">With Media</p>
+        <p className="mt-0.5 font-mono text-lg font-semibold text-text-primary">{stats?.with_media ?? 0}</p>
       </div>
-      <div className="rounded-2xl border border-sky-500/15 bg-sky-500/[0.04] px-4 py-3">
-        <p className="text-[11px] text-sky-400/70">Subscribed</p>
-        <p className="mt-1 text-2xl font-semibold text-sky-300">{stats?.subscribed_count ?? 0}</p>
+      <div className="rounded-xl border border-sky-500/15 bg-sky-500/[0.03] px-3 py-2.5">
+        <p className="text-[10px] text-sky-400/70">Subscribed</p>
+        <p className="mt-0.5 font-mono text-lg font-semibold text-sky-300">{stats?.subscribed_count ?? 0}</p>
       </div>
-      <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.04] px-4 py-3">
-        <p className="text-[11px] text-emerald-400/70">Monthly Spend</p>
-        <p className="mt-1 text-2xl font-semibold text-emerald-300">
-          {stats?.monthly_spend ? `$${stats.monthly_spend.toFixed(2)}` : "--"}
+      <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/[0.03] px-3 py-2.5">
+        <p className="text-[10px] text-emerald-400/70">Spend/mo</p>
+        <p className="mt-0.5 font-mono text-lg font-semibold text-emerald-300">
+          {stats?.monthly_spend ? `$${stats.monthly_spend.toFixed(0)}` : "--"}
         </p>
       </div>
       <button
         type="button"
         onClick={onRenewingClick}
         className={cn(
-          "rounded-2xl border px-4 py-3 text-left transition-opacity hover:opacity-80",
+          "rounded-xl border px-3 py-2.5 text-left transition-opacity hover:opacity-80",
           (stats?.renewing_soon_count ?? 0) > 0
-            ? "border-orange-500/20 bg-orange-500/[0.04]"
-            : "border-white/8 bg-white/[0.03]"
+            ? "border-orange-500/15 bg-orange-500/[0.03]"
+            : "border-white/[0.06] bg-white/[0.03]"
         )}
         title="Filter by subscriptions renewing within 7 days"
       >
-        <p className={cn("text-[11px]", (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-400/70" : "text-text-muted")}>Renewing Soon</p>
-        <p className={cn("mt-1 text-2xl font-semibold", (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-300" : "text-text-primary")}>
+        <p className={cn("text-[10px]", (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-400/70" : "text-text-muted")}>Renewing</p>
+        <p className={cn("mt-0.5 font-mono text-lg font-semibold", (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-300" : "text-text-primary")}>
           {stats?.renewing_soon_count ?? 0}
         </p>
       </button>
       <div className={cn(
-        "rounded-2xl border px-4 py-3",
+        "rounded-xl border px-3 py-2.5",
         (stats?.stale_count ?? 0) > 0
-          ? "border-amber-500/20 bg-amber-500/[0.04]"
-          : "border-white/8 bg-white/[0.03]"
+          ? "border-amber-500/15 bg-amber-500/[0.03]"
+          : "border-white/[0.06] bg-white/[0.03]"
       )}>
-        <p className={cn("text-[11px]", (stats?.stale_count ?? 0) > 0 ? "text-amber-400/70" : "text-text-muted")}>Due for Check</p>
-        <p className={cn("mt-1 text-2xl font-semibold", (stats?.stale_count ?? 0) > 0 ? "text-amber-300" : "text-text-primary")}>
+        <p className={cn("text-[10px]", (stats?.stale_count ?? 0) > 0 ? "text-amber-400/70" : "text-text-muted")}>Stale</p>
+        <p className={cn("mt-0.5 font-mono text-lg font-semibold", (stats?.stale_count ?? 0) > 0 ? "text-amber-300" : "text-text-primary")}>
           {stats?.stale_count ?? 0}
         </p>
       </div>

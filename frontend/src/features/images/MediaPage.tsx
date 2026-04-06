@@ -303,38 +303,22 @@ function pushViewHistory(id: number) {
 function MediaStatsBar({ stats }: { stats: MediaStatsPayload | undefined }) {
   if (!stats) return null
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-white/5 px-4 py-2 text-xs text-[var(--color-text-muted)]">
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-[var(--color-text-primary)]">{stats.total.toLocaleString()}</strong> total
+    <div className="hide-scrollbar flex items-center gap-1.5 overflow-x-auto pb-2 text-[11px] text-text-muted">
+      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.05] px-2.5 py-1">
+        <strong className="font-mono text-text-primary">{stats.total.toLocaleString()}</strong> total
       </span>
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-[var(--color-text-primary)]">{(stats.by_type.image ?? 0).toLocaleString()}</strong> images
+      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.05] px-2.5 py-1">
+        <strong className="font-mono text-text-primary">{(stats.by_type.image ?? 0).toLocaleString()}</strong> img
       </span>
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-[var(--color-text-primary)]">{(stats.by_type.video ?? 0).toLocaleString()}</strong> videos
+      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.05] px-2.5 py-1">
+        <strong className="font-mono text-text-primary">{(stats.by_type.video ?? 0).toLocaleString()}</strong> vid
       </span>
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-[var(--color-text-primary)]">{stats.rated.toLocaleString()}</strong> rated
-      </span>
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-[var(--color-text-primary)]">{stats.described.toLocaleString()}</strong> described
-      </span>
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-sky-200">{stats.with_performer.toLocaleString()}</strong> linked
+      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.05] px-2.5 py-1">
+        <strong className="font-mono text-text-primary">{stats.rated.toLocaleString()}</strong> rated
       </span>
       {stats.recent_24h > 0 && (
-        <span className="ui-chip ui-chip-active !px-2.5 !py-1">
+        <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent/10 px-2.5 py-1 text-accent">
           +{stats.recent_24h} today
-        </span>
-      )}
-      {stats.recent_7d > 0 && (
-        <span className="ui-chip !px-2.5 !py-1">
-          +{stats.recent_7d} this week
-        </span>
-      )}
-      {stats.storage_mb > 0 && (
-        <span className="ui-chip !px-2.5 !py-1">
-          {stats.storage_mb} MB stored
         </span>
       )}
     </div>
