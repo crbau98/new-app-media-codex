@@ -8,7 +8,7 @@ import { Spinner } from "@/components/Spinner"
 import { SkeletonGrid } from "@/components/Skeleton"
 import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
-import { getMediaDebugLabel, getScreenshotMediaSrc, getScreenshotPreviewSrc } from "@/lib/media"
+import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
 
 const AUTO_DESCRIBE_KEY = "auto-describe-screenshots"
 const MEDIA_NAVIGATION_INTENT_KEY = "codex:media-navigation-intent"
@@ -78,7 +78,7 @@ type ShotClientMeta = {
 }
 
 function buildShotClientMeta(shot: Screenshot): ShotClientMeta {
-  const src = getScreenshotMediaSrc(shot)
+  const src = getBestAvailableMediaSrc(shot)
   return {
     isVideo: isVideo(src),
     searchText: [shot.term, shot.source, shot.page_url, shot.ai_summary ?? ""].join(" ").toLowerCase(),
@@ -573,13 +573,8 @@ const MediaCard = memo(function MediaCard({
   onContextMenu?: (e: React.MouseEvent) => void
   onNavigateToPerformer?: (performerId: number, username: string) => void
 }) {
-  const src = getScreenshotMediaSrc(shot)
-  const previewSrc = getScreenshotPreviewSrc(shot)
+  const { mediaSrc: src, previewSrc, isVideo: vid, isGif: gif, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const mediaLabel = getMediaDebugLabel(shot)
-  const vid = src ? isVideo(src) : false
-  const gif = src ? isGif(src) : false
-  const [broken, setBroken] = useState(false)
-  const previewPending = vid && !!src
 
   return (
     <article
@@ -591,158 +586,145 @@ const MediaCard = memo(function MediaCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); batchMode ? onSelect() : onClick() } }}
       onContextMenu={onContextMenu}
       className={cn(
-        "group relative cursor-pointer overflow-hidden bg-black/20 aspect-square",
+        "group relative aspect-square cursor-pointer overflow-hidden bg-black/20",
         selected && "ring-2 ring-blue-500"
       )}
     >
       <div style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
-      {!previewSrc || broken ? (
-        vid && src && !broken ? (
-          <video
-            src={src}
-            muted
-            playsInline
-            preload="metadata"
-            onError={() => setBroken(true)}
+        {!previewSrc ? (
+          vid && src ? (
+            <video
+              src={src}
+              muted
+              playsInline
+              preload="metadata"
+              onError={markMediaBroken}
+              className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
+            />
+          ) : (
+            <MediaUnavailableTile
+              title={shot.term}
+              detail={mediaLabel}
+              statusLabel="Media unavailable"
+            />
+          )
+        ) : (
+          <img
+            src={previewSrc}
+            alt={shot.ai_summary || `${vid ? "Video" : "Screenshot"}: ${shot.term} from ${sourceLabel(shot.source)}`}
+            loading="lazy"
+            decoding="async"
+            fetchPriority="low"
+            onError={markPreviewBroken}
             className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
           />
-        ) : previewPending ? (
-          <MediaUnavailableTile
-            title={shot.term}
-            detail={`Loading preview: ${mediaLabel}`}
-            statusLabel="Preparing preview"
-          />
-        ) : (
-          <MediaUnavailableTile
-            title={shot.term}
-            detail={mediaLabel}
-            statusLabel="Media unavailable"
-          />
-        )
-      ) : (
-        <img
-          src={previewSrc}
-          alt={shot.ai_summary || `${vid ? "Video" : "Screenshot"}: ${shot.term} from ${sourceLabel(shot.source)}`}
-          loading="lazy"
-          decoding="async"
-          fetchPriority="low"
-          onError={() => setBroken(true)}
-          className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
-        />
-      )}
-
-      {/* Content type badges — top-left */}
-      <div className="absolute top-1.5 left-1.5 flex flex-col gap-1">
-        <div className="flex gap-1">
-          {gif && (
-            <span className="rounded bg-emerald-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
-              GIF
-            </span>
-          )}
-          {vid && (
-            <span className="rounded bg-purple-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
-              VIDEO
-            </span>
-          )}
-        </div>
-        {shot.performer_username && shot.performer_id && onNavigateToPerformer && (
-          <button
-            type="button"
-            className="hidden group-hover:inline rounded bg-sky-500/80 px-1 py-0.5 text-[9px] font-medium leading-none text-white shadow truncate max-w-[80px] hover:bg-sky-400/90 transition-colors"
-            onClick={(e) => { e.stopPropagation(); onNavigateToPerformer(shot.performer_id!, shot.performer_username!) }}
-            title={`View @${shot.performer_username}'s profile`}
-          >
-            @{shot.performer_username}
-          </button>
         )}
-        {shot.performer_username && (!shot.performer_id || !onNavigateToPerformer) && (
-          <span className="hidden group-hover:inline rounded bg-sky-500/80 px-1 py-0.5 text-[9px] font-medium leading-none text-white shadow truncate max-w-[80px]">
-            @{shot.performer_username}
-          </span>
-        )}
-      </div>
 
-      {/* Video play icon — always visible */}
-      {vid && !batchMode && (
-        <div className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:hidden">
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,0 10,5 2,10" /></svg>
-        </div>
-      )}
-
-      {/* Favorite heart — always visible */}
-      {favorite && (
-        <div className="absolute top-1.5 right-1.5 text-red-400 text-sm drop-shadow">&#9829;</div>
-      )}
-
-      {/* Star rating — always visible if rated, hover otherwise */}
-      {(shot.rating ?? 0) > 0 ? (
-        <div className="absolute bottom-1.5 left-1.5 z-10" onClick={(e) => e.stopPropagation()}>
-          <StarRating value={shot.rating ?? 0} onChange={onRate} compact />
-        </div>
-      ) : (
-        !batchMode && (
-          <div className="absolute bottom-1.5 left-1.5 z-10 hidden group-hover:block" onClick={(e) => e.stopPropagation()}>
-            <StarRating value={0} onChange={onRate} compact />
+        <div className="absolute top-1.5 left-1.5 flex flex-col gap-1">
+          <div className="flex gap-1">
+            {gif && (
+              <span className="rounded bg-emerald-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
+                GIF
+              </span>
+            )}
+            {vid && (
+              <span className="rounded bg-purple-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
+                VIDEO
+              </span>
+            )}
           </div>
-        )
-      )}
-
-      {/* Batch checkbox */}
-      {batchMode && (
-        <div className={cn(
-          "absolute top-1.5 left-1.5 flex h-5 w-5 items-center justify-center rounded border text-[10px]",
-          selected ? "border-blue-500 bg-blue-500 text-white" : "border-white/40 bg-black/50 text-transparent"
-        )}>
-          {selected && "\u2713"}
+          {shot.performer_username && shot.performer_id && onNavigateToPerformer && (
+            <button
+              type="button"
+              className="hidden max-w-[80px] truncate rounded bg-sky-500/80 px-1 py-0.5 text-[9px] font-medium leading-none text-white shadow transition-colors hover:bg-sky-400/90 group-hover:inline"
+              onClick={(e) => { e.stopPropagation(); onNavigateToPerformer(shot.performer_id!, shot.performer_username!) }}
+              title={`View @${shot.performer_username}'s profile`}
+            >
+              @{shot.performer_username}
+            </button>
+          )}
+          {shot.performer_username && (!shot.performer_id || !onNavigateToPerformer) && (
+            <span className="hidden max-w-[80px] truncate rounded bg-sky-500/80 px-1 py-0.5 text-[9px] font-medium leading-none text-white shadow group-hover:inline">
+              @{shot.performer_username}
+            </span>
+          )}
         </div>
-      )}
 
-      {/* Quick actions on hover — bottom-right */}
-      {!batchMode && (
-        <div className="absolute bottom-1.5 right-1.5 hidden gap-1 group-hover:flex">
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 hover:text-red-400 transition-colors"
-            title={favorite ? "Unfavorite" : "Favorite"}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill={favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDescribe() }}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 hover:text-purple-400 transition-colors"
-            title="AI Describe"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z" />
-              <path d="M18 15l.75 2.25L21 18l-2.25.75L18 21l-.75-2.25L15 18l2.25-.75z" />
-            </svg>
-          </button>
-          {shot.page_url && (
-            <a
-              href={shot.page_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 hover:text-blue-400 transition-colors"
-              title="Open source"
+        {vid && !batchMode && (
+          <div className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:hidden">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,0 10,5 2,10" /></svg>
+          </div>
+        )}
+
+        {favorite && (
+          <div className="absolute top-1.5 right-1.5 text-sm text-red-400 drop-shadow">&#9829;</div>
+        )}
+
+        {(shot.rating ?? 0) > 0 ? (
+          <div className="absolute bottom-1.5 left-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+            <StarRating value={shot.rating ?? 0} onChange={onRate} compact />
+          </div>
+        ) : (
+          !batchMode && (
+            <div className="absolute bottom-1.5 left-1.5 z-10 hidden group-hover:block" onClick={(e) => e.stopPropagation()}>
+              <StarRating value={0} onChange={onRate} compact />
+            </div>
+          )
+        )}
+
+        {batchMode && (
+          <div className={cn(
+            "absolute top-1.5 left-1.5 flex h-5 w-5 items-center justify-center rounded border text-[10px]",
+            selected ? "border-blue-500 bg-blue-500 text-white" : "border-white/40 bg-black/50 text-transparent"
+          )}>
+            {selected && "✓"}
+          </div>
+        )}
+
+        {!batchMode && (
+          <div className="absolute bottom-1.5 right-1.5 hidden gap-1 group-hover:flex">
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors hover:text-red-400"
+              title={favorite ? "Unfavorite" : "Favorite"}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill={favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDescribe() }}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors hover:text-purple-400"
+              title="AI Describe"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
+                <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z" />
+                <path d="M18 15l.75 2.25L21 18l-2.25.75L18 21l-.75-2.25L15 18l2.25-.75z" />
               </svg>
-            </a>
-          )}
-        </div>
-      )}
+            </button>
+            {shot.page_url && (
+              <a
+                href={shot.page_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors hover:text-blue-400"
+                title="Open source"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </a>
+            )}
+          </div>
+        )}
 
-      {/* Hover overlay */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pb-2 pt-6 opacity-0 transition-opacity group-hover:opacity-100">
-        <p className="truncate text-xs font-medium text-white">{shot.term}</p>
-        <p className="text-[10px] text-white/60">{sourceLabel(shot.source)}</p>
-      </div>
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pb-2 pt-6 opacity-0 transition-opacity group-hover:opacity-100">
+          <p className="truncate text-xs font-medium text-white">{shot.term}</p>
+          <p className="text-[10px] text-white/60">{sourceLabel(shot.source)}</p>
+        </div>
       </div>
     </article>
   )
@@ -773,13 +755,8 @@ const MosaicCard = memo(function MosaicCard({
   onToggleFavorite: () => void
   onContextMenu?: (e: React.MouseEvent) => void
 }) {
-  const src = getScreenshotMediaSrc(shot)
-  const previewSrc = getScreenshotPreviewSrc(shot)
+  const { mediaSrc: src, previewSrc, isVideo: vid, isGif: gif, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const mediaLabel = getMediaDebugLabel(shot)
-  const vid = src ? isVideo(src) : false
-  const gif = src ? isGif(src) : false
-  const [broken, setBroken] = useState(false)
-  const previewPending = vid && !!src
 
   return (
     <article
@@ -794,82 +771,76 @@ const MosaicCard = memo(function MosaicCard({
       style={{ breakInside: "avoid" }}
     >
       <div style={{ contentVisibility: "auto", containIntrinsicSize: "220px" }}>
-      {!previewSrc || broken ? (
-        vid && src && !broken ? (
-          <video
-            src={src}
-            muted
-            playsInline
-            preload="metadata"
-            onError={() => setBroken(true)}
+        {!previewSrc ? (
+          vid && src ? (
+            <video
+              src={src}
+              muted
+              playsInline
+              preload="metadata"
+              onError={markMediaBroken}
+              className="w-full transition-[filter] duration-200 group-hover:brightness-110"
+              style={{ display: "block" }}
+            />
+          ) : (
+            <MediaUnavailableTile
+              title={shot.term}
+              detail={mediaLabel}
+              statusLabel="Media unavailable"
+              className="min-h-[10rem]"
+            />
+          )
+        ) : (
+          <img
+            src={previewSrc}
+            alt={shot.ai_summary || `${shot.term} — ${sourceLabel(shot.source)}`}
+            loading="lazy"
+            decoding="async"
+            fetchPriority="low"
+            onError={markPreviewBroken}
             className="w-full transition-[filter] duration-200 group-hover:brightness-110"
             style={{ display: "block" }}
           />
-        ) : previewPending ? (
-          <MediaUnavailableTile
-            title={shot.term}
-            detail={`Loading preview: ${mediaLabel}`}
-            statusLabel="Preparing preview"
-            className="min-h-[10rem]"
-          />
-        ) : (
-          <MediaUnavailableTile
-            title={shot.term}
-            detail={mediaLabel}
-            statusLabel="Media unavailable"
-            className="min-h-[10rem]"
-          />
-        )
-      ) : (
-        <img
-          src={previewSrc}
-          alt={shot.ai_summary || `${shot.term} — ${sourceLabel(shot.source)}`}
-          loading="lazy"
-          decoding="async"
-          fetchPriority="low"
-          onError={() => setBroken(true)}
-          className="w-full transition-[filter] duration-200 group-hover:brightness-110"
-          style={{ display: "block" }}
-        />
-      )}
+        )}
 
-      {/* Badges */}
-      <div className="absolute top-1.5 left-1.5 flex gap-1">
-        {gif && <span className="rounded bg-emerald-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white">GIF</span>}
-        {vid && <span className="rounded bg-purple-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white">VIDEO</span>}
-      </div>
-
-      {/* Favorite */}
-      {favorite && (
-        <div className="absolute top-1.5 right-1.5 text-red-400 text-sm drop-shadow">&#9829;</div>
-      )}
-
-      {/* Star rating */}
-      {(shot.rating ?? 0) > 0 && (
-        <div className="absolute bottom-8 left-1.5 z-10" onClick={(e) => e.stopPropagation()}>
-          <span className="text-[10px] text-yellow-400">{"★".repeat(shot.rating ?? 0)}</span>
+        <div className="absolute top-1.5 left-1.5 flex gap-1">
+          {gif && <span className="rounded bg-emerald-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white">GIF</span>}
+          {vid && <span className="rounded bg-purple-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white">VIDEO</span>}
         </div>
-      )}
 
-      {/* Hover caption */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-2 pt-8 opacity-0 transition-opacity group-hover:opacity-100">
-        <p className="truncate text-xs font-medium text-white">{shot.term}</p>
-        <p className="text-[10px] text-white/60">{sourceLabel(shot.source)}</p>
-      </div>
+        {favorite && (
+          <div className="absolute top-1.5 right-1.5 text-sm text-red-400 drop-shadow">&#9829;</div>
+        )}
 
-      {/* Favorite toggle */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
-        className="absolute top-1.5 right-1.5 hidden h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors group-hover:flex hover:text-red-400"
-        title={favorite ? "Unfavorite" : "Favorite"}
-      >
-        {favorite ? "♥" : "♡"}
-      </button>
+        {(shot.rating ?? 0) > 0 && (
+          <div className="absolute bottom-8 left-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+            <span className="text-[10px] text-yellow-400">{"★".repeat(shot.rating ?? 0)}</span>
+          </div>
+        )}
+
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-2 pt-8 opacity-0 transition-opacity group-hover:opacity-100">
+          <p className="truncate text-xs font-medium text-white">{shot.term}</p>
+          <p className="text-[10px] text-white/60">{sourceLabel(shot.source)}</p>
+        </div>
+
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
+          className={cn(
+            "absolute bottom-1.5 right-1.5 hidden h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors group-hover:flex",
+            favorite ? "text-red-400" : "hover:text-red-300",
+          )}
+          title={favorite ? "Unfavorite" : "Favorite"}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill={favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+        </button>
       </div>
     </article>
   )
 }, (prev, next) =>
   prev.shot.id === next.shot.id &&
+  prev.shot.rating === next.shot.rating &&
   prev.shot.local_url === next.shot.local_url &&
   prev.favorite === next.favorite
 )
@@ -921,7 +892,7 @@ const AIDescribedSection = memo(function AIDescribedSection({
       {!collapsed && (
         <div className="hide-scrollbar mt-2 flex gap-3 overflow-x-auto pb-1">
           {described.map((shot) => {
-            const src = getScreenshotPreviewSrc(shot)
+            const src = getBestAvailablePreviewSrc(shot)
             if (!src) return null
             return (
               <button
@@ -2500,7 +2471,7 @@ export function MediaPage() {
   function openMedia(shot: Screenshot) {
     pushViewHistory(shot.id)
     setViewHistory(loadViewHistory())
-    const src = getScreenshotMediaSrc(shot)
+    const src = getBestAvailableMediaSrc(shot)
     if (isVideo(src)) {
       void preloadInlineVideoPlayer()
       setExpandedVideoId(shot.id)
@@ -2511,7 +2482,7 @@ export function MediaPage() {
   }
 
   function renderCard(shot: Screenshot) {
-    const src = getScreenshotMediaSrc(shot)
+    const src = getBestAvailableMediaSrc(shot)
     const prefetchViewer = () => {
       if (src && isVideo(src)) void preloadInlineVideoPlayer()
       else void preloadMediaLightbox()
@@ -2539,7 +2510,7 @@ export function MediaPage() {
   }
 
   function renderListItem(shot: Screenshot) {
-    const src = getScreenshotMediaSrc(shot)
+    const src = getBestAvailableMediaSrc(shot)
     const prefetchViewer = () => {
       if (src && isVideo(src)) void preloadInlineVideoPlayer()
       else void preloadMediaLightbox()
@@ -3384,8 +3355,8 @@ export function MediaPage() {
             {!recentlyViewedCollapsed && (
               <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-white/10">
                 {recentShots.map((shot) => {
-                  const src = getScreenshotPreviewSrc(shot)
-                  const mediaSrc = getScreenshotMediaSrc(shot)
+                  const src = getBestAvailablePreviewSrc(shot)
+                  const mediaSrc = getBestAvailableMediaSrc(shot)
                   const vid = isVideo(mediaSrc)
                   return (
                     <button

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { createPortal } from "react-dom"
 import type { Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
-import { getMediaDebugLabel, getScreenshotMediaSrc } from "@/lib/media"
+import { getBestAvailableMediaSrc, getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
 
 type SlideshowSpeed = 3 | 5 | 8 | 15
 
@@ -47,7 +47,8 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
   useEffect(() => { onCloseRef.current = onClose }, [onClose])
 
   const shot = shots[idx]
-  const src = shot ? getScreenshotMediaSrc(shot) : ""
+  const { mediaSrc: resolvedSrc, markMediaBroken } = useResolvedScreenshotMedia(shot)
+  const src = shot ? resolvedSrc : ""
   const mediaLabel = shot ? getMediaDebugLabel(shot) : "missing-slide"
   const currentIsVideo = isVideo(src)
 
@@ -60,7 +61,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
     ? Math.floor(Math.random() * shots.length)
     : Math.min(idx + 1, shots.length - 1)
   const nextShot = shots[nextIdx]
-  const nextSrc = nextShot ? getScreenshotMediaSrc(nextShot) : ""
+  const nextSrc = nextShot ? getBestAvailableMediaSrc(nextShot) : ""
 
   useEffect(() => {
     if (!nextSrc || isVideo(nextSrc)) return
@@ -117,7 +118,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
     if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current)
     if (!playing) return
 
-    const shotSrc = shots[idx] ? getScreenshotMediaSrc(shots[idx]) : ""
+    const shotSrc = shots[idx] ? getBestAvailableMediaSrc(shots[idx]) : ""
     if (isVideo(shotSrc)) {
       // For videos, wait for them to end
       return
@@ -209,7 +210,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
             autoPlay
             playsInline
             onEnded={handleVideoEnded}
-            onError={() => setLoadFailed(true)}
+            onError={() => { markMediaBroken(); setLoadFailed(true) }}
             className="max-h-[90vh] max-w-[95vw] object-contain"
           />
         ) : (
@@ -218,7 +219,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
             src={src}
             alt={shot?.term ?? ""}
             draggable={false}
-            onError={() => setLoadFailed(true)}
+            onError={() => { markMediaBroken(); setLoadFailed(true) }}
             className="max-h-[90vh] max-w-[95vw] object-contain select-none"
           />
         )}

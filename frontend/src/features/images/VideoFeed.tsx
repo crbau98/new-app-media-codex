@@ -4,7 +4,7 @@ import { api, type Screenshot, type BrowseScreenshotsPayload } from "@/lib/api"
 import { useAppStore } from "@/store"
 import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
-import { getScreenshotMediaSrc, getScreenshotPosterSrc } from "@/lib/media"
+import { useResolvedScreenshotMedia } from "@/lib/media"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -169,8 +169,7 @@ function VideoSlide({
   const lastTapSideRef = useRef<"left" | "right" | null>(null)
   const addToast = useAppStore((s) => s.addToast)
 
-  const src = getScreenshotMediaSrc(shot)
-  const posterSrc = getScreenshotPosterSrc(shot)
+  const { mediaSrc: src, posterSrc, markMediaBroken } = useResolvedScreenshotMedia(shot)
   const isFav = favorites.has(shot.id)
   const userTags = parseUserTags(shot.user_tags)
   const shouldLoadVideo = isActive
@@ -328,18 +327,30 @@ function VideoSlide({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Video element */}
-      <video
-        ref={videoRef}
-        src={videoSrc}
-        poster={posterSrc || undefined}
-        loop
-        muted={muted}
-        playsInline
-        preload={isActive ? "metadata" : "none"}
-        className="h-full w-full cursor-pointer object-contain"
-        onClick={handleTap}
-      />
+      {!src ? (
+        <div className="flex h-full w-full items-center justify-center px-8 text-center">
+          <div className="flex max-w-md flex-col items-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-6 py-8">
+            <div className="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100">
+              Video unavailable
+            </div>
+            <p className="text-lg font-medium text-white/85">{shot.term}</p>
+            <p className="text-sm text-amber-100/70">The feed skipped this item because its media source failed to load.</p>
+          </div>
+        </div>
+      ) : (
+        <video
+          ref={videoRef}
+          src={videoSrc}
+          poster={posterSrc || undefined}
+          loop
+          muted={muted}
+          playsInline
+          preload={isActive ? "metadata" : "none"}
+          className="h-full w-full cursor-pointer object-contain"
+          onClick={handleTap}
+          onError={markMediaBroken}
+        />
+      )}
 
       {/* Play/Pause flash */}
       <PlayPauseFlash state={flashState} />
