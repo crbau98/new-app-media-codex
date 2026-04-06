@@ -830,6 +830,7 @@ def _search_ytdlp_videos(
                     "page_url": url,
                     "local_path": str(out_path),
                     "ok": True,
+                    "source_url": url,
                 })
                 downloaded += 1
                 print(f"[ytdlp] downloaded: {out_path.name} ({out_path.stat().st_size // 1024 // 1024}MB)")
@@ -935,7 +936,8 @@ def capture_screenshots(
                     if progress_cb:
                         progress_cb(term, "ddg", done, len(image_jobs))
                     yield {"term": term, "source": "ddg", "page_url": job["page_url"],
-                           "local_path": str(out_path) if ok else None, "ok": ok}
+                           "local_path": str(out_path) if ok else None, "ok": ok,
+                           "source_url": job.get("url") or job.get("page_url")}
 
         # ── Pass 2: DDG animated GIFs (2 pages) ───────────────────────────────
         gif_results = (
@@ -986,7 +988,8 @@ def capture_screenshots(
                     if progress_cb:
                         progress_cb(term, "ddg", done, len(gif_jobs))
                     yield {"term": term, "source": "ddg", "page_url": job["page_url"],
-                           "local_path": str(out_path) if ok else None, "ok": ok}
+                           "local_path": str(out_path) if ok else None, "ok": ok,
+                           "source_url": job.get("url") or job.get("page_url")}
 
         # ── Pass 3: yt-dlp full-length videos from tube sites ────────────────
         ytdlp_results = _search_ytdlp_videos(
@@ -1078,7 +1081,8 @@ def capture_screenshots(
                     if progress_cb:
                         progress_cb(term, "redgifs", done, len(redgifs_jobs))
                     yield {"term": term, "source": "redgifs", "page_url": job["page_url"],
-                           "local_path": str(out_path) if ok else None, "ok": ok}
+                           "local_path": str(out_path) if ok else None, "ok": ok,
+                           "source_url": job.get("url") or job.get("page_url")}
 
     # ── Creator-specific DDG image capture ─────────────────────────────────
     for creator_name, creator_query in CREATOR_QUERIES.items():
@@ -1129,7 +1133,8 @@ def capture_screenshots(
                     if ok:
                         _mark_page_url(job["page_url"])
                     yield {"term": creator_name, "source": "ddg", "page_url": job["page_url"],
-                           "local_path": str(out_path) if ok else None, "ok": ok}
+                           "local_path": str(out_path) if ok else None, "ok": ok,
+                           "source_url": job.get("url") or job.get("page_url")}
 
 
 # ── Term → research theme mapping ────────────────────────────────────────────

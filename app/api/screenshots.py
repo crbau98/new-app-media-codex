@@ -442,17 +442,17 @@ def browse_screenshots(
                     valid.append(s)
                     if len(valid) >= effective_limit:
                         break
-                elif not _looks_like_female_content(s) and s.get("page_url"):
-                    # File not on disk — check if page_url is a direct media URL
-                    page_url = s["page_url"]
-                    ext = page_url.split("?")[0].rsplit(".", 1)[-1].lower()
+                elif not _looks_like_female_content(s):
+                    # File not on disk — check if source_url / page_url is a direct media URL
+                    media_url = s.get("source_url") or s.get("page_url") or ""
+                    ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
                     if ext in ("mp4", "webm", "mov"):
-                        s["local_url"] = page_url
+                        s["local_url"] = media_url
                         s["preview_url"] = None
                         valid.append(s)
                     elif ext in ("jpg", "jpeg", "png", "gif", "webp"):
                         from urllib.parse import quote
-                        s["local_url"] = f"/api/screenshots/proxy-media?url={quote(page_url, safe='')}"
+                        s["local_url"] = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
                         s["preview_url"] = None
                         valid.append(s)
                     # else: page_url is a webpage, skip — can't display it
@@ -538,6 +538,7 @@ def _run_capture(app_state):
                 page_url=result["page_url"],
                 local_path=result["local_path"],
                 performer_id=performer_id,
+                source_url=result.get("source_url"),
             )
             try:
                 _queue_preview_generation(app_state, Path(result["local_path"]))
@@ -1748,6 +1749,7 @@ async def capture_videos(request: Request, background_tasks: BackgroundTasks) ->
                             source=r["source"],
                             page_url=r["page_url"],
                             local_path=r["local_path"],
+                            source_url=r.get("source_url"),
                         )
                         total += 1
             except Exception as e:

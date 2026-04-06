@@ -581,6 +581,7 @@ class ResearchService:
                     page_url=result["page_url"],
                     local_path=result["local_path"],
                     performer_id=performer_id,
+                    source_url=result.get("source_url"),
                 )
                 captured += 1
 
