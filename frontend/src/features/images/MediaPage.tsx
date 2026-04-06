@@ -3583,69 +3583,85 @@ export function MediaPage() {
         </div>
       )}
 
-      {/* ── Grid view: flat (virtualized) ───────────────────────────────── */}
+      {/* ── Grid view: flat ─────────────────────────────────────────────── */}
       {tab !== "creators" && !isLoading && visibleShots.length > 0 && viewMode === "grid" && !showGrouped && (
-        <div
-          style={{
-            height: `${flatGridVirtualizer.getTotalSize()}px`,
-            position: "relative",
-          }}
-          className="py-2"
-        >
-          {flatGridVirtualizer.getVirtualItems().map((virtualRow) => {
-            const rowShots = flatGridRows[virtualRow.index]
-            if (!rowShots) return null
-            return (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={flatGridVirtualizer.measureElement}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualRow.start - flatGridVirtualizer.options.scrollMargin}px)`,
-                }}
-                className={cn("grid", gridClass)}
-              >
-                {renderGrid(rowShots)}
-              </div>
-            )
-          })}
-        </div>
+        flatGridRows.length <= 30 ? (
+          <div className="py-2 space-y-1">
+            {flatGridRows.map((rowShots, i) => (
+              <div key={i} className={cn("grid", gridClass)}>{renderGrid(rowShots)}</div>
+            ))}
+          </div>
+        ) : (
+          <div
+            style={{
+              height: `${flatGridVirtualizer.getTotalSize()}px`,
+              position: "relative",
+            }}
+            className="py-2"
+          >
+            {flatGridVirtualizer.getVirtualItems().map((virtualRow) => {
+              const rowShots = flatGridRows[virtualRow.index]
+              if (!rowShots) return null
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={flatGridVirtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start - flatGridVirtualizer.options.scrollMargin}px)`,
+                  }}
+                  className={cn("grid", gridClass)}
+                >
+                  {renderGrid(rowShots)}
+                </div>
+              )
+            })}
+          </div>
+        )
       )}
 
       {/* ── List view ────────────────────────────────────────────────────── */}
       {tab !== "creators" && !isLoading && visibleShots.length > 0 && viewMode === "list" && (
-        <div
-          className="px-2 py-2"
-          style={{
-            height: `${listVirtualizer.getTotalSize()}px`,
-            position: "relative",
-          }}
-        >
-          {listVirtualizer.getVirtualItems().map((virtualRow) => {
-            const shot = visibleShots[virtualRow.index]
-            if (!shot) return null
-            return (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={listVirtualizer.measureElement}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualRow.start - listVirtualizer.options.scrollMargin}px)`,
-                }}
-              >
-                {renderListItem(shot)}
-              </div>
-            )
-          })}
-        </div>
+        visibleShots.length <= 100 ? (
+          <div className="px-2 py-2 space-y-0.5">
+            {visibleShots.map((shot) => (
+              <div key={shot.id}>{renderListItem(shot)}</div>
+            ))}
+          </div>
+        ) : (
+          <div
+            className="px-2 py-2"
+            style={{
+              height: `${listVirtualizer.getTotalSize()}px`,
+              position: "relative",
+            }}
+          >
+            {listVirtualizer.getVirtualItems().map((virtualRow) => {
+              const shot = visibleShots[virtualRow.index]
+              if (!shot) return null
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={listVirtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start - listVirtualizer.options.scrollMargin}px)`,
+                  }}
+                >
+                  {renderListItem(shot)}
+                </div>
+              )
+            })}
+          </div>
+        )
       )}
 
       {/* ── Timeline view ────────────────────────────────────────────────── */}
