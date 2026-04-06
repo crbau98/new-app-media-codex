@@ -43,7 +43,7 @@ export const MediaListItem = memo(function MediaListItem({ shot, onClick, favori
       onFocus={onHover}
       onContextMenu={onContextMenu}
       className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/[0.04] border border-transparent hover:border-white/8"
-      style={{ contentVisibility: "auto", containIntrinsicSize: "72px" }}
+      style={{/* contentVisibility removed — conflicts with virtualizer */}}
     >
       {/* Thumbnail */}
       <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-black/30">
