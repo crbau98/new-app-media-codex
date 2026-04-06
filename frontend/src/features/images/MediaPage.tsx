@@ -3544,43 +3544,62 @@ export function MediaPage() {
 
       {/* ── Grid view: grouped by term ─────────────────────────────────── */}
       {tab !== "creators" && !isLoading && visibleShots.length > 0 && viewMode === "grid" && showGrouped && (
-        <div
-          className="py-2"
-          style={{
-            height: `${sectionVirtualizer.getTotalSize()}px`,
-            position: "relative",
-          }}
-        >
-          {sectionVirtualizer.getVirtualItems().map((virtualSection) => {
-            const section = activeSectionEntries[virtualSection.index]
-            if (!section) return null
-            const { label: groupTerm, shots } = section
-            return (
-            <section
-              key={groupTerm}
-              data-index={virtualSection.index}
-              ref={sectionVirtualizer.measureElement}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${virtualSection.start - sectionVirtualizer.options.scrollMargin}px)`,
-              }}
-            >
-              <button
-                onClick={() => setTerm(groupTerm)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
+        activeSectionEntries.length <= 20 ? (
+          <div className="py-2">
+            {activeSectionEntries.map(({ label: groupTerm, shots }) => (
+              <section key={groupTerm}>
+                <button
+                  onClick={() => setTerm(groupTerm)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
+                >
+                  {groupTerm}
+                  <span className="text-xs font-normal text-[var(--color-text-muted)]">{shots.length}</span>
+                </button>
+                <div className={cn("grid", gridClass)}>
+                  {renderGrid(shots)}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <div
+            className="py-2"
+            style={{
+              height: `${sectionVirtualizer.getTotalSize()}px`,
+              position: "relative",
+            }}
+          >
+            {sectionVirtualizer.getVirtualItems().map((virtualSection) => {
+              const section = activeSectionEntries[virtualSection.index]
+              if (!section) return null
+              const { label: groupTerm, shots } = section
+              return (
+              <section
+                key={groupTerm}
+                data-index={virtualSection.index}
+                ref={sectionVirtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualSection.start - sectionVirtualizer.options.scrollMargin}px)`,
+                }}
               >
-                {groupTerm}
-                <span className="text-xs font-normal text-[var(--color-text-muted)]">{shots.length}</span>
-              </button>
-              <div className={cn("grid", gridClass)}>
-                {renderGrid(shots)}
-              </div>
-            </section>
-          )})}
-        </div>
+                <button
+                  onClick={() => setTerm(groupTerm)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
+                >
+                  {groupTerm}
+                  <span className="text-xs font-normal text-[var(--color-text-muted)]">{shots.length}</span>
+                </button>
+                <div className={cn("grid", gridClass)}>
+                  {renderGrid(shots)}
+                </div>
+              </section>
+            )})}
+          </div>
+        )
       )}
 
       {/* ── Grid view: flat ─────────────────────────────────────────────── */}
