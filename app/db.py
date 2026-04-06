@@ -2252,12 +2252,7 @@ class Database:
             "performers.platform, performers.avatar_url, performers.avatar_local, "
             "performers.is_favorite, performers.media_count"
             if compact
-            else "performers.id, performers.username, performers.display_name, "
-                 "performers.platform, performers.avatar_url, performers.avatar_local, "
-                 "performers.is_favorite, performers.media_count, performers.follower_count, "
-                 "performers.status, performers.subscription_price, performers.subscription_active, "
-                 "performers.subscription_expires, performers.is_subscribed, performers.tags, "
-                 "performers.created_at, performers.checked_at"
+            else "performers.*"
         )
         search_norm = search.strip().lower() if search else ""
         cache_key = (
