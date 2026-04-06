@@ -1844,7 +1844,17 @@ export function MediaPage() {
     return rows
   }, [visibleShots, viewMode, showGrouped, colCount])
 
-  const scrollMargin = virtualizerContainerRef.current?.offsetTop ?? 0
+  const [scrollMargin, setScrollMargin] = useState(0)
+  useEffect(() => {
+    const el = virtualizerContainerRef.current
+    if (el) {
+      const measure = () => setScrollMargin(el.offsetTop)
+      measure()
+      // Re-measure after layout settles
+      const raf = requestAnimationFrame(measure)
+      return () => cancelAnimationFrame(raf)
+    }
+  }, [visibleShots.length, viewMode, tab])
 
   const flatGridVirtualizer = useWindowVirtualizer({
     count: flatGridRows.length,
