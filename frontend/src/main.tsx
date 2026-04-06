@@ -17,8 +17,11 @@ const QUERY_DEFAULTS = {
   STALE_TIME: 60_000,         // 1 minute
   GC_TIME: 10 * 60_000,      // 10 minutes
   MAX_RETRIES: 2,
+  MAX_RETRIES_503: 5,        // more retries for 503 (Render cold start)
   BASE_RETRY_DELAY: 750,     // ms
+  BASE_RETRY_DELAY_503: 2_000, // longer base delay for 503
   MAX_RETRY_DELAY: 10_000,   // ms
+  MAX_RETRY_DELAY_503: 30_000, // allow longer waits for cold starts
 } as const
 
 // ââ Safe localStorage ââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -64,9 +67,16 @@ function isRetryableQueryError(error: unknown): boolean {
   return RETRYABLE_MESSAGE_RE.test(String(candidate.message ?? ''))
 }
 
-/** Exponential backoff with jitter to prevent thundering herd */
-function retryDelay(attempt: number): number {
-  const base = Math.min(QUERY_DEFAULTS.BASE_RETRY_DELAY * 2 ** attempt, QUERY_DEFAULTS.MAX_RETRY_DELAY)
+/** Check if error is a 503 Service Unavailable (Render cold start) */
+function is503(error: unknown): boolean {
+  return !!error && typeof error === 'object' && (error as ApiError).status === 503
+}
+
+/** Exponential backoff with jitter; longer delays for 503 cold starts */
+function retryDelay(attempt: number, error: unknown): number {
+  const baseDelay = is503(error) ? QUERY_DEFAULTS.BASE_RETRY_DELAY_503 : QUERY_DEFAULTS.BASE_RETRY_DELAY
+  const maxDelay = is503(error) ? QUERY_DEFAULTS.MAX_RETRY_DELAY_503 : QUERY_DEFAULTS.MAX_RETRY_DELAY
+  const base = Math.min(baseDelay * 2 ** attempt, maxDelay)
   const jitter = base * 0.2 * Math.random()
   return base + jitter
 }
@@ -110,10 +120,14 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: QUERY_DEFAULTS.STALE_TIME,
       gcTime: QUERY_DEFAULTS.GC_TIME,
-      retry: (failureCount, error) =>
-        isRetryableQueryError(error) && failureCount < QUERY_DEFAULTS.MAX_RETRIES,
+      retry: (failureCount, error) => {
+        if (!isRetryableQueryError(error)) return false
+        const maxRetries = is503(error) ? QUERY_DEFAULTS.MAX_RETRIES_503 : QUERY_DEFAULTS.MAX_RETRIES
+        return failureCount < maxRetries
+      },
       retryDelay,
       refetchOnWindowFocus: false,
+      placeholderData: (prev: unknown) => prev, // show stale data while retrying
       refetchOnReconnect: 'always',
       refetchOnMount: false,
       refetchIntervalInBackground: false,

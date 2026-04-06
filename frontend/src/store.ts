@@ -204,6 +204,8 @@ interface AppState {
   // Connectivity
   isOnline: boolean
   setOnline: (v: boolean) => void
+  apiUnreachable: boolean
+  setApiUnreachable: (v: boolean) => void
 
   // Sidebar
   sidebarCollapsed: boolean
@@ -330,6 +332,8 @@ export const useAppStore = create<AppState>((set) => ({
   // Connectivity – listeners registered below
   isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
   setOnline: (isOnline) => set({ isOnline }),
+  apiUnreachable: false,
+  setApiUnreachable: (apiUnreachable) => set({ apiUnreachable }),
 
   // Sidebar – persisted to localStorage
   sidebarCollapsed: safeGetItem(STORAGE_KEYS.SIDEBAR) === 'true',

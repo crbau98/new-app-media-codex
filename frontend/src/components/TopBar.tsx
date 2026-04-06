@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense, startTransition } from "react"
+import { useIsFetching } from "@tanstack/react-query"
 import { useAppStore } from "../store"
 import { useAppShellSummary } from "@/hooks/useAppShellSummary"
 import { api, type Performer } from "../lib/api"
@@ -71,6 +72,7 @@ function highlightMatch(text: string, query: string): React.ReactNode {
 }
 
 export function TopBar() {
+  const isFetching = useIsFetching()
   const activeView = useAppStore((s) => s.activeView)
   const theme = useAppStore((s) => s.theme)
   const toggleTheme = useAppStore((s) => s.toggleTheme)
@@ -276,6 +278,21 @@ export function TopBar() {
 
   return (
     <>
+      {isFetching > 0 && (
+        <div className="fixed inset-x-0 top-0 z-[55] h-0.5 overflow-hidden" aria-hidden="true">
+          <div
+            className="h-full animate-[topbar-loading_1.5s_ease-in-out_infinite]"
+            style={{ background: "var(--color-accent, #7cc6ff)" }}
+          />
+          <style>{`
+            @keyframes topbar-loading {
+              0% { width: 0%; margin-left: 0%; }
+              50% { width: 60%; margin-left: 20%; }
+              100% { width: 0%; margin-left: 100%; }
+            }
+          `}</style>
+        </div>
+      )}
       <header
         className={cn(
           "fixed inset-x-0 top-0 z-20 px-3 pt-3 transition-[left] duration-200 sm:px-5 lg:px-6",

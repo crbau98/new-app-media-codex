@@ -7,6 +7,7 @@ const AUTO_DESCRIBE_KEY = "auto-describe-screenshots"
 import { useAppStore } from "@/store"
 import { Spinner } from "@/components/Spinner"
 import { SkeletonGrid } from "@/components/Skeleton"
+import { EmptyState } from "@/components/EmptyState"
 import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
 import { getMediaDebugLabel, getScreenshotMediaSrc, getScreenshotPreviewSrc } from "@/lib/media"
@@ -525,6 +526,7 @@ const CreatorCard = memo(function CreatorCard({
 
 const MediaCard = memo(function MediaCard({
   shot,
+  index = 0,
   onClick,
   batchMode,
   selected,
@@ -538,6 +540,7 @@ const MediaCard = memo(function MediaCard({
   onNavigateToPerformer,
 }: {
   shot: Screenshot
+  index?: number
   onClick: () => void
   onHover?: () => void
   batchMode: boolean
@@ -568,9 +571,10 @@ const MediaCard = memo(function MediaCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); batchMode ? onSelect() : onClick() } }}
       onContextMenu={onContextMenu}
       className={cn(
-        "group relative cursor-pointer overflow-hidden bg-black/20 aspect-square",
+        "group relative cursor-pointer overflow-hidden bg-black/20 aspect-square animate-[fade-in-up_300ms_ease-out_both]",
         selected && "ring-2 ring-blue-500"
       )}
+      style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
     >
       <div style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
       {!previewSrc || broken ? (
@@ -1479,7 +1483,7 @@ export function MediaPage() {
     return p
   }, [advancedFilters, activeTagFilter])
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error: mediaError, refetch: mediaRefetch } = useInfiniteQuery({
     queryKey: ["screenshots", term, sourceForQuery, advQueryParams, mediaCreatorId, tab],
     queryFn: ({ pageParam = 0 }) =>
       api.browseScreenshots({
@@ -2452,7 +2456,7 @@ export function MediaPage() {
     }
   }
 
-  function renderCard(shot: Screenshot) {
+  function renderCard(shot: Screenshot, index = 0) {
     const src = getScreenshotMediaSrc(shot)
     const prefetchViewer = () => {
       if (src && isVideo(src)) void preloadInlineVideoPlayer()
@@ -2462,6 +2466,7 @@ export function MediaPage() {
       <MediaCard
         key={shot.id}
         shot={shot}
+        index={index}
         onClick={() => openMedia(shot)}
         onHover={prefetchViewer}
         batchMode={batchMode}
@@ -2503,9 +2508,10 @@ export function MediaPage() {
 
   function renderGrid(shots: Screenshot[]) {
     const items: React.ReactNode[] = []
-    for (const shot of shots) {
+    for (let i = 0; i < shots.length; i++) {
+      const shot = shots[i]
       // Insert inline video player after the expanded card
-      items.push(renderCard(shot))
+      items.push(renderCard(shot, i))
       if (expandedShot && shot.id === expandedVideoId) {
         items.push(
           <Suspense key={`vid-${shot.id}`} fallback={<InlineLoadingFallback className="col-span-full mx-2 my-2" label="Loading video player" />}>
@@ -3432,14 +3438,32 @@ export function MediaPage() {
         </div>
       )}
 
+      {/* ── Error state ────────────────────────────────────────────────── */}
+      {tab !== "creators" && mediaError && (
+        <EmptyState
+          icon="⚠️"
+          title="Couldn't load media"
+          description="The server is starting up. Try refreshing in a moment."
+          action={{ label: "Retry", onClick: () => mediaRefetch() }}
+        />
+      )}
+
       {/* ── Loading ──────────────────────────────────────────────────────── */}
-      {tab !== "creators" && isLoading && <SkeletonGrid count={10} />}
+      {tab !== "creators" && !mediaError && isLoading && <SkeletonGrid count={10} />}
 
       {/* ── Empty state ──────────────────────────────────────────────────── */}
-      {tab !== "creators" && !isLoading && visibleShots.length === 0 && (
-        <div className="mx-4 my-8 flex flex-col items-center justify-center gap-4 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,32,0.92),rgba(8,13,24,0.98))] px-6 py-20 text-center shadow-[0_24px_80px_rgba(0,0,0,0.24)]">
+      {tab !== "creators" && !isLoading && !mediaError && visibleShots.length === 0 && allShots.length === 0 && (
+        <EmptyState
+          icon="\ud83d\udcf7"
+          title="No media yet"
+          description="Run a capture or add creators to start collecting media"
+          action={{ label: capturing ? "Capturing..." : "Run capture", onClick: handleCapture }}
+        />
+      )}
+      {tab !== "creators" && !isLoading && visibleShots.length === 0 && allShots.length > 0 && (
+        <div className="mx-4 my-8 flex flex-col items-center justify-center gap-4 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,32,0.92),rgba(8,13,24,0.98))] px-6 py-20 text-center shadow-[0_24px_80px_rgba(0,0,0,0.24)] animate-[fade-in-up_400ms_ease-out]">
           <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-slate-400">
-            Empty view
+            No matches
           </div>
           <p className="max-w-lg text-sm leading-6 text-[var(--color-text-muted)]">
             {filterDescribed

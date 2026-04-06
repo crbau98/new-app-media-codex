@@ -5,6 +5,7 @@ import { cn } from "@/lib/cn"
 import { api, type Performer, type DiscoveredCreator, type CaptureQueueEntry } from "@/lib/api"
 import { useAppStore } from "@/store"
 import { Skeleton } from "@/components/Skeleton"
+import { EmptyState } from "@/components/EmptyState"
 import { PerformerProfile } from "./PerformerProfile"
 
 const PerformerAnalyticsPanel = lazy(() => import("./PerformerAnalyticsPanel").then((m) => ({ default: m.PerformerAnalyticsPanel })))
@@ -1747,7 +1748,7 @@ export default function PerformersPage() {
     return params
   }, [debouncedSearch, platformFilter, sort, favOnly, dueOnly, renewingOnly])
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["performers", queryParams],
     queryFn: () => api.browsePerformers(queryParams),
     staleTime: 30_000,
@@ -2227,7 +2228,14 @@ export default function PerformersPage() {
       )}
 
       {/* Grid / Table */}
-      {isLoading ? (
+      {error ? (
+        <EmptyState
+          icon="⚠️"
+          title="Couldn't load creators"
+          description="The server is starting up. Try refreshing in a moment."
+          action={{ label: "Retry", onClick: () => refetch() }}
+        />
+      ) : isLoading ? (
         tableView ? (
           <div className="overflow-hidden rounded-2xl border border-white/8">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -2242,13 +2250,12 @@ export default function PerformersPage() {
           </div>
         )
       ) : filteredPerformers.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-white/8 bg-white/[0.02] py-16">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mb-3 text-text-muted">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
-          </svg>
-          <p className="text-sm text-text-muted">No creators found</p>
-          <p className="mt-1 text-xs text-text-muted">Add your first creator to get started</p>
-        </div>
+        <EmptyState
+          icon="👤"
+          title="No creators yet"
+          description="Add creators to start tracking their content"
+          action={{ label: "Add Creator", onClick: () => runUiTransition(() => { setShowAdd(true); setShowImportUrl(false); setShowBulkImport(false) }) }}
+        />
       ) : tableView ? (
         <div className="overflow-hidden rounded-2xl border border-white/8">
           {/* Table header */}
