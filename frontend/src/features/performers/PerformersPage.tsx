@@ -47,57 +47,76 @@ function StatsBar({ onRenewingClick }: { onRenewingClick?: () => void }) {
 
   const stats = data
 
+  type StatCard = { label: string; value: number | string; borderClass: string; bgClass: string; labelClass: string; valueClass: string; onClick?: () => void; isButton?: boolean }
+
+  const cards: StatCard[] = [
+    { label: "Total", value: stats?.total ?? 0, borderClass: "border-white/[0.06]", bgClass: "bg-white/[0.03]", labelClass: "text-text-muted", valueClass: "text-text-primary" },
+    { label: "Watchlist", value: stats?.favorites ?? 0, borderClass: "border-white/[0.06]", bgClass: "bg-white/[0.03]", labelClass: "text-text-muted", valueClass: "text-text-primary" },
+    { label: "With Media", value: stats?.with_media ?? 0, borderClass: "border-white/[0.06]", bgClass: "bg-white/[0.03]", labelClass: "text-text-muted", valueClass: "text-text-primary" },
+    { label: "Subscribed", value: stats?.subscribed_count ?? 0, borderClass: "border-sky-500/15", bgClass: "bg-sky-500/[0.03]", labelClass: "text-sky-400/70", valueClass: "text-sky-300" },
+    { label: "Spend/mo", value: stats?.monthly_spend ? `$${stats.monthly_spend.toFixed(0)}` : 0, borderClass: "border-emerald-500/15", bgClass: "bg-emerald-500/[0.03]", labelClass: "text-emerald-400/70", valueClass: "text-emerald-300" },
+    {
+      label: "Renewing", value: stats?.renewing_soon_count ?? 0,
+      borderClass: (stats?.renewing_soon_count ?? 0) > 0 ? "border-orange-500/15" : "border-white/[0.06]",
+      bgClass: (stats?.renewing_soon_count ?? 0) > 0 ? "bg-orange-500/[0.03]" : "bg-white/[0.03]",
+      labelClass: (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-400/70" : "text-text-muted",
+      valueClass: (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-300" : "text-text-primary",
+      onClick: onRenewingClick, isButton: true,
+    },
+    {
+      label: "Stale", value: stats?.stale_count ?? 0,
+      borderClass: (stats?.stale_count ?? 0) > 0 ? "border-amber-500/15" : "border-white/[0.06]",
+      bgClass: (stats?.stale_count ?? 0) > 0 ? "bg-amber-500/[0.03]" : "bg-white/[0.03]",
+      labelClass: (stats?.stale_count ?? 0) > 0 ? "text-amber-400/70" : "text-text-muted",
+      valueClass: (stats?.stale_count ?? 0) > 0 ? "text-amber-300" : "text-text-primary",
+    },
+  ]
+
+  // Hide stats with zero or "--" values
+  const visibleCards = cards.filter((c) => {
+    if (typeof c.value === "number" && c.value === 0) return false
+    if (c.value === "--") return false
+    return true
+  })
+
+  if (visibleCards.length === 0) {
+    return (
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-center">
+        <p className="text-xs text-text-muted">No data yet</p>
+      </div>
+    )
+  }
+
   return (
     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-7">
-      <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
-        <p className="text-[10px] text-text-muted">Total</p>
-        <p className="mt-0.5 font-mono text-lg font-semibold text-text-primary">{stats?.total ?? 0}</p>
-      </div>
-      <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
-        <p className="text-[10px] text-text-muted">Watchlist</p>
-        <p className="mt-0.5 font-mono text-lg font-semibold text-text-primary">{stats?.favorites ?? 0}</p>
-      </div>
-      <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
-        <p className="text-[10px] text-text-muted">With Media</p>
-        <p className="mt-0.5 font-mono text-lg font-semibold text-text-primary">{stats?.with_media ?? 0}</p>
-      </div>
-      <div className="rounded-xl border border-sky-500/15 bg-sky-500/[0.03] px-3 py-2.5">
-        <p className="text-[10px] text-sky-400/70">Subscribed</p>
-        <p className="mt-0.5 font-mono text-lg font-semibold text-sky-300">{stats?.subscribed_count ?? 0}</p>
-      </div>
-      <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/[0.03] px-3 py-2.5">
-        <p className="text-[10px] text-emerald-400/70">Spend/mo</p>
-        <p className="mt-0.5 font-mono text-lg font-semibold text-emerald-300">
-          {stats?.monthly_spend ? `$${stats.monthly_spend.toFixed(0)}` : "--"}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={onRenewingClick}
-        className={cn(
-          "rounded-xl border px-3 py-2.5 text-left transition-opacity hover:opacity-80",
-          (stats?.renewing_soon_count ?? 0) > 0
-            ? "border-orange-500/15 bg-orange-500/[0.03]"
-            : "border-white/[0.06] bg-white/[0.03]"
-        )}
-        title="Filter by subscriptions renewing within 7 days"
-      >
-        <p className={cn("text-[10px]", (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-400/70" : "text-text-muted")}>Renewing</p>
-        <p className={cn("mt-0.5 font-mono text-lg font-semibold", (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-300" : "text-text-primary")}>
-          {stats?.renewing_soon_count ?? 0}
-        </p>
-      </button>
-      <div className={cn(
-        "rounded-xl border px-3 py-2.5",
-        (stats?.stale_count ?? 0) > 0
-          ? "border-amber-500/15 bg-amber-500/[0.03]"
-          : "border-white/[0.06] bg-white/[0.03]"
-      )}>
-        <p className={cn("text-[10px]", (stats?.stale_count ?? 0) > 0 ? "text-amber-400/70" : "text-text-muted")}>Stale</p>
-        <p className={cn("mt-0.5 font-mono text-lg font-semibold", (stats?.stale_count ?? 0) > 0 ? "text-amber-300" : "text-text-primary")}>
-          {stats?.stale_count ?? 0}
-        </p>
-      </div>
+      {visibleCards.map((c) => {
+        const inner = (
+          <>
+            <p className={cn("text-[10px]", c.labelClass)}>{c.label}</p>
+            <p className={cn("mt-0.5 font-mono text-lg font-semibold", c.valueClass)}>
+              {typeof c.value === "number" ? c.value : c.value}
+            </p>
+          </>
+        )
+        if (c.isButton) {
+          return (
+            <button
+              key={c.label}
+              type="button"
+              onClick={c.onClick}
+              className={cn("rounded-xl border px-3 py-2.5 text-left transition-opacity hover:opacity-80", c.borderClass, c.bgClass)}
+              title="Filter by subscriptions renewing within 7 days"
+            >
+              {inner}
+            </button>
+          )
+        }
+        return (
+          <div key={c.label} className={cn("rounded-xl border px-3 py-2.5", c.borderClass, c.bgClass)}>
+            {inner}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -792,11 +811,11 @@ const PerformerCard = memo(function PerformerCard({
         role="button"
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onSelect(performer.id) }}
-        className="w-full cursor-pointer p-4 text-left"
+        className="w-full cursor-pointer px-3 py-2.5 text-left"
       >
         <div className="flex items-start gap-3">
           {/* Avatar */}
-          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-white/10">
+          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-white/10">
             {selectMode && (
               <button
                 onClick={(e) => { e.stopPropagation(); onToggleSelect?.(performer.id) }}
@@ -996,7 +1015,7 @@ const PerformerCard = memo(function PerformerCard({
       )}
 
       {/* Quick action bar */}
-      <div className="flex items-center justify-between border-t border-white/5 px-4 py-2 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="flex items-center justify-between border-t border-white/5 px-3 py-1.5 opacity-0 transition-opacity group-hover:opacity-100">
         <div className="flex gap-2">
           {performer.reddit_username && (
             <a
@@ -1340,7 +1359,7 @@ function PerformerThumbs({ performerId, username, visible }: { performerId: numb
   if (shots.length === 0) return null
 
   return (
-    <div className="flex gap-1 px-4 pb-2.5">
+    <div className="flex gap-1 px-3 pb-2">
       {shots.map((s) => (
         <button
           key={s.id}
@@ -1559,6 +1578,106 @@ function PerformerRow({
   )
 }
 
+/* ── More Menu (overflow actions) ─────────────────────────────────────── */
+
+function MoreMenu({
+  showBilling,
+  showAnalytics,
+  selectMode,
+  onBilling,
+  onAnalytics,
+  onImportUrl,
+  onBulkImport,
+  exportUrl,
+  onSelect,
+  onCaptureStale,
+  onCaptureAll,
+}: {
+  showBilling: boolean
+  showAnalytics: boolean
+  selectMode: boolean
+  watchlistCount: number
+  watchlistCapturing: boolean
+  captureAllRunning: boolean
+  onBilling: () => void
+  onAnalytics: () => void
+  onImportUrl: () => void
+  onBulkImport: () => void
+  onExportCsv: () => void
+  exportUrl: string
+  onSelect: () => void
+  onCaptureStale: () => void
+  onCaptureAll: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [open])
+
+  const items: { label: string; onClick: () => void; active?: boolean; href?: string }[] = [
+    { label: showBilling ? "Hide Billing" : "Billing", onClick: onBilling, active: showBilling },
+    { label: showAnalytics ? "Hide Analytics" : "Analytics", onClick: onAnalytics, active: showAnalytics },
+    { label: "Import URL", onClick: onImportUrl },
+    { label: "Bulk Import", onClick: onBulkImport },
+    { label: "Export CSV", onClick: () => {}, href: exportUrl },
+    { label: selectMode ? "Exit Select" : "Select", onClick: onSelect, active: selectMode },
+    { label: "Capture Stale", onClick: onCaptureStale },
+    { label: "Capture All", onClick: onCaptureAll },
+  ]
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "flex h-8 w-8 items-center justify-center rounded-xl border transition-colors",
+          open ? "border-white/20 bg-white/10 text-text-primary" : "border-white/10 text-text-muted hover:text-text-primary hover:bg-white/5"
+        )}
+        aria-label="More actions"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-xl border border-white/10 bg-[#0d1a30] py-1 shadow-2xl">
+          {items.map((item) =>
+            item.href ? (
+              <a
+                key={item.label}
+                href={item.href}
+                download="creators.csv"
+                onClick={() => setOpen(false)}
+                className="block px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-white/5 hover:text-text-primary"
+              >
+                {item.label}
+              </a>
+            ) : (
+              <button
+                key={item.label}
+                onClick={() => { item.onClick(); setOpen(false) }}
+                className={cn(
+                  "block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-white/5",
+                  item.active ? "text-accent" : "text-text-secondary hover:text-text-primary"
+                )}
+              >
+                {item.label}
+              </button>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ── Main Page ─────────────────────────────────────────────────────────── */
 
 export default function PerformersPage() {
@@ -1584,6 +1703,7 @@ export default function PerformersPage() {
   const [queueReady, setQueueReady] = useState(false)
   const [tableView, setTableView] = useState(() => localStorage.getItem("performers-view") === "table")
   const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [showTagCloud, setShowTagCloud] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const focusedCardRef = useRef<HTMLDivElement>(null)
 
@@ -1877,125 +1997,58 @@ export default function PerformersPage() {
   }, [focusedIdx])
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6 pb-24">
+    <div className="mx-auto max-w-6xl space-y-4 p-6 pb-24">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-text-primary">Creators</h1>
-          <p className="mt-1 text-sm text-text-secondary">Track and manage content creators</p>
+      <div className="flex items-center gap-3">
+        <h1 className="text-lg font-semibold text-text-primary">Creators</h1>
+        <div className="relative ml-auto">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search... (/)"
+            className="w-44 rounded-xl border border-white/10 bg-white/5 py-1.5 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+          />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
-              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-            </svg>
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search creators... (/)"
-              className="w-48 rounded-xl border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
-            />
-          </div>
-          <button
-            onClick={() => runUiTransition(() => { setShowBilling(!showBilling); setShowAnalytics(false) })}
-            className={cn(
-              "rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
-              showBilling
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                : "border-white/10 text-text-secondary hover:text-text-primary"
-            )}
-          >
-            {showBilling ? "Hide Billing" : "Billing"}
-          </button>
-          <button
-            onClick={() => runUiTransition(() => { setShowAnalytics(!showAnalytics); setShowBilling(false) })}
-            className={cn(
-              "rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
-              showAnalytics
-                ? "border-accent/40 bg-accent/15 text-accent"
-                : "border-white/10 text-text-secondary hover:text-text-primary"
-            )}
-          >
-            {showAnalytics ? "Hide Analytics" : "Analytics"}
-          </button>
-          <button
-            onClick={() => runUiTransition(() => setShowDiscover(true))}
-            className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
-          >
-            Discover
-          </button>
-          <button
-            onClick={() => runUiTransition(() => { setShowImportUrl(!showImportUrl); setShowBulkImport(false); setShowAdd(false) })}
-            className="rounded-xl border border-white/10 px-3 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary"
-          >
-            Import URL
-          </button>
-          <button
-            onClick={() => runUiTransition(() => { setShowBulkImport(!showBulkImport); setShowImportUrl(false); setShowAdd(false) })}
-            className="rounded-xl border border-white/10 px-3 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary"
-          >
-            Bulk Import
-          </button>
-          <a
-            href={api.exportPerformersUrl()}
-            download="creators.csv"
-            className="rounded-xl border border-white/10 px-3 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary"
-          >
-            Export CSV
-          </a>
-          <button
-            onClick={() => runUiTransition(() => { setSelectMode((v) => !v); setSelectedIds(new Set()) })}
-            className={cn(
-              "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm transition-colors",
-              selectMode
-                ? "border-accent/40 bg-accent/10 text-accent"
-                : "border-white/10 text-text-secondary hover:text-text-primary"
-            )}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>
-            Select
-          </button>
-          <button
-            onClick={() => {
-              api.captureStale().then((r) => {
-                addToast(`Queued ${r.queued} stale creators for capture`, "success")
-                qcMain.invalidateQueries({ queryKey: ["capture-queue"] })
-              }).catch(() => addToast("Failed to queue stale captures", "error"))
-            }}
-            className="flex items-center gap-1.5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm text-amber-400 transition-colors hover:bg-amber-500/10"
-            title="Capture all creators not checked in 7+ days"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            Capture Stale
-          </button>
-          {watchlistCount > 0 && (
-            <button
-              onClick={handleCaptureWatchlist}
-              disabled={watchlistCapturing}
-              title={`Capture content for all ${watchlistCount} favorited creators`}
-              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50 whitespace-nowrap"
-            >
-              {watchlistCapturing ? "Capturing…" : `♥ Capture ${watchlistCount}`}
-            </button>
-          )}
-          <button
-            onClick={handleCaptureAll}
-            disabled={captureAllRunning}
-            title="Capture fresh content for all active creators"
-            className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-sm font-medium text-violet-300 transition-colors hover:bg-violet-500/20 disabled:opacity-50 whitespace-nowrap"
-          >
-            {captureAllRunning ? "Queuing…" : "Capture All"}
-          </button>
-          <button
-            onClick={() => runUiTransition(() => { setShowAdd(!showAdd); setShowImportUrl(false); setShowBulkImport(false) })}
-            className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-            data-add-performer
-          >
-            {showAdd ? "Close" : "Add Creator"}
-          </button>
-        </div>
+        <button
+          onClick={() => runUiTransition(() => setShowDiscover(true))}
+          className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
+        >
+          Discover
+        </button>
+        <button
+          onClick={() => runUiTransition(() => { setShowAdd(!showAdd); setShowImportUrl(false); setShowBulkImport(false) })}
+          className="rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+          data-add-performer
+        >
+          {showAdd ? "Close" : "Add Creator"}
+        </button>
+        <MoreMenu
+          showBilling={showBilling}
+          showAnalytics={showAnalytics}
+          selectMode={selectMode}
+          watchlistCount={watchlistCount}
+          watchlistCapturing={watchlistCapturing}
+          captureAllRunning={captureAllRunning}
+          onBilling={() => runUiTransition(() => { setShowBilling(!showBilling); setShowAnalytics(false) })}
+          onAnalytics={() => runUiTransition(() => { setShowAnalytics(!showAnalytics); setShowBilling(false) })}
+          onImportUrl={() => runUiTransition(() => { setShowImportUrl(!showImportUrl); setShowBulkImport(false); setShowAdd(false) })}
+          onBulkImport={() => runUiTransition(() => { setShowBulkImport(!showBulkImport); setShowImportUrl(false); setShowAdd(false) })}
+          onExportCsv={() => {}}
+          exportUrl={api.exportPerformersUrl()}
+          onSelect={() => runUiTransition(() => { setSelectMode((v) => !v); setSelectedIds(new Set()) })}
+          onCaptureStale={() => {
+            api.captureStale().then((r) => {
+              addToast(`Queued ${r.queued} stale creators for capture`, "success")
+              qcMain.invalidateQueries({ queryKey: ["capture-queue"] })
+            }).catch(() => addToast("Failed to queue stale captures", "error"))
+          }}
+          onCaptureAll={handleCaptureAll}
+        />
       </div>
 
       {/* Discovery modal */}
@@ -2169,19 +2222,31 @@ export default function PerformersPage() {
         </div>
       </div>
 
-      {/* Tag filter strip */}
+      {/* Tag filter strip — collapsed by default */}
       {tagCloud.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           {tagFilter && (
             <button
-            onClick={() => runUiTransition(() => setTagFilter(null))}
+              onClick={() => runUiTransition(() => setTagFilter(null))}
               className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[11px] font-medium text-accent hover:bg-accent/20 transition-colors"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
               {tagFilter}
             </button>
           )}
-          {tagCloud
+          <button
+            onClick={() => setShowTagCloud((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+              showTagCloud
+                ? "border-white/15 bg-white/5 text-text-secondary"
+                : "border-white/8 bg-white/[0.03] text-text-muted hover:border-white/15 hover:text-text-secondary"
+            )}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={cn("transition-transform", showTagCloud ? "rotate-0" : "-rotate-90")}><path d="M6 9l6 6 6-6"/></svg>
+            Tags ({tagCloud.length})
+          </button>
+          {showTagCloud && tagCloud
             .filter((t) => t.tag !== tagFilter)
             .map(({ tag, count }) => (
               <button
@@ -2257,17 +2322,17 @@ export default function PerformersPage() {
         tableView ? (
           <div className="overflow-hidden rounded-2xl border border-white/8">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="animate-[fade-in-up_300ms_ease-out_both]" style={{ animationDelay: `${i * 50}ms` }}>
+              <div key={i} className="animate-[slideUp_300ms_ease-out_both]" style={{ animationDelay: `${i * 50}ms` }}>
                 <Skeleton variant="card" height="44px" />
               </div>
             ))}
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 9 }).map((_, i) => (
               <div
                 key={i}
-                className="h-40 rounded-xl border border-white/8 bg-white/[0.03] animate-[fade-in-up_300ms_ease-out_both]"
+                className="h-40 rounded-xl border border-white/8 bg-white/[0.03] animate-[slideUp_300ms_ease-out_both]"
                 style={{ animationDelay: `${i * 50}ms` }}
               >
                 <div className="flex gap-3 p-4">
@@ -2335,11 +2400,11 @@ export default function PerformersPage() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {performers.map((p, idx) => (
             <div
               key={p.id}
-              className="animate-[fade-in-up_300ms_ease-out_both]"
+              className="animate-[slideUp_300ms_ease-out_both]"
               style={{ animationDelay: `${Math.min(idx * 30, 600)}ms` }}
             >
               <PerformerCard

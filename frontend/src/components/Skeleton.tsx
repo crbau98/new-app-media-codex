@@ -134,7 +134,7 @@ export function SkeletonGrid({ count = 12, className }: { count?: number; classN
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className={cn('aspect-square skeleton-grid-tile', shimmerClass, 'animate-[fade-in-up_400ms_ease-out_both]')}
+          className={cn('aspect-square skeleton-grid-tile', shimmerClass, 'animate-[slideUp_400ms_ease-out_both]')}
           style={{ animationDelay: `${i * 50}ms` }}
         />
       ))}

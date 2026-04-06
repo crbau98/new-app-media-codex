@@ -164,7 +164,7 @@ function TelegramVideosTab() {
               onClick={() => setPlayingMedia(media)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPlayingMedia(media) } }}
               aria-label={`Play video: ${media.caption || media.channel_username}`}
-              className="card-lift group panel-surface relative cursor-pointer overflow-hidden rounded-[24px]"
+              className="content-card-interactive group panel-surface relative cursor-pointer overflow-hidden rounded-[24px]"
             >
               <div className="relative aspect-[4/5] flex items-center justify-center bg-black/40">
                 {/* Play button overlay */}

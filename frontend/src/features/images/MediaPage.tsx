@@ -210,13 +210,13 @@ function getTimelineGroup(dateStr: string | undefined): string {
 
 const GRID_CLASSES: Record<GridDensity, string> = {
   compact: "grid-cols-4 sm:grid-cols-5 lg:grid-cols-7 gap-0.5",
-  normal: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1",
+  normal: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-4 gap-1",
   spacious: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2",
 }
 
 const GRID_COLS: Record<GridDensity, number> = {
   compact: 7,
-  normal: 5,
+  normal: 4,
   spacious: 4,
 }
 
@@ -303,21 +303,12 @@ function pushViewHistory(id: number) {
 function MediaStatsBar({ stats }: { stats: MediaStatsPayload | undefined }) {
   if (!stats) return null
   return (
-    <div className="hide-scrollbar flex items-center gap-1.5 overflow-x-auto pb-2 text-[11px] text-text-muted">
-      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.05] px-2.5 py-1">
+    <div className="hide-scrollbar flex items-center gap-1 overflow-x-auto px-4 py-1 text-[10px] text-text-muted">
+      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.04] px-2 py-0.5">
         <strong className="font-mono text-text-primary">{stats.total.toLocaleString()}</strong> total
       </span>
-      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.05] px-2.5 py-1">
-        <strong className="font-mono text-text-primary">{(stats.by_type.image ?? 0).toLocaleString()}</strong> img
-      </span>
-      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.05] px-2.5 py-1">
-        <strong className="font-mono text-text-primary">{(stats.by_type.video ?? 0).toLocaleString()}</strong> vid
-      </span>
-      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.05] px-2.5 py-1">
-        <strong className="font-mono text-text-primary">{stats.rated.toLocaleString()}</strong> rated
-      </span>
       {stats.recent_24h > 0 && (
-        <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent/10 px-2.5 py-1 text-accent">
+        <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-accent">
           +{stats.recent_24h} today
         </span>
       )}
@@ -338,6 +329,7 @@ const TermBrowser = memo(function TermBrowser({
 }) {
   const [termSearch, setTermSearch] = useState("")
   const [expanded, setExpanded] = useState(false)
+  const [sectionOpen, setSectionOpen] = useState(false)
   const deferredTermSearch = useDeferredValue(termSearch)
 
   if (terms.length === 0) return null
@@ -348,69 +340,81 @@ const TermBrowser = memo(function TermBrowser({
   const hasMore = filtered.length > 60 && !expanded
 
   return (
-    <div className="border-b border-white/5 px-4 py-2 space-y-1.5" style={{  }}>
-      <div className="flex items-center gap-2">
-        <span className="shrink-0 text-[10px] text-[var(--color-text-muted)]">Categories:</span>
-        <div className="relative">
-          <input
-            type="text"
-            value={termSearch}
-            onChange={(e) => setTermSearch(e.target.value)}
-            placeholder="Search categories…"
-            className="h-6 w-36 rounded-full border border-white/10 bg-black/20 px-2.5 text-[10px] text-[var(--color-text-primary)] placeholder:text-white/25 focus:outline-none focus:border-white/25"
-          />
-          {termSearch && (
-            <button
-              onClick={() => setTermSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 text-[10px]"
-            >
-              ×
-            </button>
-          )}
-        </div>
-        {activeTerm && (
-          <button
-            onClick={() => onSelect(null)}
-            className="shrink-0 rounded-full bg-[var(--color-accent)]/20 px-2.5 py-0.5 text-[10px] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/30 transition-colors"
-          >
-            Clear ×
-          </button>
-        )}
-        <span className="ml-auto text-[10px] text-white/20">{filtered.length} categories</span>
-      </div>
-      <div className="hide-scrollbar flex flex-wrap gap-1">
-        {visible.map(({ term, count }) => (
-          <button
-            key={term}
-            onClick={() => onSelect(activeTerm === term ? null : term)}
-            className={cn(
-              "shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] transition-colors",
-              activeTerm === term
-                ? "bg-[var(--color-accent)]/25 text-[var(--color-accent)] border border-[var(--color-accent)]/40"
-                : "bg-white/5 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--color-text-secondary)] border border-transparent"
+    <div className="border-b border-white/5 px-4 py-1.5">
+      <button
+        onClick={() => setSectionOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={cn("transition-transform", sectionOpen ? "rotate-0" : "-rotate-90")}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+        Categories ({terms.length})
+      </button>
+      {sectionOpen && (
+        <div className="mt-1.5 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <input
+                type="text"
+                value={termSearch}
+                onChange={(e) => setTermSearch(e.target.value)}
+                placeholder="Search categories…"
+                className="h-6 w-36 rounded-full border border-white/10 bg-black/20 px-2.5 text-[10px] text-[var(--color-text-primary)] placeholder:text-white/25 focus:outline-none focus:border-white/25"
+              />
+              {termSearch && (
+                <button
+                  onClick={() => setTermSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 text-[10px]"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            {activeTerm && (
+              <button
+                onClick={() => onSelect(null)}
+                className="shrink-0 rounded-full bg-[var(--color-accent)]/20 px-2.5 py-0.5 text-[10px] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/30 transition-colors"
+              >
+                Clear ×
+              </button>
             )}
-          >
-            {term}
-            <span className="ml-1 text-white/30">({count})</span>
-          </button>
-        ))}
-        {hasMore && (
-          <button
-            onClick={() => setExpanded(true)}
-            className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 border border-transparent transition-colors"
-          >
-            +{filtered.length - 60} more…
-          </button>
-        )}
-        {expanded && !lc && (
-          <button
-            onClick={() => setExpanded(false)}
-            className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 border border-transparent transition-colors"
-          >
-            Show less
-          </button>
-        )}
-      </div>
+            <span className="ml-auto text-[10px] text-white/20">{filtered.length} categories</span>
+          </div>
+          <div className="hide-scrollbar flex flex-wrap gap-1">
+            {visible.map(({ term, count }) => (
+              <button
+                key={term}
+                onClick={() => onSelect(activeTerm === term ? null : term)}
+                className={cn(
+                  "shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] transition-colors",
+                  activeTerm === term
+                    ? "bg-[var(--color-accent)]/25 text-[var(--color-accent)] border border-[var(--color-accent)]/40"
+                    : "bg-white/5 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--color-text-secondary)] border border-transparent"
+                )}
+              >
+                {term}
+                <span className="ml-1 text-white/30">({count})</span>
+              </button>
+            ))}
+            {hasMore && (
+              <button
+                onClick={() => setExpanded(true)}
+                className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 border border-transparent transition-colors"
+              >
+                +{filtered.length - 60} more…
+              </button>
+            )}
+            {expanded && !lc && (
+              <button
+                onClick={() => setExpanded(false)}
+                className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 border border-transparent transition-colors"
+              >
+                Show less
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 })
@@ -555,7 +559,7 @@ const MediaCard = memo(function MediaCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); batchMode ? onSelect() : onClick() } }}
       onContextMenu={onContextMenu}
       className={cn(
-        "group relative cursor-pointer overflow-hidden rounded-lg bg-white/5 aspect-square animate-[fade-in-up_300ms_ease-out_both]",
+        "group relative cursor-pointer overflow-hidden rounded-lg bg-white/5 aspect-square animate-[slideUp_300ms_ease-out_both]",
         selected && "ring-2 ring-blue-500"
       )}
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
@@ -2124,6 +2128,8 @@ export function MediaPage() {
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [heroCollapsed, setHeroCollapsed] = useState(true)
+  const [overflowMenuOpen, setOverflowMenuOpen] = useState(false)
+  const [filtersVisible, setFiltersVisible] = useState(false)
 
   // ── Keyboard ─────────────────────────────────────────────────────────────
 
@@ -2571,585 +2577,491 @@ export function MediaPage() {
         </Suspense>
       )}
 
-      <div className="px-4 pt-2">
-        <div className="hero-surface overflow-hidden rounded-2xl">
-          {/* Compact hero bar */}
-          <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
-            {/* Badge + title */}
-            <div className="flex items-center gap-2">
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/20 bg-sky-400/10 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.24em] text-sky-200/80">
-                Media Studio
-                <span className="rounded-full bg-white/10 px-1.5 py-0.5 tracking-normal text-[9px] text-white/60">{viewMode}</span>
+      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+      <div className="sticky top-14 z-20 px-4 py-2 backdrop-blur-xl">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0c1424]/80 px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+          {/* Search input */}
+          <div className="relative flex-1 max-w-md">
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+              placeholder="Search..."
+              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+              >
+                &times;
+              </button>
+            )}
+            {ftsSearching && (
+              <div className="absolute right-8 top-1/2 -translate-y-1/2"><Spinner /></div>
+            )}
+            {/* Recent searches dropdown */}
+            {searchFocused && !search && recentSearches.length > 0 && (
+              <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
+                <div className="px-3 py-1.5 border-b border-white/5 flex items-center justify-between">
+                  <span className="text-[10px] text-white/30 font-mono uppercase tracking-widest">Recent</span>
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); setRecentSearches([]); localStorage.removeItem("media-recent-searches") }}
+                    className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
+                  >
+                    clear
+                  </button>
+                </div>
+                {recentSearches.map((s) => (
+                  <button
+                    key={s}
+                    onMouseDown={(e) => { e.preventDefault(); setSearch(s) }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-white/30 shrink-0">
+                      <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.92"/>
+                    </svg>
+                    {s}
+                  </button>
+                ))}
               </div>
-              <button
-                onClick={() => setHeroCollapsed((v) => !v)}
-                className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-slate-400 transition-colors hover:bg-white/10"
-              >
-                {heroCollapsed ? "Expand" : "Collapse"}
-              </button>
-            </div>
+            )}
+            {showSearchSuggestions && searchSuggestions.length > 0 && (
+              <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
+                <div className="px-3 py-1.5 border-b border-white/5">
+                  <span className="text-[10px] text-white/30 font-mono uppercase tracking-widest">Jump to</span>
+                </div>
+                {searchSuggestions.map((suggestion) => (
+                  <button
+                    key={`${suggestion.type}-${suggestion.value}`}
+                    onMouseDown={(e) => { e.preventDefault(); applySearchSuggestion(suggestion) }}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                  >
+                    <span>
+                      <span className="mr-2 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/40">
+                        {suggestion.type}
+                      </span>
+                      {suggestion.value}
+                    </span>
+                    {suggestion.meta && <span className="text-[10px] text-white/35">{suggestion.meta}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-            {/* Inline stats */}
-            <div className="flex items-center gap-3 text-xs">
-              <span className="text-slate-400"><span className="font-medium text-white">{visibleShots.length.toLocaleString()}</span> visible</span>
-              <span className="text-slate-400"><span className="font-medium text-white">{favCount.toLocaleString()}</span> favs</span>
-              <span className="text-slate-400"><span className="font-medium text-white">{mediaStatsData?.with_performer?.toLocaleString?.() ?? "0"}</span> linked</span>
-              <span className="text-slate-400">seed: <span className="font-medium text-sky-200">{discoverySeedLabel}</span></span>
-            </div>
+          {/* Filters toggle */}
+          <button
+            onClick={() => setFiltersVisible((v) => !v)}
+            className={cn(
+              "rounded-lg px-2.5 py-1.5 text-xs transition-colors whitespace-nowrap",
+              filtersVisible || advancedOpen
+                ? "bg-blue-500/20 text-blue-400"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+            )}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block mr-1">
+              <line x1="4" y1="6" x2="20" y2="6" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="11" y1="18" x2="13" y2="18" />
+            </svg>
+            Filters{Object.values(advancedFilters).some((v) => v !== "" && v !== 0 && v !== null && v !== "any" && !(Array.isArray(v) && v.length === 0)) ? " *" : ""}
+          </button>
 
-            {/* Action buttons */}
-            <div className="ml-auto flex flex-wrap items-center gap-1.5">
-              {activeFilterPills.length > 0 ? activeFilterPills.map((pill) => (
-                <span key={pill} className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] text-slate-300">
-                  {pill}
-                </span>
-              )) : (
-                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] text-slate-400">
-                  No filters
-                </span>
+          {/* Sort dropdown */}
+          <select
+            value={sortOrder}
+            onChange={(e) => {
+              const v = e.target.value as SortOrder
+              setSortOrder(v)
+              localStorage.setItem("media-sort-order", v)
+            }}
+            className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs text-[var(--color-text-secondary)]"
+            aria-label="Sort order"
+          >
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="rating">Top Rated</option>
+            <option value="az">A-Z</option>
+            <option value="random">Random</option>
+          </select>
+
+          {/* View mode toggle */}
+          <div className="flex rounded-lg border border-white/10 bg-black/20 overflow-hidden">
+            <button
+              onClick={() => handleViewModeChange("grid")}
+              title="Grid view"
+              className={cn(
+                "flex items-center justify-center px-2 py-1.5 transition-colors",
+                viewMode === "grid" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
               )}
-              {activeFilterPills.length > 0 && (
-                <button
-                  onClick={clearMediaFilters}
-                  className="rounded-full border border-white/12 bg-white/6 px-2.5 py-0.5 text-[11px] font-medium text-white/80 transition-colors hover:bg-white/10"
-                >
-                  Reset
-                </button>
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+                <rect x="0" y="0" width="4" height="4" rx="0.5" />
+                <rect x="5" y="0" width="4" height="4" rx="0.5" />
+                <rect x="10" y="0" width="4" height="4" rx="0.5" />
+                <rect x="0" y="5" width="4" height="4" rx="0.5" />
+                <rect x="5" y="5" width="4" height="4" rx="0.5" />
+                <rect x="10" y="5" width="4" height="4" rx="0.5" />
+              </svg>
+            </button>
+            <button
+              onClick={() => handleViewModeChange("list")}
+              title="List view"
+              className={cn(
+                "flex items-center justify-center px-2 py-1.5 transition-colors",
+                viewMode === "list" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
               )}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+                <rect x="0" y="1" width="14" height="2" rx="0.5" />
+                <rect x="0" y="6" width="14" height="2" rx="0.5" />
+                <rect x="0" y="11" width="14" height="2" rx="0.5" />
+              </svg>
+            </button>
+            <button
+              onClick={() => handleViewModeChange("timeline")}
+              title="Timeline view"
+              className={cn(
+                "flex items-center justify-center px-2 py-1.5 transition-colors",
+                viewMode === "timeline" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              )}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <line x1="3" y1="0" x2="3" y2="14" />
+                <circle cx="3" cy="3" r="1.5" fill="currentColor" />
+                <line x1="5" y1="3" x2="13" y2="3" />
+                <circle cx="3" cy="8" r="1.5" fill="currentColor" />
+                <line x1="5" y1="8" x2="13" y2="8" />
+                <circle cx="3" cy="13" r="1.5" fill="currentColor" />
+              </svg>
+            </button>
+            <button
+              onClick={() => handleViewModeChange("feed")}
+              onMouseEnter={() => { void preloadVideoFeed() }}
+              onFocus={() => { void preloadVideoFeed() }}
+              title="Video feed"
+              className={cn(
+                "flex items-center justify-center px-2 py-1.5 transition-colors",
+                viewMode === "feed" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              )}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="2" y="1" width="10" height="12" rx="1.5" />
+                <polygon points="5.5,4.5 9.5,7 5.5,9.5" fill="currentColor" stroke="none" />
+              </svg>
+            </button>
+            <button
+              onClick={() => handleViewModeChange("mosaic")}
+              title="Mosaic / masonry"
+              className={cn(
+                "flex items-center justify-center px-2 py-1.5 transition-colors",
+                viewMode === "mosaic" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              )}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+                <rect x="0" y="0" width="4" height="6" rx="0.5" />
+                <rect x="5" y="0" width="4" height="3" rx="0.5" />
+                <rect x="10" y="0" width="4" height="8" rx="0.5" />
+                <rect x="5" y="4" width="4" height="5" rx="0.5" />
+                <rect x="0" y="7" width="4" height="3" rx="0.5" />
+                <rect x="0" y="11" width="4" height="3" rx="0.5" />
+                <rect x="5" y="10" width="4" height="4" rx="0.5" />
+                <rect x="10" y="9" width="4" height="5" rx="0.5" />
+              </svg>
+            </button>
+          </div>
+
+          {viewMode === "grid" && <GridDensityControl density={gridDensity} onChange={handleDensityChange} />}
+
+          {/* Visible count */}
+          <span className="text-[10px] text-slate-400 whitespace-nowrap">{visibleShots.length.toLocaleString()} items</span>
+
+          {/* Overflow menu */}
+          <div className="relative ml-auto">
+            <button
+              onClick={() => setOverflowMenuOpen((v) => !v)}
+              className="rounded-lg px-2 py-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-white/5 transition-colors"
+              title="More actions"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+            {overflowMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setOverflowMenuOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
+                  <div className="py-1">
+                    <button
+                      onClick={() => { setSlideshowActive(true); setOverflowMenuOpen(false) }}
+                      onMouseEnter={() => { void preloadSlideshowMode() }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      Slideshow
+                    </button>
+                    <button
+                      onClick={() => { handleSurpriseMe(); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      Surprise me
+                    </button>
+                    <button
+                      onClick={() => { setBatchMode((v) => { if (v) setSelectedIds(new Set()); return !v }); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      {batchMode ? "Cancel select" : "Select"}
+                    </button>
+                    <div className="border-t border-white/5 my-1" />
+                    <button
+                      onClick={() => { setPlaylistDropdownOpen((v) => !v); setOverflowMenuOpen(false) }}
+                      onMouseEnter={() => { void preloadPlaylistPanel() }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      Playlists
+                    </button>
+                    <button
+                      onClick={() => { setAnalyticsOpen((v) => !v); setOverflowMenuOpen(false) }}
+                      onMouseEnter={() => { void loadMediaAnalyticsDashboard() }}
+                      className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", analyticsOpen ? "text-emerald-400" : "text-white/70 hover:text-white")}
+                    >
+                      Analytics
+                    </button>
+                    <button
+                      onClick={() => { setDiscoveryOpen((v) => !v); setOverflowMenuOpen(false) }}
+                      className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", discoveryOpen ? "text-emerald-400" : "text-white/70 hover:text-white")}
+                    >
+                      AI discovery
+                    </button>
+                    <div className="border-t border-white/5 my-1" />
+                    <button
+                      onClick={() => { handleCapture(); setOverflowMenuOpen(false) }}
+                      disabled={capturing}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-[var(--color-accent)] hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                    >
+                      {capturing ? "Capturing..." : "Capture"}
+                    </button>
+                    <button
+                      onClick={() => { handleCaptureVideos(); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-teal-300 hover:bg-white/[0.06] transition-colors"
+                    >
+                      + Videos
+                    </button>
+                    <button
+                      onClick={() => { setUrlInputOpen((v) => !v); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      + URL
+                    </button>
+                    <div className="border-t border-white/5 my-1" />
+                    <button
+                      onClick={() => { handleAutoTag(); setOverflowMenuOpen(false) }}
+                      disabled={autoTagging}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-purple-300 hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                    >
+                      {autoTagging ? "Tagging..." : "Auto-Tag"}
+                    </button>
+                    <button
+                      onClick={() => { setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true })); setOverflowMenuOpen(false) }}
+                      className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", advancedFilters.hasPerformer === true ? "text-sky-300" : "text-white/70 hover:text-white")}
+                    >
+                      Creators Only
+                    </button>
+                    <button
+                      onClick={() => { handlePurgeWomen(); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-red-400 hover:bg-white/[0.06] transition-colors"
+                    >
+                      Purge
+                    </button>
+                    <div className="border-t border-white/5 my-1" />
+                    <label className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={autoDescribe}
+                        onChange={(e) => {
+                          setAutoDescribe(e.target.checked)
+                          localStorage.setItem(AUTO_DESCRIBE_KEY, String(e.target.checked))
+                        }}
+                        className="h-3 w-3 rounded border-white/20 bg-black/30 accent-[var(--color-accent)]"
+                      />
+                      <span className="text-xs text-[var(--color-text-muted)]">Auto-describe</span>
+                    </label>
+                    <button
+                      onClick={() => { setShortcutsOpen(true); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      Keyboard shortcuts
+                    </button>
+                    <button
+                      onClick={() => { setHeroCollapsed((v) => !v); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      {heroCollapsed ? "Show stats panel" : "Hide stats panel"}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* URL input panel (shown when triggered from overflow menu) */}
+        {urlInputOpen && (
+          <div className="mt-2 flex flex-col gap-2 rounded-xl border border-white/10 bg-[#1a1a2e]/95 p-3 shadow-xl max-w-sm backdrop-blur">
+            <input
+              type="url"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleCaptureUrl() }}
+              placeholder="https://... (image, video, Redgifs)"
+              autoFocus
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
+            />
+            <input
+              type="text"
+              value={urlTerm}
+              onChange={(e) => setUrlTerm(e.target.value)}
+              placeholder="Term / label (optional)"
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
+            />
+            <div className="flex gap-2">
               <button
-                onClick={() => setDiscoveryOpen((v) => !v)}
-                className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-200 transition-colors hover:bg-emerald-400/15"
+                onClick={handleCaptureUrl}
+                disabled={!urlInput.trim() || urlCapturing}
+                className="flex-1 rounded-lg bg-[var(--color-accent)]/80 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 hover:bg-[var(--color-accent)]"
               >
-                {discoveryOpen ? "Hide AI" : "AI discovery"}
+                {urlCapturing ? "Capturing..." : "Capture"}
               </button>
               <button
-                onClick={() => setShortcutsOpen(true)}
-                className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-slate-400 transition-colors hover:bg-white/10"
-                title="Keyboard shortcuts"
+                onClick={() => setUrlInputOpen(false)}
+                className="rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
               >
-                ?
+                Cancel
               </button>
             </div>
           </div>
+        )}
 
-          {/* Expanded details -- only when not collapsed */}
-          {!heroCollapsed && (
-            <>
-              <div className="flex flex-wrap items-center gap-2 border-t border-white/8 bg-black/15 px-4 py-2">
-                <button
-                  onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
-                  className={cn(
-                    "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-                    advancedFilters.hasPerformer === true
-                      ? "bg-sky-500/20 text-sky-200"
-                      : "bg-white/5 text-slate-300 hover:bg-white/10"
-                  )}
-                >
-                  Creator-linked only
-                </button>
-                <button
-                  onClick={() => setTab("videos")}
-                  className={cn("rounded-full px-3 py-1 text-xs font-medium transition-colors", tab === "videos" ? "bg-white/15 text-white" : "bg-white/5 text-slate-300 hover:bg-white/10")}
-                >
-                  Jump to videos
-                </button>
-                <button
-                  onClick={() => {
-                    setSortOrder("newest")
-                    localStorage.setItem("media-sort-order", "newest")
-                  }}
-                  className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
-                >
-                  Newest first
-                </button>
-                <button
-                  onClick={() => setFilterDescribed((v) => !v)}
-                  className={cn("rounded-full px-3 py-1 text-xs font-medium transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
-                >
-                  AI-described only
-                </button>
-              </div>
-
-              <div className="grid gap-2 border-t border-white/8 bg-black/10 px-4 py-3 sm:grid-cols-3 xl:grid-cols-6">
-                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
-                  <p className="text-[10px] text-slate-400">Visible</p>
-                  <p className="text-lg font-semibold text-white">{visibleSummary.total.toLocaleString()}</p>
-                </div>
-                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
-                  <p className="text-[10px] text-slate-400">Images</p>
-                  <p className="text-lg font-semibold text-white">{visibleSummary.images.toLocaleString()}</p>
-                </div>
-                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
-                  <p className="text-[10px] text-slate-400">Videos</p>
-                  <p className="text-lg font-semibold text-white">{visibleSummary.videos.toLocaleString()}</p>
-                </div>
-                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
-                  <p className="text-[10px] text-slate-400">Linked</p>
-                  <p className="text-lg font-semibold text-white">{visibleSummary.linked.toLocaleString()}</p>
-                </div>
-                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
-                  <p className="text-[10px] text-slate-400">Described</p>
-                  <p className="text-lg font-semibold text-white">{visibleSummary.described.toLocaleString()}</p>
-                </div>
-                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
-                  <p className="text-[10px] text-slate-400">Needs rating</p>
-                  <p className="text-lg font-semibold text-white">{visibleSummary.unrated.toLocaleString()}</p>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
-      <div className="sticky top-14 z-20 px-4 py-4 backdrop-blur-xl">
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-[#0c1424]/80 p-3 shadow-[0_12px_40px_rgba(0,0,0,0.22)] backdrop-blur-xl">
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-          <span className="font-medium text-white/70">Search & refine</span>
-          <span className="ui-chip !px-2.5 !py-1">term</span>
-          <span className="ui-chip !px-2.5 !py-1">creator</span>
-          <span className="ui-chip !px-2.5 !py-1">URL</span>
-          <span className="ui-chip !px-2.5 !py-1">AI description</span>
-        </div>
-        <div className="relative flex-1 max-w-md">
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-            placeholder="Search term, source, URL, or description..."
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
+        {/* Playlist dropdown (positioned here since Playlists moved to overflow) */}
+        <Suspense fallback={null}>
+          <PlaylistDropdown
+            open={playlistDropdownOpen}
+            onClose={() => setPlaylistDropdownOpen(false)}
+            onSelectPlaylist={(id) => setActivePlaylistId(id)}
+            onCreateNew={() => { setCreatePlaylistWithIds(undefined); setCreatePlaylistOpen(true) }}
           />
-          {search && (
+        </Suspense>
+
+        {/* Filters panel -- shown when Filters button is clicked */}
+        {filtersVisible && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-white/8 bg-[#0a1322]/70 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
+              <span className="ui-chip !px-2 !py-0.5">term</span>
+              <span className="ui-chip !px-2 !py-0.5">creator</span>
+              <span className="ui-chip !px-2 !py-0.5">URL</span>
+              <span className="ui-chip !px-2 !py-0.5">AI description</span>
+            </div>
             <button
-              onClick={() => setSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+              onClick={() => setAdvancedOpen((v) => !v)}
+              className={cn(
+                "rounded-lg px-2 py-1 text-[11px] transition-colors whitespace-nowrap",
+                advancedOpen
+                  ? "bg-blue-500/20 text-blue-400"
+                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+              )}
             >
-              &times;
+              Advanced{Object.values(advancedFilters).some((v) => v !== "" && v !== 0 && v !== null && v !== "any" && !(Array.isArray(v) && v.length === 0)) ? " *" : ""}
             </button>
-          )}
-          {ftsSearching && (
-            <div className="absolute right-8 top-1/2 -translate-y-1/2"><Spinner /></div>
-          )}
-          {/* Recent searches dropdown */}
-          {searchFocused && !search && recentSearches.length > 0 && (
-            <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
-              <div className="px-3 py-1.5 border-b border-white/5 flex items-center justify-between">
-                <span className="text-[10px] text-white/30 font-mono uppercase tracking-widest">Recent</span>
-                <button
-                  onMouseDown={(e) => { e.preventDefault(); setRecentSearches([]); localStorage.removeItem("media-recent-searches") }}
-                  className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
-                >
-                  clear
-                </button>
-              </div>
-              {recentSearches.map((s) => (
-                <button
-                  key={s}
-                  onMouseDown={(e) => { e.preventDefault(); setSearch(s) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-white/30 shrink-0">
-                    <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.92"/>
-                  </svg>
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
-          {showSearchSuggestions && searchSuggestions.length > 0 && (
-            <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
-              <div className="px-3 py-1.5 border-b border-white/5">
-                <span className="text-[10px] text-white/30 font-mono uppercase tracking-widest">Jump to</span>
-              </div>
-              {searchSuggestions.map((suggestion) => (
-                <button
-                  key={`${suggestion.type}-${suggestion.value}`}
-                  onMouseDown={(e) => { e.preventDefault(); applySearchSuggestion(suggestion) }}
-                  className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
-                >
-                  <span>
-                    <span className="mr-2 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/40">
-                      {suggestion.type}
-                    </span>
-                    {suggestion.value}
-                  </span>
-                  {suggestion.meta && <span className="text-[10px] text-white/35">{suggestion.meta}</span>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <button
-          onClick={() => setAdvancedOpen((v) => !v)}
-          className={cn(
-            "rounded-lg px-2 py-2 text-xs transition-colors whitespace-nowrap",
-            advancedOpen
-              ? "bg-blue-500/20 text-blue-400"
-              : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-          )}
-        >
-          Advanced{Object.values(advancedFilters).some((v) => v !== "" && v !== 0 && v !== null && v !== "any" && !(Array.isArray(v) && v.length === 0)) ? " *" : ""}
-        </button>
-
-        <select
-          value={sortOrder}
-          onChange={(e) => {
-            const v = e.target.value as SortOrder
-            setSortOrder(v)
-            localStorage.setItem("media-sort-order", v)
-          }}
-          className="rounded-lg border border-white/10 bg-black/20 px-2 py-2 text-sm text-[var(--color-text-secondary)]"
-          aria-label="Sort order"
-        >
-          <option value="newest">Newest</option>
-          <option value="oldest">Oldest</option>
-          <option value="rating">Top Rated</option>
-          <option value="az">A-Z</option>
-          <option value="random">Random</option>
-        </select>
-
-        {/* View mode toggle */}
-        <div className="flex rounded-lg border border-white/10 bg-black/20 overflow-hidden">
-          <button
-            onClick={() => handleViewModeChange("grid")}
-            title="Grid view"
-            className={cn(
-              "flex items-center justify-center px-2 py-2 transition-colors",
-              viewMode === "grid" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+            {filterDescribed && (
+              <button
+                onClick={() => setFilterDescribed(false)}
+                className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] text-purple-300 hover:bg-purple-500/30"
+              >
+                Showing described only &times;
+              </button>
             )}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-              <rect x="0" y="0" width="4" height="4" rx="0.5" />
-              <rect x="5" y="0" width="4" height="4" rx="0.5" />
-              <rect x="10" y="0" width="4" height="4" rx="0.5" />
-              <rect x="0" y="5" width="4" height="4" rx="0.5" />
-              <rect x="5" y="5" width="4" height="4" rx="0.5" />
-              <rect x="10" y="5" width="4" height="4" rx="0.5" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleViewModeChange("list")}
-            title="List view"
-            className={cn(
-              "flex items-center justify-center px-2 py-2 transition-colors",
-              viewMode === "list" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+            {activeFilterPills.length > 0 && (
+              <button
+                onClick={clearMediaFilters}
+                className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 hover:bg-white/10"
+              >
+                Reset all
+              </button>
             )}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-              <rect x="0" y="1" width="14" height="2" rx="0.5" />
-              <rect x="0" y="6" width="14" height="2" rx="0.5" />
-              <rect x="0" y="11" width="14" height="2" rx="0.5" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleViewModeChange("timeline")}
-            title="Timeline view"
-            className={cn(
-              "flex items-center justify-center px-2 py-2 transition-colors",
-              viewMode === "timeline" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-            )}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <line x1="3" y1="0" x2="3" y2="14" />
-              <circle cx="3" cy="3" r="1.5" fill="currentColor" />
-              <line x1="5" y1="3" x2="13" y2="3" />
-              <circle cx="3" cy="8" r="1.5" fill="currentColor" />
-              <line x1="5" y1="8" x2="13" y2="8" />
-              <circle cx="3" cy="13" r="1.5" fill="currentColor" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleViewModeChange("feed")}
-            onMouseEnter={() => { void preloadVideoFeed() }}
-            onFocus={() => { void preloadVideoFeed() }}
-            title="Video feed"
-            className={cn(
-              "flex items-center justify-center px-2 py-2 transition-colors",
-              viewMode === "feed" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-            )}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="2" y="1" width="10" height="12" rx="1.5" />
-              <polygon points="5.5,4.5 9.5,7 5.5,9.5" fill="currentColor" stroke="none" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleViewModeChange("mosaic")}
-            title="Mosaic / masonry"
-            className={cn(
-              "flex items-center justify-center px-2 py-2 transition-colors",
-              viewMode === "mosaic" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-            )}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-              <rect x="0" y="0" width="4" height="6" rx="0.5" />
-              <rect x="5" y="0" width="4" height="3" rx="0.5" />
-              <rect x="10" y="0" width="4" height="8" rx="0.5" />
-              <rect x="5" y="4" width="4" height="5" rx="0.5" />
-              <rect x="0" y="7" width="4" height="3" rx="0.5" />
-              <rect x="0" y="11" width="4" height="3" rx="0.5" />
-              <rect x="5" y="10" width="4" height="4" rx="0.5" />
-              <rect x="10" y="9" width="4" height="5" rx="0.5" />
-            </svg>
-          </button>
-        </div>
-
-        {viewMode === "grid" && <GridDensityControl density={gridDensity} onChange={handleDensityChange} />}
-
-        {/* Slideshow button */}
-        {visibleShots.length > 0 && (
-          <button
-            onClick={() => setSlideshowActive(true)}
-            onMouseEnter={() => { void preloadSlideshowMode() }}
-            onFocus={() => { void preloadSlideshowMode() }}
-            className="rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-            title="Start slideshow"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block mr-1">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <line x1="8" y1="21" x2="16" y2="21" />
-              <line x1="12" y1="17" x2="12" y2="21" />
-            </svg>
-            Slideshow
-          </button>
+          </div>
         )}
 
-        {/* Surprise me button */}
-        <button
-          onClick={handleSurpriseMe}
-          className="rounded-lg px-2 py-2 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-          title="Surprise me — random pick from top-rated (R)"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="2" width="20" height="20" rx="5" />
-            <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
-            <circle cx="15.5" cy="8.5" r="1.5" fill="currentColor" />
-            <circle cx="8.5" cy="15.5" r="1.5" fill="currentColor" />
-            <circle cx="15.5" cy="15.5" r="1.5" fill="currentColor" />
-            <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-          </svg>
-        </button>
-
-        {/* Keyboard shortcuts help */}
-        <button
-          onClick={() => setShortcutsOpen((v) => !v)}
-          onMouseEnter={() => { void preloadMediaContextMenu() }}
-          className="rounded-lg px-2 py-2 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-          title="Keyboard shortcuts (?)"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="6" width="20" height="13" rx="3" />
-            <path d="M6 10h1M10 10h1M14 10h1M18 10h1M6 14h1M10 14h5M18 14h1" />
-          </svg>
-        </button>
-
-        <button
-          onClick={() => {
-            setBatchMode((v) => { if (v) setSelectedIds(new Set()); return !v })
-          }}
-          className={cn(
-            "rounded-lg px-3 py-2 text-sm transition-colors",
-            batchMode ? "bg-blue-500/20 text-blue-400" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-          )}
-        >
-          {batchMode ? "Cancel" : "Select"}
-        </button>
-
-        <div className="relative">
-          <button
-            onClick={() => setPlaylistDropdownOpen((v) => !v)}
-            onMouseEnter={() => { void preloadPlaylistPanel() }}
-            onFocus={() => { void preloadPlaylistPanel() }}
-            className="rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-          >
-            Playlists
-          </button>
-          <Suspense fallback={null}>
-            <PlaylistDropdown
-              open={playlistDropdownOpen}
-              onClose={() => setPlaylistDropdownOpen(false)}
-              onSelectPlaylist={(id) => setActivePlaylistId(id)}
-              onCreateNew={() => { setCreatePlaylistWithIds(undefined); setCreatePlaylistOpen(true) }}
-            />
-          </Suspense>
-        </div>
-
-        <button
-          onClick={() => setAnalyticsOpen((v) => !v)}
-          onMouseEnter={() => { void loadMediaAnalyticsDashboard() }}
-          onFocus={() => { void loadMediaAnalyticsDashboard() }}
-          title="Media analytics"
-          className={cn(
-            "rounded-lg px-3 py-2 text-sm transition-colors",
-            analyticsOpen
-              ? "bg-emerald-500/20 text-emerald-400"
-              : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-          )}
-        >
-          Analytics
-        </button>
-
-        <button
-          onClick={handleCapture}
-          disabled={capturing}
-          className="rounded-lg border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/10 px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] disabled:opacity-50"
-        >
-          {capturing ? "Capturing..." : "Capture"}
-        </button>
-
-        <button
-          onClick={handleCaptureVideos}
-          title="Download full videos from Pornhub and other tube sites"
-          className="rounded-lg border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-sm font-medium text-teal-300 hover:bg-teal-500/20 transition-colors whitespace-nowrap"
-        >
-          + Videos
-        </button>
-
-        <button
-          onClick={handlePurgeWomen}
-          title="Scan all images with AI vision and delete any containing women"
-          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 hover:bg-red-500/20 transition-colors whitespace-nowrap"
-        >
-          Purge ♀
-        </button>
-
-        {/* Linked-to-creator quick filter */}
-        <button
-          onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
-          title="Show only media linked to a tracked creator"
-          className={cn(
-            "rounded-lg border px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap",
-            advancedFilters.hasPerformer === true
-              ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
-              : "border-white/10 bg-black/20 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-          )}
-        >
-          Creators Only
-        </button>
-
-        {/* Auto-Tag button */}
-        <button
-          onClick={handleAutoTag}
-          disabled={autoTagging}
-          title="Auto-extract tags from AI descriptions"
-          className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-sm font-medium text-purple-300 disabled:opacity-50 hover:bg-purple-500/20 transition-colors whitespace-nowrap"
-        >
-          {autoTagging ? "Tagging…" : "Auto-Tag"}
-        </button>
-
-        {/* Paste URL capture */}
-        <div className="relative">
-          <button
-            onClick={() => setUrlInputOpen((v) => !v)}
-            title="Capture media from a URL"
-            className={cn(
-              "rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm transition-colors whitespace-nowrap",
-              urlInputOpen ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-            )}
-          >
-            + URL
-          </button>
-          {urlInputOpen && (
-            <div className="absolute right-0 top-full mt-1 z-30 flex flex-col gap-2 rounded-xl border border-white/10 bg-[#1a1a2e]/95 p-3 shadow-xl w-72 backdrop-blur">
-              <input
-                type="url"
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleCaptureUrl() }}
-                placeholder="https://... (image, video, Redgifs)"
-                autoFocus
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
-              />
-              <input
-                type="text"
-                value={urlTerm}
-                onChange={(e) => setUrlTerm(e.target.value)}
-                placeholder="Term / label (optional)"
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={handleCaptureUrl}
-                  disabled={!urlInput.trim() || urlCapturing}
-                  className="flex-1 rounded-lg bg-[var(--color-accent)]/80 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 hover:bg-[var(--color-accent)]"
-                >
-                  {urlCapturing ? "Capturing…" : "Capture"}
-                </button>
-                <button
-                  onClick={() => setUrlInputOpen(false)}
-                  className="rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <label className="flex items-center gap-1.5 cursor-pointer select-none" title="Auto-describe new captures with AI">
-          <input
-            type="checkbox"
-            checked={autoDescribe}
-            onChange={(e) => {
-              setAutoDescribe(e.target.checked)
-              localStorage.setItem(AUTO_DESCRIBE_KEY, String(e.target.checked))
-            }}
-            className="h-3.5 w-3.5 rounded border-white/20 bg-black/30 accent-[var(--color-accent)]"
-          />
-          <span className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">Auto-describe</span>
-        </label>
-
-        {filterDescribed && (
-          <button
-            onClick={() => setFilterDescribed(false)}
-            className="rounded-lg bg-purple-500/20 px-2 py-1 text-xs text-purple-300 hover:bg-purple-500/30"
-          >
-            Showing described only &times;
-          </button>
-        )}
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl border border-white/8 bg-[#0a1322]/70 px-3 py-3">
-          <span className="text-[10px] uppercase tracking-[0.18em] text-white/30">Quick filters</span>
+        {/* Quick filters -- compact */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1 px-1">
           <button
             onClick={() => setOnlyUnlinked((v) => !v)}
-            className={cn("rounded-full px-3 py-1.5 text-xs transition-colors", onlyUnlinked ? "bg-sky-500/20 text-sky-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnlinked ? "bg-sky-500/20 text-sky-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
-            Unlinked only
+            Unlinked
           </button>
           <button
             onClick={() => setOnlyUnrated((v) => !v)}
-            className={cn("rounded-full px-3 py-1.5 text-xs transition-colors", onlyUnrated ? "bg-amber-500/20 text-amber-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnrated ? "bg-amber-500/20 text-amber-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
             Needs rating
           </button>
           <button
             onClick={() => setOnlyRecent((v) => !v)}
-            className={cn("rounded-full px-3 py-1.5 text-xs transition-colors", onlyRecent ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyRecent ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
-            Last 7 days
+            7 days
           </button>
           <button
             onClick={() => setFilterDescribed((v) => !v)}
-            className={cn("rounded-full px-3 py-1.5 text-xs transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
             Described
           </button>
           <button
             onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
-            className={cn("rounded-full px-3 py-1.5 text-xs transition-colors", advancedFilters.hasPerformer === true ? "bg-indigo-500/20 text-indigo-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", advancedFilters.hasPerformer === true ? "bg-indigo-500/20 text-indigo-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
             Creator-linked
           </button>
-          <div className="ml-auto text-xs text-slate-400">
-            / search, r surprise, g/l/t/v/o switch views
-          </div>
         </div>
       </div>
+
+      {/* ── Hero stats panel (hidden by default, toggled from overflow menu) ── */}
+      {!heroCollapsed && (
+        <div className="px-4 pb-2">
+          <div className="rounded-xl border border-white/8 bg-black/10 p-3">
+            <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Visible</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.total.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Images</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.images.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Videos</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.videos.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Linked</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.linked.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Described</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.described.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Needs rating</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.unrated.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Advanced Search Panel ──────────────────────────────────────── */}
       {advancedOpen && (
@@ -3456,7 +3368,7 @@ export function MediaPage() {
         />
       )}
       {tab !== "creators" && !isLoading && visibleShots.length === 0 && allShots.length > 0 && (
-        <div className="mx-4 my-8 flex flex-col items-center justify-center gap-4 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,32,0.92),rgba(8,13,24,0.98))] px-6 py-20 text-center shadow-[0_24px_80px_rgba(0,0,0,0.24)] animate-[fade-in-up_400ms_ease-out]">
+        <div className="mx-4 my-8 flex flex-col items-center justify-center gap-4 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,32,0.92),rgba(8,13,24,0.98))] px-6 py-20 text-center shadow-[0_24px_80px_rgba(0,0,0,0.24)] animate-[slideUp_400ms_ease-out]">
           <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-slate-400">
             No matches
           </div>

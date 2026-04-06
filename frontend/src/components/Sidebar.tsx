@@ -332,12 +332,21 @@ export function Sidebar() {
   const captureQueueActive = (captureQueueData?.queue ?? []).some(
     (e) => e.status === "queued" || e.status === "running"
   )
+  // Use media-stats for accurate screenshot count (app-shell-summary returns 0 for image_count)
+  const { data: mediaStats } = useQuery({
+    queryKey: ["sidebar-media-stats"],
+    queryFn: () => api.mediaStats(),
+    enabled: sidebarEnhancementsReady,
+    staleTime: 15_000,
+    refetchOnMount: true,
+  })
+
   const counts: Partial<Record<string, number>> = {
-    images: sidebarSummary?.stats?.totals?.image_count,
+    images: mediaStats?.total ?? sidebarSummary?.stats?.totals?.image_count,
     performers: perfStats?.total,
   }
 
-  const currentImageCount = sidebarSummary?.stats?.totals?.image_count ?? 0
+  const currentImageCount = mediaStats?.total ?? sidebarSummary?.stats?.totals?.image_count ?? 0
   const [lastSeenImageCount, setLastSeenImageCount] = useState<number | null>(null)
   const newImageCount =
     lastSeenImageCount != null && currentImageCount > lastSeenImageCount

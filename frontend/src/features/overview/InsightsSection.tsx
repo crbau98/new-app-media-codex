@@ -48,7 +48,7 @@ function SourceBreakdownBar({
   const total = data.reduce((s, d) => s + d.count, 0) || 1
 
   return (
-    <div className="bg-bg-surface border border-border rounded-xl p-4 card-glass glass">
+    <div className="bg-bg-surface border border-border rounded-xl p-4 card-hover glass">
       <h3 className="text-xs font-semibold uppercase tracking-widest text-text-muted font-mono mb-3">
         Source Breakdown
       </h3>
@@ -110,7 +110,7 @@ function ReviewFunnel({
   const maxVal = data.total || 1
 
   return (
-    <div className="bg-bg-surface border border-border rounded-xl p-4 card-glass glass">
+    <div className="bg-bg-surface border border-border rounded-xl p-4 card-hover glass">
       <h3 className="text-xs font-semibold uppercase tracking-widest text-text-muted font-mono mb-3">
         Review Funnel
       </h3>
@@ -162,7 +162,7 @@ function GrowthIndicator({ data }: { data: InsightsPayload['growth'] }) {
   const color = isUp ? 'text-green' : 'text-red'
 
   return (
-    <div className="bg-bg-surface border border-border rounded-xl p-4 card-glass glass">
+    <div className="bg-bg-surface border border-border rounded-xl p-4 card-hover glass">
       <h3 className="text-xs font-semibold uppercase tracking-widest text-text-muted font-mono mb-3">
         Growth
       </h3>
@@ -203,7 +203,7 @@ function TopThemesChart({
   const height = 8 + chartData.length * 28
 
   return (
-    <div className="bg-bg-surface border border-border rounded-xl p-4 card-glass glass">
+    <div className="bg-bg-surface border border-border rounded-xl p-4 card-hover glass">
       <h3 className="text-xs font-semibold uppercase tracking-widest text-text-muted font-mono mb-3">
         Top Themes
       </h3>
@@ -270,7 +270,7 @@ export function InsightsSection() {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="bg-bg-surface border border-border rounded-xl p-4 card-glass glass h-40 animate-pulse">
+          <div key={i} className="bg-bg-surface border border-border rounded-xl p-4 card-hover glass h-40 animate-pulse">
             <div className="h-3 w-24 shimmer rounded mb-3" />
             <div className="h-20 shimmer rounded" />
           </div>

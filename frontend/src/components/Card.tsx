@@ -12,7 +12,7 @@ export function Card({ children, className, onClick }: {
       type={onClick ? 'button' : undefined}
       aria-pressed={undefined}
       className={cn(
-        'bg-bg-surface border border-border rounded-[20px] p-4 text-left w-full card-glass glass content-card',
+        'bg-bg-surface border border-border rounded-[20px] p-4 text-left w-full card-hover glass content-card',
         'transition-all duration-200',
         onClick ? 'cursor-pointer hover:bg-bg-elevated content-card-interactive hover:-translate-y-0.5 hover:shadow-lg' : '',
         onClick && 'hover:shadow-[0_0_0_1px_var(--color-accent-glow)] hover:border-accent/30',

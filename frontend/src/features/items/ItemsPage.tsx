@@ -439,7 +439,7 @@ export function ItemsPage() {
                 >
                   <div
                     className={cn(
-                      'transition-all duration-200 card-glass',
+                      'transition-all duration-200 card-hover',
                       idx === focusedIdx && 'ring-1 ring-accent/40 rounded-xl',
                       isVisited && 'opacity-70',
                     )}
