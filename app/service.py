@@ -216,6 +216,12 @@ class ResearchService:
 
     def start(self) -> None:
         self.db.init()
+        try:
+            repaired = self.db.repair_moved_repo_paths(self.settings.base_dir)
+            if repaired:
+                print(f"[startup] repaired {repaired} moved local media paths")
+        except Exception as exc:
+            print(f"[startup] path repair skipped: {exc}")
         requeued = self.db.requeue_stale_running_entries()
         if requeued:
             print(f"[queue-worker] re-queued {requeued} stale running capture entries")
