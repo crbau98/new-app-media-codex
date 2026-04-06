@@ -1,11 +1,12 @@
 import { StrictMode, Component, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import './index.css'
 import App from './App'
 import { useAppStore, getViewFromHash } from './store'
 import type { ApiError } from './lib/api'
 
-// ── Constants ────────────────────────────────────────────────────────
+// ââ Constants ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 const STORAGE_KEYS = {
   THEME: 'theme',
   ACCENT: 'accent-color',
@@ -20,12 +21,12 @@ const QUERY_DEFAULTS = {
   MAX_RETRY_DELAY: 10_000,   // ms
 } as const
 
-// ── Safe localStorage ────────────────────────────────────────────────
+// ââ Safe localStorage ââââââââââââââââââââââââââââââââââââââââââââââââ
 function safeLocalStorageGet(key: string): string | null {
   try { return window.localStorage.getItem(key) } catch { return null }
 }
 
-// ── Theme & accent restoration (runs before React renders) ───────────
+// ââ Theme & accent restoration (runs before React renders) âââââââââââ
 const savedTheme = safeLocalStorageGet(STORAGE_KEYS.THEME) || 'dark'
 document.documentElement.dataset.theme = savedTheme
 
@@ -39,7 +40,7 @@ if (savedAccentSecondary) {
   document.documentElement.style.setProperty('--color-accent-secondary', savedAccentSecondary)
 }
 
-// ── Hash sync (back/forward navigation) ──────────────────────────────
+// ââ Hash sync (back/forward navigation) ââââââââââââââââââââââââââââââ
 window.addEventListener('hashchange', () => {
   const view = getViewFromHash()
   if (useAppStore.getState().activeView !== view) {
@@ -47,7 +48,7 @@ window.addEventListener('hashchange', () => {
   }
 })
 
-// ── Retry logic ──────────────────────────────────────────────────────
+// ââ Retry logic ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 const NON_RETRYABLE_ERRORS = new Set(['AbortError', 'CancelledError'])
 const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504])
 const RETRYABLE_MESSAGE_RE = /Failed to fetch|NetworkError|timed out|ECONNRESET/i
@@ -70,7 +71,7 @@ function retryDelay(attempt: number): number {
   return base + jitter
 }
 
-// ── Error Boundary ───────────────────────────────────────────────────
+// ââ Error Boundary âââââââââââââââââââââââââââââââââââââââââââââââââââ
 interface ErrorBoundaryState { hasError: boolean; error: Error | null }
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
@@ -103,7 +104,7 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryS
   }
 }
 
-// ── Query Client ─────────────────────────────────────────────────────
+// ââ Query Client âââââââââââââââââââââââââââââââââââââââââââââââââââââ
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -120,7 +121,7 @@ const queryClient = new QueryClient({
   },
 })
 
-// ── Render ────────────────────────────────────────────────────────────
+// ââ Render ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('Root element #root not found')
 
