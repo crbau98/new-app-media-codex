@@ -381,10 +381,11 @@ class Database:
 
     def ping(self) -> bool:
         try:
-            with self.connect() as conn:
-                conn.execute("SELECT 1").fetchone()
+            conn = sqlite3.connect(self.path, timeout=2)
+            conn.execute("SELECT 1").fetchone()
+            conn.close()
             return True
-        except sqlite3.Error:
+        except Exception:
             return False
 
     def init(self) -> None:

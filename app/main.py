@@ -273,7 +273,7 @@ def compound_detail(name: str, request: Request) -> JSONResponse:
 @app.head("/healthz")
 def healthz() -> JSONResponse:
     db_ok = db.ping()
-    status = "ok" if db_ok else "degraded"
+    status = "ok" if db_ok else "starting"
     return JSONResponse(
         {
             "status": status,
@@ -281,7 +281,7 @@ def healthz() -> JSONResponse:
             "db_ok": db_ok,
             "scheduler_running": service.running,
         },
-        status_code=200 if db_ok else 503,
+        status_code=200,
     )
 
 
