@@ -46,7 +46,7 @@ export const MediaListItem = memo(function MediaListItem({ shot, onClick, favori
       style={{/* contentVisibility removed — conflicts with virtualizer */}}
     >
       {/* Thumbnail */}
-      <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-black/30">
+      <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-white/[0.06]">
         {!previewSrc || broken ? (
           vid && mediaSrc && !broken ? (
             <video

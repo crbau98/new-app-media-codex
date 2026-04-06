@@ -259,7 +259,7 @@ function MediaUnavailableTile({
   className?: string
 }) {
   return (
-    <div className={cn("flex h-full w-full flex-col items-center justify-center gap-2 bg-amber-500/10 px-3 text-center", className)}>
+    <div className={cn("flex h-full w-full flex-col items-center justify-center gap-2 rounded-lg bg-white/[0.06] px-3 text-center", className)}>
       <div className="rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.22em] text-amber-200">
         {statusLabel}
       </div>
@@ -571,7 +571,7 @@ const MediaCard = memo(function MediaCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); batchMode ? onSelect() : onClick() } }}
       onContextMenu={onContextMenu}
       className={cn(
-        "group relative cursor-pointer overflow-hidden bg-black/20 aspect-square animate-[fade-in-up_300ms_ease-out_both]",
+        "group relative cursor-pointer overflow-hidden rounded-lg bg-white/5 aspect-square animate-[fade-in-up_300ms_ease-out_both]",
         selected && "ring-2 ring-blue-500"
       )}
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
@@ -719,9 +719,9 @@ const MediaCard = memo(function MediaCard({
         </div>
       )}
 
-      {/* Hover overlay */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pb-2 pt-6 opacity-0 transition-opacity group-hover:opacity-100">
-        <p className="truncate text-xs font-medium text-white">{shot.term}</p>
+      {/* Card metadata — always visible for contrast on dark backgrounds */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-2 pt-8">
+        <p className="truncate text-xs font-medium text-white drop-shadow-sm">{shot.term}</p>
         <p className="text-[10px] text-white/60">{sourceLabel(shot.source)}</p>
       </div>
       </div>
@@ -771,7 +771,7 @@ const MosaicCard = memo(function MosaicCard({
       onFocus={onHover}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick() } }}
       onContextMenu={onContextMenu}
-      className="group relative mb-1 cursor-pointer overflow-hidden rounded-lg bg-black/20 break-inside-avoid"
+      className="group relative mb-1 cursor-pointer overflow-hidden rounded-lg bg-white/5 break-inside-avoid"
       style={{ breakInside: "avoid" }}
     >
       <div style={{  }}>
@@ -832,9 +832,9 @@ const MosaicCard = memo(function MosaicCard({
         </div>
       )}
 
-      {/* Hover caption */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-2 pt-8 opacity-0 transition-opacity group-hover:opacity-100">
-        <p className="truncate text-xs font-medium text-white">{shot.term}</p>
+      {/* Card metadata — always visible */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-2 pt-8">
+        <p className="truncate text-xs font-medium text-white drop-shadow-sm">{shot.term}</p>
         <p className="text-[10px] text-white/60">{sourceLabel(shot.source)}</p>
       </div>
 
@@ -2139,6 +2139,7 @@ export function MediaPage() {
   // ── Keyboard shortcuts help overlay ──────────────────────────────────────
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [heroCollapsed, setHeroCollapsed] = useState(true)
 
   // ── Keyboard ─────────────────────────────────────────────────────────────
 
@@ -2586,139 +2587,133 @@ export function MediaPage() {
         </Suspense>
       )}
 
-      <div className="px-4 pt-4">
-        <div className="hero-surface overflow-hidden rounded-[28px]">
-          <div className="flex flex-col gap-5 px-5 py-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.24em] text-sky-200/80">
+      <div className="px-4 pt-2">
+        <div className="hero-surface overflow-hidden rounded-2xl">
+          {/* Compact hero bar */}
+          <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+            {/* Badge + title */}
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/20 bg-sky-400/10 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.24em] text-sky-200/80">
                 Media Studio
-                <span className="rounded-full bg-white/10 px-2 py-0.5 tracking-normal text-[9px] text-white/60">{viewMode}</span>
+                <span className="rounded-full bg-white/10 px-1.5 py-0.5 tracking-normal text-[9px] text-white/60">{viewMode}</span>
               </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-[2rem]">Capture, review, and expand your creator library faster</h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                  Search and triage media, keep creator-linked captures organized, and use AI to find similar creators based on the people and themes already performing well in your library.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {activeFilterPills.length > 0 ? activeFilterPills.map((pill) => (
-                  <span key={pill} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-                    {pill}
-                  </span>
-                )) : (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
-                    No filters active
-                  </span>
-                )}
-                {activeFilterPills.length > 0 && (
-                  <button
-                    onClick={clearMediaFilters}
-                    className="rounded-full border border-white/12 bg-white/6 px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:bg-white/10"
-                  >
-                    Reset view
-                  </button>
-                )}
+              <button
+                onClick={() => setHeroCollapsed((v) => !v)}
+                className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-slate-400 transition-colors hover:bg-white/10"
+              >
+                {heroCollapsed ? "Expand" : "Collapse"}
+              </button>
+            </div>
+
+            {/* Inline stats */}
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-slate-400"><span className="font-medium text-white">{visibleShots.length.toLocaleString()}</span> visible</span>
+              <span className="text-slate-400"><span className="font-medium text-white">{favCount.toLocaleString()}</span> favs</span>
+              <span className="text-slate-400"><span className="font-medium text-white">{mediaStatsData?.with_performer?.toLocaleString?.() ?? "0"}</span> linked</span>
+              <span className="text-slate-400">seed: <span className="font-medium text-sky-200">{discoverySeedLabel}</span></span>
+            </div>
+
+            {/* Action buttons */}
+            <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              {activeFilterPills.length > 0 ? activeFilterPills.map((pill) => (
+                <span key={pill} className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] text-slate-300">
+                  {pill}
+                </span>
+              )) : (
+                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] text-slate-400">
+                  No filters
+                </span>
+              )}
+              {activeFilterPills.length > 0 && (
                 <button
-                  onClick={() => setDiscoveryOpen((v) => !v)}
-                  className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200 transition-colors hover:bg-emerald-400/15"
+                  onClick={clearMediaFilters}
+                  className="rounded-full border border-white/12 bg-white/6 px-2.5 py-0.5 text-[11px] font-medium text-white/80 transition-colors hover:bg-white/10"
                 >
-                  {discoveryOpen ? "Hide AI discovery" : "Open AI discovery"}
+                  Reset
+                </button>
+              )}
+              <button
+                onClick={() => setDiscoveryOpen((v) => !v)}
+                className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-200 transition-colors hover:bg-emerald-400/15"
+              >
+                {discoveryOpen ? "Hide AI" : "AI discovery"}
+              </button>
+              <button
+                onClick={() => setShortcutsOpen(true)}
+                className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-slate-400 transition-colors hover:bg-white/10"
+                title="Keyboard shortcuts"
+              >
+                ?
+              </button>
+            </div>
+          </div>
+
+          {/* Expanded details -- only when not collapsed */}
+          {!heroCollapsed && (
+            <>
+              <div className="flex flex-wrap items-center gap-2 border-t border-white/8 bg-black/15 px-4 py-2">
+                <button
+                  onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                    advancedFilters.hasPerformer === true
+                      ? "bg-sky-500/20 text-sky-200"
+                      : "bg-white/5 text-slate-300 hover:bg-white/10"
+                  )}
+                >
+                  Creator-linked only
+                </button>
+                <button
+                  onClick={() => setTab("videos")}
+                  className={cn("rounded-full px-3 py-1 text-xs font-medium transition-colors", tab === "videos" ? "bg-white/15 text-white" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+                >
+                  Jump to videos
+                </button>
+                <button
+                  onClick={() => {
+                    setSortOrder("newest")
+                    localStorage.setItem("media-sort-order", "newest")
+                  }}
+                  className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
+                >
+                  Newest first
+                </button>
+                <button
+                  onClick={() => setFilterDescribed((v) => !v)}
+                  className={cn("rounded-full px-3 py-1 text-xs font-medium transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+                >
+                  AI-described only
                 </button>
               </div>
-              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-400">
-                <span>Fast paths:</span>
-                <span className="ui-chip !px-2.5 !py-1">M select</span>
-                <span className="ui-chip !px-2.5 !py-1">R surprise me</span>
-                <span className="ui-chip !px-2.5 !py-1">? shortcuts</span>
-                <span className="ui-chip !px-2.5 !py-1">Hover creators to prefetch</span>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-[11px] text-slate-400">Visible</p>
-                <p className="mt-1 text-2xl font-semibold text-white">{visibleShots.length.toLocaleString()}</p>
+              <div className="grid gap-2 border-t border-white/8 bg-black/10 px-4 py-3 sm:grid-cols-3 xl:grid-cols-6">
+                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+                  <p className="text-[10px] text-slate-400">Visible</p>
+                  <p className="text-lg font-semibold text-white">{visibleSummary.total.toLocaleString()}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+                  <p className="text-[10px] text-slate-400">Images</p>
+                  <p className="text-lg font-semibold text-white">{visibleSummary.images.toLocaleString()}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+                  <p className="text-[10px] text-slate-400">Videos</p>
+                  <p className="text-lg font-semibold text-white">{visibleSummary.videos.toLocaleString()}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+                  <p className="text-[10px] text-slate-400">Linked</p>
+                  <p className="text-lg font-semibold text-white">{visibleSummary.linked.toLocaleString()}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+                  <p className="text-[10px] text-slate-400">Described</p>
+                  <p className="text-lg font-semibold text-white">{visibleSummary.described.toLocaleString()}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+                  <p className="text-[10px] text-slate-400">Needs rating</p>
+                  <p className="text-lg font-semibold text-white">{visibleSummary.unrated.toLocaleString()}</p>
+                </div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-[11px] text-slate-400">Context</p>
-                <p className="mt-1 truncate text-sm font-medium text-sky-200">{discoverySeedLabel}</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-[11px] text-slate-400">Favorites</p>
-                <p className="mt-1 text-2xl font-semibold text-white">{favCount.toLocaleString()}</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-[11px] text-slate-400">Linked</p>
-                <p className="mt-1 text-2xl font-semibold text-white">{mediaStatsData?.with_performer?.toLocaleString?.() ?? "0"}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 border-t border-white/8 bg-black/15 px-5 py-3">
-            <button
-              onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
-              className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                advancedFilters.hasPerformer === true
-                  ? "bg-sky-500/20 text-sky-200"
-                  : "bg-white/5 text-slate-300 hover:bg-white/10"
-              )}
-            >
-              Creator-linked only
-            </button>
-            <button
-              onClick={() => setTab("videos")}
-              className={cn("rounded-full px-3 py-1.5 text-xs font-medium transition-colors", tab === "videos" ? "bg-white/15 text-white" : "bg-white/5 text-slate-300 hover:bg-white/10")}
-            >
-              Jump to videos
-            </button>
-            <button
-              onClick={() => {
-                setSortOrder("newest")
-                localStorage.setItem("media-sort-order", "newest")
-              }}
-              className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
-            >
-              Newest first
-            </button>
-            <button
-              onClick={() => setFilterDescribed((v) => !v)}
-              className={cn("rounded-full px-3 py-1.5 text-xs font-medium transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
-            >
-              AI-described only
-            </button>
-            <div className="ml-auto flex items-center gap-2 text-xs text-slate-400">
-              <span>Seeded from</span>
-              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-200">{discoverySeedLabel}</span>
-            </div>
-          </div>
-
-          <div className="grid gap-3 border-t border-white/8 bg-black/10 px-5 py-4 sm:grid-cols-2 xl:grid-cols-6">
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Visible set</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.total.toLocaleString()}</p>
-            </div>
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Images</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.images.toLocaleString()}</p>
-            </div>
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Videos</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.videos.toLocaleString()}</p>
-            </div>
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Linked</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.linked.toLocaleString()}</p>
-            </div>
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Described</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.described.toLocaleString()}</p>
-            </div>
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Needs rating</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.unrated.toLocaleString()}</p>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
 
