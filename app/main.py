@@ -65,7 +65,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = db
     app.state.settings = settings
     app.state.service = service
-    db.init()
     repaired_paths = db.repair_moved_repo_paths(settings.base_dir)
     if repaired_paths:
         print(f"[startup] repaired {repaired_paths} moved local media paths")

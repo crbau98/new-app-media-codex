@@ -438,10 +438,13 @@ class Database:
         updated = 0
         with self.connect() as conn:
             for table, id_column, path_column in targets:
-                rows = conn.execute(
-                    f"SELECT {id_column} AS row_id, {path_column} AS path_value "
-                    f"FROM {table} WHERE {path_column} IS NOT NULL AND {path_column} != ''"
-                ).fetchall()
+                try:
+                    rows = conn.execute(
+                        f"SELECT {id_column} AS row_id, {path_column} AS path_value "
+                        f"FROM {table} WHERE {path_column} IS NOT NULL AND {path_column} != ''"
+                    ).fetchall()
+                except sqlite3.OperationalError:
+                    continue
                 for row in rows:
                     new_value = rebased(row["path_value"])
                     if not new_value:
