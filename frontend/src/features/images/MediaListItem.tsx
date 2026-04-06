@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, memo, useMemo } from "react"
 import type { Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { StarRating } from "@/components/StarRating"
@@ -28,9 +28,9 @@ interface MediaListItemProps {
   onContextMenu?: (e: React.MouseEvent) => void
 }
 
-export function MediaListItem({ shot, onClick, favorite, onToggleFavorite, onRate, onHover, onContextMenu }: MediaListItemProps) {
-  const mediaSrc = getScreenshotMediaSrc(shot)
-  const previewSrc = getScreenshotPreviewSrc(shot)
+export const MediaListItem = memo(function MediaListItem({ shot, onClick, favorite, onToggleFavorite, onRate, onHover, onContextMenu }: MediaListItemProps) {
+  const mediaSrc = useMemo(() => getScreenshotMediaSrc(shot), [shot])
+  const previewSrc = useMemo(() => getScreenshotPreviewSrc(shot), [shot])
   const mediaLabel = getMediaDebugLabel(shot)
   const vid = isVideo(mediaSrc)
   const [broken, setBroken] = useState(false)
@@ -53,7 +53,8 @@ export function MediaListItem({ shot, onClick, favorite, onToggleFavorite, onRat
               src={mediaSrc}
               muted
               playsInline
-              preload="metadata"
+              preload="none"
+              decoding="async"
               onError={() => setBroken(true)}
               className="h-full w-full object-cover"
             />
@@ -153,4 +154,4 @@ export function MediaListItem({ shot, onClick, favorite, onToggleFavorite, onRat
       </button>
     </button>
   )
-}
+})

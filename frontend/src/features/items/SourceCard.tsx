@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 import { Bookmark, BookmarkCheck, Archive, Check, Copy, Star, Clock } from 'lucide-react'
 import { SourceIcon } from '@/components/SourceIcon'
 import { TagChip } from '@/components/TagChip'
@@ -52,7 +52,7 @@ function normalizeScore(score: number): number {
   return Math.min(score / 100, 1)
 }
 
-export function SourceCard({
+export const SourceCard = memo(function SourceCard({
   item,
   selected,
   onSelect,
@@ -319,7 +319,12 @@ export function SourceCard({
       </div>
     </div>
   )
-}
+}, (prev, next) => {
+  return prev.item.id === next.item.id &&
+    prev.selected === next.selected &&
+    prev.visited === next.visited &&
+    prev.density === next.density
+})
 
 function ActionButton({
   children,

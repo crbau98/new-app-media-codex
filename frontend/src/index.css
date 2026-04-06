@@ -365,7 +365,7 @@ a {
     inset: 0;
     background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.08) 50%, transparent 80%);
     transform: translateX(-120%);
-    animation: shimmer 1.6s ease-in-out infinite;
+    animation: shimmer 2.4s ease-in-out infinite;
   }
 
   .skeleton-line {
@@ -417,7 +417,7 @@ a {
       rgba(255, 255, 255, 0.02) 100%
     );
     background-size: 220% 100%;
-    animation: shimmer 1.6s ease-in-out infinite;
+    animation: shimmer 2.4s ease-in-out infinite;
   }
 
   .hero-gradient {
@@ -609,10 +609,15 @@ a {
   }
 }
 
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes slide-in-right {
   from {
     opacity: 0;
-    transform: translateX(20px);
+    transform: translateX(12px);
   }
   to {
     opacity: 1;
@@ -623,7 +628,7 @@ a {
 @keyframes scale-in {
   from {
     opacity: 0;
-    transform: scale(0.96);
+    transform: scale(0.95);
   }
   to {
     opacity: 1;

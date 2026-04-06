@@ -34,6 +34,8 @@ export function ImageCard({ img, onClick }: { img: ImageRecord; onClick: () => v
         onError={() => setLoaded(true)}
         className={`w-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
         loading="lazy"
+        decoding="async"
+        fetchPriority="low"
       />
       <div
         className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-end"

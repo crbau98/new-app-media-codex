@@ -86,6 +86,8 @@ export function Lightbox({
       <img
         src={src}
         alt={img.title || ''}
+        decoding="async"
+        fetchPriority="high"
         className="max-h-[85vh] max-w-full rounded-xl object-contain"
         onClick={(e) => e.stopPropagation()}
       />

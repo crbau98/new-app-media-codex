@@ -1064,7 +1064,7 @@ def get_performer(performer_id: int, request: Request):
     if not performer:
         raise HTTPException(404, detail="Performer not found")
     links = db.get_performer_links(performer_id)
-    media_result = db.browse_performer_media(performer_id=performer_id, limit=0)
+    media_result = db.browse_performer_media(performer_id=performer_id, limit=1)
     with db.connect() as conn:
         screenshots_count = conn.execute(
             "SELECT COUNT(*) FROM screenshots WHERE performer_id = ?", (performer_id,)

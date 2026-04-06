@@ -716,6 +716,9 @@ class Database:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_platform_created ON performers(platform, created_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_status_created ON performers(status, created_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_favorite_created ON performers(is_favorite, created_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_username ON performers(username)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_display_name ON performers(display_name)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_images_source_created ON images(source_type, created_at DESC)")
         conn.execute("PRAGMA optimize")
 
     def start_run(self) -> int:
@@ -1300,7 +1303,7 @@ class Database:
                 "has_more": has_more,
             }
 
-        return self._cached_snapshot(cache_key, 8.0, build)
+        return self._cached_snapshot(cache_key, 30.0, build)
 
     def get_recent_hypotheses(self, limit: int = 10) -> list[dict[str, Any]]:
         with self.connect() as conn:
@@ -1923,7 +1926,7 @@ class Database:
             screenshots = [dict(r) for r in rows[:limit]]
             return {"screenshots": screenshots, "total": total, "offset": offset, "limit": limit, "has_more": has_more}
 
-        return self._cached_snapshot(cache_key, 8.0, build)
+        return self._cached_snapshot(cache_key, 30.0, build)
 
     def backfill_screenshot_performers(self) -> int:
         """Link unlinked screenshots to performers by matching term against username/display_name/twitter_username.
@@ -2249,7 +2252,12 @@ class Database:
             "performers.platform, performers.avatar_url, performers.avatar_local, "
             "performers.is_favorite, performers.media_count"
             if compact
-            else "performers.*"
+            else "performers.id, performers.username, performers.display_name, "
+                 "performers.platform, performers.avatar_url, performers.avatar_local, "
+                 "performers.is_favorite, performers.media_count, performers.follower_count, "
+                 "performers.status, performers.subscription_price, performers.subscription_active, "
+                 "performers.subscription_expires, performers.is_subscribed, performers.tags, "
+                 "performers.created_at, performers.checked_at"
         )
         search_norm = search.strip().lower() if search else ""
         cache_key = (
@@ -2296,7 +2304,7 @@ class Database:
                     total = offset + len(rows)
             return {"performers": performers, "total": total, "offset": offset, "limit": limit, "has_more": len(rows) > limit}
 
-        return self._cached_snapshot(cache_key, 8.0, build)
+        return self._cached_snapshot(cache_key, 45.0, build)
 
     def update_performer(self, performer_id: int, **fields: Any) -> dict | None:
         allowed = {

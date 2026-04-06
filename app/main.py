@@ -121,7 +121,10 @@ async def apply_response_headers(request: Request, call_next):
         "camera=(), microphone=(), geolocation=(), fullscreen=(self)",
     )
     if request.url.path.startswith("/api/") or request.url.path == "/healthz":
-        response.headers.setdefault("Cache-Control", "no-store")
+        if request.method == "GET":
+            response.headers.setdefault("Cache-Control", "public, max-age=15, stale-while-revalidate=30")
+        else:
+            response.headers.setdefault("Cache-Control", "no-store")
     return response
 
 
