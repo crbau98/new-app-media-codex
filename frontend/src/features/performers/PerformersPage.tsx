@@ -22,6 +22,35 @@ const PLATFORM_COLORS: Record<string, string> = {
   Fansly: "bg-violet-500/20 text-violet-300 border-violet-500/30",
 }
 
+const AVATAR_GRADIENTS = [
+  "from-sky-500 to-indigo-600",
+  "from-rose-500 to-pink-600",
+  "from-emerald-500 to-teal-600",
+  "from-amber-500 to-orange-600",
+  "from-violet-500 to-purple-600",
+  "from-cyan-500 to-blue-600",
+  "from-fuchsia-500 to-pink-600",
+  "from-lime-500 to-green-600",
+]
+
+function getAvatarGradient(username: string): string {
+  let hash = 0
+  for (let i = 0; i < username.length; i++) hash = username.charCodeAt(i) + ((hash << 5) - hash)
+  return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length]
+}
+
+function AvatarPlaceholder({ username, size = "md" }: { username: string; size?: "sm" | "md" | "lg" }) {
+  const gradient = getAvatarGradient(username)
+  const textSize = size === "lg" ? "text-2xl" : size === "md" ? "text-lg" : "text-sm"
+  return (
+    <div className={cn("flex h-full w-full items-center justify-center bg-gradient-to-br", gradient)}>
+      <span className={cn("font-bold text-white/90 drop-shadow-sm", textSize)}>
+        {username.charAt(0).toUpperCase()}
+      </span>
+    </div>
+  )
+}
+
 type SortOption = "newest" | "az" | "most_media" | "subscription_price" | "subscription_renewed_at" | "screenshots_count" | "last_checked_at"
 
 function parseTags(tags: string | null): string[] {
@@ -341,7 +370,7 @@ function DiscoveryModal({ onClose }: { onClose: () => void }) {
             <span className="ml-1 text-[10px] text-text-muted opacity-60">auto-seeded on startup</span>
           </button>
           {showSuggested && (
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {SUGGESTED_CREATORS.map((c) => {
                 const added = addedSet.has(c.username)
                 const pClass = PLATFORM_COLORS[c.platform] ?? "bg-white/10 text-text-secondary border-white/10"
@@ -352,15 +381,24 @@ function DiscoveryModal({ onClose }: { onClose: () => void }) {
                     disabled={added || addMutation.isPending}
                     title={c.bio}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
+                      "flex items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors",
                       added
-                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                        : "border-white/10 bg-white/5 text-text-secondary hover:border-accent/40 hover:bg-accent/10 hover:text-accent"
+                        ? "border-emerald-500/30 bg-emerald-500/10"
+                        : "border-white/8 bg-white/[0.03] hover:border-accent/40 hover:bg-accent/10"
                     )}
                   >
-                    {added && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5"/></svg>}
-                    @{c.username}
-                    <span className={cn("rounded-full border px-1.5 py-px text-[9px] leading-none", pClass)}>{c.platform}</span>
+                    <div className={cn("h-8 w-8 shrink-0 overflow-hidden rounded-full ring-1", added ? "ring-emerald-500/40" : "ring-white/10")}>
+                      <AvatarPlaceholder username={c.username} size="sm" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn("truncate text-xs font-medium", added ? "text-emerald-400" : "text-text-primary")}>
+                          {added && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="mr-1 inline-block"><path d="M20 6L9 17l-5-5"/></svg>}
+                          @{c.username}
+                        </span>
+                      </div>
+                      <span className={cn("mt-0.5 inline-block rounded-full border px-1.5 py-px text-[9px] leading-none", pClass)}>{c.platform}</span>
+                    </div>
                   </button>
                 )
               })}
@@ -813,9 +851,9 @@ const PerformerCard = memo(function PerformerCard({
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onSelect(performer.id) }}
         className="w-full cursor-pointer px-3 py-2.5 text-left"
       >
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3.5">
           {/* Avatar */}
-          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-white/10">
+          <div className="relative h-14 w-14 shrink-0">
             {selectMode && (
               <button
                 onClick={(e) => { e.stopPropagation(); onToggleSelect?.(performer.id) }}
@@ -830,22 +868,25 @@ const PerformerCard = memo(function PerformerCard({
                 {selected && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="m-auto"><path d="M20 6L9 17l-5-5"/></svg>}
               </button>
             )}
-            {performer.avatar_url || performer.avatar_local ? (
-              <img
-                src={performer.avatar_local ?? performer.avatar_url ?? ""}
-                alt={performer.username}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-xl font-bold text-text-muted">
-                {performer.username.charAt(0).toUpperCase()}
-              </div>
-            )}
+            <div className={cn(
+              "h-full w-full overflow-hidden rounded-full ring-2 shadow-lg shadow-black/20",
+              performer.is_subscribed === 1 ? "ring-emerald-500/50" : performer.is_favorite ? "ring-rose-500/40" : "ring-white/10"
+            )}>
+              {performer.avatar_local || performer.avatar_url ? (
+                <img
+                  src={performer.avatar_local ?? performer.avatar_url ?? ""}
+                  alt={performer.username}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <AvatarPlaceholder username={performer.username} size="md" />
+              )}
+            </div>
             {performer.status === "active" && (
-              <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#0a1628] bg-emerald-400" title="Active" />
+              <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-[#0a1628] bg-emerald-400 shadow-sm shadow-emerald-400/40" title="Active" />
             )}
             {isInQueue && !selectMode && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-[#0a1628]/60">
+              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-[#0a1628]/60">
                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
               </div>
             )}
@@ -990,11 +1031,15 @@ const PerformerCard = memo(function PerformerCard({
             </div>
             <div className="flex flex-col items-end gap-1">
               {(performer.media_count ?? 0) > 0 && (
-                <span className="text-[10px] text-text-muted">{performer.media_count} media</span>
+                <span className="flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="opacity-50"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                  {performer.media_count}
+                </span>
               )}
               {(performer.screenshots_count ?? 0) > 0 && (
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                  {performer.screenshots_count} shots
+                <span className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="opacity-70"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  {performer.screenshots_count}
                 </span>
               )}
               {performer.last_checked_at ? (() => {
@@ -1126,6 +1171,7 @@ const PerformerCard = memo(function PerformerCard({
   prev.performer.screenshots_count === next.performer.screenshots_count &&
   prev.performer.last_checked_at === next.performer.last_checked_at &&
   prev.performer.avatar_url === next.performer.avatar_url &&
+  prev.performer.avatar_local === next.performer.avatar_local &&
   prev.performer.notes === next.performer.notes
 )
 
@@ -1170,11 +1216,11 @@ function BillingRow({
         onClick={() => onSelect(p.id)}
         className="flex min-w-0 flex-1 items-center gap-3 text-left"
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/10 text-sm font-semibold text-text-muted">
+        <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full ring-1 ring-white/10">
           {p.avatar_local || p.avatar_url ? (
             <img src={p.avatar_local ?? p.avatar_url ?? ""} alt="" className="h-full w-full object-cover" />
           ) : (
-            p.username.charAt(0).toUpperCase()
+            <AvatarPlaceholder username={p.username} size="sm" />
           )}
         </div>
         <div className="min-w-0 flex-1">
@@ -1469,13 +1515,13 @@ function PerformerRow({
 
       {/* Avatar */}
       <div className="relative h-7 w-7 flex-shrink-0">
-        {performer.avatar_url ? (
-          <img src={performer.avatar_url} alt={performer.username} className="h-full w-full rounded-full object-cover" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center rounded-full bg-white/10 text-[10px] text-text-muted">
-            {performer.username[0]?.toUpperCase()}
-          </div>
-        )}
+        <div className="h-full w-full overflow-hidden rounded-full ring-1 ring-white/10">
+          {performer.avatar_local || performer.avatar_url ? (
+            <img src={performer.avatar_local ?? performer.avatar_url ?? ""} alt={performer.username} className="h-full w-full object-cover" />
+          ) : (
+            <AvatarPlaceholder username={performer.username} size="sm" />
+          )}
+        </div>
         {isInQueue && (
           <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-400 ring-1 ring-surface" />
         )}
@@ -2335,8 +2381,8 @@ export default function PerformersPage() {
                 className="h-40 rounded-xl border border-white/8 bg-white/[0.03] animate-[slideUp_300ms_ease-out_both]"
                 style={{ animationDelay: `${i * 50}ms` }}
               >
-                <div className="flex gap-3 p-4">
-                  <div className="h-14 w-14 shrink-0 animate-pulse rounded-xl bg-white/10" />
+                <div className="flex gap-3.5 p-4">
+                  <div className="h-14 w-14 shrink-0 animate-pulse rounded-full bg-white/10 ring-2 ring-white/5" />
                   <div className="flex-1 space-y-2 pt-1">
                     <div className="h-3.5 w-24 animate-pulse rounded bg-white/10" />
                     <div className="h-3 w-16 animate-pulse rounded bg-white/[0.06]" />
@@ -2401,6 +2447,23 @@ export default function PerformersPage() {
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {/* Discover CTA card */}
+          {!selectMode && !search && platformFilter === "all" && !tagFilter && (
+            <button
+              onClick={() => runUiTransition(() => setShowDiscover(true))}
+              className="group/cta flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-accent/30 bg-gradient-to-br from-accent/5 via-transparent to-violet-500/5 p-6 text-center transition-all hover:border-accent/50 hover:from-accent/10 hover:to-violet-500/10 hover:shadow-lg hover:shadow-accent/5 animate-[slideUp_300ms_ease-out_both]"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/15 text-accent transition-transform group-hover/cta:scale-110">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /><path d="M11 8v6M8 11h6" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-text-primary">Discover Creators</p>
+                <p className="mt-0.5 text-[11px] text-text-muted">Find new creators with AI-powered search</p>
+              </div>
+            </button>
+          )}
           {performers.map((p, idx) => (
             <div
               key={p.id}

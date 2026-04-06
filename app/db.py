@@ -733,6 +733,8 @@ class Database:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_rating_captured ON screenshots(rating DESC, captured_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_term_captured ON screenshots(term, captured_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_source_captured ON screenshots(source, captured_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_browse ON screenshots(source, captured_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_term_date ON screenshots(term, captured_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_performer_rating_captured ON screenshots(performer_id, rating DESC, captured_at DESC)")
         # Partial index: fast scan when filtering to performer-linked shots only
         conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_has_performer ON screenshots(captured_at DESC) WHERE performer_id IS NOT NULL")

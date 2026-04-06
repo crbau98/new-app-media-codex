@@ -754,7 +754,7 @@ def _search_ytdlp_videos(
     max_count: int = 3,
     settings=None,
 ) -> list[dict]:
-    """Search gay-category pages on xvideos/xhamster and download up to max_count videos."""
+    """Search gay-category pages and extract direct streaming URLs (no download) for up to max_count videos."""
     try:
         import yt_dlp
     except ImportError:
@@ -789,56 +789,72 @@ def _search_ytdlp_videos(
             print(f"[ytdlp] search failed for '{search_url}': {exc}")
             continue
 
-    # Download up to max_count candidates
-    download_opts = {
+    # Extract streaming URLs (no download) for up to max_count candidates
+    extract_opts = {
         "quiet": True,
         "no_warnings": True,
         "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
-        "merge_output_format": "mp4",
-        "max_filesize": 500 * 1024 * 1024,  # 500 MB cap
     }
 
     session = requests.Session()
     results: list[dict] = []
-    downloaded = 0
+    extracted = 0
     for entry in candidates:
-        if downloaded >= max_count:
+        if extracted >= max_count:
             break
         url = entry.get("url") or entry.get("webpage_url") or ""
         if not url:
             continue
         if db and db.screenshot_page_url_exists(url):
             continue
-        # Vision-filter thumbnail before committing to full download
+        # Vision-filter thumbnail before committing to extraction
         thumbnail_url = entry.get("thumbnail") or ""
         if settings is not None and thumbnail_url:
             if not _check_thumbnail_vision(session, thumbnail_url, settings):
                 print(f"[ytdlp] vision rejected thumbnail for: {entry.get('title', url)}")
                 continue
-        out_path = image_dir / f"{slug_base}_ytdlp_{uuid.uuid4().hex[:8]}.mp4"
         try:
-            opts = {**download_opts, "outtmpl": str(out_path)}
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
-            if out_path.exists() and out_path.stat().st_size > 0:
-                if settings is not None and not _check_downloaded_video_vision(out_path, settings):
-                    out_path.unlink(missing_ok=True)
-                    continue
-                results.append({
-                    "term": slug_base.replace("_", " "),
-                    "source": "ytdlp",
-                    "page_url": url,
-                    "local_path": str(out_path),
-                    "ok": True,
-                    "source_url": url,
-                })
-                downloaded += 1
-                print(f"[ytdlp] downloaded: {out_path.name} ({out_path.stat().st_size // 1024 // 1024}MB)")
-            else:
-                out_path.unlink(missing_ok=True)
+            with yt_dlp.YoutubeDL(extract_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            if not info:
+                continue
+            # Extract the best direct streaming URL
+            stream_url = info.get("url")
+            if not stream_url:
+                formats = info.get("formats") or []
+                # Prefer mp4 at <=720p
+                best = None
+                for fmt in formats:
+                    ext = fmt.get("ext", "")
+                    height = fmt.get("height") or 0
+                    fmt_url = fmt.get("url")
+                    if not fmt_url:
+                        continue
+                    if ext == "mp4" and 0 < height <= 720:
+                        if best is None or (fmt.get("height") or 0) > (best.get("height") or 0):
+                            best = fmt
+                if best is None:
+                    # Fallback: pick the last format with a URL (typically best quality)
+                    for fmt in reversed(formats):
+                        if fmt.get("url"):
+                            best = fmt
+                            break
+                if best:
+                    stream_url = best["url"]
+            if not stream_url:
+                continue
+            results.append({
+                "term": slug_base.replace("_", " "),
+                "source": "ytdlp",
+                "page_url": url,
+                "local_path": None,
+                "ok": True,
+                "source_url": stream_url,
+            })
+            extracted += 1
+            print(f"[ytdlp] extracted stream URL for: {entry.get('title', url)[:60]}")
         except Exception as exc:
-            print(f"[ytdlp] download failed for {url}: {exc}")
-            out_path.unlink(missing_ok=True)
+            print(f"[ytdlp] extract failed for {url}: {exc}")
 
     return results
 

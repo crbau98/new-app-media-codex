@@ -1483,13 +1483,14 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
     for name, ytdlp_results in ytdlp_results_by_name:
         try:
             for result in ytdlp_results:
-                if result.get("ok") and result.get("local_path"):
+                if result.get("ok"):
                     db.insert_screenshot(
                         term=display_name or username,
                         source="ytdlp",
                         page_url=result.get("page_url", ""),
-                        local_path=result["local_path"],
+                        local_path=result.get("local_path"),
                         performer_id=performer_id,
+                        source_url=result.get("source_url", ""),
                     )
                     captured += 1
         except Exception as e:
@@ -1534,8 +1535,6 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 "extract_flat": True,
                 "playlistend": 10,
                 "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]",
-                "merge_output_format": "mp4",
-                "max_filesize": 200 * 1024 * 1024,
             }
             try:
                 with _yt_dlp.YoutubeDL({**_tw_opts, "extract_flat": True, "playlistend": 10}) as ydl:
@@ -1545,56 +1544,75 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 print(f"[performer-capture] twitter extract error for @{tw_user}: {e}")
                 return 0
 
-            tweet_jobs: list[dict] = []
+            _extract_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]",
+            }
+
+            tweet_urls: list[str] = []
             for entry in entries:
-                if len(tweet_jobs) >= 5:
+                if len(tweet_urls) >= 5:
                     break
                 tweet_url = entry.get("url") or entry.get("webpage_url") or ""
                 if not tweet_url or _page_url_exists(tweet_url):
                     continue
-                out_path = image_dir / f"{slug}_tw_{uuid.uuid4().hex[:8]}.mp4"
-                tweet_jobs.append({
-                    "tweet_url": tweet_url,
-                    "out_path": out_path,
-                    "yt_opts": _tw_opts,
-                })
+                tweet_urls.append(tweet_url)
 
-            if not tweet_jobs:
+            if not tweet_urls:
                 return 0
 
-            def _download_tweet(job: dict) -> dict:
-                out_path = Path(job["out_path"])
+            def _extract_tweet(tweet_url: str) -> dict:
                 try:
-                    with _yt_dlp.YoutubeDL({**job["yt_opts"], "outtmpl": str(out_path), "extract_flat": False}) as ydl:
-                        ydl.download([job["tweet_url"]])
-                    ok = out_path.exists() and out_path.stat().st_size > 0
+                    with _yt_dlp.YoutubeDL(_extract_opts) as ydl:
+                        info = ydl.extract_info(tweet_url, download=False)
+                    if not info:
+                        return {"tweet_url": tweet_url, "ok": False}
+                    stream_url = info.get("url")
+                    if not stream_url:
+                        formats = info.get("formats") or []
+                        best = None
+                        for fmt in formats:
+                            ext = fmt.get("ext", "")
+                            height = fmt.get("height") or 0
+                            fmt_url = fmt.get("url")
+                            if not fmt_url:
+                                continue
+                            if ext == "mp4" and 0 < height <= 720:
+                                if best is None or (fmt.get("height") or 0) > (best.get("height") or 0):
+                                    best = fmt
+                        if best is None:
+                            for fmt in reversed(formats):
+                                if fmt.get("url"):
+                                    best = fmt
+                                    break
+                        if best:
+                            stream_url = best["url"]
+                    return {"tweet_url": tweet_url, "stream_url": stream_url, "ok": bool(stream_url)}
                 except Exception:
-                    ok = False
-                if not ok:
-                    out_path.unlink(missing_ok=True)
-                return {**job, "ok": ok}
+                    return {"tweet_url": tweet_url, "ok": False}
 
-            downloaded = 0
-            with ThreadPoolExecutor(max_workers=min(2, len(tweet_jobs))) as pool:
-                futures = [pool.submit(_download_tweet, job) for job in tweet_jobs]
+            extracted = 0
+            with ThreadPoolExecutor(max_workers=min(2, len(tweet_urls))) as pool:
+                futures = [pool.submit(_extract_tweet, u) for u in tweet_urls]
                 completed_jobs = [future.result() for future in as_completed(futures)]
 
             for job in completed_jobs:
                 if not job.get("ok"):
                     continue
                 tweet_url = job["tweet_url"]
-                out_path = Path(job["out_path"])
                 db.insert_screenshot(
                     term=display_name or username,
                     source="ytdlp",
                     page_url=tweet_url,
-                    local_path=str(out_path),
+                    local_path=None,
                     performer_id=performer_id,
+                    source_url=job.get("stream_url", ""),
                 )
                 captured_nonlocal[0] += 1
-                downloaded += 1
+                extracted += 1
                 _mark_page_url(tweet_url)
-            return downloaded
+            return extracted
 
         captured_nonlocal = [captured]
         for tw_user in twitter_targets:

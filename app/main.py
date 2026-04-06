@@ -12,6 +12,7 @@ import uuid
 
 os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "__all__")
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -66,6 +67,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = db
     app.state.settings = settings
     app.state.service = service
+    app.state.http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=10, read=120, write=10, pool=10),
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        follow_redirects=True,
+    )
 
     service_start_task = asyncio.create_task(asyncio.to_thread(service.start))
     telegram_start_task: asyncio.Task[None] | None = None
@@ -100,6 +106,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 print("[telegram] Pyrogram client stopped")
             except Exception:
                 pass
+        http_client = getattr(app.state, "http_client", None)
+        if http_client:
+            await http_client.aclose()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)

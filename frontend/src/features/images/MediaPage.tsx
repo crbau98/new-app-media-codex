@@ -898,7 +898,7 @@ const AIDescribedSection = memo(function AIDescribedSection({
                 className="group flex-shrink-0"
               >
                 <div className="h-20 w-20 overflow-hidden rounded-lg bg-black/20">
-                  <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
+                  <img src={src} alt="" loading="lazy" decoding="async" fetchPriority="low" className="h-full w-full object-cover" />
                 </div>
                 <p className="mt-1 w-20 truncate text-[10px] text-[var(--color-text-muted)] group-hover:text-[var(--color-text-primary)]">
                   {shot.ai_summary}
@@ -1481,7 +1481,7 @@ export function MediaPage() {
         ...(mediaCreatorId != null ? { performer_id: mediaCreatorId } : {}),
         ...(tab === "videos" ? { media_type: "video" } : {}),
         ...(tab === "images" ? { media_type: "image" } : {}),
-        limit: 12,
+        limit: 24,
         offset: pageParam as number,
       }),
     getNextPageParam: (last) => (last.has_more ? (last.next_offset ?? (last.offset + last.screenshots.length)) : undefined),
@@ -2182,7 +2182,7 @@ export function MediaPage() {
     if (!node) return
     observerRef.current = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) fetchNextPage()
-    }, { rootMargin: "800px 0px" })
+    }, { rootMargin: "1200px 0px" })
     observerRef.current.observe(node)
   }, [fetchNextPage, hasNextPage, isFetchingNextPage])
 
@@ -3249,7 +3249,7 @@ export function MediaPage() {
                       title={shot.term}
                     >
                       {src ? (
-                        <img src={src} alt={shot.term} className="h-full w-full object-cover" loading="lazy" />
+                        <img src={src} alt={shot.term} className="h-full w-full object-cover" loading="lazy" decoding="async" fetchPriority="low" />
                       ) : vid && mediaSrc ? (
                         <video
                           src={mediaSrc}

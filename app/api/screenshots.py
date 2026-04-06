@@ -22,6 +22,53 @@ from PIL import Image, ImageOps
 
 _logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# In-memory LRU byte cache for proxied *image* responses (not videos).
+# Max 150 MB total, 1-hour TTL per entry.
+# ---------------------------------------------------------------------------
+_PROXY_CACHE_MAX_BYTES = 150 * 1024 * 1024  # 150 MB
+_PROXY_CACHE_TTL = 3600  # 1 hour
+_proxy_cache: dict[str, tuple[float, str, bytes]] = {}  # url -> (expires_at, content_type, body)
+_proxy_cache_size = 0  # current total bytes
+_IMAGE_CONTENT_PREFIXES = ("image/",)
+
+
+def _proxy_cache_get(url: str) -> tuple[str, bytes] | None:
+    entry = _proxy_cache.get(url)
+    if entry is None:
+        return None
+    expires_at, content_type, body = entry
+    if time.monotonic() > expires_at:
+        _proxy_cache_evict(url)
+        return None
+    return content_type, body
+
+
+def _proxy_cache_evict(url: str) -> None:
+    global _proxy_cache_size
+    entry = _proxy_cache.pop(url, None)
+    if entry:
+        _proxy_cache_size -= len(entry[2])
+
+
+def _proxy_cache_put(url: str, content_type: str, body: bytes) -> None:
+    global _proxy_cache_size
+    size = len(body)
+    # Don't cache entries larger than 10 MB individually
+    if size > 10 * 1024 * 1024:
+        return
+    # Evict expired entries first, then oldest until under budget
+    now = time.monotonic()
+    expired = [k for k, (exp, _, _) in _proxy_cache.items() if now > exp]
+    for k in expired:
+        _proxy_cache_evict(k)
+    # Evict oldest until we have room
+    while _proxy_cache_size + size > _PROXY_CACHE_MAX_BYTES and _proxy_cache:
+        oldest_key = next(iter(_proxy_cache))
+        _proxy_cache_evict(oldest_key)
+    _proxy_cache[url] = (now + _PROXY_CACHE_TTL, content_type, body)
+    _proxy_cache_size += size
+
 
 def _disk_has_space(path: str, min_free_mb: int = 500) -> bool:
     """Return True if *path*'s filesystem has at least *min_free_mb* MB free."""
@@ -47,7 +94,18 @@ async def proxy_media(url: str = Query(...), request: Request = None):
     if range_header:
         req_headers["Range"] = range_header
 
-    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=120, write=10, pool=10), follow_redirects=True)
+    # Check in-memory cache for non-range image requests
+    if not range_header:
+        cached = _proxy_cache_get(url)
+        if cached is not None:
+            ct, body = cached
+            return Response(
+                content=body,
+                media_type=ct,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+
+    client: httpx.AsyncClient = request.app.state.http_client
     try:
         resp = await client.send(
             client.build_request("GET", url, headers=req_headers),
@@ -55,9 +113,26 @@ async def proxy_media(url: str = Query(...), request: Request = None):
         )
         resp.raise_for_status()
     except Exception:
-        await client.aclose()
         raise HTTPException(502, "Could not fetch media")
     content_type = resp.headers.get("content-type", "application/octet-stream")
+    is_image = content_type.startswith(_IMAGE_CONTENT_PREFIXES)
+
+    # For small images without Range header, read fully and cache
+    content_length_str = resp.headers.get("content-length")
+    if is_image and not range_header and content_length_str:
+        try:
+            cl = int(content_length_str)
+        except ValueError:
+            cl = 0
+        if 0 < cl <= 10 * 1024 * 1024:
+            body = await resp.aread()
+            await resp.aclose()
+            _proxy_cache_put(url, content_type, body)
+            return Response(
+                content=body,
+                media_type=content_type,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
 
     async def stream_and_close():
         try:
@@ -65,12 +140,11 @@ async def proxy_media(url: str = Query(...), request: Request = None):
                 yield chunk
         finally:
             await resp.aclose()
-            await client.aclose()
 
     resp_headers = {"Cache-Control": "public, max-age=86400"}
     # Propagate content-length and range headers for video seeking
-    if resp.headers.get("content-length"):
-        resp_headers["Content-Length"] = resp.headers["content-length"]
+    if content_length_str:
+        resp_headers["Content-Length"] = content_length_str
     if resp.headers.get("accept-ranges"):
         resp_headers["Accept-Ranges"] = resp.headers["accept-ranges"]
     if resp.headers.get("content-range"):
@@ -490,6 +564,11 @@ def browse_screenshots(
             if not raw_has_more or inspected == 0:
                 break
         compatible_offset = max(offset, raw_cursor - len(valid))
+        # Strip heavy fields not needed for grid view (loaded on-demand in detail)
+        _BROWSE_STRIP_KEYS = ("ai_summary", "ai_tags", "user_tags")
+        for s in valid:
+            for k in _BROWSE_STRIP_KEYS:
+                s.pop(k, None)
         return {
             "screenshots": valid,
             "total": raw_total,
@@ -1774,7 +1853,7 @@ async def capture_videos(request: Request, background_tasks: BackgroundTasks) ->
                             term=term,
                             source=r["source"],
                             page_url=r["page_url"],
-                            local_path=r["local_path"],
+                            local_path=r.get("local_path"),
                             source_url=r.get("source_url"),
                         )
                         total += 1
