@@ -539,21 +539,19 @@ def browse_screenshots(
                     s["preview_url"] = preview_url
                     valid.append(s)
                 else:
-                    # Remote-only entry — stream via proxy
+                    # Remote-only entry — serve source URL directly to browser
                     media_url = s.get("source_url") or s.get("page_url") or ""
                     if not media_url or not media_url.startswith(("http://", "https://")):
                         if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
                             break
                         continue
-                    from urllib.parse import quote
-                    proxy_url = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
                     ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
                     src = s.get("source", "")
                     is_vid = ext in ("mp4", "webm", "mov") or src in ("redgifs", "ytdlp")
-                    s["local_url"] = proxy_url
-                    # For images, the proxy URL doubles as the preview;
-                    # for videos, no preview available (frontend shows poster frame)
-                    s["preview_url"] = None if is_vid else proxy_url
+                    # Let browser load directly from source CDN (faster, no proxy overhead)
+                    s["local_url"] = media_url
+                    s["source_url"] = media_url
+                    s["preview_url"] = None if is_vid else media_url
                     valid.append(s)
                 if len(valid) >= effective_limit:
                     break

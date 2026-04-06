@@ -11,17 +11,15 @@ interface Screenshot {
 }
 
 export function getScreenshotMediaSrc(s: Screenshot): string {
-  // Prefer backend-resolved local_url (works for both local files and proxy URLs)
+  // Prefer backend-resolved local_url (direct CDN URL or local path)
   if (s.local_url) return s.local_url
   // Legacy: local file on disk
   if (s.local_path) {
     const name = s.local_path.split("/").pop() || ""
     if (name) return `/cached-screenshots/${name}`
   }
-  // Remote-only: proxy through backend
-  if (s.source_url) {
-    return `/api/screenshots/proxy-media?url=${encodeURIComponent(s.source_url)}`
-  }
+  // Remote-only: use source URL directly (browser loads from CDN)
+  if (s.source_url) return s.source_url
   return s.page_url || ""
 }
 
