@@ -72,6 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         timeout=httpx.Timeout(connect=10, read=120, write=10, pool=10),
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
         follow_redirects=True,
+        cookies=httpx.Cookies(),  # Persist cookies across requests (DDoS-Guard)
     )
 
     service_start_task = asyncio.create_task(asyncio.to_thread(service.start))
@@ -271,15 +272,20 @@ def index(request: Request) -> HTMLResponse:
                 if local_p and (Path(settings.image_dir).parent / "screenshots" / Path(local_p).name).exists():
                     s["local_url"] = f"/cached-screenshots/{Path(local_p).name}"
                 elif media_url.startswith(("http://", "https://")):
+                    from urllib.parse import quote
                     ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
                     src = s.get("source", "")
                     is_vid = ext in _vid_exts or src in _vid_sources
-                    s["local_url"] = media_url
+                    if "coomer.st" in media_url:
+                        s["local_url"] = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
+                        s["preview_url"] = None if is_vid else s["local_url"]
+                    else:
+                        s["local_url"] = media_url
+                        thumb = s.get("thumbnail_url")
+                        if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
+                            thumb = media_url.replace(".mp4", "-poster.jpg")
+                        s["preview_url"] = thumb or (None if is_vid else media_url)
                     s["source_url"] = media_url
-                    thumb = s.get("thumbnail_url")
-                    if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
-                        thumb = media_url.replace(".mp4", "-poster.jpg")
-                    s["preview_url"] = thumb or (None if is_vid else media_url)
                 else:
                     continue
                 for k in ("ai_summary", "ai_tags", "user_tags"):

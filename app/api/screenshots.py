@@ -89,7 +89,11 @@ async def proxy_media(url: str = Query(...), request: Request = None):
     from starlette.responses import StreamingResponse
 
     # Forward Range header for video seeking support
-    req_headers = {"User-Agent": "Mozilla/5.0", "Referer": url}
+    req_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Referer": url,
+        "Accept": "image/webp,image/apng,image/*,video/*,*/*;q=0.8",
+    }
     range_header = request.headers.get("range") if request else None
     if range_header:
         req_headers["Range"] = range_header
@@ -548,14 +552,20 @@ def browse_screenshots(
                     ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
                     src = s.get("source", "")
                     is_vid = ext in ("mp4", "webm", "mov") or src in ("redgifs", "ytdlp")
-                    # Let browser load directly from source CDN (faster, no proxy overhead)
-                    s["local_url"] = media_url
+                    # Coomer.st uses DDoS-Guard which blocks direct video loading;
+                    # proxy coomer URLs through our backend, serve others directly
+                    if "coomer.st" in media_url:
+                        from urllib.parse import quote
+                        s["local_url"] = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
+                        s["preview_url"] = None if is_vid else s["local_url"]
+                    else:
+                        s["local_url"] = media_url
+                        # Derive poster thumbnail for Redgifs videos
+                        thumb = s.get("thumbnail_url")
+                        if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
+                            thumb = media_url.replace(".mp4", "-poster.jpg")
+                        s["preview_url"] = thumb or (None if is_vid else media_url)
                     s["source_url"] = media_url
-                    # Derive poster thumbnail for Redgifs videos: {Slug}.mp4 → {Slug}-poster.jpg
-                    thumb = s.get("thumbnail_url")
-                    if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
-                        thumb = media_url.replace(".mp4", "-poster.jpg")
-                    s["preview_url"] = thumb or (None if is_vid else media_url)
                     valid.append(s)
                 if len(valid) >= effective_limit:
                     break
