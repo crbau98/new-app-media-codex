@@ -1,28 +1,29 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-base: #0a0f14;
-  --color-bg-surface: #111920;
-  --color-bg-elevated: #18212c;
-  --color-bg-subtle: #1e2935;
+  --color-bg-base: #09090b;
+  --color-bg-surface: #111113;
+  --color-bg-elevated: #1a1a1e;
+  --color-bg-subtle: #222226;
 
-  --color-border: #22354a;
-  --color-border-muted: #162434;
+  --color-border: #2a2a30;
+  --color-border-muted: #1e1e22;
 
-  --color-text-primary: #eef4fb;
-  --color-text-secondary: #9bb0c7;
-  --color-text-muted: #607690;
+  --color-text-primary: #f0ece8;
+  --color-text-secondary: #a8a096;
+  --color-text-muted: #6b6560;
 
-  --color-accent: #7cc6ff;
-  --color-accent-secondary: #06b6d4;
-  --color-accent-hover: #9dd7ff;
+  --color-accent: #f59e0b;
+  --color-accent-secondary: #d97706;
+  --color-accent-hover: #d97706;
+  --color-accent-soft: rgba(245, 158, 11, 0.1);
   --color-teal: #64dfcf;
   --color-amber: #f7b955;
   --color-green: #56d497;
   --color-red: #ff7b83;
   --color-purple: #8ea2ff;
 
-  --color-accent-glow: rgba(124, 198, 255, 0.22);
+  --color-accent-glow: rgba(245, 158, 11, 0.22);
   --color-teal-glow: rgba(100, 223, 207, 0.16);
 
   --font-sans: 'Inter', 'IBM Plex Sans', system-ui, sans-serif;
@@ -48,16 +49,17 @@
   --color-text-secondary: #4a5e75;
   --color-text-muted: #7a8da0;
 
-  --color-accent: #2b8fd6;
-  --color-accent-secondary: #0891b2;
-  --color-accent-hover: #1a7ac0;
+  --color-accent: #d97706;
+  --color-accent-secondary: #b45309;
+  --color-accent-hover: #b45309;
+  --color-accent-soft: rgba(217, 119, 6, 0.1);
   --color-teal: #0d9488;
   --color-amber: #d97706;
   --color-green: #16a34a;
   --color-red: #dc2626;
   --color-purple: #6366f1;
 
-  --color-accent-glow: rgba(43, 143, 214, 0.15);
+  --color-accent-glow: rgba(217, 119, 6, 0.15);
   --color-teal-glow: rgba(13, 148, 136, 0.12);
 }
 
@@ -94,12 +96,12 @@ a {
 }
 
 ::selection {
-  background: rgba(124, 198, 255, 0.28);
+  background: rgba(245, 158, 11, 0.28);
   color: var(--color-text-primary);
 }
 
 [data-theme="light"] ::selection {
-  background: rgba(43, 143, 214, 0.2);
+  background: rgba(217, 119, 6, 0.2);
 }
 
 [data-theme="light"] ::-webkit-scrollbar-thumb {
@@ -129,7 +131,7 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid rgba(124, 198, 255, 0.9);
+  outline: 2px solid rgba(245, 158, 11, 0.9);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -180,7 +182,7 @@ a {
     background: linear-gradient(135deg, var(--color-accent), var(--color-teal));
   }
   .border-glow {
-    box-shadow: 0 0 12px rgba(59, 130, 246, 0.15);
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.15);
   }
 
   .fade-in { animation: fadeIn 300ms ease-out; }
@@ -206,9 +208,9 @@ a {
 
   .hero-surface {
     background:
-      radial-gradient(circle at top left, rgba(124, 198, 255, 0.16), transparent 34%),
-      radial-gradient(circle at top right, rgba(100, 223, 207, 0.12), transparent 28%),
-      linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(5, 10, 22, 0.98));
+      radial-gradient(circle at top left, rgba(245, 158, 11, 0.14), transparent 34%),
+      radial-gradient(circle at top right, rgba(100, 223, 207, 0.10), transparent 28%),
+      linear-gradient(180deg, rgba(14, 14, 16, 0.96), rgba(9, 9, 11, 0.98));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:
       0 24px 80px rgba(0, 0, 0, 0.28),
@@ -244,10 +246,10 @@ a {
   }
 
   .ui-chip-active {
-    border-color: rgba(124, 198, 255, 0.35);
-    background: rgba(124, 198, 255, 0.14);
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.14);
     color: var(--color-accent);
-    box-shadow: 0 0 0 1px rgba(124, 198, 255, 0.08) inset;
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.08) inset;
   }
 
   .hero-title {
@@ -265,7 +267,7 @@ a {
   .glow-accent {
     box-shadow:
       0 0 24px var(--color-accent-glow),
-      0 0 44px rgba(124, 198, 255, 0.08);
+      0 0 44px rgba(245, 158, 11, 0.08);
   }
 
   .glow-teal {
@@ -359,7 +361,7 @@ a {
     border-radius: 28px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     background:
-      radial-gradient(circle at top, rgba(124, 198, 255, 0.12), transparent 36%),
+      radial-gradient(circle at top, rgba(245, 158, 11, 0.12), transparent 36%),
       radial-gradient(circle at bottom right, rgba(100, 223, 207, 0.08), transparent 30%),
       linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
     box-shadow:
@@ -374,7 +376,7 @@ a {
     width: 12rem;
     height: 12rem;
     border-radius: 999px;
-    background: radial-gradient(circle, rgba(124, 198, 255, 0.18), transparent 70%);
+    background: radial-gradient(circle, rgba(245, 158, 11, 0.18), transparent 70%);
     filter: blur(10px);
     pointer-events: none;
   }
@@ -398,7 +400,7 @@ a {
   }
 
   .gradient-text {
-    background: linear-gradient(135deg, #cfeaff, #7cc6ff 42%, #64dfcf 100%);
+    background: linear-gradient(135deg, #fde68a, #f59e0b 42%, #d97706 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -433,7 +435,7 @@ a {
 
   .card-hover:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(124, 198, 255, 0.08);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(245, 158, 11, 0.08);
   }
 
   /* Pill/chip entrance animation */
@@ -484,7 +486,7 @@ a {
     border-color: var(--color-border-muted);
   }
   [data-theme="light"] .card-hover:hover {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(43, 143, 214, 0.12);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(217, 119, 6, 0.12);
   }
   [data-theme="light"] .row-hover:hover {
     background: rgba(0, 0, 0, 0.025);
@@ -499,14 +501,14 @@ a {
     background-size: 220% 100%;
   }
   [data-theme="light"] .gradient-text {
-    background: linear-gradient(135deg, #1a7ac0, #2b8fd6 42%, #0d9488 100%);
+    background: linear-gradient(135deg, #b45309, #d97706 42%, #92400e 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
   [data-theme="light"] .shell-bg {
     background:
-      radial-gradient(circle at 20% 10%, rgba(43, 143, 214, 0.04), transparent 0 28%),
+      radial-gradient(circle at 20% 10%, rgba(217, 119, 6, 0.04), transparent 0 28%),
       radial-gradient(circle at 90% 0%, rgba(13, 148, 136, 0.04), transparent 0 24%),
       linear-gradient(180deg, rgba(0, 0, 0, 0.01), transparent 18%);
   }
@@ -536,7 +538,7 @@ a {
   }
   [data-theme="light"] .empty-state-panel {
     background:
-      radial-gradient(circle at top, rgba(43, 143, 214, 0.08), transparent 36%),
+      radial-gradient(circle at top, rgba(217, 119, 6, 0.08), transparent 36%),
       radial-gradient(circle at bottom right, rgba(13, 148, 136, 0.06), transparent 30%),
       linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.76));
     border-color: var(--color-border);

@@ -63,91 +63,14 @@ function parseTags(tags: string | null): string[] {
   }
 }
 
-/* ── Stats Bar ─────────────────────────────────────────────────────────── */
+/* ── Stats Bar (clean, minimal) ────────────────────────────────────────── */
 
-function StatsBar({ onRenewingClick }: { onRenewingClick?: () => void }) {
-  const { data, isLoading } = useQuery({
+function useCreatorStats() {
+  return useQuery({
     queryKey: ["performer-stats"],
     queryFn: () => api.performerStats(),
     staleTime: 30_000,
   })
-
-  if (isLoading) return <Skeleton variant="card" height="72px" />
-
-  const stats = data
-
-  type StatCard = { label: string; value: number | string; borderClass: string; bgClass: string; labelClass: string; valueClass: string; onClick?: () => void; isButton?: boolean }
-
-  const cards: StatCard[] = [
-    { label: "Total", value: stats?.total ?? 0, borderClass: "border-white/[0.06]", bgClass: "bg-white/[0.03]", labelClass: "text-text-muted", valueClass: "text-text-primary" },
-    { label: "Watchlist", value: stats?.favorites ?? 0, borderClass: "border-white/[0.06]", bgClass: "bg-white/[0.03]", labelClass: "text-text-muted", valueClass: "text-text-primary" },
-    { label: "With Media", value: stats?.with_media ?? 0, borderClass: "border-white/[0.06]", bgClass: "bg-white/[0.03]", labelClass: "text-text-muted", valueClass: "text-text-primary" },
-    { label: "Subscribed", value: stats?.subscribed_count ?? 0, borderClass: "border-sky-500/15", bgClass: "bg-sky-500/[0.03]", labelClass: "text-sky-400/70", valueClass: "text-sky-300" },
-    { label: "Spend/mo", value: stats?.monthly_spend ? `$${stats.monthly_spend.toFixed(0)}` : 0, borderClass: "border-emerald-500/15", bgClass: "bg-emerald-500/[0.03]", labelClass: "text-emerald-400/70", valueClass: "text-emerald-300" },
-    {
-      label: "Renewing", value: stats?.renewing_soon_count ?? 0,
-      borderClass: (stats?.renewing_soon_count ?? 0) > 0 ? "border-orange-500/15" : "border-white/[0.06]",
-      bgClass: (stats?.renewing_soon_count ?? 0) > 0 ? "bg-orange-500/[0.03]" : "bg-white/[0.03]",
-      labelClass: (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-400/70" : "text-text-muted",
-      valueClass: (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-300" : "text-text-primary",
-      onClick: onRenewingClick, isButton: true,
-    },
-    {
-      label: "Stale", value: stats?.stale_count ?? 0,
-      borderClass: (stats?.stale_count ?? 0) > 0 ? "border-amber-500/15" : "border-white/[0.06]",
-      bgClass: (stats?.stale_count ?? 0) > 0 ? "bg-amber-500/[0.03]" : "bg-white/[0.03]",
-      labelClass: (stats?.stale_count ?? 0) > 0 ? "text-amber-400/70" : "text-text-muted",
-      valueClass: (stats?.stale_count ?? 0) > 0 ? "text-amber-300" : "text-text-primary",
-    },
-  ]
-
-  // Hide stats with zero or "--" values
-  const visibleCards = cards.filter((c) => {
-    if (typeof c.value === "number" && c.value === 0) return false
-    if (c.value === "--") return false
-    return true
-  })
-
-  if (visibleCards.length === 0) {
-    return (
-      <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-center">
-        <p className="text-xs text-text-muted">No data yet</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-7">
-      {visibleCards.map((c) => {
-        const inner = (
-          <>
-            <p className={cn("text-[10px]", c.labelClass)}>{c.label}</p>
-            <p className={cn("mt-0.5 font-mono text-lg font-semibold", c.valueClass)}>
-              {typeof c.value === "number" ? c.value : c.value}
-            </p>
-          </>
-        )
-        if (c.isButton) {
-          return (
-            <button
-              key={c.label}
-              type="button"
-              onClick={c.onClick}
-              className={cn("rounded-xl border px-3 py-2.5 text-left transition-opacity hover:opacity-80", c.borderClass, c.bgClass)}
-              title="Filter by subscriptions renewing within 7 days"
-            >
-              {inner}
-            </button>
-          )
-        }
-        return (
-          <div key={c.label} className={cn("rounded-xl border px-3 py-2.5", c.borderClass, c.bgClass)}>
-            {inner}
-          </div>
-        )
-      })}
-    </div>
-  )
 }
 
 /* ── Add Creator Form ──────────────────────────────────────────────────── */
@@ -745,24 +668,9 @@ const PerformerCard = memo(function PerformerCard({
   cardRef?: React.Ref<HTMLDivElement>
 }) {
   const qc = useQueryClient()
-  const addToast = useAppStore((s) => s.addToast)
   const setMediaCreator = useAppStore((s) => s.setMediaCreator)
   const setActiveView = useAppStore((s) => s.setActiveView)
-  const [capturing, setCapturing] = useState(false)
-  const [enriching, setEnriching] = useState(false)
   const [hovered, setHovered] = useState(false)
-  const [showNotes, setShowNotes] = useState(false)
-  const [notesDraft, setNotesDraft] = useState("")
-
-  const notesMutation = useMutation({
-    mutationFn: (notes: string) => api.updatePerformer(performer.id, { notes }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["performers"] })
-      addToast("Notes saved", "success")
-      setShowNotes(false)
-    },
-    onError: () => addToast("Failed to save notes", "error"),
-  })
 
   function handleViewMedia(e: React.MouseEvent) {
     e.stopPropagation()
@@ -779,59 +687,11 @@ const PerformerCard = memo(function PerformerCard({
     },
   })
 
-  const subMutation = useMutation({
-    mutationFn: () => {
-      const newSub = performer.is_subscribed === 1 ? 0 : 1
-      const updates: Record<string, unknown> = { is_subscribed: newSub }
-      if (newSub === 1) updates.subscription_renewed_at = new Date().toISOString()
-      return api.updatePerformer(performer.id, updates as Parameters<typeof api.updatePerformer>[1])
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["performers"] })
-      qc.invalidateQueries({ queryKey: ["performer-stats"] })
-    },
-  })
-
-  async function handleRefreshAvatar(e: React.MouseEvent) {
-    e.stopPropagation()
-    setEnriching(true)
-    try {
-      await api.enrichPerformer(performer.id)
-      qc.invalidateQueries({ queryKey: ["performers"] })
-    } catch {
-      // silent — enrich is best-effort
-    } finally {
-      setEnriching(false)
-    }
-  }
-
-  async function handleQuickCapture(e: React.MouseEvent) {
-    e.stopPropagation()
-    setCapturing(true)
-    try {
-      await api.capturePerformerMedia(performer.id)
-      addToast(`Capture queued for @${performer.username}`, "success")
-      qc.invalidateQueries({ queryKey: ["capture-queue"] })
-    } catch {
-      addToast("Capture failed", "error")
-    } finally {
-      setCapturing(false)
-    }
-  }
-
   const tags = parseTags(performer.tags)
   const platformClass = PLATFORM_COLORS[performer.platform] ?? "bg-white/10 text-text-secondary border-white/10"
   const handlePrefetch = useCallback(() => {
     prefetchPerformerProfile(qc, performer.id)
   }, [qc, performer.id])
-
-  function daysAgo(dateStr: string): string {
-    const d = new Date(dateStr)
-    const diff = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24))
-    if (diff === 0) return "today"
-    if (diff === 1) return "1d ago"
-    return `${diff}d ago`
-  }
 
   return (
     <div
@@ -870,7 +730,7 @@ const PerformerCard = memo(function PerformerCard({
             )}
             <div className={cn(
               "h-full w-full overflow-hidden rounded-full ring-2 shadow-lg shadow-black/20",
-              performer.is_subscribed === 1 ? "ring-emerald-500/50" : performer.is_favorite ? "ring-rose-500/40" : "ring-white/10"
+              performer.is_favorite ? "ring-rose-500/40" : "ring-white/10"
             )}>
               {performer.avatar_local || performer.avatar_url ? (
                 <img
@@ -900,20 +760,6 @@ const PerformerCard = memo(function PerformerCard({
                   <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
                 </svg>
               )}
-              {performer.is_subscribed === 1 && (() => {
-                if (performer.subscription_renewed_at) {
-                  const daysUntil = Math.round(
-                    (new Date(performer.subscription_renewed_at).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24)
-                  )
-                  if (daysUntil < 0) return (
-                    <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[9px] font-medium text-red-400 border border-red-500/30" title="Subscription overdue">⚡ overdue</span>
-                  )
-                  if (daysUntil <= 7) return (
-                    <span className="rounded-full bg-orange-500/20 px-1.5 py-0.5 text-[9px] font-medium text-orange-400 border border-orange-500/30" title={`Renews in ${daysUntil} days`}>⚡ {daysUntil}d</span>
-                  )
-                }
-                return <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400 border border-emerald-500/30">✓ Sub'd</span>
-              })()}
             </div>
             {performer.display_name && (
               <p className="truncate text-xs text-text-secondary">{performer.display_name}</p>
@@ -934,19 +780,6 @@ const PerformerCard = memo(function PerformerCard({
                   {performer.platform}
                 </span>
               )}
-              {performer.subscription_price != null && (
-                <span className="rounded-full bg-sky-500/20 border border-sky-500/30 px-1.5 py-0.5 text-[10px] text-sky-300">
-                  ${performer.subscription_price}/mo
-                </span>
-              )}
-              {performer.is_subscribed === 1 && performer.subscription_renewed_at && (() => {
-                const nextRenewal = new Date(new Date(performer.subscription_renewed_at).getTime() + 30 * 24 * 60 * 60 * 1000)
-                const daysUntil = Math.round((nextRenewal.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-                if (daysUntil >= 0 && daysUntil > 7) {
-                  return <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[9px] text-white/30" title="Next renewal date">{nextRenewal.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-                }
-                return null
-              })()}
               {tags.slice(0, 2).map((t) => (
                 <button
                   key={t}
@@ -963,62 +796,6 @@ const PerformerCard = memo(function PerformerCard({
 
           <div className="flex shrink-0 flex-col items-end gap-1.5">
             <div className="flex items-center gap-0.5">
-              <div className="relative">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setNotesDraft(performer.notes ?? "")
-                    setShowNotes((v) => !v)
-                  }}
-                  className={cn(
-                    "rounded-lg p-1 transition-colors hover:bg-white/10",
-                    performer.notes ? "text-amber-400/70 hover:text-amber-400" : "text-text-muted/40 hover:text-text-muted"
-                  )}
-                  title={showNotes ? "Close notes" : (performer.notes ? "Edit notes" : "Add notes")}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/>
-                  </svg>
-                </button>
-                {showNotes && (
-                  <div
-                    className="absolute right-0 top-8 z-30 w-64 rounded-xl border border-white/15 bg-[#0d1a30] p-3 shadow-2xl"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <textarea
-                      autoFocus
-                      value={notesDraft}
-                      onChange={(e) => setNotesDraft(e.target.value)}
-                      rows={4}
-                      placeholder="Add notes…"
-                      className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-accent/60 focus:outline-none"
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") { e.stopPropagation(); setShowNotes(false) }
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                          e.stopPropagation()
-                          notesMutation.mutate(notesDraft)
-                        }
-                      }}
-                    />
-                    <div className="mt-2 flex items-center justify-end gap-2">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setShowNotes(false) }}
-                        className="text-xs text-text-muted hover:text-text-secondary"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); notesMutation.mutate(notesDraft) }}
-                        disabled={notesMutation.isPending}
-                        className="rounded-lg bg-accent px-2.5 py-1 text-xs text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-                      >
-                        {notesMutation.isPending ? "Saving…" : "Save"}
-                      </button>
-                    </div>
-                    <p className="mt-1.5 text-[9px] text-text-muted">⌘↵ to save · Esc to close</p>
-                  </div>
-                )}
-              </div>
               <button
                 onClick={(e) => { e.stopPropagation(); favMutation.mutate() }}
                 className="rounded-lg p-1 transition-colors hover:bg-white/10"
@@ -1029,27 +806,12 @@ const PerformerCard = memo(function PerformerCard({
                 </svg>
               </button>
             </div>
-            <div className="flex flex-col items-end gap-1">
-              {(performer.media_count ?? 0) > 0 && (
-                <span className="flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="opacity-50"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-                  {performer.media_count}
-                </span>
-              )}
-              {(performer.screenshots_count ?? 0) > 0 && (
-                <span className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="opacity-70"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                  {performer.screenshots_count}
-                </span>
-              )}
-              {performer.last_checked_at ? (() => {
-                const diff = Math.floor((Date.now() - new Date(performer.last_checked_at).getTime()) / (1000 * 60 * 60 * 24))
-                const color = diff === 0 ? "text-emerald-400" : diff <= 3 ? "text-white/50" : diff <= 7 ? "text-amber-400" : "text-red-400"
-                return <span className={cn("text-[10px]", color)}>{daysAgo(performer.last_checked_at)}</span>
-              })() : (
-                <span className="text-[10px] text-red-400/60">never</span>
-              )}
-            </div>
+            {(performer.media_count ?? 0) > 0 && (
+              <span className="flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="opacity-50"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                {performer.media_count}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -1087,20 +849,19 @@ const PerformerCard = memo(function PerformerCard({
         </div>
         <div className="flex items-center gap-1">
           {performer.profile_url && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                navigator.clipboard.writeText(performer.profile_url!)
-                addToast(`@${performer.username} URL copied`, "success")
-              }}
+            <a
+              href={performer.profile_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
               className="flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-text-muted transition-colors hover:bg-white/10 hover:text-text-secondary"
-              title="Copy profile URL"
+              title="Visit profile"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
               </svg>
-              Copy
-            </button>
+              Profile
+            </a>
           )}
           <button
             onClick={handleViewMedia}
@@ -1109,51 +870,6 @@ const PerformerCard = memo(function PerformerCard({
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
             Media
-          </button>
-          <button
-            onClick={handleRefreshAvatar}
-            disabled={enriching}
-            className="flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-text-muted transition-colors hover:bg-white/10 hover:text-text-secondary disabled:opacity-40"
-            title="Refresh avatar from Redgifs"
-          >
-            {enriching ? (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            ) : (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-            )}
-            Avatar
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); subMutation.mutate() }}
-            disabled={subMutation.isPending}
-            className={cn(
-              "flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] transition-colors disabled:opacity-40",
-              performer.is_subscribed === 1
-                ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
-                : "bg-white/5 text-text-muted hover:bg-white/10 hover:text-emerald-400"
-            )}
-            title={performer.is_subscribed === 1 ? "Mark as unsubscribed" : "Mark as subscribed (sets today as renewal date)"}
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill={performer.is_subscribed === 1 ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
-            {performer.is_subscribed === 1 ? "Sub'd" : "Subscribe"}
-          </button>
-          <button
-            onClick={handleQuickCapture}
-            disabled={capturing || isInQueue}
-            className={cn(
-              "flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] transition-colors disabled:opacity-40",
-              isInQueue
-                ? "bg-accent/10 text-accent"
-                : "bg-white/5 text-text-muted hover:bg-white/10 hover:text-text-secondary"
-            )}
-            title={isInQueue ? "Already in capture queue" : "Queue capture"}
-          >
-            {capturing || isInQueue ? (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            ) : (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-            )}
-            {capturing ? "Starting…" : isInQueue ? "Queued" : "Capture"}
           </button>
         </div>
       </div>
@@ -1169,10 +885,8 @@ const PerformerCard = memo(function PerformerCard({
   prev.performer.is_subscribed === next.performer.is_subscribed &&
   prev.performer.media_count === next.performer.media_count &&
   prev.performer.screenshots_count === next.performer.screenshots_count &&
-  prev.performer.last_checked_at === next.performer.last_checked_at &&
   prev.performer.avatar_url === next.performer.avatar_url &&
-  prev.performer.avatar_local === next.performer.avatar_local &&
-  prev.performer.notes === next.performer.notes
+  prev.performer.avatar_local === next.performer.avatar_local
 )
 
 /* ── Analytics Panel ───────────────────────────────────────────────────── */
@@ -1668,12 +1382,12 @@ function MoreMenu({
   }, [open])
 
   const items: { label: string; onClick: () => void; active?: boolean; href?: string }[] = [
-    { label: showBilling ? "Hide Billing" : "Billing", onClick: onBilling, active: showBilling },
-    { label: showAnalytics ? "Hide Analytics" : "Analytics", onClick: onAnalytics, active: showAnalytics },
     { label: "Import URL", onClick: onImportUrl },
     { label: "Bulk Import", onClick: onBulkImport },
     { label: "Export CSV", onClick: () => {}, href: exportUrl },
     { label: selectMode ? "Exit Select" : "Select", onClick: onSelect, active: selectMode },
+    { label: showBilling ? "Hide Billing" : "Billing", onClick: onBilling, active: showBilling },
+    { label: showAnalytics ? "Hide Analytics" : "Analytics", onClick: onAnalytics, active: showAnalytics },
     { label: "Capture Stale", onClick: onCaptureStale },
     { label: "Capture All", onClick: onCaptureAll },
   ]
@@ -1735,7 +1449,7 @@ export default function PerformersPage() {
   const [showBilling, setShowBilling] = useState(false)
   const [search, setSearch] = useState("")
   const [platformFilter, setPlatformFilter] = useState<string>("all")
-  const [sort, setSort] = useState<SortOption>("newest")
+  const [sort, setSort] = useState<SortOption>("most_media")
   const [favOnly, setFavOnly] = useState(false)
   const [dueOnly, setDueOnly] = useState(false)
   const [renewingOnly, setRenewingOnly] = useState(false)
@@ -1804,6 +1518,8 @@ export default function PerformersPage() {
       clearTimeout(timeoutId)
     }
   }, [])
+
+  const { data: statsData } = useCreatorStats()
 
   const { data: analyticsData } = useQuery({
     queryKey: ["performer-analytics"],
@@ -1882,13 +1598,10 @@ export default function PerformersPage() {
     if (debouncedSearch.trim()) labels.push(`Search: "${debouncedSearch.trim()}"`)
     if (platformFilter !== "all") labels.push(platformFilter)
     if (favOnly) labels.push("Favorites")
-    if (dueOnly) labels.push("Due")
-    if (renewingOnly) labels.push("Renewing")
-    if (subscribedOnly) labels.push("Subscribed")
     if (tagFilter) labels.push(`#${tagFilter}`)
-    if (sort !== "newest") labels.push(`Sort: ${sort.replace(/_/g, " ")}`)
+    if (sort !== "most_media") labels.push(`Sort: ${sort.replace(/_/g, " ")}`)
     return labels
-  }, [debouncedSearch, platformFilter, favOnly, dueOnly, renewingOnly, subscribedOnly, tagFilter, sort])
+  }, [debouncedSearch, platformFilter, favOnly, tagFilter, sort])
 
   // Reset visible limit when filters change
   const filterKey = `${debouncedSearch}|${platformFilter}|${sort}|${favOnly}|${dueOnly}|${renewingOnly}|${subscribedOnly}|${tagFilter}`
@@ -2047,6 +1760,14 @@ export default function PerformersPage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <h1 className="text-lg font-semibold text-text-primary">Creators</h1>
+        {statsData && (
+          <div className="flex items-center gap-3 text-xs text-text-muted">
+            <span><span className="font-mono font-medium text-text-secondary">{statsData.total ?? 0}</span> total</span>
+            {(statsData.with_media ?? 0) > 0 && (
+              <span><span className="font-mono font-medium text-text-secondary">{statsData.with_media}</span> with media</span>
+            )}
+          </div>
+        )}
         <div className="relative ml-auto">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
@@ -2109,9 +1830,6 @@ export default function PerformersPage() {
       {/* Bulk Import */}
       {showBulkImport && <BulkImportPanel onClose={() => runUiTransition(() => setShowBulkImport(false))} />}
 
-      {/* Stats */}
-      <StatsBar onRenewingClick={() => runUiTransition(() => setRenewingOnly((v) => !v))} />
-
       {activeFilterSummary.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-xs text-text-secondary">
           <span className="text-text-muted">Active filters</span>
@@ -2127,7 +1845,7 @@ export default function PerformersPage() {
             onClick={() => runUiTransition(() => {
               setSearch("")
               setPlatformFilter("all")
-              setSort("newest")
+              setSort("most_media")
               setFavOnly(false)
               setDueOnly(false)
               setRenewingOnly(false)
@@ -2175,13 +1893,9 @@ export default function PerformersPage() {
           onChange={(e) => runUiTransition(() => setSort(e.target.value as SortOption))}
           className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-text-secondary focus:border-accent focus:outline-none"
         >
+          <option value="most_media">Most Content</option>
           <option value="newest">Newest</option>
           <option value="az">A-Z</option>
-          <option value="most_media">Most Media</option>
-          <option value="screenshots_count">Most Shots</option>
-          <option value="last_checked_at">Recently Checked</option>
-          <option value="subscription_price">Price</option>
-          <option value="subscription_renewed_at">Renewal Date</option>
         </select>
 
         <button
@@ -2197,52 +1911,6 @@ export default function PerformersPage() {
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
           </svg>
           Favorites
-        </button>
-
-        <button
-          onClick={() => runUiTransition(() => setDueOnly(!dueOnly))}
-          className={cn(
-            "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs transition-colors",
-            dueOnly
-              ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-              : "border-white/10 text-text-muted hover:text-text-secondary"
-          )}
-          title="Show creators not checked in 7+ days"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
-          </svg>
-          Due
-        </button>
-        <button
-          onClick={() => runUiTransition(() => setRenewingOnly(!renewingOnly))}
-          className={cn(
-            "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs transition-colors",
-            renewingOnly
-              ? "border-orange-500/30 bg-orange-500/10 text-orange-400"
-              : "border-white/10 text-text-muted hover:text-text-secondary"
-          )}
-          title="Show subscriptions renewing within 7 days"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 16h5v5" />
-          </svg>
-          Renewing
-        </button>
-        <button
-          onClick={() => runUiTransition(() => setSubscribedOnly(!subscribedOnly))}
-          className={cn(
-            "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs transition-colors",
-            subscribedOnly
-              ? "border-sky-500/30 bg-sky-500/10 text-sky-400"
-              : "border-white/10 text-text-muted hover:text-text-secondary"
-          )}
-          title="Show subscribed creators only"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill={subscribedOnly ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-          </svg>
-          Subscribed
         </button>
 
         {/* View toggle */}

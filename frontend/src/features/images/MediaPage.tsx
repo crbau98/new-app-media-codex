@@ -123,6 +123,9 @@ type SortOrder = "newest" | "oldest" | "az" | "rating" | "random"
 type TabFilter = "all" | "ddg" | "redgifs" | "tube" | "favorites" | "videos" | "images" | "creators" | "rated"
 type GridDensity = "compact" | "normal" | "spacious"
 type ViewMode = "grid" | "list" | "timeline" | "feed" | "mosaic"
+// Simplified defaults
+const DEFAULT_GRID_DENSITY: GridDensity = "normal"
+const SIMPLIFIED_VIEW_MODES: ViewMode[] = ["grid", "feed"]
 type SearchSuggestion =
   | { type: "term"; value: string; meta?: string }
   | { type: "tag"; value: string; meta?: string }
@@ -135,13 +138,15 @@ const DISCOVERY_PREFS_KEY = "media-discovery-prefs"
 
 function loadViewMode(): ViewMode {
   const stored = localStorage.getItem(VIEW_MODE_KEY)
-  if (stored === "grid" || stored === "list" || stored === "timeline" || stored === "feed" || stored === "mosaic") return stored
+  // Only grid and feed are exposed in the UI now
+  if (stored === "grid" || stored === "feed") return stored
   return "grid"
 }
 
 function loadTab(): TabFilter {
   const stored = localStorage.getItem(MEDIA_TAB_KEY)
-  if (stored === "all" || stored === "ddg" || stored === "redgifs" || stored === "tube" || stored === "favorites" || stored === "videos" || stored === "images" || stored === "creators" || stored === "rated") {
+  // Only simplified tabs are exposed in the UI now
+  if (stored === "all" || stored === "favorites" || stored === "videos" || stored === "images") {
     return stored
   }
   return "all"
@@ -301,18 +306,7 @@ function pushViewHistory(id: number) {
 
 function MediaStatsBar({ stats }: { stats: MediaStatsPayload | undefined }) {
   if (!stats) return null
-  return (
-    <div className="hide-scrollbar flex items-center gap-1 overflow-x-auto px-4 py-1 text-[10px] text-text-muted">
-      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/[0.04] px-2 py-0.5">
-        <strong className="font-mono text-text-primary">{stats.total.toLocaleString()}</strong> total
-      </span>
-      {stats.recent_24h > 0 && (
-        <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-accent">
-          +{stats.recent_24h} today
-        </span>
-      )}
-    </div>
-  )
+  return null // Stats moved to sidebar; keeping component for API compatibility
 }
 
 // ── TermBrowser ──────────────────────────────────────────────────────────────
@@ -521,8 +515,6 @@ const MediaCard = memo(function MediaCard({
   onHover,
   favorite,
   onToggleFavorite,
-  onDescribe,
-  onRate,
   onContextMenu,
   onNavigateToPerformer,
 }: {
@@ -535,18 +527,14 @@ const MediaCard = memo(function MediaCard({
   onSelect: () => void
   favorite: boolean
   onToggleFavorite: () => void
-  onDescribe: () => void
-  onRate: (rating: number) => void
   onContextMenu?: (e: React.MouseEvent) => void
   onNavigateToPerformer?: (performerId: number, username: string) => void
 }) {
   const src = getScreenshotMediaSrc(shot)
   const previewSrc = getScreenshotPreviewSrc(shot)
-  const mediaLabel = getMediaDebugLabel(shot)
   const vid = isVideoShot(shot) || (src ? isVideo(src) : false)
   const gif = src ? isGif(src) : false
   const [broken, setBroken] = useState(false)
-  const previewPending = vid && !previewSrc && !!src
 
   return (
     <article
@@ -558,12 +546,12 @@ const MediaCard = memo(function MediaCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); batchMode ? onSelect() : onClick() } }}
       onContextMenu={onContextMenu}
       className={cn(
-        "group relative cursor-pointer overflow-hidden rounded-lg bg-white/5 aspect-square animate-[slideUp_300ms_ease-out_both]",
+        "group relative cursor-pointer overflow-hidden rounded-xl bg-white/5 aspect-video transition-transform duration-200 hover:scale-[1.02] animate-[slideUp_300ms_ease-out_both]",
         selected && "ring-2 ring-blue-500"
       )}
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
     >
-      <div style={{  }}>
+      <div className="absolute inset-0">
       {previewSrc && !broken ? (
         <img
           src={previewSrc}
@@ -584,133 +572,91 @@ const MediaCard = memo(function MediaCard({
           className="h-full w-full object-cover"
         />
       ) : (
-        <MediaUnavailableTile
-          title={shot.term}
-          detail={mediaLabel}
-          statusLabel={broken ? "Media unavailable" : "Loading"}
-        />
+        <div className="flex h-full w-full items-center justify-center bg-white/[0.03]">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-white/20">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+          </svg>
+        </div>
       )}
 
-      {/* Content type badges — top-left */}
-      <div className="absolute top-1.5 left-1.5 flex flex-col gap-1">
-        <div className="flex gap-1">
+      {/* Content type badge — top-left pill with icon */}
+      {(gif || vid) && (
+        <div className="absolute top-2 left-2 flex gap-1">
           {gif && (
-            <span className="rounded bg-emerald-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
+            <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide leading-none text-white/90 backdrop-blur-sm">
               GIF
             </span>
           )}
           {vid && (
-            <span className="rounded bg-purple-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
-              VIDEO
+            <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide leading-none text-white/90 backdrop-blur-sm">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Video
             </span>
           )}
         </div>
-        {shot.performer_username && shot.performer_id && onNavigateToPerformer && (
-          <button
-            type="button"
-            className="hidden group-hover:inline rounded bg-sky-500/80 px-1 py-0.5 text-[9px] font-medium leading-none text-white shadow truncate max-w-[80px] hover:bg-sky-400/90 transition-colors"
-            onClick={(e) => { e.stopPropagation(); onNavigateToPerformer(shot.performer_id!, shot.performer_username!) }}
-            title={`View @${shot.performer_username}'s profile`}
-          >
-            @{shot.performer_username}
-          </button>
+      )}
+
+      {/* Favorite heart — top-right, visible on hover or if favorited */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
+        className={cn(
+          "absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-full transition-all",
+          favorite
+            ? "bg-black/50 text-red-400 backdrop-blur-sm"
+            : "bg-black/50 text-white/70 backdrop-blur-sm opacity-0 group-hover:opacity-100 hover:text-red-400"
         )}
-        {shot.performer_username && (!shot.performer_id || !onNavigateToPerformer) && (
-          <span className="hidden group-hover:inline rounded bg-sky-500/80 px-1 py-0.5 text-[9px] font-medium leading-none text-white shadow truncate max-w-[80px]">
-            @{shot.performer_username}
-          </span>
-        )}
-      </div>
-
-      {/* Video play icon — always visible */}
-      {vid && !batchMode && (
-        <div className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:hidden">
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,0 10,5 2,10" /></svg>
-        </div>
-      )}
-
-      {/* Favorite heart — always visible */}
-      {favorite && (
-        <div className="absolute top-1.5 right-1.5 text-red-400 text-sm drop-shadow">&#9829;</div>
-      )}
-
-      {/* Star rating — always visible if rated, hover otherwise */}
-      {(shot.rating ?? 0) > 0 ? (
-        <div className="absolute bottom-1.5 left-1.5 z-10" onClick={(e) => e.stopPropagation()}>
-          <StarRating value={shot.rating ?? 0} onChange={onRate} compact />
-        </div>
-      ) : (
-        !batchMode && (
-          <div className="absolute bottom-1.5 left-1.5 z-10 hidden group-hover:block" onClick={(e) => e.stopPropagation()}>
-            <StarRating value={0} onChange={onRate} compact />
-          </div>
-        )
-      )}
+        title={favorite ? "Unfavorite" : "Favorite"}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill={favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+        </svg>
+      </button>
 
       {/* Batch checkbox */}
       {batchMode && (
         <div className={cn(
-          "absolute top-1.5 left-1.5 flex h-5 w-5 items-center justify-center rounded border text-[10px]",
+          "absolute top-2 left-2 flex h-5 w-5 items-center justify-center rounded border text-[10px]",
           selected ? "border-blue-500 bg-blue-500 text-white" : "border-white/40 bg-black/50 text-transparent"
         )}>
           {selected && "\u2713"}
         </div>
       )}
 
-      {/* Quick actions on hover — bottom-right */}
-      {!batchMode && (
-        <div className="absolute bottom-1.5 right-1.5 hidden gap-1 group-hover:flex">
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 hover:text-red-400 transition-colors"
-            title={favorite ? "Unfavorite" : "Favorite"}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill={favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDescribe() }}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 hover:text-purple-400 transition-colors"
-            title="AI Describe"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z" />
-              <path d="M18 15l.75 2.25L21 18l-2.25.75L18 21l-.75-2.25L15 18l2.25-.75z" />
-            </svg>
-          </button>
-          {shot.page_url && (
-            <a
-              href={shot.page_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 hover:text-blue-400 transition-colors"
-              title="Open source"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-            </a>
-          )}
+      {/* Bottom overlay — creator username + source, hidden on mobile until hover */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 pb-2.5 pt-10 max-sm:opacity-0 max-sm:group-hover:opacity-100 transition-opacity duration-200">
+        <div className="flex items-end justify-between gap-2">
+          <div className="min-w-0">
+            {shot.performer_username && (
+              shot.performer_id && onNavigateToPerformer ? (
+                <button
+                  type="button"
+                  className="block truncate text-[11px] font-medium text-white/90 hover:text-white transition-colors"
+                  onClick={(e) => { e.stopPropagation(); onNavigateToPerformer(shot.performer_id!, shot.performer_username!) }}
+                  title={`View @${shot.performer_username}'s profile`}
+                >
+                  @{shot.performer_username}
+                </button>
+              ) : (
+                <span className="block truncate text-[11px] font-medium text-white/90">
+                  @{shot.performer_username}
+                </span>
+              )
+            )}
+            {!shot.performer_username && (
+              <p className="truncate text-[11px] font-medium text-white/90">{shot.term}</p>
+            )}
+          </div>
+          <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[8px] font-medium uppercase tracking-wide text-white/50 backdrop-blur-sm">
+            {sourceLabel(shot.source)}
+          </span>
         </div>
-      )}
-
-      {/* Card metadata — always visible for contrast on dark backgrounds */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-2 pt-8">
-        <p className="truncate text-xs font-medium text-white drop-shadow-sm">{shot.term}</p>
-        <p className="text-[10px] text-white/60">{sourceLabel(shot.source)}</p>
       </div>
       </div>
     </article>
   )
 }, (prev, next) =>
   prev.shot.id === next.shot.id &&
-  prev.shot.rating === next.shot.rating &&
   prev.shot.local_url === next.shot.local_url &&
-  prev.shot.ai_summary === next.shot.ai_summary &&
   prev.favorite === next.favorite &&
   prev.selected === next.selected &&
   prev.batchMode === next.batchMode
@@ -2212,14 +2158,9 @@ export function MediaPage() {
 
   const tabs: { key: TabFilter; label: string; count?: number }[] = [
     { key: "all", label: "All", count: totalCount },
-    { key: "ddg", label: "DDG", count: ddgCount },
-    { key: "redgifs", label: "Redgifs", count: redgifsCount },
-    ...(tubeCount > 0 ? [{ key: "tube" as TabFilter, label: "Tube", count: tubeCount }] : []),
-    { key: "favorites", label: "\u2665 Favorites", count: favCount },
-    { key: "rated", label: "\u2605 Rated", count: ratedCount },
     { key: "videos", label: "Videos" },
     { key: "images", label: "Images" },
-    { key: "creators", label: "Creators" },
+    { key: "favorites", label: "Favorites", count: favCount },
   ]
 
   // ── Grid density handler ─────────────────────────────────────────────────
@@ -2474,8 +2415,6 @@ export function MediaPage() {
         onSelect={() => toggleSelect(shot.id)}
         favorite={favorites.has(shot.id)}
         onToggleFavorite={() => toggleFavorite(shot.id)}
-        onDescribe={() => handleSingleDescribe(shot.id)}
-        onRate={(rating) => rateMutation.mutate({ id: shot.id, rating })}
         onContextMenu={(e) => handleContextMenu(e, shot)}
         onNavigateToPerformer={(performerId) => {
           setPendingPerformer(performerId)
@@ -2674,13 +2613,10 @@ export function MediaPage() {
             aria-label="Sort order"
           >
             <option value="newest">Newest</option>
-            <option value="oldest">Oldest</option>
             <option value="rating">Top Rated</option>
-            <option value="az">A-Z</option>
-            <option value="random">Random</option>
           </select>
 
-          {/* View mode toggle */}
+          {/* View mode toggle — Grid / Feed */}
           <div className="flex rounded-lg border border-white/10 bg-black/20 overflow-hidden">
             <button
               onClick={() => handleViewModeChange("grid")}
@@ -2700,37 +2636,6 @@ export function MediaPage() {
               </svg>
             </button>
             <button
-              onClick={() => handleViewModeChange("list")}
-              title="List view"
-              className={cn(
-                "flex items-center justify-center px-2 py-1.5 transition-colors",
-                viewMode === "list" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-              )}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                <rect x="0" y="1" width="14" height="2" rx="0.5" />
-                <rect x="0" y="6" width="14" height="2" rx="0.5" />
-                <rect x="0" y="11" width="14" height="2" rx="0.5" />
-              </svg>
-            </button>
-            <button
-              onClick={() => handleViewModeChange("timeline")}
-              title="Timeline view"
-              className={cn(
-                "flex items-center justify-center px-2 py-1.5 transition-colors",
-                viewMode === "timeline" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-              )}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <line x1="3" y1="0" x2="3" y2="14" />
-                <circle cx="3" cy="3" r="1.5" fill="currentColor" />
-                <line x1="5" y1="3" x2="13" y2="3" />
-                <circle cx="3" cy="8" r="1.5" fill="currentColor" />
-                <line x1="5" y1="8" x2="13" y2="8" />
-                <circle cx="3" cy="13" r="1.5" fill="currentColor" />
-              </svg>
-            </button>
-            <button
               onClick={() => handleViewModeChange("feed")}
               onMouseEnter={() => { void preloadVideoFeed() }}
               onFocus={() => { void preloadVideoFeed() }}
@@ -2745,28 +2650,7 @@ export function MediaPage() {
                 <polygon points="5.5,4.5 9.5,7 5.5,9.5" fill="currentColor" stroke="none" />
               </svg>
             </button>
-            <button
-              onClick={() => handleViewModeChange("mosaic")}
-              title="Mosaic / masonry"
-              className={cn(
-                "flex items-center justify-center px-2 py-1.5 transition-colors",
-                viewMode === "mosaic" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-              )}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                <rect x="0" y="0" width="4" height="6" rx="0.5" />
-                <rect x="5" y="0" width="4" height="3" rx="0.5" />
-                <rect x="10" y="0" width="4" height="8" rx="0.5" />
-                <rect x="5" y="4" width="4" height="5" rx="0.5" />
-                <rect x="0" y="7" width="4" height="3" rx="0.5" />
-                <rect x="0" y="11" width="4" height="3" rx="0.5" />
-                <rect x="5" y="10" width="4" height="4" rx="0.5" />
-                <rect x="10" y="9" width="4" height="5" rx="0.5" />
-              </svg>
-            </button>
           </div>
-
-          {viewMode === "grid" && <GridDensityControl density={gridDensity} onChange={handleDensityChange} />}
 
           {/* Visible count */}
           <span className="text-[10px] text-slate-400 whitespace-nowrap">{visibleShots.length.toLocaleString()} items</span>
