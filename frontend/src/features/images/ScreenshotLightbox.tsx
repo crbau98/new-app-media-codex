@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import type { Screenshot } from "@/lib/api"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/cn"
-import { getScreenshotMediaSrc } from "@/lib/media"
+import { getScreenshotMediaSrc, isVideoShot } from "@/lib/media"
 
 interface ScreenshotLightboxProps {
   shots: Screenshot[]
@@ -31,7 +31,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 function isVideo(src: string): boolean {
-  return /\.(mp4|webm|mov)$/i.test(src)
+  return /\.(mp4|webm|mov)/i.test(src)
 }
 
 function sourceLabel(source: string) {
@@ -41,7 +41,7 @@ function sourceLabel(source: string) {
 export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites, onToggleFavorite, onRate, onAddTag, onRemoveTag, allTags, onViewCreator }: ScreenshotLightboxProps) {
   const shot = shots[idx]
   const src = getScreenshotMediaSrc(shot)
-  const currentIsVideo = src ? isVideo(src) : false
+  const currentIsVideo = isVideoShot(shot) || (src ? isVideo(src) : false)
 
   const qc = useQueryClient()
   const videoRef = useRef<HTMLVideoElement>(null)

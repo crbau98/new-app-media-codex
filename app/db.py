@@ -1659,13 +1659,13 @@ class Database:
                   data.get("molecular_weight"), data.get("pharmacology",""), "", utcnow()))
             conn.commit()
 
-    def insert_screenshot(self, term: str, source: str, page_url: str, local_path: str, performer_id: int | None = None, source_url: str | None = None) -> bool:
+    def insert_screenshot(self, term: str, source: str, page_url: str, local_path: str | None = None, performer_id: int | None = None, source_url: str | None = None) -> bool:
         """Insert screenshot record. Returns True if inserted, False if duplicate."""
         with self.connect() as conn:
             try:
                 conn.execute(
                     "INSERT INTO screenshots (term, source, page_url, local_path, captured_at, performer_id, source_url) VALUES (?,?,?,?,?,?,?)",
-                    (term, source, page_url, local_path, utcnow(), performer_id, source_url)
+                    (term, source, page_url, local_path or "", utcnow(), performer_id, source_url)
                 )
                 conn.commit()
                 self._invalidate_after_write()

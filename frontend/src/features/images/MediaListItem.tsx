@@ -2,10 +2,10 @@ import { useState, memo, useMemo } from "react"
 import type { Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { StarRating } from "@/components/StarRating"
-import { getMediaDebugLabel, getScreenshotMediaSrc, getScreenshotPreviewSrc } from "@/lib/media"
+import { getMediaDebugLabel, getScreenshotMediaSrc, getScreenshotPreviewSrc, isVideoShot } from "@/lib/media"
 
 function isVideo(src: string): boolean {
-  return /\.(mp4|webm|mov)$/i.test(src)
+  return /\.(mp4|webm|mov)/i.test(src)
 }
 
 function sourceLabel(s: string) {
@@ -32,9 +32,9 @@ export const MediaListItem = memo(function MediaListItem({ shot, onClick, favori
   const mediaSrc = useMemo(() => getScreenshotMediaSrc(shot), [shot])
   const previewSrc = useMemo(() => getScreenshotPreviewSrc(shot), [shot])
   const mediaLabel = getMediaDebugLabel(shot)
-  const vid = isVideo(mediaSrc)
+  const vid = isVideoShot(shot) || isVideo(mediaSrc)
   const [broken, setBroken] = useState(false)
-  const previewPending = vid && !!mediaSrc
+  const previewPending = vid && !previewSrc && !!mediaSrc
 
   return (
     <button

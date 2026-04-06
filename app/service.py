@@ -579,7 +579,7 @@ class ResearchService:
                     term=result["term"],
                     source=result["source"],
                     page_url=result["page_url"],
-                    local_path=result["local_path"],
+                    local_path=result.get("local_path"),
                     performer_id=performer_id,
                     source_url=result.get("source_url"),
                 )

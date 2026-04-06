@@ -40,10 +40,17 @@ async def proxy_media(url: str = Query(...), request: Request = None):
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "Invalid URL")
     from starlette.responses import StreamingResponse
-    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=60, write=10, pool=10), follow_redirects=True)
+
+    # Forward Range header for video seeking support
+    req_headers = {"User-Agent": "Mozilla/5.0", "Referer": url}
+    range_header = request.headers.get("range") if request else None
+    if range_header:
+        req_headers["Range"] = range_header
+
+    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=120, write=10, pool=10), follow_redirects=True)
     try:
         resp = await client.send(
-            client.build_request("GET", url, headers={"User-Agent": "Mozilla/5.0", "Referer": url}),
+            client.build_request("GET", url, headers=req_headers),
             stream=True,
         )
         resp.raise_for_status()
@@ -60,10 +67,22 @@ async def proxy_media(url: str = Query(...), request: Request = None):
             await resp.aclose()
             await client.aclose()
 
+    resp_headers = {"Cache-Control": "public, max-age=86400"}
+    # Propagate content-length and range headers for video seeking
+    if resp.headers.get("content-length"):
+        resp_headers["Content-Length"] = resp.headers["content-length"]
+    if resp.headers.get("accept-ranges"):
+        resp_headers["Accept-Ranges"] = resp.headers["accept-ranges"]
+    if resp.headers.get("content-range"):
+        resp_headers["Content-Range"] = resp.headers["content-range"]
+
+    status_code = resp.status_code  # 200 or 206 for partial content
+
     return StreamingResponse(
         stream_and_close(),
+        status_code=status_code,
         media_type=content_type,
-        headers={"Cache-Control": "public, max-age=86400"},
+        headers=resp_headers,
     )
 
 
@@ -428,8 +447,13 @@ def browse_screenshots(
             for s in rows:
                 inspected += 1
                 scanned_rows += 1
+                if _looks_like_female_content(s):
+                    if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
+                        break
+                    continue
                 local = Path(s.get("local_path", "") or "")
-                if _cached_local_media_exists(request.app.state, local) and not _looks_like_female_content(s):
+                if local.name and _cached_local_media_exists(request.app.state, local):
+                    # Local file exists (yt-dlp or legacy) — serve from disk
                     s["local_url"] = f"/cached-screenshots/{local.name}"
                     preview_url = _get_preview_url_if_ready(request.app.state, local)
                     if preview_url is None:
@@ -440,24 +464,25 @@ def browse_screenshots(
                             _queue_preview_generation(request.app.state, local)
                     s["preview_url"] = preview_url
                     valid.append(s)
-                    if len(valid) >= effective_limit:
-                        break
-                elif not _looks_like_female_content(s):
-                    # File not on disk — check if source_url / page_url is a direct media URL
+                else:
+                    # Remote-only entry — stream via proxy
                     media_url = s.get("source_url") or s.get("page_url") or ""
+                    if not media_url or not media_url.startswith(("http://", "https://")):
+                        if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
+                            break
+                        continue
+                    from urllib.parse import quote
+                    proxy_url = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
                     ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
-                    if ext in ("mp4", "webm", "mov"):
-                        s["local_url"] = media_url
-                        s["preview_url"] = None
-                        valid.append(s)
-                    elif ext in ("jpg", "jpeg", "png", "gif", "webp"):
-                        from urllib.parse import quote
-                        s["local_url"] = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
-                        s["preview_url"] = None
-                        valid.append(s)
-                    # else: page_url is a webpage, skip — can't display it
-                    if len(valid) >= effective_limit:
-                        break
+                    src = s.get("source", "")
+                    is_vid = ext in ("mp4", "webm", "mov") or src in ("redgifs", "ytdlp")
+                    s["local_url"] = proxy_url
+                    # For images, the proxy URL doubles as the preview;
+                    # for videos, no preview available (frontend shows poster frame)
+                    s["preview_url"] = None if is_vid else proxy_url
+                    valid.append(s)
+                if len(valid) >= effective_limit:
+                    break
                 if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
                     break
             raw_cursor += inspected
@@ -536,14 +561,15 @@ def _run_capture(app_state):
                 term=result["term"],
                 source=result["source"],
                 page_url=result["page_url"],
-                local_path=result["local_path"],
+                local_path=result.get("local_path"),
                 performer_id=performer_id,
                 source_url=result.get("source_url"),
             )
-            try:
-                _queue_preview_generation(app_state, Path(result["local_path"]))
-            except Exception:
-                pass
+            if result.get("local_path"):
+                try:
+                    _queue_preview_generation(app_state, Path(result["local_path"]))
+                except Exception:
+                    pass
             captured += 1
 
         app_state.screenshot_progress = {

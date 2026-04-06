@@ -10,7 +10,7 @@ import { SkeletonGrid } from "@/components/Skeleton"
 import { EmptyState } from "@/components/EmptyState"
 import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
-import { getMediaDebugLabel, getScreenshotMediaSrc, getScreenshotPreviewSrc } from "@/lib/media"
+import { getMediaDebugLabel, getScreenshotMediaSrc, getScreenshotPreviewSrc, isVideoShot } from "@/lib/media"
 
 const loadMediaAnalyticsDashboard = () =>
   import("./MediaAnalyticsDashboard").then((m) => ({ default: m.MediaAnalyticsDashboard }))
@@ -56,9 +56,8 @@ type ShotClientMeta = {
 }
 
 function buildShotClientMeta(shot: Screenshot): ShotClientMeta {
-  const src = getScreenshotMediaSrc(shot)
   return {
-    isVideo: isVideo(src),
+    isVideo: isVideoShot(shot),
     searchText: [shot.term, shot.source, shot.page_url, shot.ai_summary ?? ""].join(" ").toLowerCase(),
   }
 }
@@ -67,7 +66,7 @@ const FAVORITES_KEY = "screenshot-favorites"
 const GRID_DENSITY_KEY = "media-grid-density"
 
 function isVideo(src: string) {
-  return /\.(mp4|webm|mov)$/i.test(src)
+  return /\.(mp4|webm|mov)/i.test(src)
 }
 
 function isGif(src: string) {
@@ -544,10 +543,10 @@ const MediaCard = memo(function MediaCard({
   const src = getScreenshotMediaSrc(shot)
   const previewSrc = getScreenshotPreviewSrc(shot)
   const mediaLabel = getMediaDebugLabel(shot)
-  const vid = src ? isVideo(src) : false
+  const vid = isVideoShot(shot) || (src ? isVideo(src) : false)
   const gif = src ? isGif(src) : false
   const [broken, setBroken] = useState(false)
-  const previewPending = vid && !!src
+  const previewPending = vid && !previewSrc && !!src
 
   return (
     <article
@@ -745,10 +744,10 @@ const MosaicCard = memo(function MosaicCard({
   const src = getScreenshotMediaSrc(shot)
   const previewSrc = getScreenshotPreviewSrc(shot)
   const mediaLabel = getMediaDebugLabel(shot)
-  const vid = src ? isVideo(src) : false
+  const vid = isVideoShot(shot) || (src ? isVideo(src) : false)
   const gif = src ? isGif(src) : false
   const [broken, setBroken] = useState(false)
-  const previewPending = vid && !!src
+  const previewPending = vid && !previewSrc && !!src
 
   return (
     <article

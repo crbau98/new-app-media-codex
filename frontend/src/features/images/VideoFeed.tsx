@@ -9,7 +9,7 @@ import { getScreenshotMediaSrc, getScreenshotPosterSrc } from "@/lib/media"
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function isVideo(src: string) {
-  return /\.(mp4|webm|mov)$/i.test(src)
+  return /\.(mp4|webm|mov)/i.test(src)
 }
 
 function sourceLabel(s: string) {

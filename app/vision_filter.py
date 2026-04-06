@@ -224,3 +224,106 @@ def passes_strict_content_filter(settings: Settings, image_path: str) -> bool:
     if contains_women(settings, image_path, default_on_error=True):
         return False
     return passes_vision_filter(settings, image_path, fail_open=False)
+
+
+# ── URL-based vision filtering (no local file needed) ────────────────────
+
+def _call_vision_api_url(settings: Settings, image_url: str, prompt: str) -> dict | None:
+    """Send a remote image URL to the vision API. Returns parsed JSON or None."""
+    try:
+        response = requests.post(
+            f"{settings.openai_base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": settings.openai_model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": image_url, "detail": "low"},
+                            },
+                        ],
+                    }
+                ],
+                "response_format": {"type": "json_object"},
+                "max_tokens": 80,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"]
+        return json.loads(content)
+    except Exception:
+        return None
+
+
+def _url_cache_key(image_url: str, prompt: str) -> str:
+    fingerprint = f"url:{image_url}:{prompt}"
+    return hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()
+
+
+def _get_cached_url_vision(image_url: str, prompt: str):
+    cache_key = _url_cache_key(image_url, prompt)
+    now = time.time()
+    with _VISION_RESULT_CACHE_LOCK:
+        entry = _VISION_RESULT_CACHE.get(cache_key)
+        if entry and now < entry[0]:
+            return entry[1]
+    return _VISION_CACHE_MISS
+
+
+def _store_cached_url_vision(image_url: str, prompt: str, parsed: dict | None) -> None:
+    cache_key = _url_cache_key(image_url, prompt)
+    ttl = _VISION_FAILURE_CACHE_TTL_S if parsed is None else _VISION_CACHE_TTL_S
+    with _VISION_RESULT_CACHE_LOCK:
+        if len(_VISION_RESULT_CACHE) > 4000:
+            now = time.time()
+            expired = [k for k, (exp, _) in _VISION_RESULT_CACHE.items() if exp <= now]
+            for k in expired:
+                _VISION_RESULT_CACHE.pop(k, None)
+            if len(_VISION_RESULT_CACHE) > 4000:
+                _VISION_RESULT_CACHE.clear()
+        _VISION_RESULT_CACHE[cache_key] = (time.time() + ttl, parsed)
+
+
+def passes_vision_filter_url(settings: Settings, image_url: str, *, fail_open: bool = True) -> bool:
+    """Like passes_vision_filter but works on a remote image URL."""
+    if not settings.openai_api_key:
+        return fail_open
+    cached = _get_cached_url_vision(image_url, _VISION_PROMPT)
+    parsed = _call_vision_api_url(settings, image_url, _VISION_PROMPT) if cached is _VISION_CACHE_MISS else cached
+    if cached is _VISION_CACHE_MISS:
+        _store_cached_url_vision(image_url, _VISION_PROMPT, parsed)
+    if parsed is None:
+        return fail_open
+    result = bool(parsed.get("pass", False))
+    if not result:
+        reason = parsed.get("reason", "")
+        _log_once_per_window(f"rejected-url:{reason}", f"[vision_filter] REJECTED URL ...{image_url[-60:]}: {reason}")
+    return result
+
+
+def contains_women_url(settings: Settings, image_url: str, *, default_on_error: bool = False) -> bool:
+    """Like contains_women but works on a remote image URL."""
+    if not settings.openai_api_key:
+        return default_on_error
+    cached = _get_cached_url_vision(image_url, _WOMEN_CHECK_PROMPT)
+    parsed = _call_vision_api_url(settings, image_url, _WOMEN_CHECK_PROMPT) if cached is _VISION_CACHE_MISS else cached
+    if cached is _VISION_CACHE_MISS:
+        _store_cached_url_vision(image_url, _WOMEN_CHECK_PROMPT, parsed)
+    if parsed is None:
+        return default_on_error
+    return bool(parsed.get("has_women", False))
+
+
+def passes_strict_content_filter_url(settings: Settings, image_url: str) -> bool:
+    """Like passes_strict_content_filter but works on a remote image URL."""
+    if contains_women_url(settings, image_url, default_on_error=True):
+        return False
+    return passes_vision_filter_url(settings, image_url, fail_open=False)

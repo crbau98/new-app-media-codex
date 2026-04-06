@@ -899,7 +899,7 @@ def capture_screenshots(
                 unique_results.append(row)
         results = unique_results
         print(f"[screenshot] {term!r} images: found {len(results)}")
-        image_jobs: list[dict] = []
+        image_candidates: list[dict] = []
         for i, row in enumerate(results):
             image_url = row.get("image") or ""
             page_url = row.get("url") or image_url
@@ -907,37 +907,26 @@ def capture_screenshots(
                 continue
             if _page_url_exists(page_url):
                 continue
-            ext = Path(image_url.split("?")[0]).suffix.lower()
-            if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
-                ext = ".jpg"
-            out_path = image_dir / f"{slug_base}_ddg_{i}_{uuid.uuid4().hex[:8]}{ext}"
-            image_jobs.append({
+            image_candidates.append({
                 "term": term,
                 "source": "ddg",
                 "page_url": page_url,
                 "url": image_url,
-                "out_path": out_path,
-                "accept": ("image/",),
             })
-        if image_jobs:
-            with ThreadPoolExecutor(max_workers=min(4, len(image_jobs))) as pool:
-                futures = [pool.submit(_download_job, job) for job in image_jobs]
-                for done, future in enumerate(as_completed(futures), 1):
-                    job = future.result()
-                    ok = bool(job.get("ok"))
-                    out_path = job["out_path"]
-                    if ok and settings is not None:
-                        from app.vision_filter import passes_strict_content_filter
-                        if not passes_strict_content_filter(settings, str(out_path)):
-                            out_path.unlink(missing_ok=True)
-                            ok = False
-                    if ok:
-                        _mark_page_url(job["page_url"])
-                    if progress_cb:
-                        progress_cb(term, "ddg", done, len(image_jobs))
-                    yield {"term": term, "source": "ddg", "page_url": job["page_url"],
-                           "local_path": str(out_path) if ok else None, "ok": ok,
-                           "source_url": job.get("url") or job.get("page_url")}
+        for done, cand in enumerate(image_candidates, 1):
+            image_url = cand["url"]
+            ok = True
+            if settings is not None:
+                from app.vision_filter import passes_strict_content_filter_url
+                if not passes_strict_content_filter_url(settings, image_url):
+                    ok = False
+            if ok:
+                _mark_page_url(cand["page_url"])
+            if progress_cb:
+                progress_cb(term, "ddg", done, len(image_candidates))
+            yield {"term": term, "source": "ddg", "page_url": cand["page_url"],
+                   "local_path": None, "ok": ok,
+                   "source_url": image_url}
 
         # ── Pass 2: DDG animated GIFs (2 pages) ───────────────────────────────
         gif_results = (
@@ -951,7 +940,7 @@ def capture_screenshots(
         ]
         gif_results = gif_results  # already filtered above — keep variable for loop below
         print(f"[screenshot] {term!r} gifs: found {len(gif_results)}")
-        gif_jobs: list[dict] = []
+        gif_candidates: list[dict] = []
         for i, row in enumerate(gif_results):
             image_url = row.get("image") or ""
             page_url = row.get("url") or image_url
@@ -959,37 +948,26 @@ def capture_screenshots(
                 continue
             if _page_url_exists(page_url):
                 continue
-            ext = Path(image_url.split("?")[0]).suffix.lower()
-            if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
-                ext = ".gif"
-            out_path = image_dir / f"{slug_base}_gif_{i}_{uuid.uuid4().hex[:8]}{ext}"
-            gif_jobs.append({
+            gif_candidates.append({
                 "term": term,
                 "source": "ddg",
                 "page_url": page_url,
                 "url": image_url,
-                "out_path": out_path,
-                "accept": ("image/",),
             })
-        if gif_jobs:
-            with ThreadPoolExecutor(max_workers=min(4, len(gif_jobs))) as pool:
-                futures = [pool.submit(_download_job, job) for job in gif_jobs]
-                for done, future in enumerate(as_completed(futures), 1):
-                    job = future.result()
-                    ok = bool(job.get("ok"))
-                    out_path = job["out_path"]
-                    if ok and settings is not None:
-                        from app.vision_filter import passes_strict_content_filter
-                        if not passes_strict_content_filter(settings, str(out_path)):
-                            out_path.unlink(missing_ok=True)
-                            ok = False
-                    if ok:
-                        _mark_page_url(job["page_url"])
-                    if progress_cb:
-                        progress_cb(term, "ddg", done, len(gif_jobs))
-                    yield {"term": term, "source": "ddg", "page_url": job["page_url"],
-                           "local_path": str(out_path) if ok else None, "ok": ok,
-                           "source_url": job.get("url") or job.get("page_url")}
+        for done, cand in enumerate(gif_candidates, 1):
+            image_url = cand["url"]
+            ok = True
+            if settings is not None:
+                from app.vision_filter import passes_strict_content_filter_url
+                if not passes_strict_content_filter_url(settings, image_url):
+                    ok = False
+            if ok:
+                _mark_page_url(cand["page_url"])
+            if progress_cb:
+                progress_cb(term, "ddg", done, len(gif_candidates))
+            yield {"term": term, "source": "ddg", "page_url": cand["page_url"],
+                   "local_path": None, "ok": ok,
+                   "source_url": image_url}
 
         # ── Pass 3: yt-dlp full-length videos from tube sites ────────────────
         ytdlp_results = _search_ytdlp_videos(
@@ -1055,7 +1033,6 @@ def capture_screenshots(
                 if not _check_thumbnail_vision(session, poster_url, settings):
                     print(f"[redgifs] vision rejected: {gif.get('id', '')}")
                     continue
-            out_path = image_dir / f"{slug_base}_vid_{i}_{uuid.uuid4().hex[:8]}.mp4"
             if _page_url_exists(page_url):
                 continue
             redgifs_jobs.append({
@@ -1063,26 +1040,16 @@ def capture_screenshots(
                 "source": "redgifs",
                 "page_url": page_url,
                 "url": mp4_url,
-                "out_path": out_path,
-                "accept": ("video/", "application/octet-stream"),
+                "poster_url": poster_url,
             })
-        if redgifs_jobs:
-            with ThreadPoolExecutor(max_workers=min(3, len(redgifs_jobs))) as pool:
-                futures = [pool.submit(_download_job, job) for job in redgifs_jobs]
-                for done, future in enumerate(as_completed(futures), 1):
-                    job = future.result()
-                    ok = bool(job.get("ok"))
-                    out_path = job["out_path"]
-                    if ok and settings is not None and not _check_downloaded_video_vision(out_path, settings):
-                        out_path.unlink(missing_ok=True)
-                        ok = False
-                    if ok:
-                        _mark_page_url(job["page_url"])
-                    if progress_cb:
-                        progress_cb(term, "redgifs", done, len(redgifs_jobs))
-                    yield {"term": term, "source": "redgifs", "page_url": job["page_url"],
-                           "local_path": str(out_path) if ok else None, "ok": ok,
-                           "source_url": job.get("url") or job.get("page_url")}
+        for done, job in enumerate(redgifs_jobs, 1):
+            ok = True
+            _mark_page_url(job["page_url"])
+            if progress_cb:
+                progress_cb(term, "redgifs", done, len(redgifs_jobs))
+            yield {"term": term, "source": "redgifs", "page_url": job["page_url"],
+                   "local_path": None, "ok": ok,
+                   "source_url": job["url"]}
 
     # ── Creator-specific DDG image capture ─────────────────────────────────
     for creator_name, creator_query in CREATOR_QUERIES.items():
@@ -1098,7 +1065,7 @@ def capture_screenshots(
             if (u := row.get("image") or "") and u not in seen_creator_urls and not seen_creator_urls.add(u)  # type: ignore[func-returns-value]
         ]
         print(f"[screenshot] creator '{creator_name}': found {len(results)} images")
-        creator_jobs: list[dict] = []
+        creator_candidates: list[dict] = []
         for i, row in enumerate(results):
             image_url = row.get("image") or ""
             page_url = row.get("url") or image_url
@@ -1106,35 +1073,24 @@ def capture_screenshots(
                 continue
             if _page_url_exists(page_url):
                 continue
-            ext = Path(image_url.split("?")[0]).suffix.lower()
-            if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
-                ext = ".jpg"
-            out_path = image_dir / f"creator_{slug_base}_ddg_{i}_{uuid.uuid4().hex[:8]}{ext}"
-            creator_jobs.append({
+            creator_candidates.append({
                 "term": creator_name,
                 "source": "ddg",
                 "page_url": page_url,
                 "url": image_url,
-                "out_path": out_path,
-                "accept": ("image/",),
             })
-        if creator_jobs:
-            with ThreadPoolExecutor(max_workers=min(4, len(creator_jobs))) as pool:
-                futures = [pool.submit(_download_job, job) for job in creator_jobs]
-                for done, future in enumerate(as_completed(futures), 1):
-                    job = future.result()
-                    ok = bool(job.get("ok"))
-                    out_path = job["out_path"]
-                    if ok and settings is not None:
-                        from app.vision_filter import passes_strict_content_filter
-                        if not passes_strict_content_filter(settings, str(out_path)):
-                            out_path.unlink(missing_ok=True)
-                            ok = False
-                    if ok:
-                        _mark_page_url(job["page_url"])
-                    yield {"term": creator_name, "source": "ddg", "page_url": job["page_url"],
-                           "local_path": str(out_path) if ok else None, "ok": ok,
-                           "source_url": job.get("url") or job.get("page_url")}
+        for done, cand in enumerate(creator_candidates, 1):
+            image_url = cand["url"]
+            ok = True
+            if settings is not None:
+                from app.vision_filter import passes_strict_content_filter_url
+                if not passes_strict_content_filter_url(settings, image_url):
+                    ok = False
+            if ok:
+                _mark_page_url(cand["page_url"])
+            yield {"term": creator_name, "source": "ddg", "page_url": cand["page_url"],
+                   "local_path": None, "ok": ok,
+                   "source_url": image_url}
 
 
 # ── Term → research theme mapping ────────────────────────────────────────────
