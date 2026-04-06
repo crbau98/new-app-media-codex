@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 import re
+import sqlite3
 from typing import AsyncIterator
 import time
 import uuid
@@ -103,6 +104,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+
+
+@app.exception_handler(sqlite3.OperationalError)
+async def sqlite_operational_error_handler(request: Request, exc: sqlite3.OperationalError):
+    return JSONResponse(
+        status_code=503,
+        content={"error": "database_unavailable", "detail": str(exc)},
+    )
 
 
 @app.middleware("http")

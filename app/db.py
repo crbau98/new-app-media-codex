@@ -365,15 +365,18 @@ class Database:
     def connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.path, timeout=self.timeout_seconds)
         conn.row_factory = sqlite3.Row
-        try:
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
-            conn.execute("PRAGMA journal_mode = WAL")
-            conn.execute("PRAGMA synchronous = NORMAL")
-            conn.execute("PRAGMA temp_store = MEMORY")
-            conn.execute("PRAGMA cache_size = -20000")
-        except sqlite3.OperationalError:
-            pass  # PRAGMAs may fail on some filesystems (e.g. Render disks)
+        for pragma in [
+            "PRAGMA foreign_keys = ON",
+            f"PRAGMA busy_timeout = {self.busy_timeout_ms}",
+            "PRAGMA journal_mode = DELETE",
+            "PRAGMA synchronous = NORMAL",
+            "PRAGMA temp_store = MEMORY",
+            "PRAGMA cache_size = -20000",
+        ]:
+            try:
+                conn.execute(pragma)
+            except sqlite3.OperationalError:
+                pass  # Individual PRAGMAs may fail on network storage
         try:
             yield conn
         finally:
