@@ -215,6 +215,16 @@ class ResearchService:
             print(f"[seed] added {seeded} default performers, queued for capture")
 
     def start(self) -> None:
+        # Clean up stale WAL/SHM files that cause disk I/O errors on network storage
+        db_path = self.db.path
+        for suffix in ["-wal", "-shm"]:
+            wal_file = db_path.parent / (db_path.name + suffix)
+            if wal_file.exists():
+                try:
+                    wal_file.unlink()
+                    print(f"[startup] removed stale {wal_file.name}")
+                except Exception as exc:
+                    print(f"[startup] could not remove {wal_file.name}: {exc}")
         self.db.init()
         try:
             repaired = self.db.repair_moved_repo_paths(self.settings.base_dir)

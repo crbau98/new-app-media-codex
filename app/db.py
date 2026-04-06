@@ -363,20 +363,21 @@ class Database:
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.path, timeout=self.timeout_seconds)
-        conn.row_factory = sqlite3.Row
-        for pragma in [
-            "PRAGMA foreign_keys = ON",
-            f"PRAGMA busy_timeout = {self.busy_timeout_ms}",
-            "PRAGMA journal_mode = DELETE",
-            "PRAGMA synchronous = NORMAL",
-            "PRAGMA temp_store = MEMORY",
-            "PRAGMA cache_size = -20000",
-        ]:
+        for attempt in range(3):
             try:
-                conn.execute(pragma)
+                conn = sqlite3.connect(self.path, timeout=self.timeout_seconds)
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA foreign_keys = ON")
+                conn.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
+                # Skip journal_mode changes — let SQLite use its default.
+                # Changing journal mode on network storage can corrupt the DB.
+                conn.execute("SELECT 1")  # verify connection actually works
+                break
             except sqlite3.OperationalError:
-                pass  # Individual PRAGMAs may fail on network storage
+                if attempt == 2:
+                    raise
+                import time as _time
+                _time.sleep(0.5 * (attempt + 1))
         try:
             yield conn
         finally:
