@@ -461,6 +461,8 @@ const MediaCard = memo(function MediaCard({
 }) {
   const { mediaSrc: src, previewSrc, isVideo: vid, isGif: gif, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const mediaLabel = getMediaDebugLabel(shot)
+  const [imgLoaded, setImgLoaded] = useState(false)
+  const isAboveFold = index <= 8
 
   return (
     <article
@@ -478,6 +480,9 @@ const MediaCard = memo(function MediaCard({
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
     >
       <div style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
+        {!imgLoaded && previewSrc && (
+          <div className="absolute inset-0 shimmer z-[1]" aria-hidden="true" />
+        )}
         {!previewSrc ? (
           vid && src ? (
             <video
@@ -499,10 +504,11 @@ const MediaCard = memo(function MediaCard({
           <img
             src={previewSrc}
             alt={shot.ai_summary || `${vid ? "Video" : "Screenshot"}: ${shot.term} from ${sourceLabel(shot.source)}`}
-            loading="lazy"
-            decoding="async"
-            fetchPriority="low"
+            loading={isAboveFold ? "eager" : "lazy"}
+            decoding={isAboveFold ? "sync" : "async"}
+            fetchPriority={isAboveFold ? "high" : "low"}
             onError={markPreviewBroken}
+            onLoad={() => setImgLoaded(true)}
             className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
           />
         )}
@@ -1759,8 +1765,9 @@ export function MediaPage() {
   const flatGridVirtualizer = useWindowVirtualizer({
     count: flatGridRows.length,
     estimateSize: () => GRID_ROW_SIZE_ESTIMATE[gridDensity],
-    overscan: 3,
+    overscan: 6,
     scrollMargin,
+    scrollPaddingStart: 8,
   })
 
   // ── Tab counts ───────────────────────────────────────────────────────────
@@ -2094,6 +2101,20 @@ export function MediaPage() {
     observerRef.current.observe(node)
   }, [fetchNextPage, hasNextPage, isFetchingNextPage])
 
+  // Prefetch next page when user reaches 80% scroll depth
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage) return
+    const onScroll = () => {
+      const scrolled = window.scrollY + window.innerHeight
+      const total = document.documentElement.scrollHeight
+      if (total > 0 && scrolled / total >= 0.8) {
+        void fetchNextPage()
+      }
+    }
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+
   const mosaicObserverRef = useRef<IntersectionObserver | null>(null)
   const mosaicSentinelRef = useCallback((node: HTMLDivElement | null) => {
     if (mosaicObserverRef.current) mosaicObserverRef.current.disconnect()
@@ -2305,14 +2326,15 @@ export function MediaPage() {
     count: activeSectionEntries.length,
     estimateSize: (index) =>
       estimateGridSectionHeight(activeSectionEntries[index]?.shots.length ?? 1, colCount, gridDensity),
-    overscan: 2,
+    overscan: 4,
     scrollMargin,
+    scrollPaddingStart: 8,
   })
 
   const listVirtualizer = useWindowVirtualizer({
     count: viewMode === "list" ? visibleShots.length : 0,
     estimateSize: () => 86,
-    overscan: 8,
+    overscan: 12,
     scrollMargin,
   })
 

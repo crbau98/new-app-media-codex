@@ -166,6 +166,8 @@ export interface Screenshot {
   local_path: string
   local_url: string | null
   preview_url?: string | null
+  source_url?: string | null
+  thumbnail_url?: string | null
   captured_at: string
   ai_summary?: string | null
   ai_tags?: string | null

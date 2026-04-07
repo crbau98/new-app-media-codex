@@ -389,8 +389,8 @@ class Database:
                 conn.row_factory = sqlite3.Row
                 conn.execute("PRAGMA foreign_keys = ON")
                 conn.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
-                # Skip journal_mode changes — let SQLite use its default.
-                # Changing journal mode on network storage can corrupt the DB.
+                conn.execute("PRAGMA journal_mode = WAL")  # WAL enables concurrent reads + writes
+                conn.execute("PRAGMA cache_size = -65536")  # 64 MB page cache
                 conn.execute("SELECT 1")  # verify connection actually works
                 break
             except sqlite3.OperationalError:

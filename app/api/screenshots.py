@@ -24,9 +24,9 @@ _logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # In-memory LRU byte cache for proxied *image* responses (not videos).
-# Max 150 MB total, 1-hour TTL per entry.
+# Max 500 MB total, 1-hour TTL per entry.
 # ---------------------------------------------------------------------------
-_PROXY_CACHE_MAX_BYTES = 150 * 1024 * 1024  # 150 MB
+_PROXY_CACHE_MAX_BYTES = 500 * 1024 * 1024  # 500 MB
 _PROXY_CACHE_TTL = 3600  # 1 hour
 _proxy_cache: dict[str, tuple[float, str, bytes]] = {}  # url -> (expires_at, content_type, body)
 _proxy_cache_size = 0  # current total bytes
@@ -184,12 +184,13 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
         return shot
 
     if _is_remote_media_url(source_url):
-        shot["local_url"] = existing_local or source_url
+        raw_local = existing_local if _is_remote_media_url(existing_local) else source_url
+        shot["local_url"] = proxy_media_url(raw_local)
         shot["source_url"] = source_url
         if existing_preview:
-            shot["preview_url"] = existing_preview
+            shot["preview_url"] = proxy_media_url(existing_preview) if _is_remote_media_url(existing_preview) else existing_preview
         elif _is_remote_media_url(thumbnail_url):
-            shot["preview_url"] = thumbnail_url
+            shot["preview_url"] = proxy_media_url(thumbnail_url)
         else:
             shot["preview_url"] = None if _screenshot_is_video(shot) else shot["local_url"]
         return shot
@@ -290,7 +291,7 @@ async def proxy_media(url: str = Query(...), request: Request = None):
         finally:
             await resp.aclose()
 
-    resp_headers = {"Cache-Control": "public, max-age=86400"}
+    resp_headers = {"Cache-Control": "public, max-age=86400", "X-Accel-Buffering": "no"}
     # Propagate content-length and range headers for video seeking
     if content_length_str:
         resp_headers["Content-Length"] = content_length_str
