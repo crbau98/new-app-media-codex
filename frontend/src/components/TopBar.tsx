@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, startTransition } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useIsFetching, useQuery } from "@tanstack/react-query"
 import { useAppStore } from "../store"
 import { useAppShellSummary } from "@/hooks/useAppShellSummary"
 import { api, type Performer, type ScreenshotTerm, type UserTagCount } from "../lib/api"
