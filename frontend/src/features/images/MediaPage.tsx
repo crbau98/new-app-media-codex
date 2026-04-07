@@ -2493,7 +2493,7 @@ export function MediaPage() {
     }
   }
 
-  function renderCard(shot: Screenshot) {
+  function renderCard(shot: Screenshot, index = 0) {
     const src = getScreenshotMediaSrc(shot)
     const prefetchViewer = () => {
       if (src && isVideo(src)) void preloadInlineVideoPlayer()
