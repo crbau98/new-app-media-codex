@@ -2,9 +2,14 @@ import { useState } from 'react'
 import { Badge } from '@/components/Badge'
 import type { ImageRecord } from '@/lib/api'
 
+function isVideoSrc(src: string) {
+  return /\.(mp4|webm|mov)$/i.test(src)
+}
+
 export function ImageCard({ img, onClick }: { img: ImageRecord; onClick: () => void }) {
   const [loaded, setLoaded] = useState(false)
   const src = img.local_url || img.thumb_url || img.image_url
+  const isVideo = src ? isVideoSrc(src) : false
 
   return (
     <div
@@ -13,33 +18,48 @@ export function ImageCard({ img, onClick }: { img: ImageRecord; onClick: () => v
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       aria-label={`Open ${img.title || 'image'} in lightbox`}
-      className="relative break-inside-avoid mb-3 rounded-xl overflow-hidden cursor-pointer group border border-border hover:border-accent/40 transition-all"
+      className="relative break-inside-avoid mb-2 overflow-hidden rounded-2xl cursor-pointer group border border-white/[0.06] hover:border-white/[0.15] transition-all duration-200"
     >
-      {!loaded && <div className="bg-bg-subtle h-40 animate-pulse" aria-hidden="true" />}
+      {!loaded && <div className="bg-white/[0.03] h-40 shimmer" aria-hidden="true" />}
+
+      {/* Video badge */}
+      {isVideo && (
+        <div className="absolute top-2 left-2 z-10 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 backdrop-blur-sm">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className="text-white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span className="text-[10px] font-medium text-white">Video</span>
+        </div>
+      )}
+
+      {/* Download button */}
       <a
         href={img.local_url || img.image_url}
         download
         onClick={(e) => e.stopPropagation()}
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-white"
-        aria-label="Download image"
+        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 p-1.5 rounded-lg bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm"
+        aria-label="Download"
         target="_blank"
         rel="noreferrer"
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       </a>
+
       <img
         src={src}
         alt={img.title || ''}
         onLoad={() => setLoaded(true)}
         onError={() => setLoaded(true)}
-        className={`w-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        className={`w-full object-cover transition-all duration-300 group-hover:scale-[1.03] ${loaded ? 'opacity-100' : 'opacity-0'}`}
         loading="lazy"
+        decoding="async"
+        fetchPriority="low"
       />
+
+      {/* Hover overlay */}
       <div
-        className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-end"
+        className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-3 flex flex-col justify-end"
         aria-hidden="true"
       >
-        <p className="text-xs text-white line-clamp-2 mb-1">{img.title}</p>
+        {img.title && <p className="text-[11px] font-medium text-white line-clamp-1 mb-1">{img.title}</p>}
         <div className="flex gap-1">
           <Badge variant="muted">{img.source_type}</Badge>
           {img.theme && <Badge variant="teal" mono>{img.theme}</Badge>}

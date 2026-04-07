@@ -3,9 +3,8 @@ __pycache__/
 .pytest_cache/
 *.pyc
 data/research.db
-data/research.db-shm
-data/research.db-wal
 data/images/*
 !.gitkeep
 .env
 app/static/dist/
+.claude/worktrees/

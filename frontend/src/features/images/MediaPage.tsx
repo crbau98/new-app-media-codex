@@ -6,6 +6,7 @@ import { api, type Screenshot, type ScreenshotTerm, type Performer, type Playlis
 import { useAppStore } from "@/store"
 import { Spinner } from "@/components/Spinner"
 import { SkeletonGrid } from "@/components/Skeleton"
+import { EmptyState } from "@/components/EmptyState"
 import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
 import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
@@ -80,7 +81,7 @@ type ShotClientMeta = {
 function buildShotClientMeta(shot: Screenshot): ShotClientMeta {
   const src = getBestAvailableMediaSrc(shot)
   return {
-    isVideo: isVideo(src),
+    isVideo: isVideoShot(shot),
     searchText: [shot.term, shot.source, shot.page_url, shot.ai_summary ?? ""].join(" ").toLowerCase(),
   }
 }
@@ -89,7 +90,7 @@ const FAVORITES_KEY = "screenshot-favorites"
 const GRID_DENSITY_KEY = "media-grid-density"
 
 function isVideo(src: string) {
-  return /\.(mp4|webm|mov)$/i.test(src)
+  return /\.(mp4|webm|mov)/i.test(src)
 }
 
 function isGif(src: string) {
@@ -146,6 +147,9 @@ type SortOrder = "newest" | "oldest" | "az" | "rating" | "random"
 type TabFilter = "all" | "ddg" | "redgifs" | "tube" | "favorites" | "videos" | "images" | "creators" | "rated"
 type GridDensity = "compact" | "normal" | "spacious"
 type ViewMode = "grid" | "list" | "timeline" | "feed" | "mosaic"
+// Simplified defaults
+const DEFAULT_GRID_DENSITY: GridDensity = "normal"
+const SIMPLIFIED_VIEW_MODES: ViewMode[] = ["grid", "feed"]
 type SearchSuggestion =
   | { type: "term"; value: string; meta?: string }
   | { type: "tag"; value: string; meta?: string }
@@ -158,13 +162,15 @@ const DISCOVERY_PREFS_KEY = "media-discovery-prefs"
 
 function loadViewMode(): ViewMode {
   const stored = localStorage.getItem(VIEW_MODE_KEY)
-  if (stored === "grid" || stored === "list" || stored === "timeline" || stored === "feed" || stored === "mosaic") return stored
+  // Only grid and feed are exposed in the UI now
+  if (stored === "grid" || stored === "feed") return stored
   return "grid"
 }
 
 function loadTab(): TabFilter {
   const stored = localStorage.getItem(MEDIA_TAB_KEY)
-  if (stored === "all" || stored === "ddg" || stored === "redgifs" || stored === "tube" || stored === "favorites" || stored === "videos" || stored === "images" || stored === "creators" || stored === "rated") {
+  // Only simplified tabs are exposed in the UI now
+  if (stored === "all" || stored === "favorites" || stored === "videos" || stored === "images") {
     return stored
   }
   return "all"
@@ -232,13 +238,13 @@ function getTimelineGroup(dateStr: string | undefined): string {
 
 const GRID_CLASSES: Record<GridDensity, string> = {
   compact: "grid-cols-4 sm:grid-cols-5 lg:grid-cols-7 gap-0.5",
-  normal: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1",
+  normal: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-4 gap-1",
   spacious: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2",
 }
 
 const GRID_COLS: Record<GridDensity, number> = {
   compact: 7,
-  normal: 5,
+  normal: 4,
   spacious: 4,
 }
 
@@ -281,7 +287,7 @@ function MediaUnavailableTile({
   className?: string
 }) {
   return (
-    <div className={cn("flex h-full w-full flex-col items-center justify-center gap-2 bg-amber-500/10 px-3 text-center", className)}>
+    <div className={cn("flex h-full w-full flex-col items-center justify-center gap-2 rounded-lg bg-white/[0.06] px-3 text-center", className)}>
       <div className="rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.22em] text-amber-200">
         {statusLabel}
       </div>
@@ -324,43 +330,7 @@ function pushViewHistory(id: number) {
 
 function MediaStatsBar({ stats }: { stats: MediaStatsPayload | undefined }) {
   if (!stats) return null
-  return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-white/5 px-4 py-2 text-xs text-[var(--color-text-muted)]">
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-[var(--color-text-primary)]">{stats.total.toLocaleString()}</strong> total
-      </span>
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-[var(--color-text-primary)]">{(stats.by_type.image ?? 0).toLocaleString()}</strong> images
-      </span>
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-[var(--color-text-primary)]">{(stats.by_type.video ?? 0).toLocaleString()}</strong> videos
-      </span>
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-[var(--color-text-primary)]">{stats.rated.toLocaleString()}</strong> rated
-      </span>
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-[var(--color-text-primary)]">{stats.described.toLocaleString()}</strong> described
-      </span>
-      <span className="ui-chip !px-2.5 !py-1">
-        <strong className="text-sky-200">{stats.with_performer.toLocaleString()}</strong> linked
-      </span>
-      {stats.recent_24h > 0 && (
-        <span className="ui-chip ui-chip-active !px-2.5 !py-1">
-          +{stats.recent_24h} today
-        </span>
-      )}
-      {stats.recent_7d > 0 && (
-        <span className="ui-chip !px-2.5 !py-1">
-          +{stats.recent_7d} this week
-        </span>
-      )}
-      {stats.storage_mb > 0 && (
-        <span className="ui-chip !px-2.5 !py-1">
-          {stats.storage_mb} MB stored
-        </span>
-      )}
-    </div>
-  )
+  return null // Stats moved to sidebar; keeping component for API compatibility
 }
 
 // ── TermBrowser ──────────────────────────────────────────────────────────────
@@ -376,6 +346,7 @@ const TermBrowser = memo(function TermBrowser({
 }) {
   const [termSearch, setTermSearch] = useState("")
   const [expanded, setExpanded] = useState(false)
+  const [sectionOpen, setSectionOpen] = useState(false)
   const deferredTermSearch = useDeferredValue(termSearch)
 
   if (terms.length === 0) return null
@@ -386,69 +357,81 @@ const TermBrowser = memo(function TermBrowser({
   const hasMore = filtered.length > 60 && !expanded
 
   return (
-    <div className="border-b border-white/5 px-4 py-2 space-y-1.5" style={{ contentVisibility: "auto", containIntrinsicSize: "96px" }}>
-      <div className="flex items-center gap-2">
-        <span className="shrink-0 text-[10px] text-[var(--color-text-muted)]">Categories:</span>
-        <div className="relative">
-          <input
-            type="text"
-            value={termSearch}
-            onChange={(e) => setTermSearch(e.target.value)}
-            placeholder="Search categories…"
-            className="h-6 w-36 rounded-full border border-white/10 bg-black/20 px-2.5 text-[10px] text-[var(--color-text-primary)] placeholder:text-white/25 focus:outline-none focus:border-white/25"
-          />
-          {termSearch && (
-            <button
-              onClick={() => setTermSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 text-[10px]"
-            >
-              ×
-            </button>
-          )}
-        </div>
-        {activeTerm && (
-          <button
-            onClick={() => onSelect(null)}
-            className="shrink-0 rounded-full bg-[var(--color-accent)]/20 px-2.5 py-0.5 text-[10px] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/30 transition-colors"
-          >
-            Clear ×
-          </button>
-        )}
-        <span className="ml-auto text-[10px] text-white/20">{filtered.length} categories</span>
-      </div>
-      <div className="hide-scrollbar flex flex-wrap gap-1">
-        {visible.map(({ term, count }) => (
-          <button
-            key={term}
-            onClick={() => onSelect(activeTerm === term ? null : term)}
-            className={cn(
-              "shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] transition-colors",
-              activeTerm === term
-                ? "bg-[var(--color-accent)]/25 text-[var(--color-accent)] border border-[var(--color-accent)]/40"
-                : "bg-white/5 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--color-text-secondary)] border border-transparent"
+    <div className="border-b border-white/5 px-4 py-1.5">
+      <button
+        onClick={() => setSectionOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={cn("transition-transform", sectionOpen ? "rotate-0" : "-rotate-90")}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+        Categories ({terms.length})
+      </button>
+      {sectionOpen && (
+        <div className="mt-1.5 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <input
+                type="text"
+                value={termSearch}
+                onChange={(e) => setTermSearch(e.target.value)}
+                placeholder="Search categories…"
+                className="h-6 w-36 rounded-full border border-white/10 bg-black/20 px-2.5 text-[10px] text-[var(--color-text-primary)] placeholder:text-white/25 focus:outline-none focus:border-white/25"
+              />
+              {termSearch && (
+                <button
+                  onClick={() => setTermSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 text-[10px]"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            {activeTerm && (
+              <button
+                onClick={() => onSelect(null)}
+                className="shrink-0 rounded-full bg-[var(--color-accent)]/20 px-2.5 py-0.5 text-[10px] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/30 transition-colors"
+              >
+                Clear ×
+              </button>
             )}
-          >
-            {term}
-            <span className="ml-1 text-white/30">({count})</span>
-          </button>
-        ))}
-        {hasMore && (
-          <button
-            onClick={() => setExpanded(true)}
-            className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 border border-transparent transition-colors"
-          >
-            +{filtered.length - 60} more…
-          </button>
-        )}
-        {expanded && !lc && (
-          <button
-            onClick={() => setExpanded(false)}
-            className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 border border-transparent transition-colors"
-          >
-            Show less
-          </button>
-        )}
-      </div>
+            <span className="ml-auto text-[10px] text-white/20">{filtered.length} categories</span>
+          </div>
+          <div className="hide-scrollbar flex flex-wrap gap-1">
+            {visible.map(({ term, count }) => (
+              <button
+                key={term}
+                onClick={() => onSelect(activeTerm === term ? null : term)}
+                className={cn(
+                  "shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] transition-colors",
+                  activeTerm === term
+                    ? "bg-[var(--color-accent)]/25 text-[var(--color-accent)] border border-[var(--color-accent)]/40"
+                    : "bg-white/5 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--color-text-secondary)] border border-transparent"
+                )}
+              >
+                {term}
+                <span className="ml-1 text-white/30">({count})</span>
+              </button>
+            ))}
+            {hasMore && (
+              <button
+                onClick={() => setExpanded(true)}
+                className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 border border-transparent transition-colors"
+              >
+                +{filtered.length - 60} more…
+              </button>
+            )}
+            {expanded && !lc && (
+              <button
+                onClick={() => setExpanded(false)}
+                className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 border border-transparent transition-colors"
+              >
+                Show less
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 })
@@ -485,7 +468,7 @@ const CreatorCard = memo(function CreatorCard({
       className="group relative flex flex-col items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] p-4 transition-colors hover:bg-white/[0.06] hover:border-white/15"
       onMouseEnter={onHover}
       onFocus={onHover}
-      style={{ contentVisibility: "auto", containIntrinsicSize: "160px" }}
+      style={{  }}
     >
       <button onClick={onClick} className="flex flex-col items-center gap-2 w-full">
         <div className="relative h-16 w-16 overflow-hidden rounded-full bg-white/10">
@@ -548,6 +531,7 @@ const CreatorCard = memo(function CreatorCard({
 
 const MediaCard = memo(function MediaCard({
   shot,
+  index = 0,
   onClick,
   batchMode,
   selected,
@@ -555,12 +539,11 @@ const MediaCard = memo(function MediaCard({
   onHover,
   favorite,
   onToggleFavorite,
-  onDescribe,
-  onRate,
   onContextMenu,
   onNavigateToPerformer,
 }: {
   shot: Screenshot
+  index?: number
   onClick: () => void
   onHover?: () => void
   batchMode: boolean
@@ -568,8 +551,6 @@ const MediaCard = memo(function MediaCard({
   onSelect: () => void
   favorite: boolean
   onToggleFavorite: () => void
-  onDescribe: () => void
-  onRate: (rating: number) => void
   onContextMenu?: (e: React.MouseEvent) => void
   onNavigateToPerformer?: (performerId: number, username: string) => void
 }) {
@@ -589,6 +570,7 @@ const MediaCard = memo(function MediaCard({
         "group relative aspect-square cursor-pointer overflow-hidden bg-black/20",
         selected && "ring-2 ring-blue-500"
       )}
+      style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
     >
       <div style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
         {!previewSrc ? (
@@ -730,9 +712,7 @@ const MediaCard = memo(function MediaCard({
   )
 }, (prev, next) =>
   prev.shot.id === next.shot.id &&
-  prev.shot.rating === next.shot.rating &&
   prev.shot.local_url === next.shot.local_url &&
-  prev.shot.ai_summary === next.shot.ai_summary &&
   prev.favorite === next.favorite &&
   prev.selected === next.selected &&
   prev.batchMode === next.batchMode
@@ -767,7 +747,7 @@ const MosaicCard = memo(function MosaicCard({
       onFocus={onHover}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick() } }}
       onContextMenu={onContextMenu}
-      className="group relative mb-1 cursor-pointer overflow-hidden rounded-lg bg-black/20 break-inside-avoid"
+      className="group relative mb-1 cursor-pointer overflow-hidden rounded-lg bg-white/5 break-inside-avoid"
       style={{ breakInside: "avoid" }}
     >
       <div style={{ contentVisibility: "auto", containIntrinsicSize: "220px" }}>
@@ -862,7 +842,7 @@ const AIDescribedSection = memo(function AIDescribedSection({
   if (described.length === 0) return null
 
   return (
-    <div className="border-b border-white/10 px-4 py-3" style={{ contentVisibility: "auto", containIntrinsicSize: "150px" }}>
+    <div className="border-b border-white/10 px-4 py-3" style={{  }}>
       <div className="flex items-center justify-between">
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -901,7 +881,7 @@ const AIDescribedSection = memo(function AIDescribedSection({
                 className="group flex-shrink-0"
               >
                 <div className="h-20 w-20 overflow-hidden rounded-lg bg-black/20">
-                  <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
+                  <img src={src} alt="" loading="lazy" decoding="async" fetchPriority="low" className="h-full w-full object-cover" />
                 </div>
                 <p className="mt-1 w-20 truncate text-[10px] text-[var(--color-text-muted)] group-hover:text-[var(--color-text-primary)]">
                   {shot.ai_summary}
@@ -1300,6 +1280,7 @@ export function MediaPage() {
   const deferredSearch = useDeferredValue(search)
   const deferredCreatorSearch = useDeferredValue(creatorSearch)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const virtualizerContainerRef = useRef<HTMLDivElement>(null)
 
   const addToast = useAppStore((s) => s.addToast)
   const setActiveView = useAppStore((s) => s.setActiveView)
@@ -1397,6 +1378,9 @@ export function MediaPage() {
     staleTime: 15_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    initialData: typeof window !== "undefined" && (window as any).__INITIAL_DATA__?.status
+      ? (window as any).__INITIAL_DATA__.status
+      : undefined,
   })
   const capturing = statusData?.running ?? false
 
@@ -1438,8 +1422,8 @@ export function MediaPage() {
   const { data: screenshotTermsData } = useQuery<ScreenshotTerm[]>({
     queryKey: ["screenshot-terms"],
     queryFn: api.screenshotTerms,
-    staleTime: 5 * 60_000,
-    gcTime: 15 * 60_000,
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
     enabled: shouldLoadTermData,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -1484,8 +1468,8 @@ export function MediaPage() {
   const { data: mediaStatsData } = useQuery({
     queryKey: ["media-stats"],
     queryFn: api.mediaStats,
-    staleTime: 2 * 60_000,
-    gcTime: 10 * 60_000,
+    staleTime: 5 * 60_000,
+    gcTime: 15 * 60_000,
     enabled: mediaStatsEnabled,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -1508,7 +1492,13 @@ export function MediaPage() {
     return p
   }, [advancedFilters, activeTagFilter])
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
+  // Use server-embedded initial data only for the default unfiltered first page
+  const _canUseEmbeddedData = !term && !sourceForQuery && mediaCreatorId == null
+    && Object.keys(advQueryParams).length === 0
+    && (tab === "all" || tab == null)
+    && typeof window !== "undefined" && (window as any).__INITIAL_DATA__?.screenshots
+
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error: mediaError, refetch: mediaRefetch } = useInfiniteQuery({
     queryKey: ["screenshots", term, sourceForQuery, advQueryParams, mediaCreatorId, tab],
     queryFn: ({ pageParam = 0 }) =>
       api.browseScreenshots({
@@ -1518,13 +1508,16 @@ export function MediaPage() {
         ...(mediaCreatorId != null ? { performer_id: mediaCreatorId } : {}),
         ...(tab === "videos" ? { media_type: "video" } : {}),
         ...(tab === "images" ? { media_type: "image" } : {}),
-        limit: 12,
+        limit: 24,
         offset: pageParam as number,
       }),
     getNextPageParam: (last) => (last.has_more ? (last.next_offset ?? (last.offset + last.screenshots.length)) : undefined),
     initialPageParam: 0,
+    initialData: _canUseEmbeddedData
+      ? { pages: [(window as any).__INITIAL_DATA__.screenshots], pageParams: [0] }
+      : undefined,
     enabled: tab !== "creators",
-    staleTime: 30_000,
+    staleTime: 60_000,
     gcTime: 10 * 60_000,
     maxPages: 6,
     refetchOnWindowFocus: false,
@@ -1868,10 +1861,23 @@ export function MediaPage() {
     return rows
   }, [visibleShots, viewMode, showGrouped, colCount])
 
+  const [scrollMargin, setScrollMargin] = useState(0)
+  useEffect(() => {
+    const el = virtualizerContainerRef.current
+    if (el) {
+      const measure = () => setScrollMargin(el.offsetTop)
+      measure()
+      // Re-measure after layout settles
+      const raf = requestAnimationFrame(measure)
+      return () => cancelAnimationFrame(raf)
+    }
+  }, [visibleShots.length, viewMode, tab])
+
   const flatGridVirtualizer = useWindowVirtualizer({
     count: flatGridRows.length,
     estimateSize: () => GRID_ROW_SIZE_ESTIMATE[gridDensity],
     overscan: 3,
+    scrollMargin,
   })
 
   // ── Tab counts ───────────────────────────────────────────────────────────
@@ -2150,6 +2156,9 @@ export function MediaPage() {
   // ── Keyboard shortcuts help overlay ──────────────────────────────────────
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [heroCollapsed, setHeroCollapsed] = useState(true)
+  const [overflowMenuOpen, setOverflowMenuOpen] = useState(false)
+  const [filtersVisible, setFiltersVisible] = useState(false)
 
   // ── Keyboard ─────────────────────────────────────────────────────────────
 
@@ -2203,7 +2212,7 @@ export function MediaPage() {
     if (!node) return
     observerRef.current = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) fetchNextPage()
-    }, { rootMargin: "800px 0px" })
+    }, { rootMargin: "1200px 0px" })
     observerRef.current.observe(node)
   }, [fetchNextPage, hasNextPage, isFetchingNextPage])
 
@@ -2239,14 +2248,9 @@ export function MediaPage() {
 
   const tabs: { key: TabFilter; label: string; count?: number }[] = [
     { key: "all", label: "All", count: totalCount },
-    { key: "ddg", label: "DDG", count: ddgCount },
-    { key: "redgifs", label: "Redgifs", count: redgifsCount },
-    ...(tubeCount > 0 ? [{ key: "tube" as TabFilter, label: "Tube", count: tubeCount }] : []),
-    { key: "favorites", label: "\u2665 Favorites", count: favCount },
-    { key: "rated", label: "\u2605 Rated", count: ratedCount },
     { key: "videos", label: "Videos" },
     { key: "images", label: "Images" },
-    { key: "creators", label: "Creators" },
+    { key: "favorites", label: "Favorites", count: favCount },
   ]
 
   // ── Grid density handler ─────────────────────────────────────────────────
@@ -2426,12 +2430,14 @@ export function MediaPage() {
     estimateSize: (index) =>
       estimateGridSectionHeight(activeSectionEntries[index]?.shots.length ?? 1, colCount, gridDensity),
     overscan: 2,
+    scrollMargin,
   })
 
   const listVirtualizer = useWindowVirtualizer({
     count: viewMode === "list" ? visibleShots.length : 0,
     estimateSize: () => 86,
     overscan: 8,
+    scrollMargin,
   })
 
   const visibleMosaicShots = useMemo(
@@ -2491,6 +2497,7 @@ export function MediaPage() {
       <MediaCard
         key={shot.id}
         shot={shot}
+        index={index}
         onClick={() => openMedia(shot)}
         onHover={prefetchViewer}
         batchMode={batchMode}
@@ -2498,8 +2505,6 @@ export function MediaPage() {
         onSelect={() => toggleSelect(shot.id)}
         favorite={favorites.has(shot.id)}
         onToggleFavorite={() => toggleFavorite(shot.id)}
-        onDescribe={() => handleSingleDescribe(shot.id)}
-        onRate={(rating) => rateMutation.mutate({ id: shot.id, rating })}
         onContextMenu={(e) => handleContextMenu(e, shot)}
         onNavigateToPerformer={(performerId) => {
           setPendingPerformer(performerId)
@@ -2532,9 +2537,10 @@ export function MediaPage() {
 
   function renderGrid(shots: Screenshot[]) {
     const items: React.ReactNode[] = []
-    for (const shot of shots) {
+    for (let i = 0; i < shots.length; i++) {
+      const shot = shots[i]
       // Insert inline video player after the expanded card
-      items.push(renderCard(shot))
+      items.push(renderCard(shot, i))
       if (expandedShot && shot.id === expandedVideoId) {
         items.push(
           <Suspense key={`vid-${shot.id}`} fallback={<InlineLoadingFallback className="col-span-full mx-2 my-2" label="Loading video player" />}>
@@ -2593,591 +2599,436 @@ export function MediaPage() {
         </Suspense>
       )}
 
-      <div className="px-4 pt-4">
-        <div className="hero-surface overflow-hidden rounded-[28px]">
-          <div className="flex flex-col gap-5 px-5 py-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.24em] text-sky-200/80">
-                Media Studio
-                <span className="rounded-full bg-white/10 px-2 py-0.5 tracking-normal text-[9px] text-white/60">{viewMode}</span>
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-[2rem]">Capture, review, and expand your creator library faster</h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                  Search and triage media, keep creator-linked captures organized, and use AI to find similar creators based on the people and themes already performing well in your library.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {activeFilterPills.length > 0 ? activeFilterPills.map((pill) => (
-                  <span key={pill} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-                    {pill}
-                  </span>
-                )) : (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
-                    No filters active
-                  </span>
-                )}
-                {activeFilterPills.length > 0 && (
+      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+      <div className="sticky top-14 z-20 px-4 py-2 backdrop-blur-xl">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0c1424]/80 px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+          {/* Search input */}
+          <div className="relative flex-1 max-w-md">
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+              placeholder="Search..."
+              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+              >
+                &times;
+              </button>
+            )}
+            {ftsSearching && (
+              <div className="absolute right-8 top-1/2 -translate-y-1/2"><Spinner /></div>
+            )}
+            {/* Recent searches dropdown */}
+            {searchFocused && !search && recentSearches.length > 0 && (
+              <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
+                <div className="px-3 py-1.5 border-b border-white/5 flex items-center justify-between">
+                  <span className="text-[10px] text-white/30 font-mono uppercase tracking-widest">Recent</span>
                   <button
-                    onClick={clearMediaFilters}
-                    className="rounded-full border border-white/12 bg-white/6 px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:bg-white/10"
+                    onMouseDown={(e) => { e.preventDefault(); setRecentSearches([]); localStorage.removeItem("media-recent-searches") }}
+                    className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
                   >
-                    Reset view
+                    clear
                   </button>
-                )}
-                <button
-                  onClick={() => setDiscoveryOpen((v) => !v)}
-                  className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200 transition-colors hover:bg-emerald-400/15"
-                >
-                  {discoveryOpen ? "Hide AI discovery" : "Open AI discovery"}
-                </button>
+                </div>
+                {recentSearches.map((s) => (
+                  <button
+                    key={s}
+                    onMouseDown={(e) => { e.preventDefault(); setSearch(s) }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-white/30 shrink-0">
+                      <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.92"/>
+                    </svg>
+                    {s}
+                  </button>
+                ))}
               </div>
-              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-400">
-                <span>Fast paths:</span>
-                <span className="ui-chip !px-2.5 !py-1">M select</span>
-                <span className="ui-chip !px-2.5 !py-1">R surprise me</span>
-                <span className="ui-chip !px-2.5 !py-1">? shortcuts</span>
-                <span className="ui-chip !px-2.5 !py-1">Hover creators to prefetch</span>
+            )}
+            {showSearchSuggestions && searchSuggestions.length > 0 && (
+              <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
+                <div className="px-3 py-1.5 border-b border-white/5">
+                  <span className="text-[10px] text-white/30 font-mono uppercase tracking-widest">Jump to</span>
+                </div>
+                {searchSuggestions.map((suggestion) => (
+                  <button
+                    key={`${suggestion.type}-${suggestion.value}`}
+                    onMouseDown={(e) => { e.preventDefault(); applySearchSuggestion(suggestion) }}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                  >
+                    <span>
+                      <span className="mr-2 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/40">
+                        {suggestion.type}
+                      </span>
+                      {suggestion.value}
+                    </span>
+                    {suggestion.meta && <span className="text-[10px] text-white/35">{suggestion.meta}</span>}
+                  </button>
+                ))}
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-[11px] text-slate-400">Visible</p>
-                <p className="mt-1 text-2xl font-semibold text-white">{visibleShots.length.toLocaleString()}</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-[11px] text-slate-400">Context</p>
-                <p className="mt-1 truncate text-sm font-medium text-sky-200">{discoverySeedLabel}</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-[11px] text-slate-400">Favorites</p>
-                <p className="mt-1 text-2xl font-semibold text-white">{favCount.toLocaleString()}</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-[11px] text-slate-400">Linked</p>
-                <p className="mt-1 text-2xl font-semibold text-white">{mediaStatsData?.with_performer?.toLocaleString?.() ?? "0"}</p>
-              </div>
-            </div>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-white/8 bg-black/15 px-5 py-3">
+          {/* Filters toggle */}
+          <button
+            onClick={() => setFiltersVisible((v) => !v)}
+            className={cn(
+              "rounded-lg px-2.5 py-1.5 text-xs transition-colors whitespace-nowrap",
+              filtersVisible || advancedOpen
+                ? "bg-blue-500/20 text-blue-400"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+            )}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block mr-1">
+              <line x1="4" y1="6" x2="20" y2="6" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="11" y1="18" x2="13" y2="18" />
+            </svg>
+            Filters{Object.values(advancedFilters).some((v) => v !== "" && v !== 0 && v !== null && v !== "any" && !(Array.isArray(v) && v.length === 0)) ? " *" : ""}
+          </button>
+
+          {/* Sort dropdown */}
+          <select
+            value={sortOrder}
+            onChange={(e) => {
+              const v = e.target.value as SortOrder
+              setSortOrder(v)
+              localStorage.setItem("media-sort-order", v)
+            }}
+            className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs text-[var(--color-text-secondary)]"
+            aria-label="Sort order"
+          >
+            <option value="newest">Newest</option>
+            <option value="rating">Top Rated</option>
+          </select>
+
+          {/* View mode toggle — Grid / Feed */}
+          <div className="flex rounded-lg border border-white/10 bg-black/20 overflow-hidden">
             <button
-              onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
+              onClick={() => handleViewModeChange("grid")}
+              title="Grid view"
               className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                advancedFilters.hasPerformer === true
-                  ? "bg-sky-500/20 text-sky-200"
-                  : "bg-white/5 text-slate-300 hover:bg-white/10"
+                "flex items-center justify-center px-2 py-1.5 transition-colors",
+                viewMode === "grid" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
               )}
             >
-              Creator-linked only
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+                <rect x="0" y="0" width="4" height="4" rx="0.5" />
+                <rect x="5" y="0" width="4" height="4" rx="0.5" />
+                <rect x="10" y="0" width="4" height="4" rx="0.5" />
+                <rect x="0" y="5" width="4" height="4" rx="0.5" />
+                <rect x="5" y="5" width="4" height="4" rx="0.5" />
+                <rect x="10" y="5" width="4" height="4" rx="0.5" />
+              </svg>
             </button>
             <button
-              onClick={() => setTab("videos")}
-              className={cn("rounded-full px-3 py-1.5 text-xs font-medium transition-colors", tab === "videos" ? "bg-white/15 text-white" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+              onClick={() => handleViewModeChange("feed")}
+              onMouseEnter={() => { void preloadVideoFeed() }}
+              onFocus={() => { void preloadVideoFeed() }}
+              title="Video feed"
+              className={cn(
+                "flex items-center justify-center px-2 py-1.5 transition-colors",
+                viewMode === "feed" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              )}
             >
-              Jump to videos
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="2" y="1" width="10" height="12" rx="1.5" />
+                <polygon points="5.5,4.5 9.5,7 5.5,9.5" fill="currentColor" stroke="none" />
+              </svg>
             </button>
-            <button
-              onClick={() => {
-                setSortOrder("newest")
-                localStorage.setItem("media-sort-order", "newest")
-              }}
-              className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
-            >
-              Newest first
-            </button>
-            <button
-              onClick={() => setFilterDescribed((v) => !v)}
-              className={cn("rounded-full px-3 py-1.5 text-xs font-medium transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
-            >
-              AI-described only
-            </button>
-            <div className="ml-auto flex items-center gap-2 text-xs text-slate-400">
-              <span>Seeded from</span>
-              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-200">{discoverySeedLabel}</span>
-            </div>
           </div>
 
-          <div className="grid gap-3 border-t border-white/8 bg-black/10 px-5 py-4 sm:grid-cols-2 xl:grid-cols-6">
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Visible set</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.total.toLocaleString()}</p>
-            </div>
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Images</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.images.toLocaleString()}</p>
-            </div>
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Videos</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.videos.toLocaleString()}</p>
-            </div>
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Linked</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.linked.toLocaleString()}</p>
-            </div>
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Described</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.described.toLocaleString()}</p>
-            </div>
-            <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-              <p className="text-[11px] text-slate-400">Needs rating</p>
-              <p className="mt-1 text-xl font-semibold text-white">{visibleSummary.unrated.toLocaleString()}</p>
-            </div>
+          {/* Visible count */}
+          <span className="text-[10px] text-slate-400 whitespace-nowrap">{visibleShots.length.toLocaleString()} items</span>
+
+          {/* Overflow menu */}
+          <div className="relative ml-auto">
+            <button
+              onClick={() => setOverflowMenuOpen((v) => !v)}
+              className="rounded-lg px-2 py-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-white/5 transition-colors"
+              title="More actions"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+            {overflowMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setOverflowMenuOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
+                  <div className="py-1">
+                    <button
+                      onClick={() => { setSlideshowActive(true); setOverflowMenuOpen(false) }}
+                      onMouseEnter={() => { void preloadSlideshowMode() }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      Slideshow
+                    </button>
+                    <button
+                      onClick={() => { handleSurpriseMe(); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      Surprise me
+                    </button>
+                    <button
+                      onClick={() => { setBatchMode((v) => { if (v) setSelectedIds(new Set()); return !v }); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      {batchMode ? "Cancel select" : "Select"}
+                    </button>
+                    <div className="border-t border-white/5 my-1" />
+                    <button
+                      onClick={() => { setPlaylistDropdownOpen((v) => !v); setOverflowMenuOpen(false) }}
+                      onMouseEnter={() => { void preloadPlaylistPanel() }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      Playlists
+                    </button>
+                    <button
+                      onClick={() => { setAnalyticsOpen((v) => !v); setOverflowMenuOpen(false) }}
+                      onMouseEnter={() => { void loadMediaAnalyticsDashboard() }}
+                      className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", analyticsOpen ? "text-emerald-400" : "text-white/70 hover:text-white")}
+                    >
+                      Analytics
+                    </button>
+                    <button
+                      onClick={() => { setDiscoveryOpen((v) => !v); setOverflowMenuOpen(false) }}
+                      className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", discoveryOpen ? "text-emerald-400" : "text-white/70 hover:text-white")}
+                    >
+                      AI discovery
+                    </button>
+                    <div className="border-t border-white/5 my-1" />
+                    <button
+                      onClick={() => { handleCapture(); setOverflowMenuOpen(false) }}
+                      disabled={capturing}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-[var(--color-accent)] hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                    >
+                      {capturing ? "Capturing..." : "Capture"}
+                    </button>
+                    <button
+                      onClick={() => { handleCaptureVideos(); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-teal-300 hover:bg-white/[0.06] transition-colors"
+                    >
+                      + Videos
+                    </button>
+                    <button
+                      onClick={() => { setUrlInputOpen((v) => !v); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      + URL
+                    </button>
+                    <div className="border-t border-white/5 my-1" />
+                    <button
+                      onClick={() => { handleAutoTag(); setOverflowMenuOpen(false) }}
+                      disabled={autoTagging}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-purple-300 hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                    >
+                      {autoTagging ? "Tagging..." : "Auto-Tag"}
+                    </button>
+                    <button
+                      onClick={() => { setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true })); setOverflowMenuOpen(false) }}
+                      className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", advancedFilters.hasPerformer === true ? "text-sky-300" : "text-white/70 hover:text-white")}
+                    >
+                      Creators Only
+                    </button>
+                    <button
+                      onClick={() => { handlePurgeWomen(); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-red-400 hover:bg-white/[0.06] transition-colors"
+                    >
+                      Purge
+                    </button>
+                    <div className="border-t border-white/5 my-1" />
+                    <label className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={autoDescribe}
+                        onChange={(e) => {
+                          setAutoDescribe(e.target.checked)
+                          localStorage.setItem(AUTO_DESCRIBE_KEY, String(e.target.checked))
+                        }}
+                        className="h-3 w-3 rounded border-white/20 bg-black/30 accent-[var(--color-accent)]"
+                      />
+                      <span className="text-xs text-[var(--color-text-muted)]">Auto-describe</span>
+                    </label>
+                    <button
+                      onClick={() => { setShortcutsOpen(true); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      Keyboard shortcuts
+                    </button>
+                    <button
+                      onClick={() => { setHeroCollapsed((v) => !v); setOverflowMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                    >
+                      {heroCollapsed ? "Show stats panel" : "Hide stats panel"}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
-      </div>
 
-      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
-      <div className="sticky top-14 z-20 px-4 py-4 backdrop-blur-xl">
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-[#0c1424]/80 p-3 shadow-[0_12px_40px_rgba(0,0,0,0.22)] backdrop-blur-xl">
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-          <span className="font-medium text-white/70">Search & refine</span>
-          <span className="ui-chip !px-2.5 !py-1">term</span>
-          <span className="ui-chip !px-2.5 !py-1">creator</span>
-          <span className="ui-chip !px-2.5 !py-1">URL</span>
-          <span className="ui-chip !px-2.5 !py-1">AI description</span>
-        </div>
-        <div className="relative flex-1 max-w-md">
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-            placeholder="Search term, source, URL, or description..."
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-            >
-              &times;
-            </button>
-          )}
-          {ftsSearching && (
-            <div className="absolute right-8 top-1/2 -translate-y-1/2"><Spinner /></div>
-          )}
-          {/* Recent searches dropdown */}
-          {searchFocused && !search && recentSearches.length > 0 && (
-            <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
-              <div className="px-3 py-1.5 border-b border-white/5 flex items-center justify-between">
-                <span className="text-[10px] text-white/30 font-mono uppercase tracking-widest">Recent</span>
-                <button
-                  onMouseDown={(e) => { e.preventDefault(); setRecentSearches([]); localStorage.removeItem("media-recent-searches") }}
-                  className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
-                >
-                  clear
-                </button>
-              </div>
-              {recentSearches.map((s) => (
-                <button
-                  key={s}
-                  onMouseDown={(e) => { e.preventDefault(); setSearch(s) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-white/30 shrink-0">
-                    <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.92"/>
-                  </svg>
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
-          {showSearchSuggestions && searchSuggestions.length > 0 && (
-            <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
-              <div className="px-3 py-1.5 border-b border-white/5">
-                <span className="text-[10px] text-white/30 font-mono uppercase tracking-widest">Jump to</span>
-              </div>
-              {searchSuggestions.map((suggestion) => (
-                <button
-                  key={`${suggestion.type}-${suggestion.value}`}
-                  onMouseDown={(e) => { e.preventDefault(); applySearchSuggestion(suggestion) }}
-                  className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
-                >
-                  <span>
-                    <span className="mr-2 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/40">
-                      {suggestion.type}
-                    </span>
-                    {suggestion.value}
-                  </span>
-                  {suggestion.meta && <span className="text-[10px] text-white/35">{suggestion.meta}</span>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <button
-          onClick={() => setAdvancedOpen((v) => !v)}
-          className={cn(
-            "rounded-lg px-2 py-2 text-xs transition-colors whitespace-nowrap",
-            advancedOpen
-              ? "bg-blue-500/20 text-blue-400"
-              : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-          )}
-        >
-          Advanced{Object.values(advancedFilters).some((v) => v !== "" && v !== 0 && v !== null && v !== "any" && !(Array.isArray(v) && v.length === 0)) ? " *" : ""}
-        </button>
-
-        <select
-          value={sortOrder}
-          onChange={(e) => {
-            const v = e.target.value as SortOrder
-            setSortOrder(v)
-            localStorage.setItem("media-sort-order", v)
-          }}
-          className="rounded-lg border border-white/10 bg-black/20 px-2 py-2 text-sm text-[var(--color-text-secondary)]"
-          aria-label="Sort order"
-        >
-          <option value="newest">Newest</option>
-          <option value="oldest">Oldest</option>
-          <option value="rating">Top Rated</option>
-          <option value="az">A-Z</option>
-          <option value="random">Random</option>
-        </select>
-
-        {/* View mode toggle */}
-        <div className="flex rounded-lg border border-white/10 bg-black/20 overflow-hidden">
-          <button
-            onClick={() => handleViewModeChange("grid")}
-            title="Grid view"
-            className={cn(
-              "flex items-center justify-center px-2 py-2 transition-colors",
-              viewMode === "grid" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-            )}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-              <rect x="0" y="0" width="4" height="4" rx="0.5" />
-              <rect x="5" y="0" width="4" height="4" rx="0.5" />
-              <rect x="10" y="0" width="4" height="4" rx="0.5" />
-              <rect x="0" y="5" width="4" height="4" rx="0.5" />
-              <rect x="5" y="5" width="4" height="4" rx="0.5" />
-              <rect x="10" y="5" width="4" height="4" rx="0.5" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleViewModeChange("list")}
-            title="List view"
-            className={cn(
-              "flex items-center justify-center px-2 py-2 transition-colors",
-              viewMode === "list" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-            )}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-              <rect x="0" y="1" width="14" height="2" rx="0.5" />
-              <rect x="0" y="6" width="14" height="2" rx="0.5" />
-              <rect x="0" y="11" width="14" height="2" rx="0.5" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleViewModeChange("timeline")}
-            title="Timeline view"
-            className={cn(
-              "flex items-center justify-center px-2 py-2 transition-colors",
-              viewMode === "timeline" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-            )}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <line x1="3" y1="0" x2="3" y2="14" />
-              <circle cx="3" cy="3" r="1.5" fill="currentColor" />
-              <line x1="5" y1="3" x2="13" y2="3" />
-              <circle cx="3" cy="8" r="1.5" fill="currentColor" />
-              <line x1="5" y1="8" x2="13" y2="8" />
-              <circle cx="3" cy="13" r="1.5" fill="currentColor" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleViewModeChange("feed")}
-            onMouseEnter={() => { void preloadVideoFeed() }}
-            onFocus={() => { void preloadVideoFeed() }}
-            title="Video feed"
-            className={cn(
-              "flex items-center justify-center px-2 py-2 transition-colors",
-              viewMode === "feed" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-            )}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="2" y="1" width="10" height="12" rx="1.5" />
-              <polygon points="5.5,4.5 9.5,7 5.5,9.5" fill="currentColor" stroke="none" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleViewModeChange("mosaic")}
-            title="Mosaic / masonry"
-            className={cn(
-              "flex items-center justify-center px-2 py-2 transition-colors",
-              viewMode === "mosaic" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-            )}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-              <rect x="0" y="0" width="4" height="6" rx="0.5" />
-              <rect x="5" y="0" width="4" height="3" rx="0.5" />
-              <rect x="10" y="0" width="4" height="8" rx="0.5" />
-              <rect x="5" y="4" width="4" height="5" rx="0.5" />
-              <rect x="0" y="7" width="4" height="3" rx="0.5" />
-              <rect x="0" y="11" width="4" height="3" rx="0.5" />
-              <rect x="5" y="10" width="4" height="4" rx="0.5" />
-              <rect x="10" y="9" width="4" height="5" rx="0.5" />
-            </svg>
-          </button>
-        </div>
-
-        {viewMode === "grid" && <GridDensityControl density={gridDensity} onChange={handleDensityChange} />}
-
-        {/* Slideshow button */}
-        {visibleShots.length > 0 && (
-          <button
-            onClick={() => setSlideshowActive(true)}
-            onMouseEnter={() => { void preloadSlideshowMode() }}
-            onFocus={() => { void preloadSlideshowMode() }}
-            className="rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-            title="Start slideshow"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block mr-1">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <line x1="8" y1="21" x2="16" y2="21" />
-              <line x1="12" y1="17" x2="12" y2="21" />
-            </svg>
-            Slideshow
-          </button>
-        )}
-
-        {/* Surprise me button */}
-        <button
-          onClick={handleSurpriseMe}
-          className="rounded-lg px-2 py-2 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-          title="Surprise me — random pick from top-rated (R)"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="2" width="20" height="20" rx="5" />
-            <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
-            <circle cx="15.5" cy="8.5" r="1.5" fill="currentColor" />
-            <circle cx="8.5" cy="15.5" r="1.5" fill="currentColor" />
-            <circle cx="15.5" cy="15.5" r="1.5" fill="currentColor" />
-            <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-          </svg>
-        </button>
-
-        {/* Keyboard shortcuts help */}
-        <button
-          onClick={() => setShortcutsOpen((v) => !v)}
-          onMouseEnter={() => { void preloadMediaContextMenu() }}
-          className="rounded-lg px-2 py-2 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-          title="Keyboard shortcuts (?)"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="6" width="20" height="13" rx="3" />
-            <path d="M6 10h1M10 10h1M14 10h1M18 10h1M6 14h1M10 14h5M18 14h1" />
-          </svg>
-        </button>
-
-        <button
-          onClick={() => {
-            setBatchMode((v) => { if (v) setSelectedIds(new Set()); return !v })
-          }}
-          className={cn(
-            "rounded-lg px-3 py-2 text-sm transition-colors",
-            batchMode ? "bg-blue-500/20 text-blue-400" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-          )}
-        >
-          {batchMode ? "Cancel" : "Select"}
-        </button>
-
-        <div className="relative">
-          <button
-            onClick={() => setPlaylistDropdownOpen((v) => !v)}
-            onMouseEnter={() => { void preloadPlaylistPanel() }}
-            onFocus={() => { void preloadPlaylistPanel() }}
-            className="rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-          >
-            Playlists
-          </button>
-          <Suspense fallback={null}>
-            <PlaylistDropdown
-              open={playlistDropdownOpen}
-              onClose={() => setPlaylistDropdownOpen(false)}
-              onSelectPlaylist={(id) => setActivePlaylistId(id)}
-              onCreateNew={() => { setCreatePlaylistWithIds(undefined); setCreatePlaylistOpen(true) }}
+        {/* URL input panel (shown when triggered from overflow menu) */}
+        {urlInputOpen && (
+          <div className="mt-2 flex flex-col gap-2 rounded-xl border border-white/10 bg-[#1a1a2e]/95 p-3 shadow-xl max-w-sm backdrop-blur">
+            <input
+              type="url"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleCaptureUrl() }}
+              placeholder="https://... (image, video, Redgifs)"
+              autoFocus
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
             />
-          </Suspense>
-        </div>
-
-        <button
-          onClick={() => setAnalyticsOpen((v) => !v)}
-          onMouseEnter={() => { void loadMediaAnalyticsDashboard() }}
-          onFocus={() => { void loadMediaAnalyticsDashboard() }}
-          title="Media analytics"
-          className={cn(
-            "rounded-lg px-3 py-2 text-sm transition-colors",
-            analyticsOpen
-              ? "bg-emerald-500/20 text-emerald-400"
-              : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-          )}
-        >
-          Analytics
-        </button>
-
-        <button
-          onClick={handleCapture}
-          disabled={capturing}
-          className="rounded-lg border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/10 px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] disabled:opacity-50"
-        >
-          {capturing ? "Capturing..." : "Capture"}
-        </button>
-
-        <button
-          onClick={handleCaptureVideos}
-          title="Download full videos from Pornhub and other tube sites"
-          className="rounded-lg border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-sm font-medium text-teal-300 hover:bg-teal-500/20 transition-colors whitespace-nowrap"
-        >
-          + Videos
-        </button>
-
-        <button
-          onClick={handlePurgeWomen}
-          title="Scan all images with AI vision and delete any containing women"
-          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 hover:bg-red-500/20 transition-colors whitespace-nowrap"
-        >
-          Purge ♀
-        </button>
-
-        {/* Linked-to-creator quick filter */}
-        <button
-          onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
-          title="Show only media linked to a tracked creator"
-          className={cn(
-            "rounded-lg border px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap",
-            advancedFilters.hasPerformer === true
-              ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
-              : "border-white/10 bg-black/20 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-          )}
-        >
-          Creators Only
-        </button>
-
-        {/* Auto-Tag button */}
-        <button
-          onClick={handleAutoTag}
-          disabled={autoTagging}
-          title="Auto-extract tags from AI descriptions"
-          className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-sm font-medium text-purple-300 disabled:opacity-50 hover:bg-purple-500/20 transition-colors whitespace-nowrap"
-        >
-          {autoTagging ? "Tagging…" : "Auto-Tag"}
-        </button>
-
-        {/* Paste URL capture */}
-        <div className="relative">
-          <button
-            onClick={() => setUrlInputOpen((v) => !v)}
-            title="Capture media from a URL"
-            className={cn(
-              "rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm transition-colors whitespace-nowrap",
-              urlInputOpen ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-            )}
-          >
-            + URL
-          </button>
-          {urlInputOpen && (
-            <div className="absolute right-0 top-full mt-1 z-30 flex flex-col gap-2 rounded-xl border border-white/10 bg-[#1a1a2e]/95 p-3 shadow-xl w-72 backdrop-blur">
-              <input
-                type="url"
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleCaptureUrl() }}
-                placeholder="https://... (image, video, Redgifs)"
-                autoFocus
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
-              />
-              <input
-                type="text"
-                value={urlTerm}
-                onChange={(e) => setUrlTerm(e.target.value)}
-                placeholder="Term / label (optional)"
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={handleCaptureUrl}
-                  disabled={!urlInput.trim() || urlCapturing}
-                  className="flex-1 rounded-lg bg-[var(--color-accent)]/80 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 hover:bg-[var(--color-accent)]"
-                >
-                  {urlCapturing ? "Capturing…" : "Capture"}
-                </button>
-                <button
-                  onClick={() => setUrlInputOpen(false)}
-                  className="rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-                >
-                  Cancel
-                </button>
-              </div>
+            <input
+              type="text"
+              value={urlTerm}
+              onChange={(e) => setUrlTerm(e.target.value)}
+              placeholder="Term / label (optional)"
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleCaptureUrl}
+                disabled={!urlInput.trim() || urlCapturing}
+                className="flex-1 rounded-lg bg-[var(--color-accent)]/80 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 hover:bg-[var(--color-accent)]"
+              >
+                {urlCapturing ? "Capturing..." : "Capture"}
+              </button>
+              <button
+                onClick={() => setUrlInputOpen(false)}
+                className="rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+              >
+                Cancel
+              </button>
             </div>
-          )}
-        </div>
-
-        <label className="flex items-center gap-1.5 cursor-pointer select-none" title="Auto-describe new captures with AI">
-          <input
-            type="checkbox"
-            checked={autoDescribe}
-            onChange={(e) => {
-              setAutoDescribe(e.target.checked)
-              localStorage.setItem(AUTO_DESCRIBE_KEY, String(e.target.checked))
-            }}
-            className="h-3.5 w-3.5 rounded border-white/20 bg-black/30 accent-[var(--color-accent)]"
-          />
-          <span className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">Auto-describe</span>
-        </label>
-
-        {filterDescribed && (
-          <button
-            onClick={() => setFilterDescribed(false)}
-            className="rounded-lg bg-purple-500/20 px-2 py-1 text-xs text-purple-300 hover:bg-purple-500/30"
-          >
-            Showing described only &times;
-          </button>
+          </div>
         )}
-        </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl border border-white/8 bg-[#0a1322]/70 px-3 py-3">
-          <span className="text-[10px] uppercase tracking-[0.18em] text-white/30">Quick filters</span>
+        {/* Playlist dropdown (positioned here since Playlists moved to overflow) */}
+        <Suspense fallback={null}>
+          <PlaylistDropdown
+            open={playlistDropdownOpen}
+            onClose={() => setPlaylistDropdownOpen(false)}
+            onSelectPlaylist={(id) => setActivePlaylistId(id)}
+            onCreateNew={() => { setCreatePlaylistWithIds(undefined); setCreatePlaylistOpen(true) }}
+          />
+        </Suspense>
+
+        {/* Filters panel -- shown when Filters button is clicked */}
+        {filtersVisible && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-white/8 bg-[#0a1322]/70 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
+              <span className="ui-chip !px-2 !py-0.5">term</span>
+              <span className="ui-chip !px-2 !py-0.5">creator</span>
+              <span className="ui-chip !px-2 !py-0.5">URL</span>
+              <span className="ui-chip !px-2 !py-0.5">AI description</span>
+            </div>
+            <button
+              onClick={() => setAdvancedOpen((v) => !v)}
+              className={cn(
+                "rounded-lg px-2 py-1 text-[11px] transition-colors whitespace-nowrap",
+                advancedOpen
+                  ? "bg-blue-500/20 text-blue-400"
+                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+              )}
+            >
+              Advanced{Object.values(advancedFilters).some((v) => v !== "" && v !== 0 && v !== null && v !== "any" && !(Array.isArray(v) && v.length === 0)) ? " *" : ""}
+            </button>
+            {filterDescribed && (
+              <button
+                onClick={() => setFilterDescribed(false)}
+                className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] text-purple-300 hover:bg-purple-500/30"
+              >
+                Showing described only &times;
+              </button>
+            )}
+            {activeFilterPills.length > 0 && (
+              <button
+                onClick={clearMediaFilters}
+                className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 hover:bg-white/10"
+              >
+                Reset all
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Quick filters -- compact */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1 px-1">
           <button
             onClick={() => setOnlyUnlinked((v) => !v)}
-            className={cn("rounded-full px-3 py-1.5 text-xs transition-colors", onlyUnlinked ? "bg-sky-500/20 text-sky-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnlinked ? "bg-sky-500/20 text-sky-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
-            Unlinked only
+            Unlinked
           </button>
           <button
             onClick={() => setOnlyUnrated((v) => !v)}
-            className={cn("rounded-full px-3 py-1.5 text-xs transition-colors", onlyUnrated ? "bg-amber-500/20 text-amber-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnrated ? "bg-amber-500/20 text-amber-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
             Needs rating
           </button>
           <button
             onClick={() => setOnlyRecent((v) => !v)}
-            className={cn("rounded-full px-3 py-1.5 text-xs transition-colors", onlyRecent ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyRecent ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
-            Last 7 days
+            7 days
           </button>
           <button
             onClick={() => setFilterDescribed((v) => !v)}
-            className={cn("rounded-full px-3 py-1.5 text-xs transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
             Described
           </button>
           <button
             onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
-            className={cn("rounded-full px-3 py-1.5 text-xs transition-colors", advancedFilters.hasPerformer === true ? "bg-indigo-500/20 text-indigo-200" : "bg-white/5 text-slate-300 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", advancedFilters.hasPerformer === true ? "bg-indigo-500/20 text-indigo-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
             Creator-linked
           </button>
-          <div className="ml-auto text-xs text-slate-400">
-            / search, r surprise, g/l/t/v/o switch views
-          </div>
         </div>
       </div>
+
+      {/* ── Hero stats panel (hidden by default, toggled from overflow menu) ── */}
+      {!heroCollapsed && (
+        <div className="px-4 pb-2">
+          <div className="rounded-xl border border-white/8 bg-black/10 p-3">
+            <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Visible</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.total.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Images</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.images.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Videos</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.videos.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Linked</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.linked.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Described</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.described.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-slate-400">Needs rating</p>
+                <p className="text-lg font-semibold text-white">{visibleSummary.unrated.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Advanced Search Panel ──────────────────────────────────────── */}
       {advancedOpen && (
@@ -3366,7 +3217,7 @@ export function MediaPage() {
                       title={shot.term}
                     >
                       {src ? (
-                        <img src={src} alt={shot.term} className="h-full w-full object-cover" loading="lazy" />
+                        <img src={src} alt={shot.term} className="h-full w-full object-cover" loading="lazy" decoding="async" fetchPriority="low" />
                       ) : vid && mediaSrc ? (
                         <video
                           src={mediaSrc}
@@ -3461,14 +3312,32 @@ export function MediaPage() {
         </div>
       )}
 
+      {/* ── Error state ────────────────────────────────────────────────── */}
+      {tab !== "creators" && mediaError && (
+        <EmptyState
+          icon="⚠️"
+          title="Couldn't load media"
+          description="The server is starting up. Try refreshing in a moment."
+          action={{ label: "Retry", onClick: () => mediaRefetch() }}
+        />
+      )}
+
       {/* ── Loading ──────────────────────────────────────────────────────── */}
-      {tab !== "creators" && isLoading && <SkeletonGrid count={10} />}
+      {tab !== "creators" && !mediaError && isLoading && <SkeletonGrid count={10} />}
 
       {/* ── Empty state ──────────────────────────────────────────────────── */}
-      {tab !== "creators" && !isLoading && visibleShots.length === 0 && (
-        <div className="mx-4 my-8 flex flex-col items-center justify-center gap-4 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,32,0.92),rgba(8,13,24,0.98))] px-6 py-20 text-center shadow-[0_24px_80px_rgba(0,0,0,0.24)]">
+      {tab !== "creators" && !isLoading && !mediaError && visibleShots.length === 0 && allShots.length === 0 && (
+        <EmptyState
+          icon="\ud83d\udcf7"
+          title="No media yet"
+          description="Run a capture or add creators to start collecting media"
+          action={{ label: capturing ? "Capturing..." : "Run capture", onClick: handleCapture }}
+        />
+      )}
+      {tab !== "creators" && !isLoading && visibleShots.length === 0 && allShots.length > 0 && (
+        <div className="mx-4 my-8 flex flex-col items-center justify-center gap-4 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,32,0.92),rgba(8,13,24,0.98))] px-6 py-20 text-center shadow-[0_24px_80px_rgba(0,0,0,0.24)] animate-[slideUp_400ms_ease-out]">
           <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-slate-400">
-            Empty view
+            No matches
           </div>
           <p className="max-w-lg text-sm leading-6 text-[var(--color-text-muted)]">
             {filterDescribed
@@ -3528,110 +3397,148 @@ export function MediaPage() {
         </div>
       )}
 
+      {/* ── Virtualizer scroll-margin anchor ──────────────────────────── */}
+      <div ref={virtualizerContainerRef} />
+
       {/* ── Grid view: grouped by term ─────────────────────────────────── */}
       {tab !== "creators" && !isLoading && visibleShots.length > 0 && viewMode === "grid" && showGrouped && (
-        <div
-          className="py-2"
-          style={{
-            height: `${sectionVirtualizer.getTotalSize()}px`,
-            position: "relative",
-          }}
-        >
-          {sectionVirtualizer.getVirtualItems().map((virtualSection) => {
-            const section = activeSectionEntries[virtualSection.index]
-            if (!section) return null
-            const { label: groupTerm, shots } = section
-            return (
-            <section
-              key={groupTerm}
-              data-index={virtualSection.index}
-              ref={sectionVirtualizer.measureElement}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${virtualSection.start}px)`,
-              }}
-            >
-              <button
-                onClick={() => setTerm(groupTerm)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
-              >
-                {groupTerm}
-                <span className="text-xs font-normal text-[var(--color-text-muted)]">{shots.length}</span>
-              </button>
-              <div className={cn("grid", gridClass)}>
-                {renderGrid(shots)}
-              </div>
-            </section>
-          )})}
-        </div>
-      )}
-
-      {/* ── Grid view: flat (virtualized) ───────────────────────────────── */}
-      {tab !== "creators" && !isLoading && visibleShots.length > 0 && viewMode === "grid" && !showGrouped && (
-        <div
-          style={{
-            height: `${flatGridVirtualizer.getTotalSize()}px`,
-            position: "relative",
-          }}
-          className="py-2"
-        >
-          {flatGridVirtualizer.getVirtualItems().map((virtualRow) => {
-            const rowShots = flatGridRows[virtualRow.index]
-            if (!rowShots) return null
-            return (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={flatGridVirtualizer.measureElement}
+        activeSectionEntries.length <= 20 ? (
+          <div className="py-2">
+            {activeSectionEntries.map(({ label: groupTerm, shots }) => (
+              <section key={groupTerm}>
+                <button
+                  onClick={() => setTerm(groupTerm)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
+                >
+                  {groupTerm}
+                  <span className="text-xs font-normal text-[var(--color-text-muted)]">{shots.length}</span>
+                </button>
+                <div className={cn("grid", gridClass)}>
+                  {renderGrid(shots)}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <div
+            className="py-2"
+            style={{
+              height: `${sectionVirtualizer.getTotalSize()}px`,
+              position: "relative",
+            }}
+          >
+            {sectionVirtualizer.getVirtualItems().map((virtualSection) => {
+              const section = activeSectionEntries[virtualSection.index]
+              if (!section) return null
+              const { label: groupTerm, shots } = section
+              return (
+              <section
+                key={groupTerm}
+                data-index={virtualSection.index}
+                ref={sectionVirtualizer.measureElement}
                 style={{
                   position: "absolute",
                   top: 0,
                   left: 0,
                   width: "100%",
-                  transform: `translateY(${virtualRow.start}px)`,
+                  transform: `translateY(${virtualSection.start - sectionVirtualizer.options.scrollMargin}px)`,
                 }}
-                className={cn("grid", gridClass)}
               >
-                {renderGrid(rowShots)}
-              </div>
-            )
-          })}
-        </div>
+                <button
+                  onClick={() => setTerm(groupTerm)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
+                >
+                  {groupTerm}
+                  <span className="text-xs font-normal text-[var(--color-text-muted)]">{shots.length}</span>
+                </button>
+                <div className={cn("grid", gridClass)}>
+                  {renderGrid(shots)}
+                </div>
+              </section>
+            )})}
+          </div>
+        )
+      )}
+
+      {/* ── Grid view: flat ─────────────────────────────────────────────── */}
+      {tab !== "creators" && !isLoading && visibleShots.length > 0 && viewMode === "grid" && !showGrouped && (
+        flatGridRows.length <= 30 ? (
+          <div className="py-2 space-y-1">
+            {flatGridRows.map((rowShots, i) => (
+              <div key={i} className={cn("grid", gridClass)}>{renderGrid(rowShots)}</div>
+            ))}
+          </div>
+        ) : (
+          <div
+            style={{
+              height: `${flatGridVirtualizer.getTotalSize()}px`,
+              position: "relative",
+            }}
+            className="py-2"
+          >
+            {flatGridVirtualizer.getVirtualItems().map((virtualRow) => {
+              const rowShots = flatGridRows[virtualRow.index]
+              if (!rowShots) return null
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={flatGridVirtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start - flatGridVirtualizer.options.scrollMargin}px)`,
+                  }}
+                  className={cn("grid", gridClass)}
+                >
+                  {renderGrid(rowShots)}
+                </div>
+              )
+            })}
+          </div>
+        )
       )}
 
       {/* ── List view ────────────────────────────────────────────────────── */}
       {tab !== "creators" && !isLoading && visibleShots.length > 0 && viewMode === "list" && (
-        <div
-          className="px-2 py-2"
-          style={{
-            height: `${listVirtualizer.getTotalSize()}px`,
-            position: "relative",
-          }}
-        >
-          {listVirtualizer.getVirtualItems().map((virtualRow) => {
-            const shot = visibleShots[virtualRow.index]
-            if (!shot) return null
-            return (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={listVirtualizer.measureElement}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                {renderListItem(shot)}
-              </div>
-            )
-          })}
-        </div>
+        visibleShots.length <= 100 ? (
+          <div className="px-2 py-2 space-y-0.5">
+            {visibleShots.map((shot) => (
+              <div key={shot.id}>{renderListItem(shot)}</div>
+            ))}
+          </div>
+        ) : (
+          <div
+            className="px-2 py-2"
+            style={{
+              height: `${listVirtualizer.getTotalSize()}px`,
+              position: "relative",
+            }}
+          >
+            {listVirtualizer.getVirtualItems().map((virtualRow) => {
+              const shot = visibleShots[virtualRow.index]
+              if (!shot) return null
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={listVirtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start - listVirtualizer.options.scrollMargin}px)`,
+                  }}
+                >
+                  {renderListItem(shot)}
+                </div>
+              )
+            })}
+          </div>
+        )
       )}
 
       {/* ── Timeline view ────────────────────────────────────────────────── */}
@@ -3657,7 +3564,7 @@ export function MediaPage() {
                 top: 0,
                 left: 0,
                 width: "100%",
-                transform: `translateY(${virtualSection.start}px)`,
+                transform: `translateY(${virtualSection.start - sectionVirtualizer.options.scrollMargin}px)`,
               }}
             >
               <div className="flex items-center gap-3 px-4 py-2">

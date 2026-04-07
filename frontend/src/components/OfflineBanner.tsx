@@ -26,25 +26,41 @@ const CloseIcon = () => (
   </svg>
 )
 
-type BannerState = "hidden" | "offline" | "back-online"
+type BannerState = "hidden" | "offline" | "api-error" | "back-online"
+
+const AlertIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="10" />
+    <line x1="12" y1="8" x2="12" y2="12" />
+    <line x1="12" y1="16" x2="12.01" y2="16" />
+  </svg>
+)
 
 export function OfflineBanner() {
   const isOnline = useAppStore((s) => s.isOnline)
+  const apiUnreachable = useAppStore((s) => s.apiUnreachable)
   const [state, setState] = useState<BannerState>("hidden")
   const [dismissed, setDismissed] = useState(false)
   const prevOnline = useRef(isOnline)
+  const prevApiUnreachable = useRef(apiUnreachable)
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const wasOnline = prevOnline.current
+    const wasApiUnreachable = prevApiUnreachable.current
     prevOnline.current = isOnline
+    prevApiUnreachable.current = apiUnreachable
 
     if (!isOnline) {
       setDismissed(false)
       setState("offline")
       if (fadeTimer.current) clearTimeout(fadeTimer.current)
-    } else if (!wasOnline && isOnline) {
-      // Just came back online
+    } else if (apiUnreachable) {
+      setDismissed(false)
+      setState("api-error")
+      if (fadeTimer.current) clearTimeout(fadeTimer.current)
+    } else if ((wasApiUnreachable || !wasOnline) && isOnline && !apiUnreachable) {
+      // Just recovered
       setState("back-online")
       setDismissed(false)
       fadeTimer.current = setTimeout(() => {
@@ -55,11 +71,11 @@ export function OfflineBanner() {
     return () => {
       if (fadeTimer.current) clearTimeout(fadeTimer.current)
     }
-  }, [isOnline])
+  }, [isOnline, apiUnreachable])
 
   if (state === "hidden" || dismissed) return null
 
-  const isOffline = state === "offline"
+  const showWarning = state === "offline" || state === "api-error"
 
   return (
     <div
@@ -68,16 +84,18 @@ export function OfflineBanner() {
       className={[
         "fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium shadow-md",
         "animate-[slide-down_300ms_ease-out]",
-        isOffline
+        showWarning
           ? "bg-amber-500/90 text-amber-950 dark:bg-amber-600/90 dark:text-amber-50"
           : "bg-emerald-500/90 text-emerald-950 dark:bg-emerald-600/90 dark:text-emerald-50",
         state === "back-online" ? "animate-[slide-down_300ms_ease-out]" : "",
       ].join(" ")}
     >
-      {isOffline ? <WifiOffIcon /> : <CheckIcon />}
+      {state === "offline" ? <WifiOffIcon /> : state === "api-error" ? <AlertIcon /> : <CheckIcon />}
       <span>
-        {isOffline
+        {state === "offline"
           ? "You're offline \u2014 some features may be unavailable"
+          : state === "api-error"
+          ? "Unable to reach the server \u2014 retrying automatically"
           : "Back online"}
       </span>
       <button

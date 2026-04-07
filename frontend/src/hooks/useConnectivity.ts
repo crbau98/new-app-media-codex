@@ -6,7 +6,9 @@ const PING_TIMEOUT_MS = 5_000
 
 export function useConnectivity() {
   const setOnline = useAppStore((s) => s.setOnline)
+  const setApiUnreachable = useAppStore((s) => s.setApiUnreachable)
   const isOnline = useAppStore((s) => s.isOnline)
+  const apiUnreachable = useAppStore((s) => s.apiUnreachable)
   const [lastPingAt, setLastPingAt] = useState<number | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -37,10 +39,20 @@ export function useConnectivity() {
           cache: "no-store",
           signal: controller.signal,
         })
-        setOnline(res.ok)
+        if (res.ok) {
+          setOnline(true)
+          setApiUnreachable(false)
+        } else {
+          // API returned an error (e.g. 503) but browser is still online
+          setApiUnreachable(true)
+        }
         setLastPingAt(Date.now())
       } catch {
-        setOnline(false)
+        // Network failure — could be fully offline or API unreachable
+        if (!navigator.onLine) {
+          setOnline(false)
+        }
+        setApiUnreachable(true)
         setLastPingAt(Date.now())
       } finally {
         window.clearTimeout(timeoutId)
@@ -54,7 +66,7 @@ export function useConnectivity() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [setOnline])
+  }, [setOnline, setApiUnreachable])
 
-  return { isOnline, lastPingAt }
+  return { isOnline, apiUnreachable, lastPingAt }
 }

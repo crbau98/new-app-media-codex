@@ -31,7 +31,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 function isVideo(src: string): boolean {
-  return /\.(mp4|webm|mov)$/i.test(src)
+  return /\.(mp4|webm|mov)/i.test(src)
 }
 
 function sourceLabel(source: string) {

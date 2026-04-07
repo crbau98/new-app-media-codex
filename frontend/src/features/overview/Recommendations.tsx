@@ -56,7 +56,7 @@ export function Recommendations() {
   // Empty state: no saved items yet
   if (!isLoading && !isError && data?.reason === 'no_saved_items') {
     return (
-      <div className="bg-bg-surface border border-border rounded-xl p-4 card-glass glass">
+      <div className="bg-bg-surface border border-border rounded-xl p-4 card-hover glass">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-semibold uppercase tracking-widest text-text-muted font-mono">
             Recommended for You
@@ -72,7 +72,7 @@ export function Recommendations() {
   // Empty state: saved items have no compounds/mechanisms
   if (!isLoading && !isError && data?.reason === 'no_signals') {
     return (
-      <div className="bg-bg-surface border border-border rounded-xl p-4 card-glass glass">
+      <div className="bg-bg-surface border border-border rounded-xl p-4 card-hover glass">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-semibold uppercase tracking-widest text-text-muted font-mono">
             Recommended for You
@@ -91,7 +91,7 @@ export function Recommendations() {
   }
 
   return (
-    <div className="bg-bg-surface border border-border rounded-xl p-4 card-glass glass">
+    <div className="bg-bg-surface border border-border rounded-xl p-4 card-hover glass">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-text-muted font-mono">
           Recommended for You

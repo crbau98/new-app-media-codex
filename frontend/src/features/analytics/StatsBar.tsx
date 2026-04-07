@@ -151,7 +151,7 @@ function StatCard({ label, value, trendDir = 'neutral', onClick, accent, sparkDa
     <Comp
       onClick={onClick}
       className={cn(
-        'group bg-bg-surface border border-border rounded-xl p-4 text-left card-lift',
+        'group bg-bg-surface border border-border rounded-xl p-4 text-left content-card-interactive',
         onClick && 'cursor-pointer hover:border-accent/40 hover:bg-bg-elevated transition-colors',
         accent && 'border-accent/20 bg-bg-elevated',
       )}

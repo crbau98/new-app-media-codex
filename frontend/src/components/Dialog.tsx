@@ -27,7 +27,7 @@ export function Dialog({ open, onClose, children, className }: DialogProps) {
   return (
     <div
       ref={backdropRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-[fade-in_200ms_ease-out]"
       onClick={(e) => {
         if (e.target === backdropRef.current) onClose()
       }}
@@ -40,7 +40,7 @@ export function Dialog({ open, onClose, children, className }: DialogProps) {
         tabIndex={-1}
         className={cn(
           'bg-bg-elevated border border-border rounded-2xl shadow-2xl',
-          'w-full max-w-2xl max-h-[85vh] overflow-y-auto',
+          'w-full max-w-2xl max-h-[85vh] overflow-y-auto animate-[zoomIn_200ms_ease-out]',
           className
         )}
       >

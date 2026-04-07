@@ -929,18 +929,22 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
   const platformClass = PLATFORM_COLORS[performer.platform] ?? "bg-white/10 text-text-secondary border-white/10"
   const statusClass = STATUS_COLORS[performer.status] ?? STATUS_COLORS.inactive
   const capturedCount = performer.media_count_actual ?? performer.media_count ?? 0
-  const renewalSummary = performer.is_subscribed === 1 && performer.subscription_renewed_at
-    ? (() => {
-        const nextRenewal = new Date(new Date(performer.subscription_renewed_at).getTime() + 30 * 24 * 60 * 60 * 1000)
-        const daysUntil = Math.round((nextRenewal.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-        if (daysUntil < 0) return `Subscription overdue by ${Math.abs(daysUntil)}d`
-        if (daysUntil === 0) return "Renews today"
-        if (daysUntil <= 7) return `Renews in ${daysUntil}d`
-        return `Next renewal ${nextRenewal.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
-      })()
-    : performer.is_subscribed === 1
-      ? "Subscribed and tracked"
-      : "Not subscribed"
+  const renewalSummary = useMemo(() => {
+    try {
+      if (performer?.is_subscribed !== 1 || !performer?.subscription_renewed_at) return null
+      const renewed = new Date(performer.subscription_renewed_at)
+      if (isNaN(renewed.getTime())) return null
+      const nextRenewal = new Date(renewed.getTime() + 30 * 24 * 60 * 60 * 1000)
+      const daysUntil = Math.round((nextRenewal.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      return { nextRenewal, daysUntil }
+    } catch { return null }
+  }, [performer?.is_subscribed, performer?.subscription_renewed_at])
+  const renewalText = renewalSummary
+    ? renewalSummary.daysUntil < 0 ? `Subscription overdue by ${Math.abs(renewalSummary.daysUntil)}d`
+      : renewalSummary.daysUntil === 0 ? "Renews today"
+      : renewalSummary.daysUntil <= 7 ? `Renews in ${renewalSummary.daysUntil}d`
+      : `Next renewal ${renewalSummary.nextRenewal.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+    : performer.is_subscribed === 1 ? "Subscribed and tracked" : "Not subscribed"
   const profileSnapshot = [
     capturedCount > 0 ? `${capturedCount.toLocaleString()} media captured` : "No captured media yet",
     performer.last_checked_at
@@ -949,7 +953,7 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
           return days === 0 ? "today" : days === 1 ? "yesterday" : `${days}d ago`
         })()}`
       : "Never checked",
-    renewalSummary,
+    renewalText,
   ].join(" · ")
 
   return createPortal(
@@ -978,12 +982,18 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
         <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
           {/* Avatar */}
           <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-full bg-white/10 ring-4 ring-white/5">
-            {performer.avatar_url || performer.avatar_local ? (
-              <img
-                src={performer.avatar_local ?? performer.avatar_url ?? ""}
-                alt={performer.username}
-                className="h-full w-full object-cover"
-              />
+            {(performer.avatar_local || performer.avatar_url) ? (
+              <>
+                <img
+                  src={performer.avatar_local || performer.avatar_url || undefined}
+                  alt={performer.username}
+                  className="h-full w-full object-cover"
+                  onError={(e) => { e.currentTarget.style.display = "none"; const sib = e.currentTarget.nextElementSibling as HTMLElement; if (sib) sib.style.display = "flex" }}
+                />
+                <div className="h-full w-full items-center justify-center text-4xl font-bold text-text-muted" style={{ display: "none" }}>
+                  {performer.username.charAt(0).toUpperCase()}
+                </div>
+              </>
             ) : (
               <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-text-muted">
                 {performer.username.charAt(0).toUpperCase()}

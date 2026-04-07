@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from "react"
+import { useState, useCallback, useRef, useEffect, useMemo, memo } from "react"
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api, type Screenshot, type BrowseScreenshotsPayload } from "@/lib/api"
 import { useAppStore } from "@/store"
@@ -9,7 +9,7 @@ import { useResolvedScreenshotMedia } from "@/lib/media"
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function isVideo(src: string) {
-  return /\.(mp4|webm|mov)$/i.test(src)
+  return /\.(mp4|webm|mov)/i.test(src)
 }
 
 function sourceLabel(s: string) {
@@ -143,7 +143,7 @@ interface VideoSlideProps {
   onAddToPlaylist: (id: number) => void
 }
 
-function VideoSlide({
+const VideoSlide = memo(function VideoSlide({
   shot,
   isActive,
   favorites,
@@ -215,14 +215,6 @@ function VideoSlide({
       v.removeEventListener("loadedmetadata", onTime)
     }
   }, [])
-
-  // Preload when active
-  useEffect(() => {
-    const v = videoRef.current
-    if (v && isActive) {
-      v.preload = "metadata"
-    }
-  }, [isActive])
 
   // Flash animation helper
   const flash = useCallback((setter: (v: boolean) => void) => {
@@ -511,7 +503,12 @@ function VideoSlide({
       )}
     </div>
   )
-}
+}, (prev, next) => {
+  return prev.shot.id === next.shot.id &&
+    prev.isActive === next.isActive &&
+    prev.favorites === next.favorites &&
+    prev.describingIds === next.describingIds
+})
 
 // ── Main Feed Component ──────────────────────────────────────────────────────
 

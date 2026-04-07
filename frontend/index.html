@@ -9,26 +9,18 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="/static/dist/icons/icon.svg">
-    <!-- CSS injected by Vite build -->
+    <link rel="stylesheet" href="/static/dist/app.css">
+    <script>
+      // Clean up any stale service workers
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          regs.forEach(function(reg) { reg.unregister() })
+        })
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      // Clean up stale service workers and caches
-      ;(async () => {
-        try {
-          if ('serviceWorker' in navigator) {
-            const regs = await navigator.serviceWorker.getRegistrations()
-            await Promise.allSettled(regs.map((reg) => reg.unregister()))
-          }
-          if ('caches' in window) {
-            const keys = await caches.keys()
-            await Promise.allSettled(keys.map((key) => caches.delete(key)))
-          }
-        } catch {}
-      })()
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

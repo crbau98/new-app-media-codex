@@ -2,21 +2,25 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+import json
 import os
 from pathlib import Path
 import re
+import sqlite3
 from typing import AsyncIterator
 import time
 import uuid
 
 os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "__all__")
+
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.db import Database
+from app.db import Database, check_disk_space
 from app.service import ResearchService
 
 
@@ -64,10 +68,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = db
     app.state.settings = settings
     app.state.service = service
-    db.init()  # ensure schema exists before path repair
-    repaired_paths = db.repair_moved_repo_paths(settings.base_dir)
-    if repaired_paths:
-        print(f"[startup] repaired {repaired_paths} moved local media paths")
+    app.state.http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=10, read=120, write=10, pool=10),
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        follow_redirects=True,
+        cookies=httpx.Cookies(),  # Persist cookies across requests (DDoS-Guard)
+    )
 
     service_start_task = asyncio.create_task(asyncio.to_thread(service.start))
     telegram_start_task: asyncio.Task[None] | None = None
@@ -102,22 +108,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 print("[telegram] Pyrogram client stopped")
             except Exception:
                 pass
+        http_client = getattr(app.state, "http_client", None)
+        if http_client:
+            await http_client.aclose()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
 
-_STATIC_PREFIXES = ("/assets/", "/cached-images/", "/cached-screenshots/", "/cached-previews/", "/static/")
+@app.exception_handler(sqlite3.OperationalError)
+async def sqlite_operational_error_handler(request: Request, exc: sqlite3.OperationalError):
+    return JSONResponse(
+        status_code=503,
+        content={"error": "database_unavailable", "detail": str(exc)},
+    )
 
 
 @app.middleware("http")
 async def apply_response_headers(request: Request, call_next):
     response = await call_next(request)
-    path = request.url.path
-    # Skip expensive header work for static assets (they already have Cache-Control)
-    if any(path.startswith(p) for p in _STATIC_PREFIXES):
-        return response
     request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
     response.headers.setdefault("X-Request-ID", request_id)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -127,7 +137,7 @@ async def apply_response_headers(request: Request, call_next):
         "Permissions-Policy",
         "camera=(), microphone=(), geolocation=(), fullscreen=(self)",
     )
-    if path.startswith("/api/") or path == "/healthz":
+    if request.url.path.startswith("/api/") or request.url.path == "/healthz":
         response.headers.setdefault("Cache-Control", "no-store")
     return response
 
@@ -184,6 +194,25 @@ def _get_frontend_index_html() -> str | None:
     mtime_ns = dist_index.stat().st_mtime_ns
     if _FRONTEND_INDEX_CACHE is None or _FRONTEND_INDEX_CACHE_MTIME_NS != mtime_ns:
         html = dist_index.read_text(encoding="utf-8")
+        html = re.sub(
+            r'\n\s*<link rel="modulepreload" crossorigin href="/assets/vendor-recharts-[^"]+">',
+            "",
+            html,
+        )
+        html = re.sub(
+            r'\n\s*<link rel="modulepreload" crossorigin href="/assets/vendor-d3-[^"]+">',
+            "",
+            html,
+        )
+        # Preconnect hints for external CDNs to reduce media load latency
+        _preconnect_hints = (
+            '<link rel="preconnect" href="https://coomer.st" crossorigin>\n'
+            '    <link rel="dns-prefetch" href="https://coomer.st">\n'
+            '    <link rel="preconnect" href="https://thumbs44.redgifs.com" crossorigin>\n'
+            '    <link rel="dns-prefetch" href="https://thumbs44.redgifs.com">\n'
+            "    "
+        )
+        html = html.replace("</head>", _preconnect_hints + "</head>", 1)
         _FRONTEND_INDEX_CACHE = html
         _FRONTEND_INDEX_CACHE_MTIME_NS = mtime_ns
     return _FRONTEND_INDEX_CACHE
@@ -230,6 +259,60 @@ if (_FRONTEND_DIST / "assets").exists():
 def index(request: Request) -> HTMLResponse:
     dist_index_html = _get_frontend_index_html()
     if dist_index_html is not None:
+        # Embed initial API data to eliminate HTML->JS->API waterfall
+        try:
+            browse_result = db.browse_screenshots(limit=24, offset=0)
+            _vid_exts = {"mp4", "webm", "mov"}
+            _vid_sources = {"redgifs", "ytdlp"}
+            _img_exts = {"jpg", "jpeg", "png", "gif", "webp"}
+            _media_exts = _vid_exts | _img_exts
+            shots = []
+            for s in browse_result.get("screenshots", []):
+                local_p = s.get("local_path") or ""
+                media_url = s.get("source_url") or ""
+                if local_p and (Path(settings.image_dir).parent / "screenshots" / Path(local_p).name).exists():
+                    s["local_url"] = f"/cached-screenshots/{Path(local_p).name}"
+                elif media_url.startswith(("http://", "https://")):
+                    from urllib.parse import quote
+                    ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
+                    src = s.get("source", "")
+                    if ext not in _media_exts and src not in ("redgifs", "coomer"):
+                        continue
+                    is_vid = ext in _vid_exts or src in _vid_sources
+                    if "coomer.st" in media_url:
+                        s["local_url"] = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
+                        s["preview_url"] = None if is_vid else s["local_url"]
+                    else:
+                        s["local_url"] = media_url
+                        thumb = s.get("thumbnail_url")
+                        if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
+                            thumb = media_url.replace(".mp4", "-poster.jpg")
+                        s["preview_url"] = thumb or (None if is_vid else media_url)
+                    s["source_url"] = media_url
+                else:
+                    continue
+                for k in ("ai_summary", "ai_tags", "user_tags"):
+                    s.pop(k, None)
+                shots.append(s)
+            screenshots_payload = {
+                "screenshots": shots,
+                "total": browse_result.get("total", 0),
+                "offset": 0,
+                "limit": 24,
+                "has_more": browse_result.get("has_more", False),
+                "next_offset": browse_result.get("next_offset", 24),
+            }
+            running = getattr(request.app.state, "screenshot_running", False)
+            progress = getattr(request.app.state, "screenshot_progress", None)
+            status_payload = {"running": running, **(progress or {})}
+            initial_data = json.dumps(
+                {"screenshots": screenshots_payload, "status": status_payload},
+                separators=(",", ":"),
+            )
+            inject_script = f"<script>window.__INITIAL_DATA__={initial_data}</script>"
+            dist_index_html = dist_index_html.replace("</head>", inject_script + "</head>")
+        except Exception:
+            pass  # Serve HTML without embedded data on any error
         return HTMLResponse(dist_index_html, headers={"Cache-Control": "no-cache"})
     # Fallback: legacy Jinja2 template
     return _get_templates().TemplateResponse(
@@ -273,15 +356,25 @@ def compound_detail(name: str, request: Request) -> JSONResponse:
 @app.head("/healthz")
 def healthz() -> JSONResponse:
     db_ok = db.ping()
-    status = "ok" if db_ok else "degraded"
+    try:
+        disk = check_disk_space(settings.database_path.parent)
+    except Exception:
+        disk = None
+    if not db_ok:
+        status = "starting"
+    elif disk and disk["low_space"]:
+        status = "low_disk"
+    else:
+        status = "ok"
     return JSONResponse(
         {
             "status": status,
             "running": service.lock.locked(),
             "db_ok": db_ok,
             "scheduler_running": service.running,
+            "disk": disk,
         },
-        status_code=200 if db_ok else 503,
+        status_code=200,
     )
 
 

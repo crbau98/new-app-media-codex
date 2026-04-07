@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import copy
 import hashlib
 import json
+import logging
 import re
+import shutil
 import time
 import uuid
 from queue import Empty, Full, Queue
@@ -13,12 +14,155 @@ from pathlib import Path
 from threading import Event, Lock, Thread
 from urllib.parse import urlparse
 
+import httpx
 import requests as http_requests
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from PIL import Image, ImageOps
 
+_logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# In-memory LRU byte cache for proxied *image* responses (not videos).
+# Max 150 MB total, 1-hour TTL per entry.
+# ---------------------------------------------------------------------------
+_PROXY_CACHE_MAX_BYTES = 150 * 1024 * 1024  # 150 MB
+_PROXY_CACHE_TTL = 3600  # 1 hour
+_proxy_cache: dict[str, tuple[float, str, bytes]] = {}  # url -> (expires_at, content_type, body)
+_proxy_cache_size = 0  # current total bytes
+_IMAGE_CONTENT_PREFIXES = ("image/",)
+
+
+def _proxy_cache_get(url: str) -> tuple[str, bytes] | None:
+    entry = _proxy_cache.get(url)
+    if entry is None:
+        return None
+    expires_at, content_type, body = entry
+    if time.monotonic() > expires_at:
+        _proxy_cache_evict(url)
+        return None
+    return content_type, body
+
+
+def _proxy_cache_evict(url: str) -> None:
+    global _proxy_cache_size
+    entry = _proxy_cache.pop(url, None)
+    if entry:
+        _proxy_cache_size -= len(entry[2])
+
+
+def _proxy_cache_put(url: str, content_type: str, body: bytes) -> None:
+    global _proxy_cache_size
+    size = len(body)
+    # Don't cache entries larger than 10 MB individually
+    if size > 10 * 1024 * 1024:
+        return
+    # Evict expired entries first, then oldest until under budget
+    now = time.monotonic()
+    expired = [k for k, (exp, _, _) in _proxy_cache.items() if now > exp]
+    for k in expired:
+        _proxy_cache_evict(k)
+    # Evict oldest until we have room
+    while _proxy_cache_size + size > _PROXY_CACHE_MAX_BYTES and _proxy_cache:
+        oldest_key = next(iter(_proxy_cache))
+        _proxy_cache_evict(oldest_key)
+    _proxy_cache[url] = (now + _PROXY_CACHE_TTL, content_type, body)
+    _proxy_cache_size += size
+
+
+def _disk_has_space(path: str, min_free_mb: int = 500) -> bool:
+    """Return True if *path*'s filesystem has at least *min_free_mb* MB free."""
+    try:
+        usage = shutil.disk_usage(path)
+        return usage.free >= min_free_mb * 1024 * 1024
+    except Exception:
+        return True  # Don't block on check failure
+
 router = APIRouter(prefix="/api/screenshots", tags=["screenshots"])
+
+
+@router.get("/proxy-media")
+async def proxy_media(url: str = Query(...), request: Request = None):
+    """Proxy a remote image/video URL via streaming to avoid CORS and hotlink issues."""
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "Invalid URL")
+    from starlette.responses import StreamingResponse
+
+    # Forward Range header for video seeking support
+    req_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Referer": url,
+        "Accept": "image/webp,image/apng,image/*,video/*,*/*;q=0.8",
+    }
+    range_header = request.headers.get("range") if request else None
+    if range_header:
+        req_headers["Range"] = range_header
+
+    # Check in-memory cache for non-range image requests
+    if not range_header:
+        cached = _proxy_cache_get(url)
+        if cached is not None:
+            ct, body = cached
+            return Response(
+                content=body,
+                media_type=ct,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+
+    client: httpx.AsyncClient = request.app.state.http_client
+    try:
+        resp = await client.send(
+            client.build_request("GET", url, headers=req_headers),
+            stream=True,
+        )
+        resp.raise_for_status()
+    except Exception:
+        raise HTTPException(502, "Could not fetch media")
+    content_type = resp.headers.get("content-type", "application/octet-stream")
+    is_image = content_type.startswith(_IMAGE_CONTENT_PREFIXES)
+
+    # For small images without Range header, read fully and cache
+    content_length_str = resp.headers.get("content-length")
+    if is_image and not range_header and content_length_str:
+        try:
+            cl = int(content_length_str)
+        except ValueError:
+            cl = 0
+        if 0 < cl <= 10 * 1024 * 1024:
+            body = await resp.aread()
+            await resp.aclose()
+            _proxy_cache_put(url, content_type, body)
+            return Response(
+                content=body,
+                media_type=content_type,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+
+    async def stream_and_close():
+        try:
+            async for chunk in resp.aiter_bytes(chunk_size=65536):
+                yield chunk
+        finally:
+            await resp.aclose()
+
+    resp_headers = {"Cache-Control": "public, max-age=86400"}
+    # Propagate content-length and range headers for video seeking
+    if content_length_str:
+        resp_headers["Content-Length"] = content_length_str
+    if resp.headers.get("accept-ranges"):
+        resp_headers["Accept-Ranges"] = resp.headers["accept-ranges"]
+    if resp.headers.get("content-range"):
+        resp_headers["Content-Range"] = resp.headers["content-range"]
+
+    status_code = resp.status_code  # 200 or 206 for partial content
+
+    return StreamingResponse(
+        stream_and_close(),
+        status_code=status_code,
+        media_type=content_type,
+        headers=resp_headers,
+    )
+
 
 _FEMALE_METADATA_KEYWORDS = {
     "female", "woman", "women", "girl", "girls", "lesbian", "straight",
@@ -53,12 +197,12 @@ def _get_cached_screenshots_payload(app_state, key: str, ttl_seconds: float, bui
     with lock:
         entry = cache.get(key)
         if entry and now < entry["expires_at"]:
-            return copy.deepcopy(entry["payload"]) if copy_payload else entry["payload"]
+            return json.loads(json.dumps(entry["payload"])) if copy_payload else entry["payload"]
 
     payload = builder()
     with lock:
         cache[key] = {
-            "payload": copy.deepcopy(payload) if copy_payload else payload,
+            "payload": json.loads(json.dumps(payload)) if copy_payload else payload,
             "expires_at": time.monotonic() + ttl_seconds,
         }
     return payload
@@ -279,7 +423,11 @@ def _warm_preview_generation(app_state, local_path: Path) -> str | None:
 
     with lock:
         if len(cache) > 5000:
-            cache.clear()
+            expired_keys = [k for k, v in cache.items() if now >= v["expires_at"]]
+            for expired_key in expired_keys:
+                cache.pop(expired_key, None)
+            if len(cache) > 5000:
+                cache.clear()
         cache[cache_key] = {"status": "ready", "url": preview_url, "path": str(preview_path), "expires_at": now + 3600.0}
     return preview_url
 
@@ -290,7 +438,11 @@ def _cached_local_media_exists(app_state, local_path: Path, ttl_seconds: float =
     now = time.monotonic()
     with lock:
         if len(cache) > 5000:
-            cache.clear()
+            expired_keys = [k for k, v in cache.items() if now >= v["expires_at"]]
+            for expired_key in expired_keys:
+                cache.pop(expired_key, None)
+            if len(cache) > 5000:
+                cache.clear()
         entry = cache.get(key)
         if entry and now < entry["expires_at"]:
             return entry["exists"]
@@ -373,8 +525,13 @@ def browse_screenshots(
             for s in rows:
                 inspected += 1
                 scanned_rows += 1
+                if _looks_like_female_content(s):
+                    if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
+                        break
+                    continue
                 local = Path(s.get("local_path", "") or "")
-                if _cached_local_media_exists(request.app.state, local) and not _looks_like_female_content(s):
+                if local.name and _cached_local_media_exists(request.app.state, local):
+                    # Local file exists (yt-dlp or legacy) — serve from disk
                     s["local_url"] = f"/cached-screenshots/{local.name}"
                     preview_url = _get_preview_url_if_ready(request.app.state, local)
                     if preview_url is None:
@@ -385,8 +542,40 @@ def browse_screenshots(
                             _queue_preview_generation(request.app.state, local)
                     s["preview_url"] = preview_url
                     valid.append(s)
-                    if len(valid) >= effective_limit:
-                        break
+                else:
+                    # Remote-only entry — must have a direct media URL (not a webpage)
+                    media_url = s.get("source_url") or ""
+                    if not media_url or not media_url.startswith(("http://", "https://")):
+                        # No source_url — skip (page_url is a webpage, not loadable media)
+                        if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
+                            break
+                        continue
+                    ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
+                    # Only accept known media file extensions
+                    if ext not in ("mp4", "webm", "mov", "jpg", "jpeg", "png", "gif", "webp"):
+                        src = s.get("source", "")
+                        if src not in ("redgifs", "coomer"):
+                            # Unknown extension from unknown source — skip
+                            if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
+                                break
+                            continue
+                    src = s.get("source", "")
+                    is_vid = ext in ("mp4", "webm", "mov") or src in ("redgifs", "ytdlp")
+                    # Coomer.st uses DDoS-Guard; proxy through backend
+                    if "coomer.st" in media_url:
+                        from urllib.parse import quote
+                        s["local_url"] = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
+                        s["preview_url"] = None if is_vid else s["local_url"]
+                    else:
+                        s["local_url"] = media_url
+                        thumb = s.get("thumbnail_url")
+                        if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
+                            thumb = media_url.replace(".mp4", "-poster.jpg")
+                        s["preview_url"] = thumb or (None if is_vid else media_url)
+                    s["source_url"] = media_url
+                    valid.append(s)
+                if len(valid) >= effective_limit:
+                    break
                 if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
                     break
             raw_cursor += inspected
@@ -394,6 +583,11 @@ def browse_screenshots(
             if not raw_has_more or inspected == 0:
                 break
         compatible_offset = max(offset, raw_cursor - len(valid))
+        # Strip heavy fields not needed for grid view (loaded on-demand in detail)
+        _BROWSE_STRIP_KEYS = ("ai_summary", "ai_tags", "user_tags")
+        for s in valid:
+            for k in _BROWSE_STRIP_KEYS:
+                s.pop(k, None)
         return {
             "screenshots": valid,
             "total": raw_total,
@@ -413,6 +607,11 @@ def _run_capture(app_state):
     db = app_state.db
     settings = app_state.settings
     image_dir = Path(settings.image_dir).parent / "screenshots"
+
+    # Pre-flight disk space check
+    if not _disk_has_space(str(image_dir.parent)):
+        _logger.warning("Skipping screenshot capture: disk space below 500 MB threshold")
+        return
 
     # Apply DB-configured vision settings so capture_screenshots uses the right key
     user_settings = db.get_all_settings()
@@ -443,6 +642,11 @@ def _run_capture(app_state):
             performer_lookup[row["username"].lower()] = row["id"]
 
     for result in capture_screenshots(image_dir, db=db, settings=settings):
+        # Abort capture loop if disk is nearly full
+        if not _disk_has_space(str(image_dir.parent)):
+            _logger.warning("Stopping screenshot capture mid-run: disk space below 500 MB threshold")
+            break
+
         term = result.get("term", "")
         if term != current_term:
             if current_term:
@@ -455,13 +659,16 @@ def _run_capture(app_state):
                 term=result["term"],
                 source=result["source"],
                 page_url=result["page_url"],
-                local_path=result["local_path"],
+                local_path=result.get("local_path"),
                 performer_id=performer_id,
+                source_url=result.get("source_url"),
+                thumbnail_url=result.get("thumbnail_url"),
             )
-            try:
-                _queue_preview_generation(app_state, Path(result["local_path"]))
-            except Exception:
-                pass
+            if result.get("local_path"):
+                try:
+                    _queue_preview_generation(app_state, Path(result["local_path"]))
+                except Exception:
+                    pass
             captured += 1
 
         app_state.screenshot_progress = {
@@ -1318,6 +1525,9 @@ def capture_from_url(request: Request, body: dict = Body(...)):
     image_dir = Path(request.app.state.settings.image_dir).parent / "screenshots"
     image_dir.mkdir(parents=True, exist_ok=True)
 
+    if not _disk_has_space(str(image_dir.parent)):
+        raise HTTPException(status_code=507, detail="Insufficient disk space (< 500 MB free)")
+
     download_url = url
     source = "url"
 
@@ -1663,7 +1873,8 @@ async def capture_videos(request: Request, background_tasks: BackgroundTasks) ->
                             term=term,
                             source=r["source"],
                             page_url=r["page_url"],
-                            local_path=r["local_path"],
+                            local_path=r.get("local_path"),
+                            source_url=r.get("source_url"),
                         )
                         total += 1
             except Exception as e:
@@ -1695,6 +1906,55 @@ def delete_screenshot(screenshot_id: int, request: Request):
         conn.commit()
     _invalidate_screenshots_cache(request.app.state)
     return {"ok": True}
+
+
+@router.get("/disk-usage")
+def get_disk_usage(request: Request):
+    """Get disk usage breakdown for media storage."""
+    base = Path(request.app.state.settings.image_dir).parent
+    dirs = {}
+    for subdir in ["screenshots", "images", "previews"]:
+        d = base / subdir
+        if d.exists():
+            total = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+            count = sum(1 for f in d.rglob("*") if f.is_file())
+            dirs[subdir] = {"size_mb": round(total / (1024 * 1024), 1), "file_count": count}
+        else:
+            dirs[subdir] = {"size_mb": 0, "file_count": 0}
+
+    try:
+        usage = shutil.disk_usage(base)
+        disk = {"total_mb": usage.total // (1024**2), "used_mb": usage.used // (1024**2), "free_mb": usage.free // (1024**2)}
+    except Exception:
+        disk = None
+
+    return {"directories": dirs, "disk": disk}
+
+
+@router.post("/cleanup")
+def cleanup_media(request: Request, max_age_days: int = Query(30, ge=1, le=365)):
+    """Delete screenshot files older than max_age_days to free disk space."""
+    base = Path(request.app.state.settings.image_dir).parent / "screenshots"
+    if not base.exists():
+        return {"deleted": 0, "freed_mb": 0}
+
+    cutoff = time.time() - (max_age_days * 86400)
+    deleted = 0
+    freed = 0
+    for f in base.iterdir():
+        if f.is_file() and f.stat().st_mtime < cutoff:
+            freed += f.stat().st_size
+            f.unlink()
+            deleted += 1
+
+    # Also clean previews for deleted files
+    preview_dir = base.parent / "previews"
+    if preview_dir.exists():
+        for f in preview_dir.iterdir():
+            if f.is_file() and f.stat().st_mtime < cutoff:
+                f.unlink()
+
+    return {"deleted": deleted, "freed_mb": round(freed / (1024**2), 1)}
 
 
 @router.post("/backfill-performers")

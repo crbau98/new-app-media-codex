@@ -195,7 +195,7 @@ export function ActivityHeatmap() {
   }
 
   return (
-    <div className="bg-bg-surface border border-border rounded-xl p-4 card-glass glass">
+    <div className="bg-bg-surface border border-border rounded-xl p-4 card-hover glass">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-text-muted font-mono">Activity</h2>
         <div className="flex items-center gap-2">

@@ -24,3 +24,5 @@ services:
         value: 10000
       - key: RUN_STARTUP_CRAWL
         value: false
+      - key: SKIP_MEDIA_DOWNLOADS
+        value: "true"

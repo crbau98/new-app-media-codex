@@ -23,7 +23,7 @@ function fmtTime(s: number): string {
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const
 
 function isVideoAsset(path: string): boolean {
-  return /\.(mp4|webm|mov|avi|mkv)$/i.test(path)
+  return /\.(mp4|webm|mov|avi|mkv)/i.test(path)
 }
 
 /* ------------------------------------------------------------------ */

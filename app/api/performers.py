@@ -35,12 +35,14 @@ def _get_cached_performers_payload(app_state, key: str, ttl_seconds: float, buil
     cache, lock = _performers_cache_bucket(app_state)
     now = time.monotonic()
     with lock:
+        expired_keys = [cache_key for cache_key, entry in cache.items() if now >= entry["expires_at"]]
+        for cache_key in expired_keys:
+            cache.pop(cache_key, None)
+        if len(cache) > 512:
+            cache.clear()
         entry = cache.get(key)
         if entry and now < entry["expires_at"]:
             return entry["payload"]
-        # Only evict when cache is large; skip per-request full scan
-        if len(cache) > 512:
-            cache.clear()
 
     payload = builder()
     with lock:
@@ -964,6 +966,8 @@ def browse_performers(
     is_favorite: bool | None = Query(None),
     stale_days: int | None = Query(None, ge=1, le=365),
     renewing_only: bool | None = Query(None),
+    is_subscribed: bool | None = Query(None),
+    tags: str | None = Query(None),
     sort: str = Query("created_at"),
     compact: bool = Query(False),
     limit: int = Query(40, ge=1, le=200),
@@ -984,6 +988,8 @@ def browse_performers(
             "is_favorite": is_favorite,
             "stale_days": stale_days,
             "renewing_only": renewing_only,
+            "is_subscribed": is_subscribed,
+            "tags": tags,
             "sort": sort,
             "compact": compact,
             "limit": effective_limit,
@@ -1002,6 +1008,8 @@ def browse_performers(
             is_favorite=is_favorite,
             stale_days=stale_days,
             renewing_only=renewing_only,
+            is_subscribed=is_subscribed,
+            tags=tags,
             sort=sort,
             compact=compact,
             limit=effective_limit,
@@ -1062,7 +1070,7 @@ def get_performer(performer_id: int, request: Request):
     if not performer:
         raise HTTPException(404, detail="Performer not found")
     links = db.get_performer_links(performer_id)
-    media_result = db.browse_performer_media(performer_id=performer_id, limit=0)
+    media_result = db.browse_performer_media(performer_id=performer_id, limit=1)
     with db.connect() as conn:
         screenshots_count = conn.execute(
             "SELECT COUNT(*) FROM screenshots WHERE performer_id = ?", (performer_id,)
@@ -1296,7 +1304,7 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
     for q in queries[:12]:  # limit to 12 queries × 10 results = up to 120 candidates
         filtered_q = f"{q} {_DDG_EXCLUDE}"
         results = _search_ddg_images(session, filtered_q, 10, start=0)
-        ddg_jobs: list[dict] = []
+        ddg_candidates: list[dict] = []
         for i, row in enumerate(results):
             image_url = row.get("image") or ""
             page_url = row.get("url") or image_url
@@ -1305,41 +1313,32 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
             seen_urls.add(image_url)
             if _page_url_exists(page_url):
                 continue
-            ext = Path(image_url.split("?")[0]).suffix.lower()
-            if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
-                ext = ".jpg"
-            out_path = image_dir / f"{slug}_ddg_{uuid.uuid4().hex[:8]}{ext}"
-            ddg_jobs.append({
+            ddg_candidates.append({
                 "term": display_name or username,
                 "source": "ddg",
                 "page_url": page_url,
                 "url": image_url,
-                "out_path": out_path,
-                "accept": ("image/",),
             })
-        if not ddg_jobs:
+        if not ddg_candidates:
             continue
 
-        for job in _download_many(ddg_jobs, max_workers=4):
-            ok = bool(job.get("ok"))
-            out_path = job["out_path"]
-            if ok and _settings is not None:
-                from app.vision_filter import contains_women, passes_vision_filter
-                if contains_women(_settings, str(out_path)):
-                    out_path.unlink(missing_ok=True)
-                    ok = False
-                elif not passes_vision_filter(_settings, str(out_path)):
-                    out_path.unlink(missing_ok=True)
+        for cand in ddg_candidates:
+            image_url = cand["url"]
+            ok = True
+            if _settings is not None:
+                from app.vision_filter import passes_strict_content_filter_url
+                if not passes_strict_content_filter_url(_settings, image_url):
                     ok = False
             if ok:
                 db.insert_screenshot(
                     term=display_name or username,
                     source="ddg",
-                    page_url=job["page_url"],
-                    local_path=str(out_path),
+                    page_url=cand["page_url"],
+                    local_path=None,
                     performer_id=performer_id,
+                    source_url=image_url,
                 )
-                _mark_page_url(job["page_url"])
+                _mark_page_url(cand["page_url"])
                 captured += 1
 
     # ── Coomer.su — scrape OnlyFans/Fansly archive directly ─────────────────
@@ -1371,7 +1370,6 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                         main_file = post.get("file")
                         if main_file and isinstance(main_file, dict) and main_file.get("path"):
                             attachments = [main_file] + list(attachments)
-                        coomer_jobs: list[dict] = []
                         for att in attachments:
                             att_path = att.get("path") or ""
                             if not att_path:
@@ -1383,41 +1381,24 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                             ext = Path(att_path.split("?")[0]).suffix.lower()
                             if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".webm", ".mov"}:
                                 continue
-                            out_path = image_dir / f"{slug}_cm_{uuid.uuid4().hex[:8]}{ext}"
                             is_video = ext in {".mp4", ".webm", ".mov"}
-                            coomer_jobs.append({
-                                "term": display_name or username,
-                                "source": "coomer",
-                                "page_url": media_url,
-                                "url": media_url,
-                                "out_path": out_path,
-                                "accept": (("video/",) if is_video else ("image/",)),
-                                "is_video": is_video,
-                            })
-                        if coomer_jobs:
-                            for job in _download_many(coomer_jobs, max_workers=4):
-                                ok = bool(job.get("ok"))
-                                out_path = job["out_path"]
-                                is_video = bool(job.get("is_video"))
-                                if ok and not is_video and _settings is not None:
-                                    from app.vision_filter import contains_women, passes_vision_filter
-                                    if contains_women(_settings, str(out_path)):
-                                        out_path.unlink(missing_ok=True)
-                                        ok = False
-                                    elif not passes_vision_filter(_settings, str(out_path)):
-                                        out_path.unlink(missing_ok=True)
-                                        ok = False
-                                if ok:
-                                    db.insert_screenshot(
-                                        term=display_name or username,
-                                        source="coomer",
-                                        page_url=job["page_url"],
-                                        local_path=str(out_path),
-                                        performer_id=performer_id,
-                                    )
-                                    _mark_page_url(job["page_url"])
-                                    captured += 1
-                                    coomer_fetched += 1
+                            ok = True
+                            if not is_video and _settings is not None:
+                                from app.vision_filter import passes_strict_content_filter_url
+                                if not passes_strict_content_filter_url(_settings, media_url):
+                                    ok = False
+                            if ok:
+                                db.insert_screenshot(
+                                    term=display_name or username,
+                                    source="coomer",
+                                    page_url=media_url,
+                                    local_path=None,
+                                    performer_id=performer_id,
+                                    source_url=media_url,
+                                )
+                                _mark_page_url(media_url)
+                                captured += 1
+                                coomer_fetched += 1
                     coomer_offset += coomer_page_size
                     if len(posts) < coomer_page_size:
                         break  # no more pages
@@ -1430,7 +1411,6 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
             rg_results = _search_redgifs_videos(
                 session, name, MAX_VIDEOS_PER_TERM, MAX_VIDEO_DURATION_S, order="top"
             )
-            redgifs_jobs: list[dict] = []
             for i, gif in enumerate(rg_results):
                 video_url = (gif.get("urls") or {}).get("hd") or (gif.get("urls") or {}).get("sd") or ""
                 if not video_url:
@@ -1438,33 +1418,18 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 page_url = f"https://redgifs.com/watch/{gif.get('id', '')}"
                 if _page_url_exists(page_url):
                     continue
-                ext = Path(video_url.split("?")[0]).suffix.lower() or ".mp4"
-                out_path = image_dir / f"{slug}_rg_{uuid.uuid4().hex[:8]}{ext}"
-                redgifs_jobs.append({
-                    "term": display_name or username,
-                    "source": "redgifs",
-                    "page_url": page_url,
-                    "url": video_url,
-                    "out_path": out_path,
-                    "accept": ("video/",),
-                })
-            if redgifs_jobs:
-                for job in _download_many(redgifs_jobs, max_workers=3):
-                    ok = bool(job.get("ok"))
-                    out_path = job["out_path"]
-                    if ok and _settings is not None and not _check_downloaded_video_vision(out_path, _settings):
-                        out_path.unlink(missing_ok=True)
-                        ok = False
-                    if ok:
-                        db.insert_screenshot(
-                            term=display_name or username,
-                            source="redgifs",
-                            page_url=job["page_url"],
-                            local_path=str(out_path),
-                            performer_id=performer_id,
-                        )
-                        _mark_page_url(job["page_url"])
-                        captured += 1
+                poster_url = (gif.get("urls") or {}).get("poster") or None
+                db.insert_screenshot(
+                    term=display_name or username,
+                    source="redgifs",
+                    page_url=page_url,
+                    local_path=None,
+                    performer_id=performer_id,
+                    source_url=video_url,
+                    thumbnail_url=poster_url,
+                )
+                _mark_page_url(page_url)
+                captured += 1
         except Exception as e:
             print(f"[performer-capture] redgifs error for {name}: {e}")
 
@@ -1475,7 +1440,6 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
             rg_user_results = _search_redgifs_user(
                 session, name, MAX_VIDEOS_PER_TERM * 2, MAX_VIDEO_DURATION_S
             )
-            rg_user_jobs: list[dict] = []
             for gif in rg_user_results:
                 video_url = (gif.get("urls") or {}).get("hd") or (gif.get("urls") or {}).get("sd") or ""
                 if not video_url:
@@ -1483,33 +1447,18 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 page_url = f"https://redgifs.com/watch/{gif.get('id', '')}"
                 if _page_url_exists(page_url):
                     continue
-                ext = Path(video_url.split("?")[0]).suffix.lower() or ".mp4"
-                out_path = image_dir / f"{slug}_rgu_{uuid.uuid4().hex[:8]}{ext}"
-                rg_user_jobs.append({
-                    "term": display_name or username,
-                    "source": "redgifs",
-                    "page_url": page_url,
-                    "url": video_url,
-                    "out_path": out_path,
-                    "accept": ("video/",),
-                })
-            if rg_user_jobs:
-                for job in _download_many(rg_user_jobs, max_workers=3):
-                    ok = bool(job.get("ok"))
-                    out_path = job["out_path"]
-                    if ok and _settings is not None and not _check_downloaded_video_vision(out_path, _settings):
-                        out_path.unlink(missing_ok=True)
-                        ok = False
-                    if ok:
-                        db.insert_screenshot(
-                            term=display_name or username,
-                            source="redgifs",
-                            page_url=job["page_url"],
-                            local_path=str(out_path),
-                            performer_id=performer_id,
-                        )
-                        _mark_page_url(job["page_url"])
-                        captured += 1
+                poster_url = (gif.get("urls") or {}).get("poster") or None
+                db.insert_screenshot(
+                    term=display_name or username,
+                    source="redgifs",
+                    page_url=page_url,
+                    local_path=None,
+                    performer_id=performer_id,
+                    source_url=video_url,
+                    thumbnail_url=poster_url,
+                )
+                _mark_page_url(page_url)
+                captured += 1
         except Exception as e:
             print(f"[performer-capture] redgifs user profile error for {name}: {e}")
 
@@ -1538,13 +1487,14 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
     for name, ytdlp_results in ytdlp_results_by_name:
         try:
             for result in ytdlp_results:
-                if result.get("ok") and result.get("local_path"):
+                if result.get("ok"):
                     db.insert_screenshot(
                         term=display_name or username,
                         source="ytdlp",
                         page_url=result.get("page_url", ""),
-                        local_path=result["local_path"],
+                        local_path=result.get("local_path"),
                         performer_id=performer_id,
+                        source_url=result.get("source_url", ""),
                     )
                     captured += 1
         except Exception as e:
@@ -1589,8 +1539,6 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 "extract_flat": True,
                 "playlistend": 10,
                 "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]",
-                "merge_output_format": "mp4",
-                "max_filesize": 200 * 1024 * 1024,
             }
             try:
                 with _yt_dlp.YoutubeDL({**_tw_opts, "extract_flat": True, "playlistend": 10}) as ydl:
@@ -1600,56 +1548,75 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 print(f"[performer-capture] twitter extract error for @{tw_user}: {e}")
                 return 0
 
-            tweet_jobs: list[dict] = []
+            _extract_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]",
+            }
+
+            tweet_urls: list[str] = []
             for entry in entries:
-                if len(tweet_jobs) >= 5:
+                if len(tweet_urls) >= 5:
                     break
                 tweet_url = entry.get("url") or entry.get("webpage_url") or ""
                 if not tweet_url or _page_url_exists(tweet_url):
                     continue
-                out_path = image_dir / f"{slug}_tw_{uuid.uuid4().hex[:8]}.mp4"
-                tweet_jobs.append({
-                    "tweet_url": tweet_url,
-                    "out_path": out_path,
-                    "yt_opts": _tw_opts,
-                })
+                tweet_urls.append(tweet_url)
 
-            if not tweet_jobs:
+            if not tweet_urls:
                 return 0
 
-            def _download_tweet(job: dict) -> dict:
-                out_path = Path(job["out_path"])
+            def _extract_tweet(tweet_url: str) -> dict:
                 try:
-                    with _yt_dlp.YoutubeDL({**job["yt_opts"], "outtmpl": str(out_path), "extract_flat": False}) as ydl:
-                        ydl.download([job["tweet_url"]])
-                    ok = out_path.exists() and out_path.stat().st_size > 0
+                    with _yt_dlp.YoutubeDL(_extract_opts) as ydl:
+                        info = ydl.extract_info(tweet_url, download=False)
+                    if not info:
+                        return {"tweet_url": tweet_url, "ok": False}
+                    stream_url = info.get("url")
+                    if not stream_url:
+                        formats = info.get("formats") or []
+                        best = None
+                        for fmt in formats:
+                            ext = fmt.get("ext", "")
+                            height = fmt.get("height") or 0
+                            fmt_url = fmt.get("url")
+                            if not fmt_url:
+                                continue
+                            if ext == "mp4" and 0 < height <= 720:
+                                if best is None or (fmt.get("height") or 0) > (best.get("height") or 0):
+                                    best = fmt
+                        if best is None:
+                            for fmt in reversed(formats):
+                                if fmt.get("url"):
+                                    best = fmt
+                                    break
+                        if best:
+                            stream_url = best["url"]
+                    return {"tweet_url": tweet_url, "stream_url": stream_url, "ok": bool(stream_url)}
                 except Exception:
-                    ok = False
-                if not ok:
-                    out_path.unlink(missing_ok=True)
-                return {**job, "ok": ok}
+                    return {"tweet_url": tweet_url, "ok": False}
 
-            downloaded = 0
-            with ThreadPoolExecutor(max_workers=min(2, len(tweet_jobs))) as pool:
-                futures = [pool.submit(_download_tweet, job) for job in tweet_jobs]
+            extracted = 0
+            with ThreadPoolExecutor(max_workers=min(2, len(tweet_urls))) as pool:
+                futures = [pool.submit(_extract_tweet, u) for u in tweet_urls]
                 completed_jobs = [future.result() for future in as_completed(futures)]
 
             for job in completed_jobs:
                 if not job.get("ok"):
                     continue
                 tweet_url = job["tweet_url"]
-                out_path = Path(job["out_path"])
                 db.insert_screenshot(
                     term=display_name or username,
                     source="ytdlp",
                     page_url=tweet_url,
-                    local_path=str(out_path),
+                    local_path=None,
                     performer_id=performer_id,
+                    source_url=job.get("stream_url", ""),
                 )
                 captured_nonlocal[0] += 1
-                downloaded += 1
+                extracted += 1
                 _mark_page_url(tweet_url)
-            return downloaded
+            return extracted
 
         captured_nonlocal = [captured]
         for tw_user in twitter_targets:

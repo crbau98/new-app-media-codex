@@ -51,45 +51,38 @@ export function BottomTabBar() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-white/8 bg-[#08111a]/95 backdrop-blur-xl md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] bg-bg-base/90 backdrop-blur-2xl md:hidden"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       aria-label="Mobile navigation"
     >
-      {TABS.map((tab) => {
-        const isActive = activeView === tab.id
-        return (
-          <button
-            key={tab.id}
-            onClick={() => {
-              startTransition(() => {
-                setActiveView(tab.id)
-              })
-            }}
-            onTouchStart={() => prefetchViewModule(tab.id)}
-            onMouseEnter={() => prefetchViewModule(tab.id)}
-            onFocus={() => prefetchViewModule(tab.id)}
-            aria-current={isActive ? "page" : undefined}
-            className={cn(
-              "relative flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] transition-colors",
-              isActive ? "text-text-primary" : "text-text-muted"
-            )}
-          >
-            {isActive && (
-              <span
-                aria-hidden="true"
-                className="absolute inset-x-3 top-0 h-0.5 rounded-b-full bg-accent"
-                style={{
-                  background: "linear-gradient(90deg, transparent, var(--color-accent), transparent)",
-                  boxShadow: "0 0 12px var(--color-accent-glow)",
-                }}
-              />
-            )}
-            <span className={cn("transition-transform", isActive && "scale-110")}>
-              {tab.icon}
-            </span>
-            <span className="font-medium">{tab.label}</span>
-          </button>
-        )
-      })}
+      <div className="flex items-center justify-around">
+        {TABS.map((tab) => {
+          const isActive = activeView === tab.id
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                startTransition(() => {
+                  setActiveView(tab.id)
+                })
+              }}
+              onTouchStart={() => prefetchViewModule(tab.id)}
+              onMouseEnter={() => prefetchViewModule(tab.id)}
+              onFocus={() => prefetchViewModule(tab.id)}
+              aria-current={isActive ? "page" : undefined}
+              className={cn(
+                "relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] transition-colors",
+                isActive ? "text-accent" : "text-text-muted"
+              )}
+            >
+              <span className={cn("transition-transform duration-150", isActive && "scale-110")}>
+                {tab.icon}
+              </span>
+              <span className={cn("font-medium", isActive && "text-accent")}>{tab.label}</span>
+            </button>
+          )
+        })}
+      </div>
     </nav>
   )
 }

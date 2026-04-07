@@ -89,6 +89,7 @@ function highlightMatch(text: string, query: string): React.ReactNode {
 }
 
 export function TopBar() {
+  const isFetching = useIsFetching()
   const activeView = useAppStore((s) => s.activeView)
   const theme = useAppStore((s) => s.theme)
   const toggleTheme = useAppStore((s) => s.toggleTheme)
@@ -100,8 +101,7 @@ export function TopBar() {
   const setActiveView = useAppStore((s) => s.setActiveView)
   const setPendingPerformer = useAppStore((s) => s.setPendingPerformer)
 
-  const leftOffset = collapsed ? "lg:left-[88px]" : "lg:left-[284px]"
-  const [triggering, setTriggering] = useState(false)
+  const leftOffset = collapsed ? "lg:left-[72px]" : "lg:left-[240px]"
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [topBarEnhancementsReady, setTopBarEnhancementsReady] = useState(false)
   const [searchVal, setSearchVal] = useState("")
@@ -190,6 +190,19 @@ export function TopBar() {
     }
     window.addEventListener("open-shortcuts-overlay", openFromShortcut as EventListener)
     return () => window.removeEventListener("open-shortcuts-overlay", openFromShortcut as EventListener)
+  }, [])
+
+  // ⌘K / Ctrl+K to focus search
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault()
+        inputRef.current?.focus()
+        setDropdownOpen(true)
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
 
   useEffect(() => {
@@ -383,31 +396,41 @@ export function TopBar() {
 
   return (
     <>
+      {isFetching > 0 && (
+        <div className="fixed inset-x-0 top-0 z-[55] h-0.5 overflow-hidden" aria-hidden="true">
+          <div
+            className="h-full animate-[topbar-loading_1.5s_ease-in-out_infinite]"
+            style={{ background: "var(--color-accent, #7cc6ff)" }}
+          />
+          <style>{`
+            @keyframes topbar-loading {
+              0% { width: 0%; margin-left: 0%; }
+              50% { width: 60%; margin-left: 20%; }
+              100% { width: 0%; margin-left: 100%; }
+            }
+          `}</style>
+        </div>
+      )}
       <header
         className={cn(
           "fixed inset-x-0 top-0 z-20 px-3 pt-3 transition-[left] duration-200 sm:px-5 lg:px-6",
           leftOffset,
         )}
       >
-        <div className="panel-surface glass mx-auto flex max-w-[1600px] items-center gap-3 rounded-[22px] px-3 py-2.5 sm:px-4">
+        <div className="glass mx-auto flex max-w-[1600px] items-center gap-3 rounded-2xl px-3 py-2 sm:px-4">
           <button
             onClick={() => setMobileNavOpen(!mobileNavOpen)}
-            className="panel-muted flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:text-text-primary lg:hidden"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text-primary md:hidden"
             aria-label="Open navigation"
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
           </button>
 
-          <div className="min-w-0 shrink-0">
-            <h2 className="text-base font-semibold leading-none text-text-primary">
-              {VIEW_LABELS[activeView] ?? activeView}
-            </h2>
-            <p className="mt-0.5 hidden text-[11px] text-text-muted sm:block">
-              {VIEW_DESCRIPTIONS[activeView]}
-            </p>
-          </div>
+          <h2 className="min-w-0 shrink-0 text-sm font-semibold text-text-primary">
+            {VIEW_LABELS[activeView] ?? activeView}
+          </h2>
 
-          <div ref={containerRef} className="relative hidden max-w-sm flex-1 md:block">
+          <div ref={containerRef} className="relative hidden max-w-md flex-1 md:block">
             <form onSubmit={handleSearch}>
               <svg className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-text-muted" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
               <input
@@ -421,12 +444,13 @@ export function TopBar() {
                 }}
                 onFocus={() => setDropdownOpen(true)}
                 onKeyDown={handleKeyDown}
-                className="w-full rounded-xl border border-border bg-bg-subtle py-2 pl-8 pr-3 text-xs text-text-primary placeholder:text-text-muted transition-colors focus:border-accent/50 focus:outline-none"
+                className="w-full rounded-full border border-white/[0.08] bg-white/[0.04] py-1.5 pl-8 pr-14 text-xs text-text-primary placeholder:text-text-muted transition-all focus:border-accent/40 focus:bg-white/[0.06] focus:outline-none"
                 role="combobox"
                 aria-expanded={showDropdown}
                 aria-haspopup="listbox"
                 aria-autocomplete="list"
               />
+              <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 hidden rounded-md border border-white/10 bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-text-muted sm:inline">⌘K</kbd>
             </form>
 
             {showDropdown && (
@@ -640,22 +664,13 @@ export function TopBar() {
 
           <button
             onClick={toggleTheme}
-            className="panel-muted hidden h-8 w-8 items-center justify-center rounded-xl text-text-muted transition-colors duration-200 hover:text-text-primary sm:flex"
+            className="hidden h-7 w-7 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-white/[0.06] hover:text-text-primary sm:flex"
             aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           >
             {theme === "dark" ? (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="5" />
-                <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-              </svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
             ) : (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
             )}
           </button>
 
@@ -664,32 +679,6 @@ export function TopBar() {
               <NotificationCenter />
             </Suspense>
           )}
-
-          <button
-            onClick={openShortcuts}
-            className="panel-muted hidden h-8 w-8 items-center justify-center rounded-xl text-text-muted transition-colors hover:text-text-primary sm:flex"
-            aria-label="Keyboard shortcuts"
-            title="Keyboard shortcuts (?)"
-          >
-            <span className="font-mono text-xs">?</span>
-          </button>
-
-          <Button
-            variant="secondary"
-            size="sm"
-            className="shrink-0 rounded-xl"
-            disabled={crawlRunning || triggering}
-            loading={triggering}
-            onClick={handleRunCrawl}
-            aria-label="Run crawl"
-          >
-            {!triggering && (
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <polygon points="5 3 19 12 5 21 5 3" />
-              </svg>
-            )}
-            <span className="hidden sm:inline">Run crawl</span>
-          </Button>
         </div>
       </header>
       {(topBarEnhancementsReady || shortcutsOpen) && (
@@ -698,39 +687,5 @@ export function TopBar() {
         </Suspense>
       )}
     </>
-  )
-}
-
-function TopBarSummaryChips({
-  ready,
-  onNavigate,
-}: {
-  ready: boolean
-  onNavigate: (view: "overview" | "images" | "performers" | "settings") => void
-}) {
-  const { data: summary } = useAppShellSummary(ready)
-
-  if (!ready) return <div className="hidden items-center gap-2 lg:flex" aria-hidden="true" />
-
-  const mediaCount = summary?.stats?.totals?.image_count ?? 0
-
-  return (
-    <div className="hidden items-center gap-2 lg:flex">
-      <button
-        onClick={() => startTransition(() => onNavigate("images"))}
-        className="flex items-center gap-1.5 rounded-xl border border-border bg-bg-subtle px-2.5 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent/30 hover:text-text-primary"
-        title="Open Media"
-      >
-        <span className="font-mono font-semibold text-text-primary">{mediaCount.toLocaleString()}</span>
-        <span className="text-text-muted">media</span>
-      </button>
-      <button
-        onClick={() => startTransition(() => onNavigate("performers"))}
-        className="flex items-center gap-1.5 rounded-xl border border-border bg-bg-subtle px-2.5 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent/30 hover:text-text-primary"
-        title="Open Creators"
-      >
-        <span className="text-text-muted">creators</span>
-      </button>
-    </div>
   )
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -215,7 +216,23 @@ class ResearchService:
             print(f"[seed] added {seeded} default performers, queued for capture")
 
     def start(self) -> None:
+        # Clean up stale WAL/SHM files that cause disk I/O errors on network storage
+        db_path = self.db.path
+        for suffix in ["-wal", "-shm"]:
+            wal_file = db_path.parent / (db_path.name + suffix)
+            if wal_file.exists():
+                try:
+                    wal_file.unlink()
+                    print(f"[startup] removed stale {wal_file.name}")
+                except Exception as exc:
+                    print(f"[startup] could not remove {wal_file.name}: {exc}")
         self.db.init()
+        try:
+            repaired = self.db.repair_moved_repo_paths(self.settings.base_dir)
+            if repaired:
+                print(f"[startup] repaired {repaired} moved local media paths")
+        except Exception as exc:
+            print(f"[startup] path repair skipped: {exc}")
         requeued = self.db.requeue_stale_running_entries()
         if requeued:
             print(f"[queue-worker] re-queued {requeued} stale running capture entries")
@@ -250,6 +267,17 @@ class ResearchService:
                     id="screenshot-capture",
                     replace_existing=True,
                     max_instances=1,
+                )
+            # Self-ping keepalive to prevent Render cold starts
+            if not self.scheduler.get_job("keepalive-ping"):
+                self.scheduler.add_job(
+                    self._keepalive_ping,
+                    "interval",
+                    minutes=10,
+                    id="keepalive-ping",
+                    replace_existing=True,
+                    max_instances=1,
+                    coalesce=True,
                 )
             if not self.scheduler.running:
                 self.scheduler.start()
@@ -520,6 +548,17 @@ class ResearchService:
                 session.close()
             self.lock.release()
 
+    @staticmethod
+    def _keepalive_ping() -> None:
+        """Ping the local healthz endpoint to prevent Render cold starts."""
+        try:
+            import requests
+
+            port = int(os.environ.get("PORT", 8000))
+            requests.get(f"http://127.0.0.1:{port}/healthz", timeout=5)
+        except Exception:
+            pass
+
     def _run_screenshot_capture(self) -> None:
         """Run screenshot capture for explicit terms + per-performer targeted capture."""
         from app.sources.screenshot import capture_screenshots
@@ -563,8 +602,10 @@ class ResearchService:
                     term=result["term"],
                     source=result["source"],
                     page_url=result["page_url"],
-                    local_path=result["local_path"],
+                    local_path=result.get("local_path"),
                     performer_id=performer_id,
+                    source_url=result.get("source_url"),
+                    thumbnail_url=result.get("thumbnail_url"),
                 )
                 captured += 1
 

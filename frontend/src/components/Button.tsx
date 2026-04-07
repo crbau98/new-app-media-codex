@@ -1,4 +1,4 @@
-import { ButtonHTMLAttributes, forwardRef, useRef } from 'react'
+import { ButtonHTMLAttributes, forwardRef } from 'react'
 import { cn } from '@/lib/cn'
 import { Spinner } from './Spinner'
 
@@ -40,72 +40,29 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       className,
       children,
       disabled,
-      onClick,
       ...props
     },
     ref
   ) => {
     const busy = loading || isLoading
-    const buttonRef = useRef<HTMLButtonElement | null>(null)
-
-    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-      // Ripple effect
-      const btn = buttonRef.current
-      if (btn) {
-        const rect = btn.getBoundingClientRect()
-        const x = e.clientX - rect.left
-        const y = e.clientY - rect.top
-        const maxDim = Math.max(rect.width, rect.height)
-
-        const ripple = document.createElement('span')
-        ripple.style.cssText = [
-          'position:absolute',
-          `left:${x - maxDim / 2}px`,
-          `top:${y - maxDim / 2}px`,
-          `width:${maxDim}px`,
-          `height:${maxDim}px`,
-          'border-radius:50%',
-          'background:rgba(255,255,255,0.18)',
-          'pointer-events:none',
-          'transform:scale(0)',
-          'animation:btn-ripple 600ms ease-out forwards',
-        ].join(';')
-
-        btn.appendChild(ripple)
-        setTimeout(() => ripple.remove(), 620)
-      }
-
-      onClick?.(e)
-    }
 
     return (
-      <>
-        <style>{`
-          @keyframes btn-ripple {
-            to { transform: scale(2.2); opacity: 0; }
-          }
-        `}</style>
-        <button
-          ref={(node) => {
-            buttonRef.current = node
-            if (typeof ref === 'function') ref(node)
-            else if (ref) ref.current = node
-          }}
-          disabled={disabled || busy}
-          aria-busy={busy || undefined}
-          onClick={handleClick}
-          className={cn(
-            'relative inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 overflow-hidden',
-            'cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed',
-            variants[variant],
-            sizes[size],
-            className
-          )}
-          {...props}
-        >
-          {busy ? <Spinner size="sm" label="Loading" /> : children}
-        </button>
-      </>
+      <button
+        ref={ref}
+        disabled={disabled || busy}
+        aria-busy={busy || undefined}
+        className={cn(
+          'relative inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 overflow-hidden',
+          'cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed',
+          'active:scale-[0.97]',
+          variants[variant],
+          sizes[size],
+          className
+        )}
+        {...props}
+      >
+        {busy ? <Spinner size="sm" label="Loading" /> : children}
+      </button>
     )
   }
 )

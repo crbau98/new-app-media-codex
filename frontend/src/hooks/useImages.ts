@@ -11,5 +11,9 @@ export function useImages() {
     getNextPageParam: (last) =>
       last.has_more ? last.offset + last.images.length : undefined,
     initialPageParam: 0,
+    staleTime: 5 * 60_000,
+    gcTime: 15 * 60_000,
+    maxPages: 5,
+    refetchOnWindowFocus: false,
   })
 }

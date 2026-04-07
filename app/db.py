@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
-import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -312,6 +312,18 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def check_disk_space(path: Path, min_free_mb: int = 500) -> dict:
+    """Check available disk space. Returns dict with total, used, free in MB."""
+    usage = shutil.disk_usage(path)
+    return {
+        "total_mb": usage.total // (1024 * 1024),
+        "used_mb": usage.used // (1024 * 1024),
+        "free_mb": usage.free // (1024 * 1024),
+        "percent_used": round(usage.used / usage.total * 100, 1),
+        "low_space": usage.free < min_free_mb * 1024 * 1024,
+    }
+
+
 class Database:
     def __init__(self, path: Path, timeout_seconds: float = 10.0, busy_timeout_ms: int = 10000) -> None:
         self.path = path
@@ -320,7 +332,6 @@ class Database:
         self._snapshot_cache: dict[str, dict[str, Any]] = {}
         self._snapshot_cache_lock = Lock()
         self._snapshot_generation = 0
-        self._local = threading.local()
 
     def snapshot_generation(self) -> int:
         with self._snapshot_cache_lock:
@@ -343,7 +354,15 @@ class Database:
         expires_at = time.monotonic() + ttl_seconds
         with self._snapshot_cache_lock:
             if len(self._snapshot_cache) > 512:
-                self._snapshot_cache.clear()
+                expired = [
+                    cache_key
+                    for cache_key, cache_entry in self._snapshot_cache.items()
+                    if now >= cache_entry["expires_at"]
+                ]
+                for cache_key in expired:
+                    self._snapshot_cache.pop(cache_key, None)
+                if len(self._snapshot_cache) > 512:
+                    self._snapshot_cache.clear()
             if self._snapshot_generation == generation:
                 self._snapshot_cache[key] = {
                     "expires_at": expires_at,
@@ -355,33 +374,35 @@ class Database:
     def _invalidate_after_write(self) -> None:
         self._invalidate_snapshot_cache()
 
-    def _get_conn(self) -> sqlite3.Connection:
-        """Return a thread-local persistent connection (reused across calls)."""
-        conn = getattr(self._local, "conn", None)
-        if conn is not None:
-            return conn
-        conn = sqlite3.connect(self.path, timeout=self.timeout_seconds, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA synchronous = NORMAL")
-        conn.execute("PRAGMA temp_store = MEMORY")
-        conn.execute("PRAGMA cache_size = -20000")
-        conn.execute("PRAGMA mmap_size = 268435456")  # 256 MB memory-mapped I/O
-        self._local.conn = conn
-        return conn
-
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        yield self._get_conn()
+        for attempt in range(3):
+            try:
+                conn = sqlite3.connect(self.path, timeout=self.timeout_seconds)
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA foreign_keys = ON")
+                conn.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
+                # Skip journal_mode changes — let SQLite use its default.
+                # Changing journal mode on network storage can corrupt the DB.
+                conn.execute("SELECT 1")  # verify connection actually works
+                break
+            except sqlite3.OperationalError:
+                if attempt == 2:
+                    raise
+                import time as _time
+                _time.sleep(0.5 * (attempt + 1))
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def ping(self) -> bool:
         try:
-            with self.connect() as conn:
-                conn.execute("SELECT 1").fetchone()
+            conn = sqlite3.connect(self.path, timeout=2)
+            conn.execute("SELECT 1").fetchone()
+            conn.close()
             return True
-        except sqlite3.Error:
+        except Exception:
             return False
 
     def init(self) -> None:
@@ -438,10 +459,13 @@ class Database:
         updated = 0
         with self.connect() as conn:
             for table, id_column, path_column in targets:
-                rows = conn.execute(
-                    f"SELECT {id_column} AS row_id, {path_column} AS path_value "
-                    f"FROM {table} WHERE {path_column} IS NOT NULL AND {path_column} != ''"
-                ).fetchall()
+                try:
+                    rows = conn.execute(
+                        f"SELECT {id_column} AS row_id, {path_column} AS path_value "
+                        f"FROM {table} WHERE {path_column} IS NOT NULL AND {path_column} != ''"
+                    ).fetchall()
+                except sqlite3.OperationalError:
+                    continue
                 for row in rows:
                     new_value = rebased(row["path_value"])
                     if not new_value:
@@ -503,6 +527,10 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_rating ON screenshots(rating)")
         if "user_tags" not in screenshot_columns:
             conn.execute("ALTER TABLE screenshots ADD COLUMN user_tags TEXT DEFAULT NULL")
+        if "source_url" not in screenshot_columns:
+            conn.execute("ALTER TABLE screenshots ADD COLUMN source_url TEXT")
+        if "thumbnail_url" not in screenshot_columns:
+            conn.execute("ALTER TABLE screenshots ADD COLUMN thumbnail_url TEXT")
         # Performer subscription tracking columns
         performer_columns = {row["name"] for row in conn.execute("PRAGMA table_info(performers)").fetchall()}
         if "subscription_price" not in performer_columns:
@@ -523,16 +551,6 @@ class Database:
         # Rebuild FTS index
         try:
             conn.execute("INSERT INTO screenshots_fts(screenshots_fts) VALUES('rebuild')")
-        except Exception:
-            pass
-        # Create FTS index for items search
-        conn.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS items_fts
-            USING fts5(title, summary, author, domain, compounds_json, mechanisms_json,
-                       content=items, content_rowid=id)
-        """)
-        try:
-            conn.execute("INSERT INTO items_fts(items_fts) VALUES('rebuild')")
         except Exception:
             pass
         # user_settings table
@@ -717,6 +735,8 @@ class Database:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_rating_captured ON screenshots(rating DESC, captured_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_term_captured ON screenshots(term, captured_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_source_captured ON screenshots(source, captured_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_browse ON screenshots(source, captured_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_term_date ON screenshots(term, captured_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_performer_rating_captured ON screenshots(performer_id, rating DESC, captured_at DESC)")
         # Partial index: fast scan when filtering to performer-linked shots only
         conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_has_performer ON screenshots(captured_at DESC) WHERE performer_id IS NOT NULL")
@@ -726,6 +746,9 @@ class Database:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_platform_created ON performers(platform, created_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_status_created ON performers(status, created_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_favorite_created ON performers(is_favorite, created_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_username ON performers(username)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_display_name ON performers(display_name)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_images_source_created ON images(source_type, created_at DESC)")
         conn.execute("PRAGMA optimize")
 
     def start_run(self) -> int:
@@ -761,8 +784,6 @@ class Database:
         with self.connect() as conn:
             current = conn.execute("SELECT id FROM items WHERE url = ?", (item["url"],)).fetchone()
             if current:
-                compounds_json = json.dumps(item["compounds"], ensure_ascii=True)
-                mechanisms_json = json.dumps(item["mechanisms"], ensure_ascii=True)
                 conn.execute(
                     """
                     UPDATE items
@@ -783,24 +804,17 @@ class Database:
                         item["domain"],
                         item["image_url"],
                         item["score"],
-                        compounds_json,
-                        mechanisms_json,
+                        json.dumps(item["compounds"], ensure_ascii=True),
+                        json.dumps(item["mechanisms"], ensure_ascii=True),
                         json.dumps(item["metadata_json"], ensure_ascii=True),
                         now,
                         run_id,
                         item["url"],
                     ),
                 )
-                item_id = int(current["id"])
-                # Sync FTS index
-                try:
-                    conn.execute("INSERT OR REPLACE INTO items_fts(rowid, title, summary, author, domain, compounds_json, mechanisms_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                 (item_id, item["title"], item["summary"], item["author"], item["domain"], compounds_json, mechanisms_json))
-                except Exception:
-                    pass
                 conn.commit()
                 self._invalidate_after_write()
-                return item_id, False
+                return int(current["id"]), False
 
             cursor = conn.execute(
                 """
@@ -831,17 +845,9 @@ class Database:
                     run_id,
                 ),
             )
-            new_id = int(cursor.lastrowid)
-            # Sync FTS index
-            try:
-                conn.execute("INSERT INTO items_fts(rowid, title, summary, author, domain, compounds_json, mechanisms_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                             (new_id, item["title"], item["summary"], item["author"], item["domain"],
-                              json.dumps(item["compounds"], ensure_ascii=True), json.dumps(item["mechanisms"], ensure_ascii=True)))
-            except Exception:
-                pass
             conn.commit()
             self._invalidate_after_write()
-            return new_id, True
+            return int(cursor.lastrowid), True
 
     def insert_image(self, image: dict[str, Any], item_id: int | None = None) -> None:
         with self.connect() as conn:
@@ -962,10 +968,15 @@ class Database:
         if queued_only:
             query += " AND queued_at IS NOT NULL"
         if search.strip():
-            # Use FTS5 for fast full-text search when available, fall back to LIKE
-            fts_term = search.strip().replace('"', '""')
-            query += " AND items.id IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?)"
-            params.append(f'"{fts_term}"')
+            needle = f"%{search.strip().lower()}%"
+            query += """
+             AND lower(
+                 COALESCE(title, '') || ' ' || COALESCE(summary, '') || ' ' || COALESCE(content, '') || ' ' ||
+                 COALESCE(domain, '') || ' ' || COALESCE(author, '') || ' ' || COALESCE(user_note, '') || ' ' ||
+                 COALESCE(compounds_json, '') || ' ' || COALESCE(mechanisms_json, '')
+             ) LIKE ?
+            """
+            params.append(needle)
         if compound:
             query += " AND LOWER(compounds_json) LIKE ?"
             params.append(f'%"{compound.lower()}"%')
@@ -1322,7 +1333,7 @@ class Database:
                 "has_more": has_more,
             }
 
-        return self._cached_snapshot(cache_key, 8.0, build)
+        return self._cached_snapshot(cache_key, 30.0, build)
 
     def get_recent_hypotheses(self, limit: int = 10) -> list[dict[str, Any]]:
         with self.connect() as conn:
@@ -1652,13 +1663,13 @@ class Database:
                   data.get("molecular_weight"), data.get("pharmacology",""), "", utcnow()))
             conn.commit()
 
-    def insert_screenshot(self, term: str, source: str, page_url: str, local_path: str, performer_id: int | None = None) -> bool:
+    def insert_screenshot(self, term: str, source: str, page_url: str, local_path: str | None = None, performer_id: int | None = None, source_url: str | None = None, thumbnail_url: str | None = None) -> bool:
         """Insert screenshot record. Returns True if inserted, False if duplicate."""
         with self.connect() as conn:
             try:
                 conn.execute(
-                    "INSERT INTO screenshots (term, source, page_url, local_path, captured_at, performer_id) VALUES (?,?,?,?,?,?)",
-                    (term, source, page_url, local_path, utcnow(), performer_id)
+                    "INSERT INTO screenshots (term, source, page_url, local_path, captured_at, performer_id, source_url, thumbnail_url) VALUES (?,?,?,?,?,?,?,?)",
+                    (term, source, page_url, local_path or "", utcnow(), performer_id, source_url, thumbnail_url)
                 )
                 conn.commit()
                 self._invalidate_after_write()
@@ -1945,7 +1956,7 @@ class Database:
             screenshots = [dict(r) for r in rows[:limit]]
             return {"screenshots": screenshots, "total": total, "offset": offset, "limit": limit, "has_more": has_more}
 
-        return self._cached_snapshot(cache_key, 8.0, build)
+        return self._cached_snapshot(cache_key, 30.0, build)
 
     def backfill_screenshot_performers(self) -> int:
         """Link unlinked screenshots to performers by matching term against username/display_name/twitter_username.
@@ -2222,6 +2233,8 @@ class Database:
         is_favorite: bool | None = None,
         stale_days: int | None = None,
         renewing_only: bool | None = None,
+        is_subscribed: bool | None = None,
+        tags: str | None = None,
         sort: str = "created_at",
         compact: bool = False,
         limit: int = 40,
@@ -2245,6 +2258,14 @@ class Database:
         if stale_days is not None:
             where.append("(last_checked_at IS NULL OR last_checked_at < datetime('now', ?))")
             params.append(f"-{stale_days} days")
+        if is_subscribed is not None:
+            if is_subscribed:
+                where.append("is_subscribed = 1")
+            else:
+                where.append("(is_subscribed IS NULL OR is_subscribed = 0)")
+        if tags:
+            where.append("tags LIKE ?")
+            params.append(f"%{tags}%")
         if renewing_only:
             where.append(
                 "is_subscribed = 1 AND subscription_renewed_at IS NOT NULL "
@@ -2276,7 +2297,7 @@ class Database:
         search_norm = search.strip().lower() if search else ""
         cache_key = (
             "browse_performers:"
-            f"{limit}:{offset}:{search_norm}:{platform}:{status}:{sort}:{is_favorite}:{stale_days}:{renewing_only}:{compact}"
+            f"{limit}:{offset}:{search_norm}:{platform}:{status}:{sort}:{is_favorite}:{stale_days}:{renewing_only}:{is_subscribed}:{tags}:{compact}"
         )
 
         def build():
@@ -2318,7 +2339,7 @@ class Database:
                     total = offset + len(rows)
             return {"performers": performers, "total": total, "offset": offset, "limit": limit, "has_more": len(rows) > limit}
 
-        return self._cached_snapshot(cache_key, 8.0, build)
+        return self._cached_snapshot(cache_key, 45.0, build)
 
     def update_performer(self, performer_id: int, **fields: Any) -> dict | None:
         allowed = {

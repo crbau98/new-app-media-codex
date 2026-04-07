@@ -220,7 +220,7 @@ function TopTagsPanel() {
   }
 
   return (
-    <div className="bg-bg-surface border border-border rounded-xl p-4 card-glass glass">
+    <div className="bg-bg-surface border border-border rounded-xl p-4 card-hover glass">
       <SectionHeading>Top Signals</SectionHeading>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {compounds.length > 0 && (
@@ -280,7 +280,7 @@ function OverviewSectionIntro() {
 
   return (
     <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 card-glass glass">
+      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 card-hover glass">
         <p className="text-[11px] uppercase tracking-[0.22em] text-text-muted font-mono">Overview at a glance</p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="ui-chip ui-chip-active">{runLabel}</span>
@@ -290,7 +290,7 @@ function OverviewSectionIntro() {
           <span className="ui-chip">{totals?.hypothesis_count?.toLocaleString() ?? "0"} ideas</span>
         </div>
       </div>
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 card-glass glass">
+      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 card-hover glass">
         <p className="text-[11px] uppercase tracking-[0.22em] text-text-muted font-mono">Fast actions</p>
         <div className="mt-2 flex flex-wrap gap-2">
           <button className="ui-chip ui-chip-active" onClick={() => openView("items")}>
@@ -314,7 +314,7 @@ function RecentRuns({ runs }: { runs: { id: number; started_at: string; finished
   return (
     <div>
       <SectionHeading>Recent Runs</SectionHeading>
-      <div className="bg-bg-surface border border-border rounded-xl divide-y divide-border card-glass glass">
+      <div className="bg-bg-surface border border-border rounded-xl divide-y divide-border card-hover glass">
         {runs.slice(0, 5).map((run) => {
           const duration = run.finished_at
             ? Math.round((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000)
@@ -401,7 +401,7 @@ function ActivityFeed() {
       >
         Activity
       </SectionHeading>
-      <div className="bg-bg-surface border border-border rounded-xl overflow-hidden card-glass glass">
+      <div className="bg-bg-surface border border-border rounded-xl overflow-hidden card-hover glass">
         {isLoading ? (
           <div className="p-3 space-y-2">
             {[1, 2, 3, 4, 5].map((i) => (
@@ -494,7 +494,7 @@ function RecentActivityStrip() {
                 setActiveView('items')
                 setTimeout(() => setSelectedItemId(item.id), 50)
               }}
-              className="flex-shrink-0 w-52 bg-bg-surface border border-border rounded-xl p-3 text-left hover:border-accent/40 hover:bg-bg-elevated transition-all group card-glass glass"
+              className="flex-shrink-0 w-52 bg-bg-surface border border-border rounded-xl p-3 text-left hover:border-accent/40 hover:bg-bg-elevated transition-all group card-hover glass"
             >
               <p className="text-xs text-text-primary font-medium leading-snug mb-2.5 line-clamp-2 group-hover:text-accent transition-colors">
                 {title}
@@ -536,7 +536,7 @@ function RecentTimeline() {
 
   if (isLoading) {
     return (
-      <div className="bg-bg-surface border border-border rounded-xl p-3 card-glass glass space-y-2">
+      <div className="bg-bg-surface border border-border rounded-xl p-3 card-hover glass space-y-2">
         {[1, 2, 3].map((i) => (
           <div key={i} className="flex items-center gap-2 animate-pulse">
             <div className="w-4 h-4 rounded shimmer shrink-0" />
@@ -564,7 +564,7 @@ function RecentTimeline() {
   return (
     <div>
       <SectionHeading>Recent Activity</SectionHeading>
-      <div className="bg-bg-surface border border-border rounded-xl overflow-hidden card-glass glass">
+      <div className="bg-bg-surface border border-border rounded-xl overflow-hidden card-hover glass">
         <ul className="divide-y divide-border/50">
           {displayed.map((e, i) => {
             const label = e.title ?? e.term ?? '(untitled)'
@@ -629,7 +629,7 @@ function TopCompoundsMini() {
   return (
     <div>
       <SectionHeading>Top Compounds</SectionHeading>
-      <div className="bg-bg-surface border border-border rounded-xl p-3 card-glass glass space-y-1.5">
+      <div className="bg-bg-surface border border-border rounded-xl p-3 card-hover glass space-y-1.5">
         {top5.map(({ name, count }) => (
           <button
             key={name}
@@ -766,7 +766,7 @@ function TopCreatorsPanel() {
     return (
       <div>
         <SectionHeading>Top Creators</SectionHeading>
-        <div className="bg-bg-surface border border-border rounded-xl p-3 card-glass glass space-y-2">
+        <div className="bg-bg-surface border border-border rounded-xl p-3 card-hover glass space-y-2">
           {[...Array(4)].map((_, i) => (
             <div key={i} className="flex items-center gap-2 px-1">
               <div className="w-6 h-6 rounded-full bg-white/5 animate-pulse shrink-0" />
@@ -798,7 +798,7 @@ function TopCreatorsPanel() {
       >
         Top Creators
       </SectionHeading>
-      <div className="bg-bg-surface border border-border rounded-xl p-3 card-glass glass space-y-1">
+      <div className="bg-bg-surface border border-border rounded-xl p-3 card-hover glass space-y-1">
         {growth && (
           <div className="flex items-center gap-3 px-1 pb-1.5 mb-1 border-b border-white/5">
             <span className="text-[10px] text-text-muted">Total</span>

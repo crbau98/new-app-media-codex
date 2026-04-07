@@ -1,10 +1,12 @@
-import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense, startTransition } from "react"
+import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense, startTransition, memo } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { QueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/cn"
 import { api, type Performer, type DiscoveredCreator, type CaptureQueueEntry } from "@/lib/api"
 import { useAppStore } from "@/store"
+import { useDebounce } from "@/hooks/useDebounce"
 import { Skeleton } from "@/components/Skeleton"
+import { EmptyState } from "@/components/EmptyState"
 import { PerformerProfile } from "./PerformerProfile"
 
 const PerformerAnalyticsPanel = lazy(() => import("./PerformerAnalyticsPanel").then((m) => ({ default: m.PerformerAnalyticsPanel })))
@@ -20,6 +22,35 @@ const PLATFORM_COLORS: Record<string, string> = {
   Fansly: "bg-violet-500/20 text-violet-300 border-violet-500/30",
 }
 
+const AVATAR_GRADIENTS = [
+  "from-sky-500 to-indigo-600",
+  "from-rose-500 to-pink-600",
+  "from-emerald-500 to-teal-600",
+  "from-amber-500 to-orange-600",
+  "from-violet-500 to-purple-600",
+  "from-cyan-500 to-blue-600",
+  "from-fuchsia-500 to-pink-600",
+  "from-lime-500 to-green-600",
+]
+
+function getAvatarGradient(username: string): string {
+  let hash = 0
+  for (let i = 0; i < username.length; i++) hash = username.charCodeAt(i) + ((hash << 5) - hash)
+  return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length]
+}
+
+function AvatarPlaceholder({ username, size = "md" }: { username: string; size?: "sm" | "md" | "lg" }) {
+  const gradient = getAvatarGradient(username)
+  const textSize = size === "lg" ? "text-2xl" : size === "md" ? "text-lg" : "text-sm"
+  return (
+    <div className={cn("flex h-full w-full items-center justify-center bg-gradient-to-br", gradient)}>
+      <span className={cn("font-bold text-white/90 drop-shadow-sm", textSize)}>
+        {username.charAt(0).toUpperCase()}
+      </span>
+    </div>
+  )
+}
+
 type SortOption = "newest" | "az" | "most_media" | "subscription_price" | "subscription_renewed_at" | "screenshots_count" | "last_checked_at"
 
 function parseTags(tags: string | null): string[] {
@@ -32,72 +63,14 @@ function parseTags(tags: string | null): string[] {
   }
 }
 
-/* ── Stats Bar ─────────────────────────────────────────────────────────── */
+/* ── Stats Bar (clean, minimal) ────────────────────────────────────────── */
 
-function StatsBar({ onRenewingClick }: { onRenewingClick?: () => void }) {
-  const { data, isLoading } = useQuery({
+function useCreatorStats() {
+  return useQuery({
     queryKey: ["performer-stats"],
     queryFn: () => api.performerStats(),
     staleTime: 30_000,
   })
-
-  if (isLoading) return <Skeleton variant="card" height="72px" />
-
-  const stats = data
-
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
-        <p className="text-[11px] text-text-muted">Total Creators</p>
-        <p className="mt-1 text-2xl font-semibold text-text-primary">{stats?.total ?? 0}</p>
-      </div>
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
-        <p className="text-[11px] text-text-muted">Watchlist</p>
-        <p className="mt-1 text-2xl font-semibold text-text-primary">{stats?.favorites ?? 0}</p>
-      </div>
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
-        <p className="text-[11px] text-text-muted">With Media</p>
-        <p className="mt-1 text-2xl font-semibold text-text-primary">{stats?.with_media ?? 0}</p>
-      </div>
-      <div className="rounded-2xl border border-sky-500/15 bg-sky-500/[0.04] px-4 py-3">
-        <p className="text-[11px] text-sky-400/70">Subscribed</p>
-        <p className="mt-1 text-2xl font-semibold text-sky-300">{stats?.subscribed_count ?? 0}</p>
-      </div>
-      <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.04] px-4 py-3">
-        <p className="text-[11px] text-emerald-400/70">Monthly Spend</p>
-        <p className="mt-1 text-2xl font-semibold text-emerald-300">
-          {stats?.monthly_spend ? `$${stats.monthly_spend.toFixed(2)}` : "--"}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={onRenewingClick}
-        className={cn(
-          "rounded-2xl border px-4 py-3 text-left transition-opacity hover:opacity-80",
-          (stats?.renewing_soon_count ?? 0) > 0
-            ? "border-orange-500/20 bg-orange-500/[0.04]"
-            : "border-white/8 bg-white/[0.03]"
-        )}
-        title="Filter by subscriptions renewing within 7 days"
-      >
-        <p className={cn("text-[11px]", (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-400/70" : "text-text-muted")}>Renewing Soon</p>
-        <p className={cn("mt-1 text-2xl font-semibold", (stats?.renewing_soon_count ?? 0) > 0 ? "text-orange-300" : "text-text-primary")}>
-          {stats?.renewing_soon_count ?? 0}
-        </p>
-      </button>
-      <div className={cn(
-        "rounded-2xl border px-4 py-3",
-        (stats?.stale_count ?? 0) > 0
-          ? "border-amber-500/20 bg-amber-500/[0.04]"
-          : "border-white/8 bg-white/[0.03]"
-      )}>
-        <p className={cn("text-[11px]", (stats?.stale_count ?? 0) > 0 ? "text-amber-400/70" : "text-text-muted")}>Due for Check</p>
-        <p className={cn("mt-1 text-2xl font-semibold", (stats?.stale_count ?? 0) > 0 ? "text-amber-300" : "text-text-primary")}>
-          {stats?.stale_count ?? 0}
-        </p>
-      </div>
-    </div>
-  )
 }
 
 /* ── Add Creator Form ──────────────────────────────────────────────────── */
@@ -128,7 +101,7 @@ function AddCreatorForm({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: ["performer-stats"] })
       qc.invalidateQueries({ queryKey: ["capture-queue"] })
       addToast("Creator added — capture queued", "success")
-      api.enrichPerformer(p.id).then(() => qc.invalidateQueries({ queryKey: ["performers"] })).catch(() => {})
+      api.enrichPerformer(p.id).then(() => qc.invalidateQueries({ queryKey: ["performers"] })).catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
       onClose()
     },
     onError: () => addToast("Failed to add creator", "error"),
@@ -278,7 +251,7 @@ function DiscoveryModal({ onClose }: { onClose: () => void }) {
         if (createdPerformer) {
           api.enrichPerformer(createdPerformer.id)
             .then(() => qc.invalidateQueries({ queryKey: ["performers"] }))
-            .catch(() => {})
+            .catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
         }
         return
       }
@@ -320,7 +293,7 @@ function DiscoveryModal({ onClose }: { onClose: () => void }) {
             <span className="ml-1 text-[10px] text-text-muted opacity-60">auto-seeded on startup</span>
           </button>
           {showSuggested && (
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {SUGGESTED_CREATORS.map((c) => {
                 const added = addedSet.has(c.username)
                 const pClass = PLATFORM_COLORS[c.platform] ?? "bg-white/10 text-text-secondary border-white/10"
@@ -331,15 +304,24 @@ function DiscoveryModal({ onClose }: { onClose: () => void }) {
                     disabled={added || addMutation.isPending}
                     title={c.bio}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
+                      "flex items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors",
                       added
-                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                        : "border-white/10 bg-white/5 text-text-secondary hover:border-accent/40 hover:bg-accent/10 hover:text-accent"
+                        ? "border-emerald-500/30 bg-emerald-500/10"
+                        : "border-white/8 bg-white/[0.03] hover:border-accent/40 hover:bg-accent/10"
                     )}
                   >
-                    {added && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5"/></svg>}
-                    @{c.username}
-                    <span className={cn("rounded-full border px-1.5 py-px text-[9px] leading-none", pClass)}>{c.platform}</span>
+                    <div className={cn("h-8 w-8 shrink-0 overflow-hidden rounded-full ring-1", added ? "ring-emerald-500/40" : "ring-white/10")}>
+                      <AvatarPlaceholder username={c.username} size="sm" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn("truncate text-xs font-medium", added ? "text-emerald-400" : "text-text-primary")}>
+                          {added && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="mr-1 inline-block"><path d="M20 6L9 17l-5-5"/></svg>}
+                          @{c.username}
+                        </span>
+                      </div>
+                      <span className={cn("mt-0.5 inline-block rounded-full border px-1.5 py-px text-[9px] leading-none", pClass)}>{c.platform}</span>
+                    </div>
                   </button>
                 )
               })}
@@ -459,7 +441,7 @@ function ImportUrlPanel({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: ["performer-stats"] })
       qc.invalidateQueries({ queryKey: ["capture-queue"] })
       addToast(`Imported @${p.username} — capture queued`, "success")
-      api.enrichPerformer(p.id).then(() => qc.invalidateQueries({ queryKey: ["performers"] })).catch(() => {})
+      api.enrichPerformer(p.id).then(() => qc.invalidateQueries({ queryKey: ["performers"] })).catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
       onClose()
     },
     onError: () => addToast("Import failed -- check the URL format", "error"),
@@ -510,7 +492,7 @@ function BulkImportPanel({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: ["capture-queue"] })
       addToast(`Created ${result.created}, skipped ${result.skipped} — capture queued for new creators`, "success")
       result.performers.forEach((p) => {
-        api.enrichPerformer(p.id).catch(() => {})
+        api.enrichPerformer(p.id).catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
       })
       onClose()
     },
@@ -664,7 +646,7 @@ function CaptureQueuePanel({ queueData }: { queueData?: { queue: CaptureQueueEnt
 
 /* ── Performer Card ────────────────────────────────────────────────────── */
 
-function PerformerCard({
+const PerformerCard = memo(function PerformerCard({
   performer,
   onSelect,
   onTagClick,
@@ -686,24 +668,9 @@ function PerformerCard({
   cardRef?: React.Ref<HTMLDivElement>
 }) {
   const qc = useQueryClient()
-  const addToast = useAppStore((s) => s.addToast)
   const setMediaCreator = useAppStore((s) => s.setMediaCreator)
   const setActiveView = useAppStore((s) => s.setActiveView)
-  const [capturing, setCapturing] = useState(false)
-  const [enriching, setEnriching] = useState(false)
   const [hovered, setHovered] = useState(false)
-  const [showNotes, setShowNotes] = useState(false)
-  const [notesDraft, setNotesDraft] = useState("")
-
-  const notesMutation = useMutation({
-    mutationFn: (notes: string) => api.updatePerformer(performer.id, { notes }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["performers"] })
-      addToast("Notes saved", "success")
-      setShowNotes(false)
-    },
-    onError: () => addToast("Failed to save notes", "error"),
-  })
 
   function handleViewMedia(e: React.MouseEvent) {
     e.stopPropagation()
@@ -720,59 +687,11 @@ function PerformerCard({
     },
   })
 
-  const subMutation = useMutation({
-    mutationFn: () => {
-      const newSub = performer.is_subscribed === 1 ? 0 : 1
-      const updates: Record<string, unknown> = { is_subscribed: newSub }
-      if (newSub === 1) updates.subscription_renewed_at = new Date().toISOString()
-      return api.updatePerformer(performer.id, updates as Parameters<typeof api.updatePerformer>[1])
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["performers"] })
-      qc.invalidateQueries({ queryKey: ["performer-stats"] })
-    },
-  })
-
-  async function handleRefreshAvatar(e: React.MouseEvent) {
-    e.stopPropagation()
-    setEnriching(true)
-    try {
-      await api.enrichPerformer(performer.id)
-      qc.invalidateQueries({ queryKey: ["performers"] })
-    } catch {
-      // silent — enrich is best-effort
-    } finally {
-      setEnriching(false)
-    }
-  }
-
-  async function handleQuickCapture(e: React.MouseEvent) {
-    e.stopPropagation()
-    setCapturing(true)
-    try {
-      await api.capturePerformerMedia(performer.id)
-      addToast(`Capture queued for @${performer.username}`, "success")
-      qc.invalidateQueries({ queryKey: ["capture-queue"] })
-    } catch {
-      addToast("Capture failed", "error")
-    } finally {
-      setCapturing(false)
-    }
-  }
-
   const tags = parseTags(performer.tags)
   const platformClass = PLATFORM_COLORS[performer.platform] ?? "bg-white/10 text-text-secondary border-white/10"
   const handlePrefetch = useCallback(() => {
     prefetchPerformerProfile(qc, performer.id)
   }, [qc, performer.id])
-
-  function daysAgo(dateStr: string): string {
-    const d = new Date(dateStr)
-    const diff = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24))
-    if (diff === 0) return "today"
-    if (diff === 1) return "1d ago"
-    return `${diff}d ago`
-  }
 
   return (
     <div
@@ -790,11 +709,11 @@ function PerformerCard({
         role="button"
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onSelect(performer.id) }}
-        className="w-full cursor-pointer p-4 text-left"
+        className="w-full cursor-pointer px-3 py-2.5 text-left"
       >
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3.5">
           {/* Avatar */}
-          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-white/10">
+          <div className="relative h-14 w-14 shrink-0">
             {selectMode && (
               <button
                 onClick={(e) => { e.stopPropagation(); onToggleSelect?.(performer.id) }}
@@ -809,49 +728,38 @@ function PerformerCard({
                 {selected && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="m-auto"><path d="M20 6L9 17l-5-5"/></svg>}
               </button>
             )}
-            {performer.avatar_url || performer.avatar_local ? (
-              <img
-                src={performer.avatar_local ?? performer.avatar_url ?? ""}
-                alt={performer.username}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-xl font-bold text-text-muted">
-                {performer.username.charAt(0).toUpperCase()}
-              </div>
-            )}
+            <div className={cn(
+              "h-full w-full overflow-hidden rounded-full ring-2 shadow-lg shadow-black/20",
+              performer.is_favorite ? "ring-rose-500/40" : "ring-white/10"
+            )}>
+              {performer.avatar_local || performer.avatar_url ? (
+                <img
+                  src={performer.avatar_local ?? performer.avatar_url ?? ""}
+                  alt={performer.username}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <AvatarPlaceholder username={performer.username} size="md" />
+              )}
+            </div>
             {performer.status === "active" && (
-              <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#0a1628] bg-emerald-400" title="Active" />
+              <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-[#0a1628] bg-emerald-400 shadow-sm shadow-emerald-400/40" title="Active" />
             )}
             {isInQueue && !selectMode && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-[#0a1628]/60">
+              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-[#0a1628]/60">
                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
               </div>
             )}
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="truncate text-sm font-semibold text-text-primary">@{performer.username}</span>
+            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+              <span className="min-w-0 max-w-full truncate text-sm font-semibold text-text-primary">@{performer.username}</span>
               {performer.is_verified === 1 && (
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 text-accent">
                   <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
                 </svg>
               )}
-              {performer.is_subscribed === 1 && (() => {
-                if (performer.subscription_renewed_at) {
-                  const daysUntil = Math.round(
-                    (new Date(performer.subscription_renewed_at).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24)
-                  )
-                  if (daysUntil < 0) return (
-                    <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[9px] font-medium text-red-400 border border-red-500/30" title="Subscription overdue">⚡ overdue</span>
-                  )
-                  if (daysUntil <= 7) return (
-                    <span className="rounded-full bg-orange-500/20 px-1.5 py-0.5 text-[9px] font-medium text-orange-400 border border-orange-500/30" title={`Renews in ${daysUntil} days`}>⚡ {daysUntil}d</span>
-                  )
-                }
-                return <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400 border border-emerald-500/30">✓ Sub'd</span>
-              })()}
             </div>
             {performer.display_name && (
               <p className="truncate text-xs text-text-secondary">{performer.display_name}</p>
@@ -872,19 +780,6 @@ function PerformerCard({
                   {performer.platform}
                 </span>
               )}
-              {performer.subscription_price != null && (
-                <span className="rounded-full bg-sky-500/20 border border-sky-500/30 px-1.5 py-0.5 text-[10px] text-sky-300">
-                  ${performer.subscription_price}/mo
-                </span>
-              )}
-              {performer.is_subscribed === 1 && performer.subscription_renewed_at && (() => {
-                const nextRenewal = new Date(new Date(performer.subscription_renewed_at).getTime() + 30 * 24 * 60 * 60 * 1000)
-                const daysUntil = Math.round((nextRenewal.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-                if (daysUntil >= 0 && daysUntil > 7) {
-                  return <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[9px] text-white/30" title="Next renewal date">{nextRenewal.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-                }
-                return null
-              })()}
               {tags.slice(0, 2).map((t) => (
                 <button
                   key={t}
@@ -901,62 +796,6 @@ function PerformerCard({
 
           <div className="flex shrink-0 flex-col items-end gap-1.5">
             <div className="flex items-center gap-0.5">
-              <div className="relative">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setNotesDraft(performer.notes ?? "")
-                    setShowNotes((v) => !v)
-                  }}
-                  className={cn(
-                    "rounded-lg p-1 transition-colors hover:bg-white/10",
-                    performer.notes ? "text-amber-400/70 hover:text-amber-400" : "text-text-muted/40 hover:text-text-muted"
-                  )}
-                  title={showNotes ? "Close notes" : (performer.notes ? "Edit notes" : "Add notes")}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/>
-                  </svg>
-                </button>
-                {showNotes && (
-                  <div
-                    className="absolute right-0 top-8 z-30 w-64 rounded-xl border border-white/15 bg-[#0d1a30] p-3 shadow-2xl"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <textarea
-                      autoFocus
-                      value={notesDraft}
-                      onChange={(e) => setNotesDraft(e.target.value)}
-                      rows={4}
-                      placeholder="Add notes…"
-                      className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-accent/60 focus:outline-none"
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") { e.stopPropagation(); setShowNotes(false) }
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                          e.stopPropagation()
-                          notesMutation.mutate(notesDraft)
-                        }
-                      }}
-                    />
-                    <div className="mt-2 flex items-center justify-end gap-2">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setShowNotes(false) }}
-                        className="text-xs text-text-muted hover:text-text-secondary"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); notesMutation.mutate(notesDraft) }}
-                        disabled={notesMutation.isPending}
-                        className="rounded-lg bg-accent px-2.5 py-1 text-xs text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-                      >
-                        {notesMutation.isPending ? "Saving…" : "Save"}
-                      </button>
-                    </div>
-                    <p className="mt-1.5 text-[9px] text-text-muted">⌘↵ to save · Esc to close</p>
-                  </div>
-                )}
-              </div>
               <button
                 onClick={(e) => { e.stopPropagation(); favMutation.mutate() }}
                 className="rounded-lg p-1 transition-colors hover:bg-white/10"
@@ -967,23 +806,12 @@ function PerformerCard({
                 </svg>
               </button>
             </div>
-            <div className="flex flex-col items-end gap-1">
-              {(performer.media_count ?? 0) > 0 && (
-                <span className="text-[10px] text-text-muted">{performer.media_count} media</span>
-              )}
-              {(performer.screenshots_count ?? 0) > 0 && (
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                  {performer.screenshots_count} shots
-                </span>
-              )}
-              {performer.last_checked_at ? (() => {
-                const diff = Math.floor((Date.now() - new Date(performer.last_checked_at).getTime()) / (1000 * 60 * 60 * 24))
-                const color = diff === 0 ? "text-emerald-400" : diff <= 3 ? "text-white/50" : diff <= 7 ? "text-amber-400" : "text-red-400"
-                return <span className={cn("text-[10px]", color)}>{daysAgo(performer.last_checked_at)}</span>
-              })() : (
-                <span className="text-[10px] text-red-400/60">never</span>
-              )}
-            </div>
+            {(performer.media_count ?? 0) > 0 && (
+              <span className="flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="opacity-50"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                {performer.media_count}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -994,7 +822,7 @@ function PerformerCard({
       )}
 
       {/* Quick action bar */}
-      <div className="flex items-center justify-between border-t border-white/5 px-4 py-2 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="flex items-center justify-between border-t border-white/5 px-3 py-1.5 opacity-0 transition-opacity group-hover:opacity-100">
         <div className="flex gap-2">
           {performer.reddit_username && (
             <a
@@ -1021,20 +849,19 @@ function PerformerCard({
         </div>
         <div className="flex items-center gap-1">
           {performer.profile_url && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                navigator.clipboard.writeText(performer.profile_url!)
-                addToast(`@${performer.username} URL copied`, "success")
-              }}
+            <a
+              href={performer.profile_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
               className="flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-text-muted transition-colors hover:bg-white/10 hover:text-text-secondary"
-              title="Copy profile URL"
+              title="Visit profile"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
               </svg>
-              Copy
-            </button>
+              Profile
+            </a>
           )}
           <button
             onClick={handleViewMedia}
@@ -1044,56 +871,23 @@ function PerformerCard({
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
             Media
           </button>
-          <button
-            onClick={handleRefreshAvatar}
-            disabled={enriching}
-            className="flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-text-muted transition-colors hover:bg-white/10 hover:text-text-secondary disabled:opacity-40"
-            title="Refresh avatar from Redgifs"
-          >
-            {enriching ? (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            ) : (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-            )}
-            Avatar
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); subMutation.mutate() }}
-            disabled={subMutation.isPending}
-            className={cn(
-              "flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] transition-colors disabled:opacity-40",
-              performer.is_subscribed === 1
-                ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
-                : "bg-white/5 text-text-muted hover:bg-white/10 hover:text-emerald-400"
-            )}
-            title={performer.is_subscribed === 1 ? "Mark as unsubscribed" : "Mark as subscribed (sets today as renewal date)"}
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill={performer.is_subscribed === 1 ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
-            {performer.is_subscribed === 1 ? "Sub'd" : "Subscribe"}
-          </button>
-          <button
-            onClick={handleQuickCapture}
-            disabled={capturing || isInQueue}
-            className={cn(
-              "flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] transition-colors disabled:opacity-40",
-              isInQueue
-                ? "bg-accent/10 text-accent"
-                : "bg-white/5 text-text-muted hover:bg-white/10 hover:text-text-secondary"
-            )}
-            title={isInQueue ? "Already in capture queue" : "Queue capture"}
-          >
-            {capturing || isInQueue ? (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            ) : (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-            )}
-            {capturing ? "Starting…" : isInQueue ? "Queued" : "Capture"}
-          </button>
         </div>
       </div>
     </div>
   )
-}
+}, (prev, next) =>
+  prev.performer.id === next.performer.id &&
+  prev.selected === next.selected &&
+  prev.isInQueue === next.isInQueue &&
+  prev.isFocused === next.isFocused &&
+  prev.selectMode === next.selectMode &&
+  prev.performer.is_favorite === next.performer.is_favorite &&
+  prev.performer.is_subscribed === next.performer.is_subscribed &&
+  prev.performer.media_count === next.performer.media_count &&
+  prev.performer.screenshots_count === next.performer.screenshots_count &&
+  prev.performer.avatar_url === next.performer.avatar_url &&
+  prev.performer.avatar_local === next.performer.avatar_local
+)
 
 /* ── Analytics Panel ───────────────────────────────────────────────────── */
 
@@ -1136,11 +930,11 @@ function BillingRow({
         onClick={() => onSelect(p.id)}
         className="flex min-w-0 flex-1 items-center gap-3 text-left"
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/10 text-sm font-semibold text-text-muted">
+        <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full ring-1 ring-white/10">
           {p.avatar_local || p.avatar_url ? (
             <img src={p.avatar_local ?? p.avatar_url ?? ""} alt="" className="h-full w-full object-cover" />
           ) : (
-            p.username.charAt(0).toUpperCase()
+            <AvatarPlaceholder username={p.username} size="sm" />
           )}
         </div>
         <div className="min-w-0 flex-1">
@@ -1325,7 +1119,7 @@ function PerformerThumbs({ performerId, username, visible }: { performerId: numb
   if (shots.length === 0) return null
 
   return (
-    <div className="flex gap-1 px-4 pb-2.5">
+    <div className="flex gap-1 px-3 pb-2">
       {shots.map((s) => (
         <button
           key={s.id}
@@ -1435,13 +1229,13 @@ function PerformerRow({
 
       {/* Avatar */}
       <div className="relative h-7 w-7 flex-shrink-0">
-        {performer.avatar_url ? (
-          <img src={performer.avatar_url} alt={performer.username} className="h-full w-full rounded-full object-cover" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center rounded-full bg-white/10 text-[10px] text-text-muted">
-            {performer.username[0]?.toUpperCase()}
-          </div>
-        )}
+        <div className="h-full w-full overflow-hidden rounded-full ring-1 ring-white/10">
+          {performer.avatar_local || performer.avatar_url ? (
+            <img src={performer.avatar_local ?? performer.avatar_url ?? ""} alt={performer.username} className="h-full w-full object-cover" />
+          ) : (
+            <AvatarPlaceholder username={performer.username} size="sm" />
+          )}
+        </div>
         {isInQueue && (
           <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-400 ring-1 ring-surface" />
         )}
@@ -1544,6 +1338,106 @@ function PerformerRow({
   )
 }
 
+/* ── More Menu (overflow actions) ─────────────────────────────────────── */
+
+function MoreMenu({
+  showBilling,
+  showAnalytics,
+  selectMode,
+  onBilling,
+  onAnalytics,
+  onImportUrl,
+  onBulkImport,
+  exportUrl,
+  onSelect,
+  onCaptureStale,
+  onCaptureAll,
+}: {
+  showBilling: boolean
+  showAnalytics: boolean
+  selectMode: boolean
+  watchlistCount: number
+  watchlistCapturing: boolean
+  captureAllRunning: boolean
+  onBilling: () => void
+  onAnalytics: () => void
+  onImportUrl: () => void
+  onBulkImport: () => void
+  onExportCsv: () => void
+  exportUrl: string
+  onSelect: () => void
+  onCaptureStale: () => void
+  onCaptureAll: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [open])
+
+  const items: { label: string; onClick: () => void; active?: boolean; href?: string }[] = [
+    { label: "Import URL", onClick: onImportUrl },
+    { label: "Bulk Import", onClick: onBulkImport },
+    { label: "Export CSV", onClick: () => {}, href: exportUrl },
+    { label: selectMode ? "Exit Select" : "Select", onClick: onSelect, active: selectMode },
+    { label: showBilling ? "Hide Billing" : "Billing", onClick: onBilling, active: showBilling },
+    { label: showAnalytics ? "Hide Analytics" : "Analytics", onClick: onAnalytics, active: showAnalytics },
+    { label: "Capture Stale", onClick: onCaptureStale },
+    { label: "Capture All", onClick: onCaptureAll },
+  ]
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "flex h-8 w-8 items-center justify-center rounded-xl border transition-colors",
+          open ? "border-white/20 bg-white/10 text-text-primary" : "border-white/10 text-text-muted hover:text-text-primary hover:bg-white/5"
+        )}
+        aria-label="More actions"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-xl border border-white/10 bg-[#0d1a30] py-1 shadow-2xl">
+          {items.map((item) =>
+            item.href ? (
+              <a
+                key={item.label}
+                href={item.href}
+                download="creators.csv"
+                onClick={() => setOpen(false)}
+                className="block px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-white/5 hover:text-text-primary"
+              >
+                {item.label}
+              </a>
+            ) : (
+              <button
+                key={item.label}
+                onClick={() => { item.onClick(); setOpen(false) }}
+                className={cn(
+                  "block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-white/5",
+                  item.active ? "text-accent" : "text-text-secondary hover:text-text-primary"
+                )}
+              >
+                {item.label}
+              </button>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ── Main Page ─────────────────────────────────────────────────────────── */
 
 export default function PerformersPage() {
@@ -1555,7 +1449,7 @@ export default function PerformersPage() {
   const [showBilling, setShowBilling] = useState(false)
   const [search, setSearch] = useState("")
   const [platformFilter, setPlatformFilter] = useState<string>("all")
-  const [sort, setSort] = useState<SortOption>("newest")
+  const [sort, setSort] = useState<SortOption>("most_media")
   const [favOnly, setFavOnly] = useState(false)
   const [dueOnly, setDueOnly] = useState(false)
   const [renewingOnly, setRenewingOnly] = useState(false)
@@ -1569,6 +1463,7 @@ export default function PerformersPage() {
   const [queueReady, setQueueReady] = useState(false)
   const [tableView, setTableView] = useState(() => localStorage.getItem("performers-view") === "table")
   const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [showTagCloud, setShowTagCloud] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const focusedCardRef = useRef<HTMLDivElement>(null)
 
@@ -1624,11 +1519,12 @@ export default function PerformersPage() {
     }
   }, [])
 
+  const { data: statsData } = useCreatorStats()
+
   const { data: analyticsData } = useQuery({
     queryKey: ["performer-analytics"],
     queryFn: () => api.performerAnalytics(),
     staleTime: 5 * 60_000,
-    enabled: showAnalytics,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
@@ -1695,26 +1591,17 @@ export default function PerformersPage() {
   const [visibleLimit, setVisibleLimit] = useState(24)
 
   // Debounce search to avoid firing a query on every keystroke
-  const [debouncedSearch, setDebouncedSearch] = useState(search)
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => {
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
-    searchDebounceRef.current = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current) }
-  }, [search])
+  const debouncedSearch = useDebounce(search, 300)
 
   const activeFilterSummary = useMemo(() => {
     const labels: string[] = []
     if (debouncedSearch.trim()) labels.push(`Search: "${debouncedSearch.trim()}"`)
     if (platformFilter !== "all") labels.push(platformFilter)
     if (favOnly) labels.push("Favorites")
-    if (dueOnly) labels.push("Due")
-    if (renewingOnly) labels.push("Renewing")
-    if (subscribedOnly) labels.push("Subscribed")
     if (tagFilter) labels.push(`#${tagFilter}`)
-    if (sort !== "newest") labels.push(`Sort: ${sort.replace(/_/g, " ")}`)
+    if (sort !== "most_media") labels.push(`Sort: ${sort.replace(/_/g, " ")}`)
     return labels
-  }, [debouncedSearch, platformFilter, favOnly, dueOnly, renewingOnly, subscribedOnly, tagFilter, sort])
+  }, [debouncedSearch, platformFilter, favOnly, tagFilter, sort])
 
   // Reset visible limit when filters change
   const filterKey = `${debouncedSearch}|${platformFilter}|${sort}|${favOnly}|${dueOnly}|${renewingOnly}|${subscribedOnly}|${tagFilter}`
@@ -1744,10 +1631,12 @@ export default function PerformersPage() {
     if (favOnly) params.is_favorite = true
     if (dueOnly) params.stale_days = 7
     if (renewingOnly) params.renewing_only = true
+    if (subscribedOnly) params.is_subscribed = true
+    if (tagFilter) params.tags = tagFilter
     return params
-  }, [debouncedSearch, platformFilter, sort, favOnly, dueOnly, renewingOnly])
+  }, [debouncedSearch, platformFilter, sort, favOnly, dueOnly, renewingOnly, subscribedOnly, tagFilter])
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["performers", queryParams],
     queryFn: () => api.browsePerformers(queryParams),
     staleTime: 30_000,
@@ -1770,6 +1659,15 @@ export default function PerformersPage() {
   const handleTagClick = useCallback((tag: string) => {
     runUiTransition(() => setTagFilter(tag))
   }, [runUiTransition])
+
+  const handleCardSelect = useCallback((id: number, idx: number) => {
+    setFocusedIdx(idx)
+    if (selectMode) {
+      toggleSelect(id)
+    } else {
+      runUiTransition(() => setSelectedPerformerId(id))
+    }
+  }, [selectMode, runUiTransition])
 
   useEffect(() => {
     const el = loadMoreRef.current
@@ -1834,7 +1732,7 @@ export default function PerformersPage() {
             qcMain.invalidateQueries({ queryKey: ["performers"] })
             qcMain.invalidateQueries({ queryKey: ["performer-stats"] })
           })
-          .catch(() => {})
+          .catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
       } else if (e.key === "c" && focusedIdx >= 0 && performers[focusedIdx]) {
         e.preventDefault()
         const p = performers[focusedIdx]
@@ -1858,125 +1756,66 @@ export default function PerformersPage() {
   }, [focusedIdx])
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6 pb-24">
+    <div className="mx-auto max-w-6xl space-y-4 p-6 pb-24">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-text-primary">Creators</h1>
-          <p className="mt-1 text-sm text-text-secondary">Track and manage content creators</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
-              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-            </svg>
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search creators... (/)"
-              className="w-48 rounded-xl border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
-            />
+      <div className="flex items-center gap-3">
+        <h1 className="text-lg font-semibold text-text-primary">Creators</h1>
+        {statsData && (
+          <div className="flex items-center gap-3 text-xs text-text-muted">
+            <span><span className="font-mono font-medium text-text-secondary">{statsData.total ?? 0}</span> total</span>
+            {(statsData.with_media ?? 0) > 0 && (
+              <span><span className="font-mono font-medium text-text-secondary">{statsData.with_media}</span> with media</span>
+            )}
           </div>
-          <button
-            onClick={() => runUiTransition(() => { setShowBilling(!showBilling); setShowAnalytics(false) })}
-            className={cn(
-              "rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
-              showBilling
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                : "border-white/10 text-text-secondary hover:text-text-primary"
-            )}
-          >
-            {showBilling ? "Hide Billing" : "Billing"}
-          </button>
-          <button
-            onClick={() => runUiTransition(() => { setShowAnalytics(!showAnalytics); setShowBilling(false) })}
-            className={cn(
-              "rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
-              showAnalytics
-                ? "border-accent/40 bg-accent/15 text-accent"
-                : "border-white/10 text-text-secondary hover:text-text-primary"
-            )}
-          >
-            {showAnalytics ? "Hide Analytics" : "Analytics"}
-          </button>
-          <button
-            onClick={() => runUiTransition(() => setShowDiscover(true))}
-            className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
-          >
-            Discover
-          </button>
-          <button
-            onClick={() => runUiTransition(() => { setShowImportUrl(!showImportUrl); setShowBulkImport(false); setShowAdd(false) })}
-            className="rounded-xl border border-white/10 px-3 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary"
-          >
-            Import URL
-          </button>
-          <button
-            onClick={() => runUiTransition(() => { setShowBulkImport(!showBulkImport); setShowImportUrl(false); setShowAdd(false) })}
-            className="rounded-xl border border-white/10 px-3 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary"
-          >
-            Bulk Import
-          </button>
-          <a
-            href={api.exportPerformersUrl()}
-            download="creators.csv"
-            className="rounded-xl border border-white/10 px-3 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary"
-          >
-            Export CSV
-          </a>
-          <button
-            onClick={() => runUiTransition(() => { setSelectMode((v) => !v); setSelectedIds(new Set()) })}
-            className={cn(
-              "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm transition-colors",
-              selectMode
-                ? "border-accent/40 bg-accent/10 text-accent"
-                : "border-white/10 text-text-secondary hover:text-text-primary"
-            )}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>
-            Select
-          </button>
-          <button
-            onClick={() => {
-              api.captureStale().then((r) => {
-                addToast(`Queued ${r.queued} stale creators for capture`, "success")
-                qcMain.invalidateQueries({ queryKey: ["capture-queue"] })
-              }).catch(() => addToast("Failed to queue stale captures", "error"))
-            }}
-            className="flex items-center gap-1.5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm text-amber-400 transition-colors hover:bg-amber-500/10"
-            title="Capture all creators not checked in 7+ days"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            Capture Stale
-          </button>
-          {watchlistCount > 0 && (
-            <button
-              onClick={handleCaptureWatchlist}
-              disabled={watchlistCapturing}
-              title={`Capture content for all ${watchlistCount} favorited creators`}
-              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50 whitespace-nowrap"
-            >
-              {watchlistCapturing ? "Capturing…" : `♥ Capture ${watchlistCount}`}
-            </button>
-          )}
-          <button
-            onClick={handleCaptureAll}
-            disabled={captureAllRunning}
-            title="Capture fresh content for all active creators"
-            className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-sm font-medium text-violet-300 transition-colors hover:bg-violet-500/20 disabled:opacity-50 whitespace-nowrap"
-          >
-            {captureAllRunning ? "Queuing…" : "Capture All"}
-          </button>
-          <button
-            onClick={() => runUiTransition(() => { setShowAdd(!showAdd); setShowImportUrl(false); setShowBulkImport(false) })}
-            className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-            data-add-performer
-          >
-            {showAdd ? "Close" : "Add Creator"}
-          </button>
+        )}
+        <div className="relative ml-auto">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search... (/)"
+            className="w-44 rounded-xl border border-white/10 bg-white/5 py-1.5 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+          />
         </div>
+        <button
+          onClick={() => runUiTransition(() => setShowDiscover(true))}
+          className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
+        >
+          Discover
+        </button>
+        <button
+          onClick={() => runUiTransition(() => { setShowAdd(!showAdd); setShowImportUrl(false); setShowBulkImport(false) })}
+          className="rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+          data-add-performer
+        >
+          {showAdd ? "Close" : "Add Creator"}
+        </button>
+        <MoreMenu
+          showBilling={showBilling}
+          showAnalytics={showAnalytics}
+          selectMode={selectMode}
+          watchlistCount={watchlistCount}
+          watchlistCapturing={watchlistCapturing}
+          captureAllRunning={captureAllRunning}
+          onBilling={() => runUiTransition(() => { setShowBilling(!showBilling); setShowAnalytics(false) })}
+          onAnalytics={() => runUiTransition(() => { setShowAnalytics(!showAnalytics); setShowBilling(false) })}
+          onImportUrl={() => runUiTransition(() => { setShowImportUrl(!showImportUrl); setShowBulkImport(false); setShowAdd(false) })}
+          onBulkImport={() => runUiTransition(() => { setShowBulkImport(!showBulkImport); setShowImportUrl(false); setShowAdd(false) })}
+          onExportCsv={() => {}}
+          exportUrl={api.exportPerformersUrl()}
+          onSelect={() => runUiTransition(() => { setSelectMode((v) => !v); setSelectedIds(new Set()) })}
+          onCaptureStale={() => {
+            api.captureStale().then((r) => {
+              addToast(`Queued ${r.queued} stale creators for capture`, "success")
+              qcMain.invalidateQueries({ queryKey: ["capture-queue"] })
+            }).catch(() => addToast("Failed to queue stale captures", "error"))
+          }}
+          onCaptureAll={handleCaptureAll}
+        />
       </div>
 
       {/* Discovery modal */}
@@ -1990,9 +1829,6 @@ export default function PerformersPage() {
 
       {/* Bulk Import */}
       {showBulkImport && <BulkImportPanel onClose={() => runUiTransition(() => setShowBulkImport(false))} />}
-
-      {/* Stats */}
-      <StatsBar onRenewingClick={() => runUiTransition(() => setRenewingOnly((v) => !v))} />
 
       {activeFilterSummary.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-xs text-text-secondary">
@@ -2009,7 +1845,7 @@ export default function PerformersPage() {
             onClick={() => runUiTransition(() => {
               setSearch("")
               setPlatformFilter("all")
-              setSort("newest")
+              setSort("most_media")
               setFavOnly(false)
               setDueOnly(false)
               setRenewingOnly(false)
@@ -2057,13 +1893,9 @@ export default function PerformersPage() {
           onChange={(e) => runUiTransition(() => setSort(e.target.value as SortOption))}
           className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-text-secondary focus:border-accent focus:outline-none"
         >
+          <option value="most_media">Most Content</option>
           <option value="newest">Newest</option>
           <option value="az">A-Z</option>
-          <option value="most_media">Most Media</option>
-          <option value="screenshots_count">Most Shots</option>
-          <option value="last_checked_at">Recently Checked</option>
-          <option value="subscription_price">Price</option>
-          <option value="subscription_renewed_at">Renewal Date</option>
         </select>
 
         <button
@@ -2079,52 +1911,6 @@ export default function PerformersPage() {
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
           </svg>
           Favorites
-        </button>
-
-        <button
-          onClick={() => runUiTransition(() => setDueOnly(!dueOnly))}
-          className={cn(
-            "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs transition-colors",
-            dueOnly
-              ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-              : "border-white/10 text-text-muted hover:text-text-secondary"
-          )}
-          title="Show creators not checked in 7+ days"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
-          </svg>
-          Due
-        </button>
-        <button
-          onClick={() => runUiTransition(() => setRenewingOnly(!renewingOnly))}
-          className={cn(
-            "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs transition-colors",
-            renewingOnly
-              ? "border-orange-500/30 bg-orange-500/10 text-orange-400"
-              : "border-white/10 text-text-muted hover:text-text-secondary"
-          )}
-          title="Show subscriptions renewing within 7 days"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 16h5v5" />
-          </svg>
-          Renewing
-        </button>
-        <button
-          onClick={() => runUiTransition(() => setSubscribedOnly(!subscribedOnly))}
-          className={cn(
-            "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs transition-colors",
-            subscribedOnly
-              ? "border-sky-500/30 bg-sky-500/10 text-sky-400"
-              : "border-white/10 text-text-muted hover:text-text-secondary"
-          )}
-          title="Show subscribed creators only"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill={subscribedOnly ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-          </svg>
-          Subscribed
         </button>
 
         {/* View toggle */}
@@ -2150,19 +1936,31 @@ export default function PerformersPage() {
         </div>
       </div>
 
-      {/* Tag filter strip */}
+      {/* Tag filter strip — collapsed by default */}
       {tagCloud.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           {tagFilter && (
             <button
-            onClick={() => runUiTransition(() => setTagFilter(null))}
+              onClick={() => runUiTransition(() => setTagFilter(null))}
               className="flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[11px] font-medium text-accent hover:bg-accent/20 transition-colors"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
               {tagFilter}
             </button>
           )}
-          {tagCloud
+          <button
+            onClick={() => setShowTagCloud((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+              showTagCloud
+                ? "border-white/15 bg-white/5 text-text-secondary"
+                : "border-white/8 bg-white/[0.03] text-text-muted hover:border-white/15 hover:text-text-secondary"
+            )}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={cn("transition-transform", showTagCloud ? "rotate-0" : "-rotate-90")}><path d="M6 9l6 6 6-6"/></svg>
+            Tags ({tagCloud.length})
+          </button>
+          {showTagCloud && tagCloud
             .filter((t) => t.tag !== tagFilter)
             .map(({ tag, count }) => (
               <button
@@ -2209,7 +2007,7 @@ export default function PerformersPage() {
               </button>
               <button
                 onClick={() => {
-                  Array.from(selectedIds).forEach((id) => api.enrichPerformer(id).catch(() => {}))
+                  Array.from(selectedIds).forEach((id) => api.enrichPerformer(id).catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error")))
                   addToast(`Refreshing avatars for ${selectedIds.size} creator${selectedIds.size !== 1 ? "s" : ""}…`, "info")
                   clearSelect()
                 }}
@@ -2227,28 +2025,52 @@ export default function PerformersPage() {
       )}
 
       {/* Grid / Table */}
-      {isLoading ? (
+      {error ? (
+        <EmptyState
+          icon="⚠️"
+          title="Couldn't load creators"
+          description="The server is starting up. Try refreshing in a moment."
+          action={{ label: "Retry", onClick: () => refetch() }}
+        />
+      ) : isLoading ? (
         tableView ? (
           <div className="overflow-hidden rounded-2xl border border-white/8">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} variant="card" height="44px" />
+              <div key={i} className="animate-[slideUp_300ms_ease-out_both]" style={{ animationDelay: `${i * 50}ms` }}>
+                <Skeleton variant="card" height="44px" />
+              </div>
             ))}
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} variant="card" height="140px" />
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 9 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-40 rounded-xl border border-white/8 bg-white/[0.03] animate-[slideUp_300ms_ease-out_both]"
+                style={{ animationDelay: `${i * 50}ms` }}
+              >
+                <div className="flex gap-3.5 p-4">
+                  <div className="h-14 w-14 shrink-0 animate-pulse rounded-full bg-white/10 ring-2 ring-white/5" />
+                  <div className="flex-1 space-y-2 pt-1">
+                    <div className="h-3.5 w-24 animate-pulse rounded bg-white/10" />
+                    <div className="h-3 w-16 animate-pulse rounded bg-white/[0.06]" />
+                    <div className="flex gap-1.5 pt-1">
+                      <div className="h-4 w-14 animate-pulse rounded-full bg-white/[0.06]" />
+                      <div className="h-4 w-10 animate-pulse rounded-full bg-white/[0.06]" />
+                    </div>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         )
       ) : filteredPerformers.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-white/8 bg-white/[0.02] py-16">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mb-3 text-text-muted">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
-          </svg>
-          <p className="text-sm text-text-muted">No creators found</p>
-          <p className="mt-1 text-xs text-text-muted">Add your first creator to get started</p>
-        </div>
+        <EmptyState
+          icon="👤"
+          title="No creators yet"
+          description="Add creators to start tracking their content"
+          action={{ label: "Add Creator", onClick: () => runUiTransition(() => { setShowAdd(true); setShowImportUrl(false); setShowBulkImport(false) }) }}
+        />
       ) : tableView ? (
         <div className="overflow-hidden rounded-2xl border border-white/8">
           {/* Table header */}
@@ -2283,7 +2105,7 @@ export default function PerformersPage() {
             <PerformerRow
               key={p.id}
               performer={p}
-              onSelect={(id) => { setFocusedIdx(idx); selectMode ? toggleSelect(id) : runUiTransition(() => setSelectedPerformerId(id)) }}
+              onSelect={(id) => handleCardSelect(id, idx)}
               selected={selectedIds.has(p.id)}
               onToggleSelect={toggleSelect}
               selectMode={selectMode}
@@ -2292,20 +2114,42 @@ export default function PerformersPage() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {/* Discover CTA card */}
+          {!selectMode && !search && platformFilter === "all" && !tagFilter && (
+            <button
+              onClick={() => runUiTransition(() => setShowDiscover(true))}
+              className="group/cta flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-accent/30 bg-gradient-to-br from-accent/5 via-transparent to-violet-500/5 p-6 text-center transition-all hover:border-accent/50 hover:from-accent/10 hover:to-violet-500/10 hover:shadow-lg hover:shadow-accent/5 animate-[slideUp_300ms_ease-out_both]"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/15 text-accent transition-transform group-hover/cta:scale-110">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /><path d="M11 8v6M8 11h6" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-text-primary">Discover Creators</p>
+                <p className="mt-0.5 text-[11px] text-text-muted">Find new creators with AI-powered search</p>
+              </div>
+            </button>
+          )}
           {performers.map((p, idx) => (
-            <PerformerCard
+            <div
               key={p.id}
-              performer={p}
-              onSelect={(id) => { setFocusedIdx(idx); selectMode ? toggleSelect(id) : runUiTransition(() => setSelectedPerformerId(id)) }}
-              onTagClick={handleTagClick}
-              selected={selectedIds.has(p.id)}
-              onToggleSelect={toggleSelect}
-              selectMode={selectMode}
-              isInQueue={activePerformerIds.has(p.id)}
-              isFocused={focusedIdx === idx}
-              cardRef={focusedIdx === idx ? focusedCardRef : undefined}
-            />
+              className="animate-[slideUp_300ms_ease-out_both]"
+              style={{ animationDelay: `${Math.min(idx * 30, 600)}ms` }}
+            >
+              <PerformerCard
+                performer={p}
+                onSelect={(id) => handleCardSelect(id, idx)}
+                onTagClick={handleTagClick}
+                selected={selectedIds.has(p.id)}
+                onToggleSelect={toggleSelect}
+                selectMode={selectMode}
+                isInQueue={activePerformerIds.has(p.id)}
+                isFocused={focusedIdx === idx}
+                cardRef={focusedIdx === idx ? focusedCardRef : undefined}
+              />
+            </div>
           ))}
         </div>
       )}
