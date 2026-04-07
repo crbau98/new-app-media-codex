@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sqlite3
 from contextlib import contextmanager
@@ -1973,34 +1974,63 @@ class Database:
         return self._cached_snapshot(cache_key, 30.0, build)
 
     def backfill_screenshot_performers(self) -> int:
-        """Link unlinked screenshots to performers by matching term against username/display_name/twitter_username.
+        """Link unlinked screenshots to performers when the stored evidence strongly matches their identity."""
+        def normalize_alias(value: str | None) -> str:
+            return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
 
-        Returns the count of screenshots that were updated.
-        """
+        def performer_aliases(row: sqlite3.Row) -> list[str]:
+            aliases: list[str] = []
+            seen: set[str] = set()
+
+            for raw_value in (
+                row["username"],
+                row["display_name"],
+                row["twitter_username"],
+                row["reddit_username"],
+                row["profile_url"] if "profile_url" in row.keys() else None,
+            ):
+                alias = normalize_alias(str(raw_value or "").strip())
+                if len(alias) < 3 or alias in seen:
+                    continue
+                seen.add(alias)
+                aliases.append(alias)
+            return aliases
+
         with self.connect() as conn:
             performers = conn.execute(
-                "SELECT id, username, display_name, twitter_username, reddit_username FROM performers"
+                "SELECT id, username, display_name, twitter_username, reddit_username, profile_url FROM performers"
             ).fetchall()
-        lookup: dict[str, int] = {}
-        for row in performers:
-            lookup[row["username"].lower()] = row["id"]
-            if row["display_name"]:
-                lookup[row["display_name"].lower()] = row["id"]
-            if row["twitter_username"]:
-                lookup[row["twitter_username"].lower()] = row["id"]
-            if row["reddit_username"]:
-                lookup[row["reddit_username"].lower()] = row["id"]
-        if not lookup:
+        if not performers:
             return 0
+        performer_alias_map = {int(row["id"]): performer_aliases(row) for row in performers}
         updated = 0
         with self.connect() as conn:
             unlinked = conn.execute(
-                "SELECT id, term FROM screenshots WHERE performer_id IS NULL"
+                "SELECT id, term, page_url, source_url, thumbnail_url, ai_summary FROM screenshots WHERE performer_id IS NULL"
             ).fetchall()
             for row in unlinked:
-                pid = lookup.get(row["term"].lower())
-                if pid is not None:
-                    conn.execute("UPDATE screenshots SET performer_id = ? WHERE id = ?", (pid, row["id"]))
+                haystack = " ".join(
+                    str(value or "")
+                    for value in (
+                        row["term"],
+                        row["page_url"],
+                        row["source_url"],
+                        row["thumbnail_url"],
+                        row["ai_summary"],
+                    )
+                    if value
+                )
+                compact_haystack = normalize_alias(haystack)
+                if not compact_haystack:
+                    continue
+                matched_pid = None
+                for performer in performers:
+                    aliases = performer_alias_map.get(int(performer["id"])) or []
+                    if any(alias in compact_haystack for alias in aliases):
+                        matched_pid = int(performer["id"])
+                        break
+                if matched_pid is not None:
+                    conn.execute("UPDATE screenshots SET performer_id = ? WHERE id = ?", (matched_pid, row["id"]))
                     updated += 1
             conn.commit()
         if updated:
@@ -2373,34 +2403,6 @@ class Database:
                         fallback = fallback_by_id.get(int(performer["id"]))
                         if fallback:
                             performer["avatar_url"] = fallback
-                    still_missing_ids = [
-                        performer_id
-                        for performer_id in missing_avatar_ids
-                        if performer_id not in fallback_by_id
-                    ]
-                    if still_missing_ids:
-                        placeholders = ",".join("?" for _ in still_missing_ids)
-                        screenshot_rows = conn.execute(
-                            f"SELECT performer_id, source_url, thumbnail_url FROM screenshots "
-                            f"WHERE performer_id IN ({placeholders}) AND ((source_url IS NOT NULL AND source_url != '') OR (thumbnail_url IS NOT NULL AND thumbnail_url != '')) "
-                            f"ORDER BY performer_id, captured_at DESC",
-                            still_missing_ids,
-                        ).fetchall()
-                        for row in screenshot_rows:
-                            performer_id = int(row["performer_id"])
-                            if performer_id in fallback_by_id:
-                                continue
-                            for candidate in (row["source_url"], row["thumbnail_url"]):
-                                candidate_url = str(candidate or "").strip()
-                                if candidate_url.startswith(("http://", "https://")):
-                                    fallback_by_id[performer_id] = candidate_url
-                                    break
-                        for performer in performers:
-                            if performer.get("avatar_url") or performer.get("avatar_local"):
-                                continue
-                            fallback = fallback_by_id.get(int(performer["id"]))
-                            if fallback:
-                                performer["avatar_url"] = fallback
                 if offset == 0:
                     total = conn.execute(f"SELECT COUNT(*) FROM performers {clause}", params).fetchone()[0]
                 else:

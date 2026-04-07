@@ -297,7 +297,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
                 {speed}s
               </button>
               {showSpeedMenu && (
-                <div className="absolute bottom-full mb-2 right-0 rounded-lg border border-white/10 bg-black/90 backdrop-blur-xl p-1 shadow-xl">
+                <div className="absolute bottom-full mb-2 right-0 rounded-lg border border-white/10 bg-black/90 backdrop-blur-lg p-1 shadow-xl">
                   {speeds.map((s) => (
                     <button
                       key={s}

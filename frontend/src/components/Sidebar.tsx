@@ -419,7 +419,7 @@ export function Sidebar() {
       <aside
         style={{ transitionProperty: "width", transitionDuration: "200ms", transitionTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)" }}
         className={cn(
-          "fixed left-0 top-0 z-40 hidden h-screen flex-col border-r border-white/[0.06] bg-bg-base/92 backdrop-blur-lg md:flex",
+          "fixed left-0 top-0 z-40 hidden h-screen flex-col border-r border-white/[0.06] bg-bg-base/92 backdrop-blur-md md:flex",
           collapsed ? "md:w-[72px]" : "md:w-[240px]"
         )}
         aria-label="Main navigation"

@@ -53,7 +53,7 @@ export function AppShell({ children }: AppShellProps) {
   const desktopSidebarOffset = collapsed ? "md:pl-[72px]" : "md:pl-[240px]"
 
   return (
-    <div className="min-h-screen bg-bg-base text-text-primary">
+    <div className="shell-bg min-h-screen bg-bg-base text-text-primary">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:rounded-lg focus:bg-bg-elevated focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-text-primary focus:shadow-lg focus:outline-2 focus:outline-accent"
