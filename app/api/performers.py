@@ -17,6 +17,8 @@ import requests as req
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from app.performer_identity import performer_identity_signature, score_candidate_identity
+
 router = APIRouter(prefix="/api/performers", tags=["performers"])
 
 _FIRST_PAGE_LIMIT_CAP_COMPACT = 36
@@ -290,72 +292,8 @@ def _candidate_avatar_urls(performer: dict) -> list[str]:
     return urls
 
 
-def _normalize_identity_alias(value: str | None) -> str:
-    return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
-
-
-def _performer_identity_aliases(performer: dict) -> list[str]:
-    aliases: list[str] = []
-    seen: set[str] = set()
-
-    def add(value: str | None) -> None:
-        alias = _normalize_identity_alias(value)
-        if len(alias) < 3 or alias in seen:
-            return
-        seen.add(alias)
-        aliases.append(alias)
-
-    add(str(performer.get("username") or "").strip())
-    add(str(performer.get("display_name") or "").strip())
-    add(str(performer.get("twitter_username") or "").strip())
-    add(str(performer.get("reddit_username") or "").strip())
-
-    profile_url = str(performer.get("profile_url") or "").strip()
-    if profile_url:
-        try:
-            _, parsed_username = _parse_profile_url(profile_url)
-            add(parsed_username)
-        except Exception:
-            parts = [part for part in urlparse(profile_url).path.split("/") if part]
-            if parts:
-                add(parts[-1])
-
-    return aliases
-
-
-def _candidate_mentions_identity(candidate: object, aliases: list[str]) -> bool:
-    if not aliases:
-        return False
-
-    if isinstance(candidate, dict):
-        pieces = [
-            candidate.get("title"),
-            candidate.get("source"),
-            candidate.get("url"),
-            candidate.get("image"),
-            candidate.get("page_url"),
-            candidate.get("name"),
-            candidate.get("username"),
-            candidate.get("userName"),
-            candidate.get("display_name"),
-            candidate.get("description"),
-            candidate.get("caption"),
-            candidate.get("summary"),
-            candidate.get("text"),
-        ]
-    else:
-        pieces = [candidate]
-
-    haystack = " ".join(str(piece) for piece in pieces if piece)
-    if not haystack:
-        return False
-
-    compact_haystack = _normalize_identity_alias(haystack)
-    if any(alias in compact_haystack for alias in aliases):
-        return True
-
-    lowered = haystack.lower()
-    return any(re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", lowered) for alias in aliases)
+def _candidate_mentions_identity(candidate: object, performer_signature: dict[str, object]) -> bool:
+    return bool(score_candidate_identity(candidate, performer_signature)["accepted"])
 
 
 # ── Stats (must be before /{id} routes) ────────────────────────────────
@@ -380,53 +318,10 @@ def performer_analytics(request: Request):
 def auto_link_performers(request: Request):
     """Match existing screenshots to performers by strict identity evidence."""
     db = request.app.state.db
-    linked = 0
-    performers_matched = 0
-
-    with db.connect() as conn:
-        performers = conn.execute(
-            "SELECT id, username, display_name, twitter_username, reddit_username, profile_url FROM performers"
-        ).fetchall()
-        screenshots = conn.execute(
-            """
-            SELECT id, term, page_url, source_url, thumbnail_url, ai_summary
-            FROM screenshots
-            WHERE performer_id IS NULL
-            """
-        ).fetchall()
-
-    performer_aliases: dict[int, list[str]] = {
-        int(row["id"]): _performer_identity_aliases(dict(row))
-        for row in performers
-    }
-
-    with db.connect() as conn:
-        for shot in screenshots:
-            shot_payload = {
-                "term": shot["term"],
-                "page_url": shot["page_url"],
-                "source": shot["source_url"],
-                "url": shot["source_url"],
-                "image": shot["thumbnail_url"],
-                "summary": shot["ai_summary"],
-            }
-            for performer in performers:
-                aliases = performer_aliases.get(int(performer["id"])) or []
-                if not _candidate_mentions_identity(shot_payload, aliases):
-                    continue
-                cur = conn.execute(
-                    "UPDATE screenshots SET performer_id = ? WHERE id = ? AND performer_id IS NULL",
-                    (performer["id"], shot["id"]),
-                )
-                if cur.rowcount:
-                    linked += cur.rowcount
-                    performers_matched += 1
-                break
-        conn.commit()
-
+    linked = db.backfill_screenshot_performers()
     if linked:
         _invalidate_performers_cache(request.app.state)
-    return {"linked": linked, "performers_matched": performers_matched}
+    return {"linked": linked, "performers_matched": linked}
 
 
 # ── Search ─────────────────────────────────────────────────────────────
@@ -593,7 +488,7 @@ def _infer_candidate_platform(platform_hint: str | None, sources_blob: str | Non
     return "OnlyFans"
 
 
-def _load_existing_performer_directory(db) -> tuple[list[dict], dict[str, dict], dict[str, dict]]:
+def _load_existing_performer_directory(db) -> tuple[list[dict], dict[str, dict], dict[str, list[dict]]]:
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT id, username, display_name, platform, bio, tags, twitter_username, reddit_username "
@@ -602,12 +497,15 @@ def _load_existing_performer_directory(db) -> tuple[list[dict], dict[str, dict],
 
     performers = [dict(row) for row in rows]
     username_lookup: dict[str, dict] = {}
-    alias_lookup: dict[str, dict] = {}
+    alias_lookup: dict[str, list[dict]] = {}
 
     for performer in performers:
         username = str(performer.get("username") or "").strip()
+        platform_key = _normalize_platform_name(str(performer.get("platform") or "")) or ""
         if username:
             username_lookup[username.lower()] = performer
+            if platform_key:
+                username_lookup[f"{platform_key.lower()}::{username.lower()}"] = performer
         for alias in (
             username,
             performer.get("display_name"),
@@ -615,8 +513,8 @@ def _load_existing_performer_directory(db) -> tuple[list[dict], dict[str, dict],
             performer.get("reddit_username"),
         ):
             normalized_alias = _normalize_creator_alias(str(alias)) if alias else ""
-            if normalized_alias and normalized_alias not in alias_lookup:
-                alias_lookup[normalized_alias] = performer
+            if normalized_alias:
+                alias_lookup.setdefault(normalized_alias, []).append(performer)
 
     return performers, username_lookup, alias_lookup
 
@@ -624,17 +522,36 @@ def _load_existing_performer_directory(db) -> tuple[list[dict], dict[str, dict],
 def _find_existing_performer_match(
     username: str,
     display_name: str | None,
+    platform: str | None,
     username_lookup: dict[str, dict],
-    alias_lookup: dict[str, dict],
+    alias_lookup: dict[str, list[dict]],
 ) -> dict | None:
-    direct = username_lookup.get(username.strip().lower())
+    platform_key = (_normalize_platform_name(platform) or "").lower()
+    direct = username_lookup.get(f"{platform_key}::{username.strip().lower()}") if platform_key else None
+    if not direct:
+        direct = username_lookup.get(username.strip().lower())
     if direct:
         return direct
+    matches: dict[int, dict] = {}
     for alias in (username, display_name or ""):
         normalized_alias = _normalize_creator_alias(alias)
-        if normalized_alias and normalized_alias in alias_lookup:
-            return alias_lookup[normalized_alias]
-    return None
+        if not normalized_alias:
+            continue
+        for performer in alias_lookup.get(normalized_alias, []):
+            matches[int(performer["id"])] = performer
+    if not matches:
+        return None
+    if platform_key:
+        platform_matches = [
+            performer
+            for performer in matches.values()
+            if (_normalize_platform_name(str(performer.get("platform") or "")) or "").lower() == platform_key
+        ]
+        if len(platform_matches) == 1:
+            return platform_matches[0]
+        if len(platform_matches) > 1:
+            return None
+    return next(iter(matches.values())) if len(matches) == 1 else None
 
 
 def _parse_discovery_payload(raw: str) -> dict | list | None:
@@ -814,8 +731,8 @@ def _heuristic_discover_performers(
         if seed_alias and candidate_alias == seed_alias:
             continue
 
-        existing_match = _find_existing_performer_match(username, display_name, username_lookup, alias_lookup)
         normalized_platform = _normalize_platform_name(str(candidate.get("platform") or "")) or desired_platform or "OnlyFans"
+        existing_match = _find_existing_performer_match(username, display_name, normalized_platform, username_lookup, alias_lookup)
         local_hits = int(candidate.get("_local_hits") or 0)
         tags = candidate.get("tags") if isinstance(candidate.get("tags"), list) else []
         candidate_tokens = _tokenize_discovery_text(
@@ -924,8 +841,8 @@ def discover_performers(body: DiscoverBody, request: Request):
         if not username:
             continue
 
-        existing_match = _find_existing_performer_match(username, display_name, username_lookup, alias_lookup)
         normalized_platform = _normalize_platform_name(str(suggestion.get("platform") or "")) or _normalize_platform_name(body.platform) or "OnlyFans"
+        existing_match = _find_existing_performer_match(username, display_name, normalized_platform, username_lookup, alias_lookup)
         tags = suggestion.get("tags") if isinstance(suggestion.get("tags"), list) else []
         normalized_tags = [
             _DISCOVERY_TAG_SYNONYMS.get(str(tag).strip().lower(), str(tag).strip().lower())
@@ -975,7 +892,7 @@ def import_discovered_performers(body: ImportDiscoveredBody, request: Request):
             skipped += 1
             continue
 
-        current = _find_existing_performer_match(username, creator.display_name, username_lookup, alias_lookup)
+        current = _find_existing_performer_match(username, creator.display_name, creator.platform, username_lookup, alias_lookup)
         if current:
             existing.append(current)
             if body.capture_existing:
@@ -1201,11 +1118,7 @@ def get_performer(performer_id: int, request: Request):
     performer["media_count_actual"] = media_result["total"]
     performer["screenshots_count"] = screenshots_count
     if not performer.get("avatar_url") and not performer.get("avatar_local"):
-        for media in media_result.get("items", []):
-            source_url = str(media.get("source_url") or "").strip()
-            if source_url.startswith(("http://", "https://")):
-                performer["avatar_url"] = source_url
-                break
+        performer["avatar_url"] = None
     return performer
 
 
@@ -1367,7 +1280,7 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
         "reddit_username": None,
         "profile_url": None,
     }
-    identity_aliases = _performer_identity_aliases(tracked_performer)
+    performer_signature = performer_identity_signature(tracked_performer)
     # Apply DB-configured vision settings so vision filter calls use the user's key
     _settings = app_state.settings
     if _settings is not None:
@@ -1490,7 +1403,7 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 "title": row.get("title"),
                 "text": row.get("title"),
             }
-            if not _candidate_mentions_identity(candidate, identity_aliases):
+            if not _candidate_mentions_identity(candidate, performer_signature):
                 continue
             ddg_candidates.append(candidate)
         if not ddg_candidates:
@@ -1601,7 +1514,9 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                     "url": video_url,
                     "image": poster_url,
                 }
-                if not _candidate_mentions_identity(candidate, identity_aliases):
+                if not _candidate_mentions_identity(candidate, performer_signature):
+                    continue
+                if not _candidate_mentions_identity(candidate, performer_signature):
                     continue
                 db.insert_screenshot(
                     term=display_name or username,
@@ -1672,6 +1587,17 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
         try:
             for result in ytdlp_results:
                 if result.get("ok"):
+                    candidate = {
+                        "page_url": result.get("page_url", ""),
+                        "url": result.get("source_url", ""),
+                        "image": result.get("thumbnail_url"),
+                        "title": result.get("title"),
+                        "username": result.get("uploader") or result.get("channel"),
+                        "display_name": result.get("uploader"),
+                        "description": result.get("description"),
+                    }
+                    if not _candidate_mentions_identity(candidate, performer_signature):
+                        continue
                     db.insert_screenshot(
                         term=display_name or username,
                         source="ytdlp",
@@ -1679,6 +1605,7 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                         local_path=result.get("local_path"),
                         performer_id=performer_id,
                         source_url=result.get("source_url", ""),
+                        thumbnail_url=result.get("thumbnail_url"),
                     )
                     captured += 1
         except Exception as e:
@@ -1789,6 +1716,13 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 if not job.get("ok"):
                     continue
                 tweet_url = job["tweet_url"]
+                candidate = {
+                    "page_url": tweet_url,
+                    "url": job.get("stream_url", ""),
+                    "username": tw_user,
+                }
+                if not _candidate_mentions_identity(candidate, performer_signature):
+                    continue
                 db.insert_screenshot(
                     term=display_name or username,
                     source="ytdlp",

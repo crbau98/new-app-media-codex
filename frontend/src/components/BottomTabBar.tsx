@@ -51,11 +51,11 @@ export function BottomTabBar() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] bg-bg-base/90 backdrop-blur-md md:hidden"
+      className="fixed inset-x-3 bottom-3 z-40 rounded-[26px] border border-white/[0.08] bg-bg-base/92 shadow-[0_18px_40px_rgba(0,0,0,0.3)] backdrop-blur-xl md:hidden"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       aria-label="Mobile navigation"
     >
-      <div className="flex items-center justify-around">
+      <div className="grid grid-cols-3 items-center gap-1 p-1.5">
         {TABS.map((tab) => {
           const isActive = activeView === tab.id
           return (
@@ -71,14 +71,21 @@ export function BottomTabBar() {
               onFocus={() => prefetchViewModule(tab.id)}
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                "relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] transition-colors",
-                isActive ? "text-accent" : "text-text-muted"
+                "relative flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-[20px] px-2 py-2 text-[11px] transition-[background-color,color,transform]",
+                isActive ? "bg-white/[0.06] text-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]" : "text-text-muted"
               )}
             >
+              {isActive && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-4 top-1 h-1 rounded-full bg-accent"
+                  style={{ boxShadow: "0 0 14px var(--color-accent-glow)" }}
+                />
+              )}
               <span className={cn("transition-transform duration-150", isActive && "scale-110")}>
                 {tab.icon}
               </span>
-              <span className={cn("font-medium", isActive && "text-accent")}>{tab.label}</span>
+              <span className={cn("font-medium", isActive && "text-text-primary")}>{tab.label}</span>
             </button>
           )
         })}

@@ -545,6 +545,7 @@ const MediaCard = memo(function MediaCard({
   onHover,
   favorite,
   onToggleFavorite,
+  onDescribe,
   onRate,
   onContextMenu,
   onNavigateToPerformer,
@@ -558,6 +559,7 @@ const MediaCard = memo(function MediaCard({
   onSelect: () => void
   favorite: boolean
   onToggleFavorite: () => void
+  onDescribe: () => void
   onRate: (rating: number) => void
   onContextMenu?: (e: React.MouseEvent) => void
   onNavigateToPerformer?: (performerId: number, username: string) => void
@@ -575,7 +577,7 @@ const MediaCard = memo(function MediaCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); batchMode ? onSelect() : onClick() } }}
       onContextMenu={onContextMenu}
       className={cn(
-        "group relative aspect-square cursor-pointer overflow-hidden bg-black/20",
+        "group content-card content-card-interactive relative aspect-square cursor-pointer overflow-hidden rounded-[24px] border border-white/10 bg-black/25 shadow-[0_12px_32px_rgba(0,0,0,0.18)]",
         selected && "ring-2 ring-blue-500"
       )}
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
@@ -618,7 +620,7 @@ const MediaCard = memo(function MediaCard({
               </span>
             )}
             {vid && (
-              <span className="rounded bg-purple-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
+              <span className="rounded bg-amber-500/85 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
                 VIDEO
               </span>
             )}
@@ -626,7 +628,7 @@ const MediaCard = memo(function MediaCard({
           {shot.performer_username && shot.performer_id && onNavigateToPerformer && (
             <button
               type="button"
-              className="hidden max-w-[80px] truncate rounded bg-sky-500/80 px-1 py-0.5 text-[9px] font-medium leading-none text-white shadow transition-colors hover:bg-sky-400/90 group-hover:inline"
+              className="max-w-[110px] truncate rounded bg-sky-500/85 px-1.5 py-0.5 text-[9px] font-medium leading-none text-white shadow transition-colors hover:bg-sky-400/90"
               onClick={(e) => { e.stopPropagation(); onNavigateToPerformer(shot.performer_id!, shot.performer_username!) }}
               title={`View @${shot.performer_username}'s profile`}
             >
@@ -634,7 +636,7 @@ const MediaCard = memo(function MediaCard({
             </button>
           )}
           {shot.performer_username && (!shot.performer_id || !onNavigateToPerformer) && (
-            <span className="hidden max-w-[80px] truncate rounded bg-sky-500/80 px-1 py-0.5 text-[9px] font-medium leading-none text-white shadow group-hover:inline">
+            <span className="max-w-[110px] truncate rounded bg-sky-500/85 px-1.5 py-0.5 text-[9px] font-medium leading-none text-white shadow">
               @{shot.performer_username}
             </span>
           )}
@@ -672,7 +674,7 @@ const MediaCard = memo(function MediaCard({
         )}
 
         {!batchMode && (
-          <div className="absolute bottom-1.5 right-1.5 hidden gap-1 group-hover:flex">
+          <div className="absolute bottom-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
             <button
               onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
               className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors hover:text-red-400"
@@ -711,9 +713,20 @@ const MediaCard = memo(function MediaCard({
           </div>
         )}
 
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pb-2 pt-6 opacity-0 transition-opacity group-hover:opacity-100">
-          <p className="truncate text-xs font-medium text-white">{shot.term}</p>
-          <p className="text-[10px] text-white/60">{sourceLabel(shot.source)}</p>
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-2.5 pb-2.5 pt-8">
+          <div className="flex items-end justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-[11px] font-semibold text-white">{shot.term}</p>
+              <p className="truncate text-[10px] text-white/65">
+                {shot.performer_username ? `@${shot.performer_username} · ${sourceLabel(shot.source)}` : sourceLabel(shot.source)}
+              </p>
+            </div>
+            {vid && !batchMode && (
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,0 10,5 2,10" /></svg>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </article>
@@ -1508,7 +1521,7 @@ export function MediaPage() {
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error: mediaError, refetch: mediaRefetch } = useInfiniteQuery({
     queryKey: ["screenshots", term, sourceForQuery, advQueryParams, mediaCreatorId, tab],
-    queryFn: ({ pageParam = 0 }) =>
+    queryFn: ({ pageParam = 0, signal }) =>
       api.browseScreenshots({
         ...(term ? { term } : {}),
         ...(sourceForQuery ? { source: sourceForQuery } : {}),
@@ -1518,7 +1531,7 @@ export function MediaPage() {
         ...(tab === "images" ? { media_type: "image" } : {}),
         limit: 18,
         offset: pageParam as number,
-      }),
+      }, { signal }),
     getNextPageParam: (last) => (last.has_more ? (last.next_offset ?? (last.offset + last.screenshots.length)) : undefined),
     initialPageParam: 0,
     initialData: _canUseEmbeddedData
@@ -2513,6 +2526,8 @@ export function MediaPage() {
         onSelect={() => toggleSelect(shot.id)}
         favorite={favorites.has(shot.id)}
         onToggleFavorite={() => toggleFavorite(shot.id)}
+        onDescribe={() => handleSingleDescribe(shot.id)}
+        onRate={(rating) => rateMutation.mutate({ id: shot.id, rating })}
         onContextMenu={(e) => handleContextMenu(e, shot)}
         onNavigateToPerformer={(performerId) => {
           setPendingPerformer(performerId)
@@ -2607,9 +2622,89 @@ export function MediaPage() {
         </Suspense>
       )}
 
+      <div className="px-4 pb-3">
+        <div className="hero-surface rounded-[30px] px-4 py-5 sm:px-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <p className="eyebrow mb-2">Media Library</p>
+              <h1 className="hero-title text-[clamp(1.8rem,3vw,2.8rem)] leading-none text-text-primary">
+                {mediaCreatorName ? `@${mediaCreatorName}` : term ? term : "Publish-Ready Stream"}
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-text-secondary sm:text-[15px]">
+                {mediaCreatorName
+                  ? "A focused creator stream with faster playback, cleaner matching, and fewer dead ends."
+                  : term
+                  ? "A tighter themed stream tuned for fast scanning, confident creator labels, and smoother playback."
+                  : "A faster cross-web stream with creator-aware curation, lighter first paint, and cleaner controls."}
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:w-[360px]">
+              <button
+                onClick={handleCapture}
+                disabled={capturing}
+                className="rounded-2xl border border-accent/30 bg-accent/12 px-4 py-3 text-left text-sm font-medium text-text-primary transition-colors hover:bg-accent/18 disabled:opacity-50"
+              >
+                {capturing ? "Capture running" : "Capture new media"}
+              </button>
+              <button
+                onClick={() => handleViewModeChange("feed")}
+                className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-medium text-text-primary transition-colors hover:bg-white/[0.07]"
+              >
+                Open video feed
+              </button>
+              <button
+                onClick={() => {
+                  setDiscoveryOpen(true)
+                  if (!discoveryResults.length) handleRunDiscovery()
+                }}
+                className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-left text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-400/16"
+              >
+                Discover similar creators
+              </button>
+              <button
+                onClick={clearMediaFilters}
+                disabled={activeFilterPills.length === 0}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm font-medium text-text-secondary transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+              >
+                Reset current view
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
+              <p className="eyebrow">Visible now</p>
+              <p className="mt-2 text-2xl font-semibold text-text-primary">{visibleSummary.total.toLocaleString()}</p>
+            </div>
+            <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
+              <p className="eyebrow">Creator linked</p>
+              <p className="mt-2 text-2xl font-semibold text-text-primary">{visibleSummary.linked.toLocaleString()}</p>
+            </div>
+            <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
+              <p className="eyebrow">Videos</p>
+              <p className="mt-2 text-2xl font-semibold text-text-primary">{visibleSummary.videos.toLocaleString()}</p>
+            </div>
+            <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
+              <p className="eyebrow">Needs rating</p>
+              <p className="mt-2 text-2xl font-semibold text-text-primary">{visibleSummary.unrated.toLocaleString()}</p>
+            </div>
+          </div>
+
+          {activeFilterPills.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {activeFilterPills.map((pill) => (
+                <span key={pill} className="ui-chip ui-chip-active">
+                  {pill}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
       <div className="sticky top-14 z-20 px-4 py-2 backdrop-blur-lg">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0c1424]/80 px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.18)] backdrop-blur-lg">
+        <div className="section-shell flex items-center gap-2 rounded-[24px] px-3 py-2.5 shadow-[0_10px_26px_rgba(0,0,0,0.2)] backdrop-blur-lg">
           {/* Search input */}
           <div className="relative flex-1 max-w-md">
             <input
@@ -2620,7 +2715,7 @@ export function MediaPage() {
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
               placeholder="Search..."
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
+              className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
             />
             {search && (
               <button
@@ -2687,7 +2782,7 @@ export function MediaPage() {
           <button
             onClick={() => setFiltersVisible((v) => !v)}
             className={cn(
-              "rounded-lg px-2.5 py-1.5 text-xs transition-colors whitespace-nowrap",
+              "rounded-xl px-2.5 py-2 text-xs transition-colors whitespace-nowrap",
               filtersVisible || advancedOpen
                 ? "bg-blue-500/20 text-blue-400"
                 : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
@@ -2707,7 +2802,7 @@ export function MediaPage() {
               setSortOrder(v)
               localStorage.setItem("media-sort-order", v)
             }}
-            className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs text-[var(--color-text-secondary)]"
+            className="rounded-xl border border-white/10 bg-black/20 px-2.5 py-2 text-xs text-[var(--color-text-secondary)]"
             aria-label="Sort order"
           >
             <option value="newest">Newest</option>
@@ -2751,7 +2846,9 @@ export function MediaPage() {
           </div>
 
           {/* Visible count */}
-          <span className="text-[10px] text-slate-400 whitespace-nowrap">{visibleShots.length.toLocaleString()} items</span>
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] text-slate-300 whitespace-nowrap">
+            {visibleShots.length.toLocaleString()} items
+          </span>
 
           {/* Overflow menu */}
           <div className="relative ml-auto">
@@ -3324,6 +3421,7 @@ export function MediaPage() {
       {tab !== "creators" && mediaError && (
         <EmptyState
           icon="⚠️"
+          eyebrow="Temporary issue"
           title="Couldn't load media"
           description="The server is starting up. Try refreshing in a moment."
           action={{ label: "Retry", onClick: () => mediaRefetch() }}
@@ -3337,6 +3435,7 @@ export function MediaPage() {
       {tab !== "creators" && !isLoading && !mediaError && visibleShots.length === 0 && allShots.length === 0 && (
         <EmptyState
           icon="\ud83d\udcf7"
+          eyebrow="Ready to capture"
           title="No media yet"
           description="Run a capture or add creators to start collecting media"
           action={{ label: capturing ? "Capturing..." : "Run capture", onClick: handleCapture }}

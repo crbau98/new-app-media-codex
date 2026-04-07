@@ -68,6 +68,8 @@ def _purge_directory_contents(directory: Path) -> None:
     if not directory.exists():
         return
     for child in directory.iterdir():
+        if child.name == ".gitkeep":
+            continue
         try:
             if child.is_dir():
                 shutil.rmtree(child, ignore_errors=True)
@@ -277,34 +279,11 @@ if (_FRONTEND_DIST / "assets").exists():
 def index(request: Request) -> HTMLResponse:
     dist_index_html = _get_frontend_index_html()
     if dist_index_html is not None:
-        # Embed initial API data to eliminate HTML->JS->API waterfall
+        # Embed only lightweight status data so the app shell paints quickly.
         try:
-            browse_result = db.browse_screenshots(limit=18, offset=0)
-            shots = []
-            from app.api.screenshots import _decorate_screenshot_media
-
-            for s in browse_result.get("screenshots", []):
-                decorated = _decorate_screenshot_media(request.app.state, s)
-                if not decorated.get("local_url"):
-                    continue
-                for k in ("ai_summary", "ai_tags", "user_tags"):
-                    decorated.pop(k, None)
-                shots.append(decorated)
-            screenshots_payload = {
-                "screenshots": shots,
-                "total": browse_result.get("total", 0),
-                "offset": 0,
-                "limit": 18,
-                "has_more": browse_result.get("has_more", False),
-                "next_offset": browse_result.get("next_offset", 18),
-            }
             running = getattr(request.app.state, "screenshot_running", False)
             progress = getattr(request.app.state, "screenshot_progress", None)
-            status_payload = {"running": running, **(progress or {})}
-            initial_data = json.dumps(
-                {"screenshots": screenshots_payload, "status": status_payload},
-                separators=(",", ":"),
-            )
+            initial_data = json.dumps({"status": {"running": running, **(progress or {})}}, separators=(",", ":"))
             inject_script = f"<script>window.__INITIAL_DATA__={initial_data}</script>"
             dist_index_html = dist_index_html.replace("</head>", inject_script + "</head>")
         except Exception:

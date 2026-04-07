@@ -844,6 +844,11 @@ def _search_ytdlp_videos(
                 "local_path": None,
                 "ok": True,
                 "source_url": stream_url,
+                "thumbnail_url": info.get("thumbnail") or entry.get("thumbnail") or "",
+                "title": info.get("title") or entry.get("title") or "",
+                "description": info.get("description") or entry.get("description") or "",
+                "uploader": info.get("uploader") or entry.get("uploader") or "",
+                "channel": info.get("channel") or entry.get("channel") or "",
             })
             extracted += 1
             print(f"[ytdlp] extracted stream URL for: {entry.get('title', url)[:60]}")

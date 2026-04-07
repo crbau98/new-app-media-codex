@@ -54,12 +54,56 @@ const RELATED_VIEWS: Record<ActiveView, ActiveView[]> = {
 }
 
 // ── Loading skeleton ─────────────────────────────────────────────────
-function PageSkeleton() {
+function PageSkeleton({ activeView }: { activeView: ActiveView }) {
+  if (activeView === "performers") {
+    return (
+      <div className="flex flex-col gap-5 p-6">
+        <div className="skeleton-surface rounded-[28px] p-5">
+          <div className="mb-4 h-3 w-24 rounded-full skeleton-line" />
+          <div className="h-9 w-44 rounded-2xl skeleton-line" />
+          <div className="mt-3 h-4 w-72 max-w-full rounded-full skeleton-line" />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="skeleton-surface rounded-[24px] p-4">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="h-14 w-14 rounded-full skeleton-line" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-28 rounded-full skeleton-line" />
+                  <div className="h-3 w-20 rounded-full skeleton-line" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="h-16 rounded-2xl skeleton-line" />
+                <div className="h-16 rounded-2xl skeleton-line" />
+                <div className="h-16 rounded-2xl skeleton-line" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-col gap-4 p-6 animate-pulse">
-      <div className="h-8 w-48 bg-white/5 rounded-lg" />
-      <div className="h-64 w-full bg-white/5 rounded-xl" />
-      <div className="h-32 w-full bg-white/5 rounded-xl" />
+    <div className="flex flex-col gap-5 p-6">
+      <div className="skeleton-surface rounded-[30px] p-5">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="h-8 w-44 rounded-2xl skeleton-line" />
+          <div className="h-7 w-28 rounded-full skeleton-line" />
+          <div className="h-7 w-24 rounded-full skeleton-line" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="h-20 rounded-[20px] skeleton-line" />
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div key={index} className="skeleton-grid-tile aspect-square rounded-[22px]" />
+        ))}
+      </div>
     </div>
   )
 }
@@ -140,8 +184,8 @@ function App() {
       <CrawlNotifier />
       <TransitionIndicator isTransitioning={isTransitioning} />
       <AppShell>
-        <div className="view-enter">
-          <Suspense fallback={<PageSkeleton />}>
+        <div className="min-h-full">
+          <Suspense fallback={<PageSkeleton activeView={deferredActiveView} />}>
             {currentView}
           </Suspense>
         </div>

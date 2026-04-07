@@ -700,7 +700,7 @@ const PerformerCard = memo(function PerformerCard({
     <div
       ref={cardRef}
       className={cn(
-        "group rounded-2xl border bg-white/[0.03] transition-[background-color,border-color,box-shadow,transform] hover:border-white/15 hover:bg-white/[0.05]",
+        "group section-shell card-hover rounded-[26px] transition-[background-color,border-color,box-shadow,transform] hover:border-white/15 hover:bg-white/[0.05]",
         isFocused ? "border-accent/50 ring-1 ring-accent/30" : "border-white/8"
       )}
       style={{ contentVisibility: "auto", containIntrinsicSize: "360px 120px" }}
@@ -713,7 +713,7 @@ const PerformerCard = memo(function PerformerCard({
         role="button"
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onSelect(performer.id) }}
-        className="w-full cursor-pointer px-3 py-2.5 text-left"
+        className="w-full cursor-pointer px-3.5 py-3 text-left"
       >
         <div className="flex items-start gap-3.5">
           {/* Avatar */}
@@ -799,6 +799,21 @@ const PerformerCard = memo(function PerformerCard({
                 <span className="text-[10px] text-text-muted">+{tags.length - 2}</span>
               )}
             </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-text-muted">
+              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5">
+                {(performer.screenshots_count ?? 0).toLocaleString()} shots
+              </span>
+              {(performer.media_count ?? 0) > 0 && (
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5">
+                  {(performer.media_count ?? 0).toLocaleString()} media
+                </span>
+              )}
+              {performer.is_verified === 1 && (
+                <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 text-emerald-200">
+                  Verified
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -829,14 +844,14 @@ const PerformerCard = memo(function PerformerCard({
       )}
 
       {/* Quick action bar */}
-      <div className="flex items-center justify-between border-t border-white/5 px-3 py-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="flex items-center justify-between border-t border-white/5 px-3.5 py-2">
         <div className="flex gap-2">
           {performer.reddit_username && (
             <a
               href={`https://reddit.com/user/${performer.reddit_username}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[10px] text-orange-400 hover:underline"
+              className="text-[11px] text-orange-300 hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
               r/{performer.reddit_username}
@@ -847,7 +862,7 @@ const PerformerCard = memo(function PerformerCard({
               href={`https://twitter.com/${performer.twitter_username}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[10px] text-sky-400 hover:underline"
+              className="text-[11px] text-sky-300 hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
               @{performer.twitter_username}
@@ -861,7 +876,7 @@ const PerformerCard = memo(function PerformerCard({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-text-muted transition-colors hover:bg-white/10 hover:text-text-secondary"
+              className="flex items-center gap-1 rounded-xl bg-white/5 px-2.5 py-1.5 text-[11px] text-text-muted transition-colors hover:bg-white/10 hover:text-text-secondary"
               title="Visit profile"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -872,11 +887,11 @@ const PerformerCard = memo(function PerformerCard({
           )}
           <button
             onClick={handleViewMedia}
-            className="flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-text-muted transition-colors hover:bg-white/10 hover:text-sky-400"
+            className="flex items-center gap-1 rounded-xl bg-white/5 px-2.5 py-1.5 text-[11px] font-medium text-text-secondary transition-colors hover:bg-sky-500/15 hover:text-sky-300"
             title="View captured media"
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-            Media
+            View media
           </button>
         </div>
       </div>
@@ -1800,69 +1815,85 @@ export default function PerformersPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-6 pb-24">
       {/* Header */}
-      <div className="flex flex-col gap-4 rounded-3xl border border-white/8 bg-white/[0.03] p-4 shadow-lg shadow-black/5 lg:flex-row lg:items-end">
-        <div className="space-y-2">
-          <h1 className="text-xl font-semibold text-text-primary">Creators</h1>
-          {statsData && (
-            <div className="flex flex-wrap items-center gap-3 text-xs text-text-muted">
-              <span><span className="font-mono font-medium text-text-secondary">{statsData.total ?? 0}</span> total</span>
-              {(statsData.with_media ?? 0) > 0 && (
-                <span><span className="font-mono font-medium text-text-secondary">{statsData.with_media}</span> with media</span>
-              )}
+      <div className="hero-surface rounded-[30px] p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-3">
+            <div>
+              <p className="eyebrow mb-2">Creator Roster</p>
+              <h1 className="hero-title text-[clamp(1.8rem,3vw,2.7rem)] leading-none text-text-primary">Creators</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-text-secondary sm:text-[15px]">
+                Keep the roster fast, trustworthy, and publication-ready with better identity matching, lighter cards, and faster jumps into captured media.
+              </p>
             </div>
-          )}
-        </div>
-
-        <div className="flex flex-1 flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
-          <div className="relative w-full xl:max-w-sm">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
-              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-            </svg>
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search creators... (/)"
-              className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
-            />
+            {statsData && (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+                <span className="ui-chip"><span className="font-mono text-text-primary">{statsData.total ?? 0}</span> tracked</span>
+                <span className="ui-chip"><span className="font-mono text-text-primary">{statsData.with_media ?? 0}</span> with media</span>
+                <span className="ui-chip"><span className="font-mono text-text-primary">{watchlistCount}</span> favorites</span>
+              </div>
+            )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => runUiTransition(() => setShowDiscover(true))}
-              className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
-            >
-              Discover
-            </button>
-            <button
-              onClick={() => runUiTransition(() => { setShowAdd(!showAdd); setShowImportUrl(false); setShowBulkImport(false) })}
-              className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-              data-add-performer
-            >
-              {showAdd ? "Close" : "Add Creator"}
-            </button>
-            <MoreMenu
-              showBilling={showBilling}
-              showAnalytics={showAnalytics}
-              selectMode={selectMode}
-              watchlistCount={watchlistCount}
-              watchlistCapturing={watchlistCapturing}
-              captureAllRunning={captureAllRunning}
-              onBilling={() => runUiTransition(() => { setShowBilling(!showBilling); setShowAnalytics(false) })}
-              onAnalytics={() => runUiTransition(() => { setShowAnalytics(!showAnalytics); setShowBilling(false) })}
-              onImportUrl={() => runUiTransition(() => { setShowImportUrl(!showImportUrl); setShowBulkImport(false); setShowAdd(false) })}
-              onBulkImport={() => runUiTransition(() => { setShowBulkImport(!showBulkImport); setShowImportUrl(false); setShowAdd(false) })}
-              onExportCsv={() => {}}
-              exportUrl={api.exportPerformersUrl()}
-              onSelect={() => runUiTransition(() => { setSelectMode((v) => !v); setSelectedIds(new Set()) })}
-              onCaptureStale={() => {
-                api.captureStale().then((r) => {
-                  addToast(`Queued ${r.queued} stale creators for capture`, "success")
-                  qcMain.invalidateQueries({ queryKey: ["capture-queue"] })
-                }).catch(() => addToast("Failed to queue stale captures", "error"))
-              }}
-              onCaptureAll={handleCaptureAll}
-            />
+
+          <div className="flex flex-1 flex-col gap-3 xl:max-w-[640px] xl:items-end">
+            <div className="relative w-full xl:max-w-md">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+              </svg>
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search creators... (/)"
+                className="w-full rounded-2xl border border-white/10 bg-black/20 py-3 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+              />
+            </div>
+
+            <div className="grid w-full gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <button
+                onClick={() => runUiTransition(() => setShowDiscover(true))}
+                className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-3 py-3 text-left text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-400/16"
+              >
+                Discover creators
+              </button>
+              <button
+                onClick={() => runUiTransition(() => { setShowAdd(!showAdd); setShowImportUrl(false); setShowBulkImport(false) })}
+                className="rounded-2xl border border-accent/30 bg-accent/12 px-3 py-3 text-left text-sm font-medium text-text-primary transition-colors hover:bg-accent/18"
+                data-add-performer
+              >
+                {showAdd ? "Close add panel" : "Add creator"}
+              </button>
+              <button
+                onClick={handleCaptureAll}
+                className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3 text-left text-sm font-medium text-text-primary transition-colors hover:bg-white/[0.07]"
+              >
+                Capture all due
+              </button>
+              <div className="flex items-stretch">
+                <MoreMenu
+                  showBilling={showBilling}
+                  showAnalytics={showAnalytics}
+                  selectMode={selectMode}
+                  watchlistCount={watchlistCount}
+                  watchlistCapturing={watchlistCapturing}
+                  captureAllRunning={captureAllRunning}
+                  onBilling={() => runUiTransition(() => { setShowBilling(!showBilling); setShowAnalytics(false) })}
+                  onAnalytics={() => runUiTransition(() => { setShowAnalytics(!showAnalytics); setShowBilling(false) })}
+                  onImportUrl={() => runUiTransition(() => { setShowImportUrl(!showImportUrl); setShowBulkImport(false); setShowAdd(false) })}
+                  onBulkImport={() => runUiTransition(() => { setShowBulkImport(!showBulkImport); setShowImportUrl(false); setShowAdd(false) })}
+                  onExportCsv={() => {}}
+                  exportUrl={api.exportPerformersUrl()}
+                  onSelect={() => runUiTransition(() => { setSelectMode((v) => !v); setSelectedIds(new Set()) })}
+                  onCaptureStale={() => {
+                    api.captureStale().then((r) => {
+                      addToast(`Queued ${r.queued} stale creators for capture`, "success")
+                      qcMain.invalidateQueries({ queryKey: ["capture-queue"] })
+                    }).catch(() => addToast("Failed to queue stale captures", "error"))
+                  }}
+                  onCaptureAll={handleCaptureAll}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1919,7 +1950,7 @@ export default function PerformersPage() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="section-shell flex flex-wrap items-center gap-3 rounded-[24px] px-4 py-3">
         <div className="flex items-center gap-1 rounded-xl border border-white/8 bg-white/[0.02] p-1">
           {["all", ...PLATFORMS].map((p) => (
             <button
@@ -2077,6 +2108,7 @@ export default function PerformersPage() {
       {error ? (
         <EmptyState
           icon="⚠️"
+          eyebrow="Temporary issue"
           title="Couldn't load creators"
           description="The server is starting up. Try refreshing in a moment."
           action={{ label: "Retry", onClick: () => refetch() }}
@@ -2110,6 +2142,7 @@ export default function PerformersPage() {
       ) : deferredFilteredPerformers.length === 0 ? (
         <EmptyState
           icon="👤"
+          eyebrow="Roster ready"
           title="No creators yet"
           description="Add creators to start tracking their content"
           action={{ label: "Add Creator", onClick: () => runUiTransition(() => { setShowAdd(true); setShowImportUrl(false); setShowBulkImport(false) }) }}

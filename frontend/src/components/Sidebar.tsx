@@ -428,17 +428,17 @@ export function Sidebar() {
           <div className={cn("panel-surface rounded-[24px] p-4", collapsed ? "items-center" : "")}>
             <div className={cn("flex items-start gap-3", collapsed ? "justify-center" : "justify-between")}>
               <div className={cn("min-w-0", collapsed && "hidden")}>
-                <p className="eyebrow mb-2">Media Control</p>
-                <h1 className="hero-title hero-gradient text-xl leading-none">Media Studio</h1>
+                <p className="eyebrow mb-2">Streaming Workspace</p>
+                <h1 className="hero-title hero-gradient text-xl leading-none">Creator Library</h1>
                 <p className="mt-2 text-sm text-text-secondary">
-                  Browse the library fast, jump into creators, and keep capture one click away.
+                  Stream across the web, keep creator matches trustworthy, and move between library and roster without friction.
                 </p>
               </div>
               <div className={cn("rounded-2xl border border-white/10 bg-white/6 p-3 text-accent glow-accent", collapsed && "mx-auto")}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l2.4 4.8L20 10l-4 4 .9 6-4.9-2.6L7 20l.9-6-4-4 5.6-2.2L12 3Z"/></svg>
               </div>
               {!collapsed && (
-                <span className="text-sm font-semibold text-text-primary">Creator Capture</span>
+                <span className="text-sm font-semibold text-text-primary">Fast Capture</span>
               )}
             </div>
             <button

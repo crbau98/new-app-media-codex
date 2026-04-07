@@ -31,6 +31,9 @@ _PROXY_CACHE_TTL = 3600  # 1 hour
 _proxy_cache: dict[str, tuple[float, str, bytes]] = {}  # url -> (expires_at, content_type, body)
 _proxy_cache_size = 0  # current total bytes
 _IMAGE_CONTENT_PREFIXES = ("image/",)
+_VIDEO_CONTENT_PREFIXES = ("video/",)
+_REMOTE_MEDIA_PROBE_TTL = 900
+_PROXY_ONLY_HOSTS: tuple[str, ...] = ()
 
 
 def _proxy_cache_get(url: str) -> tuple[str, bytes] | None:
@@ -89,6 +92,72 @@ def proxy_media_url(url: str) -> str:
     return f"/api/screenshots/proxy-media?url={quote(url, safe='')}"
 
 
+def _should_proxy_remote_media(url: str | None) -> bool:
+    if not _is_remote_media_url(url):
+        return False
+    host = urlparse(str(url)).netloc.lower()
+    return any(host.endswith(suffix) for suffix in _PROXY_ONLY_HOSTS)
+
+
+def _remote_probe_cache_bucket(app_state):
+    cache = getattr(app_state, "_remote_media_probe_cache", None)
+    if cache is None:
+        cache = {}
+        app_state._remote_media_probe_cache = cache
+    lock = getattr(app_state, "_remote_media_probe_cache_lock", None)
+    if lock is None:
+        lock = Lock()
+        app_state._remote_media_probe_cache_lock = lock
+    return cache, lock
+
+
+def _probe_remote_media_kind(app_state, media_url: str) -> str | None:
+    if not _is_remote_media_url(media_url):
+        return None
+    cache, lock = _remote_probe_cache_bucket(app_state)
+    now = time.monotonic()
+    with lock:
+        cached = cache.get(media_url)
+        if cached and now < cached["expires_at"]:
+            return cached["kind"]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "image/webp,image/apng,image/*,video/*,*/*;q=0.8",
+    }
+    kind: str | None = None
+    for method, extra_headers in (
+        ("HEAD", {}),
+        ("GET", {"Range": "bytes=0-0"}),
+    ):
+        response = None
+        try:
+            response = http_requests.request(
+                method,
+                media_url,
+                headers={**headers, **extra_headers},
+                timeout=(4, 6),
+                allow_redirects=True,
+                stream=method == "GET",
+            )
+            content_type = (response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+            if content_type.startswith(_VIDEO_CONTENT_PREFIXES):
+                kind = "video"
+            elif content_type.startswith(_IMAGE_CONTENT_PREFIXES):
+                kind = "image"
+        except Exception:
+            kind = None
+        finally:
+            if response is not None:
+                response.close()
+        if kind is not None:
+            break
+
+    with lock:
+        cache[media_url] = {"kind": kind, "expires_at": now + _REMOTE_MEDIA_PROBE_TTL}
+    return kind
+
+
 def _screenshot_is_video(record: dict) -> bool:
     source = str(record.get("source") or "").lower()
     media_url = str(record.get("source_url") or record.get("local_url") or record.get("local_path") or record.get("page_url") or "")
@@ -103,6 +172,8 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
     local_path = Path(shot.get("local_path", "") or "")
     source_url = str(shot.get("source_url") or "")
     thumbnail_url = str(shot.get("thumbnail_url") or "")
+    existing_preview = str(shot.get("preview_url") or "")
+    existing_local = str(shot.get("local_url") or "")
 
     if not stream_only and local_path.name and _cached_local_media_exists(app_state, local_path):
         shot["local_url"] = f"/cached-screenshots/{local_path.name}"
@@ -113,10 +184,12 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
         return shot
 
     if _is_remote_media_url(source_url):
-        shot["local_url"] = proxy_media_url(source_url)
+        shot["local_url"] = existing_local or source_url
         shot["source_url"] = source_url
-        if _is_remote_media_url(thumbnail_url):
-            shot["preview_url"] = proxy_media_url(thumbnail_url)
+        if existing_preview:
+            shot["preview_url"] = existing_preview
+        elif _is_remote_media_url(thumbnail_url):
+            shot["preview_url"] = thumbnail_url
         else:
             shot["preview_url"] = None if _screenshot_is_video(shot) else shot["local_url"]
         return shot
@@ -138,6 +211,10 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
 def _decorate_rows(app_state, rows: list[dict]) -> list[dict]:
     return [_decorate_screenshot_media(app_state, row) for row in rows]
 
+
+def _allow_local_media(app_state) -> bool:
+    return not bool(getattr(getattr(app_state, "settings", None), "stream_only_media", False))
+
 router = APIRouter(prefix="/api/screenshots", tags=["screenshots"])
 
 
@@ -148,10 +225,12 @@ async def proxy_media(url: str = Query(...), request: Request = None):
         raise HTTPException(400, "Invalid URL")
     from starlette.responses import StreamingResponse
 
-    # Forward Range header for video seeking support
+    target_origin = urlparse(url)
+    referer = f"{target_origin.scheme}://{target_origin.netloc}/" if target_origin.scheme and target_origin.netloc else url
     req_headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Referer": url,
+        "Referer": referer,
+        "Origin": referer.rstrip("/"),
         "Accept": "image/webp,image/apng,image/*,video/*,*/*;q=0.8",
     }
     range_header = request.headers.get("range") if request else None
@@ -175,9 +254,13 @@ async def proxy_media(url: str = Query(...), request: Request = None):
             client.build_request("GET", url, headers=req_headers),
             stream=True,
         )
-        resp.raise_for_status()
-    except Exception:
-        raise HTTPException(502, "Could not fetch media")
+    except Exception as exc:
+        raise HTTPException(502, f"Could not fetch media: {exc}") from exc
+    if resp.status_code >= 400:
+        status_code = resp.status_code if resp.status_code in {401, 403, 404, 416} else 502
+        detail = f"Upstream media returned {resp.status_code}"
+        await resp.aclose()
+        raise HTTPException(status_code, detail)
     content_type = resp.headers.get("content-type", "application/octet-stream")
     is_image = content_type.startswith(_IMAGE_CONTENT_PREFIXES)
 
@@ -201,6 +284,8 @@ async def proxy_media(url: str = Query(...), request: Request = None):
     async def stream_and_close():
         try:
             async for chunk in resp.aiter_bytes(chunk_size=65536):
+                if request is not None and await request.is_disconnected():
+                    break
                 yield chunk
         finally:
             await resp.aclose()
@@ -213,6 +298,10 @@ async def proxy_media(url: str = Query(...), request: Request = None):
         resp_headers["Accept-Ranges"] = resp.headers["accept-ranges"]
     if resp.headers.get("content-range"):
         resp_headers["Content-Range"] = resp.headers["content-range"]
+    if resp.headers.get("etag"):
+        resp_headers["ETag"] = resp.headers["etag"]
+    if resp.headers.get("last-modified"):
+        resp_headers["Last-Modified"] = resp.headers["last-modified"]
 
     status_code = resp.status_code  # 200 or 206 for partial content
 
@@ -235,8 +324,8 @@ _PREVIEW_JPEG_QUALITY = 54
 _SYNC_PREVIEW_WARM_LIMIT_FIRST_PAGE = 0
 _SYNC_PREVIEW_WARM_LIMIT_OTHER_PAGES = 0
 _PREVIEW_WORKER_COUNT = 3
-_FIRST_PAGE_LIMIT_CAP = 24
-_MAX_BROWSE_SCAN_ROWS = 120
+_FIRST_PAGE_LIMIT_CAP = 18
+_MAX_BROWSE_SCAN_ROWS = 96
 
 
 def _screenshots_cache_bucket(app_state):
@@ -590,7 +679,7 @@ def browse_screenshots(
                         break
                     continue
                 local = Path(s.get("local_path", "") or "")
-                if local.name and _cached_local_media_exists(request.app.state, local):
+                if _allow_local_media(request.app.state) and local.name and _cached_local_media_exists(request.app.state, local):
                     # Local file exists (yt-dlp or legacy) — serve from disk
                     s["local_url"] = f"/cached-screenshots/{local.name}"
                     preview_url = _get_preview_url_if_ready(request.app.state, local)
@@ -610,28 +699,27 @@ def browse_screenshots(
                         if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
                             break
                         continue
-                    ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
-                    # Only accept known media file extensions
-                    if ext not in ("mp4", "webm", "mov", "jpg", "jpeg", "png", "gif", "webp"):
-                        src = s.get("source", "")
-                        if src not in ("redgifs", "coomer"):
-                            # Unknown extension from unknown source — skip
-                            if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
-                                break
-                            continue
                     src = s.get("source", "")
-                    is_vid = ext in ("mp4", "webm", "mov") or src in ("redgifs", "ytdlp")
-                    # Coomer.st uses DDoS-Guard; proxy through backend
-                    if "coomer.st" in media_url:
-                        from urllib.parse import quote
-                        s["local_url"] = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
-                        s["preview_url"] = None if is_vid else s["local_url"]
+                    ext = Path(media_url.split("?", 1)[0]).suffix.lower()
+                    if ext in {".mp4", ".webm", ".mov", ".avi", ".mkv"} or src in ("redgifs", "ytdlp"):
+                        media_kind = "video"
+                    elif ext in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+                        media_kind = "image"
                     else:
-                        s["local_url"] = media_url
-                        thumb = s.get("thumbnail_url")
-                        if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
-                            thumb = media_url.replace(".mp4", "-poster.jpg")
-                        s["preview_url"] = thumb or (None if is_vid else media_url)
+                        media_kind = _probe_remote_media_kind(request.app.state, media_url)
+                    if media_kind not in {"image", "video"}:
+                        if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
+                            break
+                        continue
+                    is_vid = media_kind == "video"
+                    thumb = str(s.get("thumbnail_url") or "").strip()
+                    if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
+                        thumb = media_url.replace(".mp4", "-poster.jpg")
+                    s["local_url"] = proxy_media_url(media_url) if _should_proxy_remote_media(media_url) else media_url
+                    if _is_remote_media_url(thumb):
+                        s["preview_url"] = proxy_media_url(thumb) if _should_proxy_remote_media(thumb) else thumb
+                    else:
+                        s["preview_url"] = None if is_vid else s["local_url"]
                     s["source_url"] = media_url
                     valid.append(_decorate_screenshot_media(request.app.state, s))
                 if len(valid) >= effective_limit:
@@ -1170,7 +1258,7 @@ async def find_related(request: Request, screenshot_id: int, limit: int = 12):
 
             if score > 0:
                 local = d.get("local_path", "")
-                if local:
+                if local and _allow_local_media(request.app.state):
                     p = Path(local)
                     if p.exists():
                         d["local_url"] = "/cached-screenshots/" + p.name

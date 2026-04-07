@@ -11,6 +11,12 @@ from threading import Lock
 import time
 from typing import Any, Iterator
 
+from app.performer_identity import (
+    find_best_identity_match,
+    performer_identity_signatures,
+    score_candidate_identity,
+)
+
 COMPOUND_EXCLUDE = {
     "AND",
     "ARE",
@@ -1676,6 +1682,37 @@ class Database:
                 self._invalidate_after_write()
                 return True
             except sqlite3.IntegrityError:
+                existing = conn.execute(
+                    "SELECT id, term, local_path, performer_id, source_url, thumbnail_url "
+                    "FROM screenshots WHERE page_url = ?",
+                    (page_url,),
+                ).fetchone()
+                if existing is None:
+                    return False
+                updates: list[str] = []
+                params: list[Any] = []
+                if performer_id and existing["performer_id"] is None:
+                    updates.append("performer_id = ?")
+                    params.append(performer_id)
+                if source_url and not str(existing["source_url"] or "").strip():
+                    updates.append("source_url = ?")
+                    params.append(source_url)
+                if thumbnail_url and not str(existing["thumbnail_url"] or "").strip():
+                    updates.append("thumbnail_url = ?")
+                    params.append(thumbnail_url)
+                if local_path and not str(existing["local_path"] or "").strip():
+                    updates.append("local_path = ?")
+                    params.append(local_path)
+                if term and not str(existing["term"] or "").strip():
+                    updates.append("term = ?")
+                    params.append(term)
+                if updates:
+                    conn.execute(
+                        f"UPDATE screenshots SET {', '.join(updates)} WHERE id = ?",
+                        params + [existing["id"]],
+                    )
+                    conn.commit()
+                    self._invalidate_after_write()
                 return False
 
     def delete_screenshot(self, screenshot_id: int) -> bool:
@@ -1974,64 +2011,65 @@ class Database:
         return self._cached_snapshot(cache_key, 30.0, build)
 
     def backfill_screenshot_performers(self) -> int:
-        """Link unlinked screenshots to performers when the stored evidence strongly matches their identity."""
-        def normalize_alias(value: str | None) -> str:
-            return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
-
-        def performer_aliases(row: sqlite3.Row) -> list[str]:
-            aliases: list[str] = []
-            seen: set[str] = set()
-
-            for raw_value in (
-                row["username"],
-                row["display_name"],
-                row["twitter_username"],
-                row["reddit_username"],
-                row["profile_url"] if "profile_url" in row.keys() else None,
-            ):
-                alias = normalize_alias(str(raw_value or "").strip())
-                if len(alias) < 3 or alias in seen:
-                    continue
-                seen.add(alias)
-                aliases.append(alias)
-            return aliases
-
+        """Link or repair screenshot performer assignments when the identity evidence is decisive."""
         with self.connect() as conn:
             performers = conn.execute(
-                "SELECT id, username, display_name, twitter_username, reddit_username, profile_url FROM performers"
+                "SELECT id, username, display_name, platform, twitter_username, reddit_username, profile_url FROM performers"
             ).fetchall()
-        if not performers:
+        performer_rows = [dict(row) for row in performers]
+        signatures = performer_identity_signatures(performer_rows)
+        signature_by_id = {
+            int(signature["id"]): signature
+            for signature in signatures
+            if signature.get("id") is not None
+        }
+        if not signatures:
             return 0
-        performer_alias_map = {int(row["id"]): performer_aliases(row) for row in performers}
         updated = 0
         with self.connect() as conn:
-            unlinked = conn.execute(
-                "SELECT id, term, page_url, source_url, thumbnail_url, ai_summary FROM screenshots WHERE performer_id IS NULL"
+            screenshots = conn.execute(
+                "SELECT id, term, source, page_url, source_url, thumbnail_url, ai_summary, performer_id "
+                "FROM screenshots"
             ).fetchall()
-            for row in unlinked:
-                haystack = " ".join(
-                    str(value or "")
-                    for value in (
-                        row["term"],
-                        row["page_url"],
-                        row["source_url"],
-                        row["thumbnail_url"],
-                        row["ai_summary"],
+            for row in screenshots:
+                candidate = {
+                    "term": row["term"],
+                    "source": row["source"],
+                    "page_url": row["page_url"],
+                    "url": row["source_url"],
+                    "image": row["thumbnail_url"],
+                    "summary": row["ai_summary"],
+                }
+                best_match = find_best_identity_match(candidate, signatures)
+                current_performer_id = row["performer_id"]
+
+                if current_performer_id is None:
+                    if best_match is None or best_match.get("performer_id") is None:
+                        continue
+                    cur = conn.execute(
+                        "UPDATE screenshots SET performer_id = ? WHERE id = ? AND performer_id IS NULL",
+                        (best_match["performer_id"], row["id"]),
                     )
-                    if value
-                )
-                compact_haystack = normalize_alias(haystack)
-                if not compact_haystack:
+                    updated += cur.rowcount
                     continue
-                matched_pid = None
-                for performer in performers:
-                    aliases = performer_alias_map.get(int(performer["id"])) or []
-                    if any(alias in compact_haystack for alias in aliases):
-                        matched_pid = int(performer["id"])
-                        break
-                if matched_pid is not None:
-                    conn.execute("UPDATE screenshots SET performer_id = ? WHERE id = ?", (matched_pid, row["id"]))
-                    updated += 1
+
+                if best_match is None or best_match.get("performer_id") is None:
+                    continue
+                if int(best_match["performer_id"]) == int(current_performer_id):
+                    continue
+
+                current_signature = signature_by_id.get(int(current_performer_id))
+                if current_signature is None:
+                    continue
+                current_score = float(score_candidate_identity(candidate, current_signature)["score"])
+                best_score = float(best_match["score"])
+                if current_score >= 5.0 or best_score < current_score + 3.0:
+                    continue
+                cur = conn.execute(
+                    "UPDATE screenshots SET performer_id = ? WHERE id = ? AND performer_id = ?",
+                    (best_match["performer_id"], row["id"], current_performer_id),
+                )
+                updated += cur.rowcount
             conn.commit()
         if updated:
             self._invalidate_after_write()
@@ -2377,32 +2415,6 @@ class Database:
                         counts_by_id = {int(r["performer_id"]): int(r["cnt"]) for r in count_rows}
                     for performer in performers:
                         performer["screenshots_count"] = counts_by_id.get(int(performer["id"]), 0)
-                performer_by_id = {int(p["id"]): p for p in performers}
-                missing_avatar_ids = [
-                    performer_id
-                    for performer_id, performer in performer_by_id.items()
-                    if not (performer.get("avatar_url") or performer.get("avatar_local"))
-                ]
-                if missing_avatar_ids:
-                    placeholders = ",".join("?" for _ in missing_avatar_ids)
-                    fallback_rows = conn.execute(
-                        f"SELECT performer_id, source_url FROM performer_media "
-                        f"WHERE performer_id IN ({placeholders}) AND source_url IS NOT NULL AND source_url != '' "
-                        f"ORDER BY performer_id, captured_at DESC",
-                        missing_avatar_ids,
-                    ).fetchall()
-                    fallback_by_id: dict[int, str] = {}
-                    for row in fallback_rows:
-                        performer_id = int(row["performer_id"])
-                        source_url = str(row["source_url"] or "").strip()
-                        if performer_id not in fallback_by_id and source_url.startswith(("http://", "https://")):
-                            fallback_by_id[performer_id] = source_url
-                    for performer in performers:
-                        if performer.get("avatar_url") or performer.get("avatar_local"):
-                            continue
-                        fallback = fallback_by_id.get(int(performer["id"]))
-                        if fallback:
-                            performer["avatar_url"] = fallback
                 if offset == 0:
                     total = conn.execute(f"SELECT COUNT(*) FROM performers {clause}", params).fetchone()[0]
                 else:

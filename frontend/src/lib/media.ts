@@ -19,6 +19,12 @@ function isRenderableRemoteUrl(url: string): boolean {
   )
 }
 
+function buildProxyMediaUrl(url: string): string {
+  return isRenderableRemoteUrl(url) && !url.startsWith("/api/screenshots/proxy-media?url=")
+    ? `/api/screenshots/proxy-media?url=${encodeURIComponent(url)}`
+    : ""
+}
+
 function uniqueMediaCandidates(candidates: Array<string | null | undefined>): string[] {
   const seen = new Set<string>()
   const urls: string[] = []
@@ -116,21 +122,22 @@ export function getScreenshotPosterSrc(s: Screenshot): string {
 }
 
 export function getBestAvailableMediaSrc(s: Screenshot): string {
-  return pickUsableMediaUrl([getScreenshotMediaSrc(s)])
+  const mediaSrc = getScreenshotMediaSrc(s)
+  return pickUsableMediaUrl([mediaSrc, buildProxyMediaUrl(mediaSrc)])
 }
 
 export function getBestAvailablePreviewSrc(s: Screenshot): string {
   const previewSrc = getScreenshotPreviewSrc(s)
-  if (previewSrc) return pickUsableMediaUrl([previewSrc])
+  if (previewSrc) return pickUsableMediaUrl([previewSrc, buildProxyMediaUrl(previewSrc)])
   const mediaSrc = getScreenshotMediaSrc(s)
-  return isVideoUrl(mediaSrc) ? "" : pickUsableMediaUrl([mediaSrc])
+  return isVideoUrl(mediaSrc) ? "" : pickUsableMediaUrl([mediaSrc, buildProxyMediaUrl(mediaSrc)])
 }
 
 export function getBestAvailablePosterSrc(s: Screenshot): string {
   const previewSrc = getScreenshotPreviewSrc(s)
-  if (previewSrc) return pickUsableMediaUrl([previewSrc])
+  if (previewSrc) return pickUsableMediaUrl([previewSrc, buildProxyMediaUrl(previewSrc)])
   const mediaSrc = getScreenshotMediaSrc(s)
-  return isVideoUrl(mediaSrc) ? "" : pickUsableMediaUrl([mediaSrc])
+  return isVideoUrl(mediaSrc) ? "" : pickUsableMediaUrl([mediaSrc, buildProxyMediaUrl(mediaSrc)])
 }
 
 export function useResolvedScreenshotMedia(s: Screenshot) {

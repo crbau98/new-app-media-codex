@@ -533,8 +533,10 @@ export const api = {
   runs: (limit?: number) => apiFetch<Run[]>(`/api/runs${limit ? `?limit=${limit}` : ""}`),
   run: (id: number) => apiFetch<Run>(`/api/runs/${id}`),
   triggerCrawl: () => apiFetch<{ status: string }>("/api/run", { method: "POST" }),
-  browseScreenshots: (params?: Record<string, string | number>) =>
-    apiFetch<BrowseScreenshotsPayload>(`/api/screenshots${buildQuery(params)}`),
+  browseScreenshots: (
+    params?: Record<string, string | number | boolean>,
+    options?: { signal?: AbortSignal },
+  ) => apiFetch<BrowseScreenshotsPayload>(`/api/screenshots${buildQuery(params)}`, { signal: options?.signal }),
   screenshotStatus: () => apiFetch<{ running: boolean; current_term?: string; terms_done?: number; terms_total?: number; items_found?: number }>("/api/screenshots/status"),
   triggerCapture: () => fetchCaptureStatus(),
   recoverVideos: () => apiFetch<{ recovered: number; skipped: number }>('/api/screenshots/recover-videos', { method: 'POST' }),

@@ -12,23 +12,23 @@ const ShortcutModal = lazy(() => import("./ShortcutModal").then((m) => ({ defaul
 const NotificationCenter = lazy(() => import("./NotificationCenter").then((m) => ({ default: m.NotificationCenter })))
 
 const VIEW_LABELS: Record<string, string> = {
-  overview: "Media",
-  items: "Media",
-  images: "Media",
-  hypotheses: "Media",
-  graph: "Media",
-  performers: "Creators",
+  overview: "Media Library",
+  items: "Media Library",
+  images: "Media Library",
+  hypotheses: "Media Library",
+  graph: "Media Library",
+  performers: "Creator Roster",
   settings: "Settings",
 }
 
 const VIEW_DESCRIPTIONS: Record<string, string> = {
-  overview: "Browse, search, and expand the media library",
-  items: "Browse, search, and expand the media library",
-  images: "Browse, filter, rate, and review captured media",
-  hypotheses: "Browse, search, and expand the media library",
-  graph: "Browse, search, and expand the media library",
-  performers: "Manage creators, discovery, and capture",
-  settings: "Operational controls and system preferences",
+  overview: "Stream faster, filter smarter, and jump straight into your strongest media",
+  items: "Stream faster, filter smarter, and jump straight into your strongest media",
+  images: "Browse, rate, and stream creator-linked media without the clutter",
+  hypotheses: "Stream faster, filter smarter, and jump straight into your strongest media",
+  graph: "Stream faster, filter smarter, and jump straight into your strongest media",
+  performers: "Verify creators, queue capture, and keep the roster clean and responsive",
+  settings: "Tune streaming, capture, and playback preferences for publish-ready performance",
 }
 
 const RECENT_SEARCHES_KEY = "codex_recent_searches"

@@ -539,14 +539,14 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
     isLoading,
   } = useInfiniteQuery({
     queryKey: ["video-feed", term, source],
-    queryFn: ({ pageParam = 0 }) =>
+    queryFn: ({ pageParam = 0, signal }) =>
       api.browseScreenshots({
         offset: pageParam as number,
         limit: 12,
         media_type: "video",
         ...(term ? { term } : {}),
         ...(source ? { source } : {}),
-      }),
+      }, { signal }),
     getNextPageParam: (last: BrowseScreenshotsPayload) =>
       last.has_more ? (last.next_offset ?? (last.offset + last.screenshots.length)) : undefined,
     initialPageParam: 0,
@@ -634,13 +634,29 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
     })
   }, [])
 
+  const patchFeedShot = useCallback((id: number, updater: (shot: Screenshot) => Screenshot) => {
+    const patchInfiniteData = (value: unknown) => {
+      if (!value || typeof value !== "object" || !("pages" in value)) return value
+      const payload = value as { pages: BrowseScreenshotsPayload[]; pageParams: unknown[] }
+      return {
+        ...payload,
+        pages: payload.pages.map((page) => ({
+          ...page,
+          screenshots: page.screenshots.map((shot) => (shot.id === id ? updater(shot) : shot)),
+        })),
+      }
+    }
+
+    qc.setQueryData(["video-feed", term, source], patchInfiniteData)
+    qc.setQueriesData({ queryKey: ["screenshots"] }, patchInfiniteData)
+  }, [qc, source, term])
+
   // Rate
   const rateMutation = useMutation({
     mutationFn: ({ id, rating }: { id: number; rating: number }) =>
       api.rateScreenshot(id, rating),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["video-feed"] })
-      qc.invalidateQueries({ queryKey: ["screenshots"] })
+    onSuccess: (shot) => {
+      patchFeedShot(shot.id, () => shot)
       qc.invalidateQueries({ queryKey: ["media-stats"] })
     },
   })
@@ -656,8 +672,7 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
       const result = await api.summarizeScreenshot(id)
       if (result.summary) {
         addToast("Description generated", "success")
-        qc.invalidateQueries({ queryKey: ["video-feed"] })
-        qc.invalidateQueries({ queryKey: ["screenshots"] })
+        patchFeedShot(id, (shot) => ({ ...shot, ai_summary: result.summary }))
         qc.invalidateQueries({ queryKey: ["media-stats"] })
       } else if (result.refused) {
         addToast("AI refused to describe this content", "info")
@@ -737,18 +752,24 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
         style={{ scrollBehavior: "smooth" }}
       >
         {videos.map((shot, idx) => (
-          <div key={shot.id} data-video-slide={idx}>
-            <VideoSlide
-              shot={shot}
-              isActive={idx === activeIndex || idx === activeIndex + 1}
-              favorites={favorites}
-              onToggleFavorite={handleToggleFavorite}
-              onRate={handleRate}
-              onDescribe={handleDescribe}
-              onDismiss={handleDismiss}
-              describingIds={describingIds}
-              onAddToPlaylist={handleAddToPlaylist}
-            />
+          <div key={shot.id} data-video-slide={idx} className="h-[calc(100vh-3.5rem)]">
+            {Math.abs(idx - activeIndex) <= 2 ? (
+              <VideoSlide
+                shot={shot}
+                isActive={idx === activeIndex || idx === activeIndex + 1}
+                favorites={favorites}
+                onToggleFavorite={handleToggleFavorite}
+                onRate={handleRate}
+                onDescribe={handleDescribe}
+                onDismiss={handleDismiss}
+                describingIds={describingIds}
+                onAddToPlaylist={handleAddToPlaylist}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center bg-black/90">
+                <div className="text-xs uppercase tracking-[0.22em] text-white/30">Queued</div>
+              </div>
+            )}
           </div>
         ))}
 
