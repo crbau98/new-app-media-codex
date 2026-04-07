@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, type Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { StarRating } from "@/components/StarRating"
-import { getScreenshotMediaSrc, getScreenshotPosterSrc, getScreenshotPreviewSrc } from "@/lib/media"
+import { getBestAvailableMediaSrc, getBestAvailablePosterSrc, getBestAvailablePreviewSrc, useResolvedScreenshotMedia } from "@/lib/media"
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -96,8 +96,7 @@ interface Props {
 }
 
 export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleFavorite, onRate, onOpenRelated, userTags = [], onAddTag, onRemoveTag }: Props) {
-  const src = getScreenshotMediaSrc(shot)
-  const posterSrc = getScreenshotPosterSrc(shot)
+  const { mediaSrc: src, posterSrc, markMediaBroken } = useResolvedScreenshotMedia(shot)
   const qc = useQueryClient()
 
   /* refs */
@@ -505,26 +504,41 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
         onMouseMove={showControls}
         onMouseLeave={() => { if (playing) setControlsVisible(false) }}
       >
-        {/* Video element - no native controls */}
-        <video
-          ref={videoRef}
-          src={src ?? undefined}
-          poster={posterSrc || undefined}
-          preload="metadata"
-          playsInline
-          autoPlay
-          loop={loop}
-          muted={muted}
-          onWheel={handleWheel}
-          className="mx-auto max-h-[70vh] w-full cursor-pointer object-contain"
-        />
+        {!src ? (
+          <div className="flex min-h-[24rem] items-center justify-center px-6 py-10 text-center">
+            <div className="flex max-w-xl flex-col items-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-8 py-8">
+              <div className="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100">
+                Media unavailable
+              </div>
+              <p className="text-lg font-medium text-white/85">{shot.term}</p>
+              <p className="text-sm text-amber-100/70">This media could not be loaded right now. You can still open the original source from the actions below.</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Video element - no native controls */}
+            <video
+              ref={videoRef}
+              src={src ?? undefined}
+              poster={posterSrc || undefined}
+              preload="metadata"
+              playsInline
+              autoPlay
+              loop={loop}
+              muted={muted}
+              onWheel={handleWheel}
+              onError={markMediaBroken}
+              className="mx-auto max-h-[70vh] w-full cursor-pointer object-contain"
+            />
 
-        {/* Big play button when not started */}
-        {!hasStarted && !playing && <BigPlayButton onClick={togglePlay} />}
+            {/* Big play button when not started */}
+            {!hasStarted && !playing && <BigPlayButton onClick={togglePlay} />}
 
-        {/* Click area for play/pause & double-tap seek */}
-        {hasStarted && (
-          <div className="absolute inset-0 z-[5]" onClick={handleVideoClick} />
+            {/* Click area for play/pause & double-tap seek */}
+            {hasStarted && (
+              <div className="absolute inset-0 z-[5]" onClick={handleVideoClick} />
+            )}
+          </>
         )}
 
         {/* Seek indicator overlays */}
@@ -699,9 +713,9 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
           <p className="mb-2 text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide">More Like This</p>
           <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-white/10">
             {relatedShots.map((rel) => {
-              const relSrc = getScreenshotMediaSrc(rel)
-              const relPreviewSrc = getScreenshotPreviewSrc(rel)
-              const relPosterSrc = getScreenshotPosterSrc(rel)
+              const relSrc = getBestAvailableMediaSrc(rel)
+              const relPreviewSrc = getBestAvailablePreviewSrc(rel)
+              const relPosterSrc = getBestAvailablePosterSrc(rel)
               const isVid = isVideoAsset(relSrc)
               return (
                 <button

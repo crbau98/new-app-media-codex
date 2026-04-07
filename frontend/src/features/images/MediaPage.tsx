@@ -3,14 +3,17 @@ import { useWindowVirtualizer } from "@tanstack/react-virtual"
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api, type Screenshot, type ScreenshotTerm, type Performer, type Playlist, type MediaStatsPayload, type UserTagCount, type DiscoveredCreator } from "@/lib/api"
 
-const AUTO_DESCRIBE_KEY = "auto-describe-screenshots"
 import { useAppStore } from "@/store"
 import { Spinner } from "@/components/Spinner"
 import { SkeletonGrid } from "@/components/Skeleton"
 import { EmptyState } from "@/components/EmptyState"
 import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
-import { getMediaDebugLabel, getScreenshotMediaSrc, getScreenshotPreviewSrc, isVideoShot } from "@/lib/media"
+import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
+
+const AUTO_DESCRIBE_KEY = "auto-describe-screenshots"
+const MEDIA_NAVIGATION_INTENT_KEY = "codex:media-navigation-intent"
+const MEDIA_NAVIGATION_EVENT = "codex:media-navigation"
 
 const loadMediaAnalyticsDashboard = () =>
   import("./MediaAnalyticsDashboard").then((m) => ({ default: m.MediaAnalyticsDashboard }))
@@ -50,12 +53,33 @@ function writeTermToHash(term: string | null) {
   else window.location.hash = basePath
 }
 
+function consumeMediaNavigationIntent(): { query?: string; term?: string; tag?: string } | null {
+  try {
+    const raw = window.sessionStorage.getItem(MEDIA_NAVIGATION_INTENT_KEY)
+    if (!raw) return null
+    window.sessionStorage.removeItem(MEDIA_NAVIGATION_INTENT_KEY)
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === "object" ? parsed as { query?: string; term?: string; tag?: string } : null
+  } catch {
+    return null
+  }
+}
+
+function clearMediaNavigationIntent() {
+  try {
+    window.sessionStorage.removeItem(MEDIA_NAVIGATION_INTENT_KEY)
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 type ShotClientMeta = {
   isVideo: boolean
   searchText: string
 }
 
 function buildShotClientMeta(shot: Screenshot): ShotClientMeta {
+  const src = getBestAvailableMediaSrc(shot)
   return {
     isVideo: isVideoShot(shot),
     searchText: [shot.term, shot.source, shot.page_url, shot.ai_summary ?? ""].join(" ").toLowerCase(),
@@ -530,11 +554,8 @@ const MediaCard = memo(function MediaCard({
   onContextMenu?: (e: React.MouseEvent) => void
   onNavigateToPerformer?: (performerId: number, username: string) => void
 }) {
-  const src = getScreenshotMediaSrc(shot)
-  const previewSrc = getScreenshotPreviewSrc(shot)
-  const vid = isVideoShot(shot) || (src ? isVideo(src) : false)
-  const gif = src ? isGif(src) : false
-  const [broken, setBroken] = useState(false)
+  const { mediaSrc: src, previewSrc, isVideo: vid, isGif: gif, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
+  const mediaLabel = getMediaDebugLabel(shot)
 
   return (
     <article
@@ -546,111 +567,146 @@ const MediaCard = memo(function MediaCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); batchMode ? onSelect() : onClick() } }}
       onContextMenu={onContextMenu}
       className={cn(
-        "group relative cursor-pointer overflow-hidden rounded-xl bg-white/5 aspect-video transition-transform duration-200 hover:scale-[1.02] animate-[slideUp_300ms_ease-out_both]",
+        "group relative aspect-square cursor-pointer overflow-hidden bg-black/20",
         selected && "ring-2 ring-blue-500"
       )}
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
     >
-      <div className="absolute inset-0">
-      {previewSrc && !broken ? (
-        <img
-          src={previewSrc}
-          alt={shot.ai_summary || `${vid ? "Video" : "Screenshot"}: ${shot.term} from ${sourceLabel(shot.source)}`}
-          loading="lazy"
-          decoding="async"
-          fetchPriority="low"
-          onError={() => setBroken(true)}
-          className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
-        />
-      ) : vid && src ? (
-        <video
-          src={src}
-          muted
-          playsInline
-          preload="metadata"
-          onError={() => setBroken(true)}
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center bg-white/[0.03]">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-white/20">
-            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
-          </svg>
-        </div>
-      )}
-
-      {/* Content type badge — top-left pill with icon */}
-      {(gif || vid) && (
-        <div className="absolute top-2 left-2 flex gap-1">
-          {gif && (
-            <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide leading-none text-white/90 backdrop-blur-sm">
-              GIF
-            </span>
-          )}
-          {vid && (
-            <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide leading-none text-white/90 backdrop-blur-sm">
-              <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              Video
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Favorite heart — top-right, visible on hover or if favorited */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
-        className={cn(
-          "absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-full transition-all",
-          favorite
-            ? "bg-black/50 text-red-400 backdrop-blur-sm"
-            : "bg-black/50 text-white/70 backdrop-blur-sm opacity-0 group-hover:opacity-100 hover:text-red-400"
+      <div style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
+        {!previewSrc ? (
+          vid && src ? (
+            <video
+              src={src}
+              muted
+              playsInline
+              preload="metadata"
+              onError={markMediaBroken}
+              className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
+            />
+          ) : (
+            <MediaUnavailableTile
+              title={shot.term}
+              detail={mediaLabel}
+              statusLabel="Media unavailable"
+            />
+          )
+        ) : (
+          <img
+            src={previewSrc}
+            alt={shot.ai_summary || `${vid ? "Video" : "Screenshot"}: ${shot.term} from ${sourceLabel(shot.source)}`}
+            loading="lazy"
+            decoding="async"
+            fetchPriority="low"
+            onError={markPreviewBroken}
+            className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
+          />
         )}
-        title={favorite ? "Unfavorite" : "Favorite"}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill={favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
-          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-        </svg>
-      </button>
 
-      {/* Batch checkbox */}
-      {batchMode && (
-        <div className={cn(
-          "absolute top-2 left-2 flex h-5 w-5 items-center justify-center rounded border text-[10px]",
-          selected ? "border-blue-500 bg-blue-500 text-white" : "border-white/40 bg-black/50 text-transparent"
-        )}>
-          {selected && "\u2713"}
-        </div>
-      )}
-
-      {/* Bottom overlay — creator username + source, hidden on mobile until hover */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 pb-2.5 pt-10 max-sm:opacity-0 max-sm:group-hover:opacity-100 transition-opacity duration-200">
-        <div className="flex items-end justify-between gap-2">
-          <div className="min-w-0">
-            {shot.performer_username && (
-              shot.performer_id && onNavigateToPerformer ? (
-                <button
-                  type="button"
-                  className="block truncate text-[11px] font-medium text-white/90 hover:text-white transition-colors"
-                  onClick={(e) => { e.stopPropagation(); onNavigateToPerformer(shot.performer_id!, shot.performer_username!) }}
-                  title={`View @${shot.performer_username}'s profile`}
-                >
-                  @{shot.performer_username}
-                </button>
-              ) : (
-                <span className="block truncate text-[11px] font-medium text-white/90">
-                  @{shot.performer_username}
-                </span>
-              )
+        <div className="absolute top-1.5 left-1.5 flex flex-col gap-1">
+          <div className="flex gap-1">
+            {gif && (
+              <span className="rounded bg-emerald-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
+                GIF
+              </span>
             )}
-            {!shot.performer_username && (
-              <p className="truncate text-[11px] font-medium text-white/90">{shot.term}</p>
+            {vid && (
+              <span className="rounded bg-purple-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
+                VIDEO
+              </span>
             )}
           </div>
-          <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[8px] font-medium uppercase tracking-wide text-white/50 backdrop-blur-sm">
-            {sourceLabel(shot.source)}
-          </span>
+          {shot.performer_username && shot.performer_id && onNavigateToPerformer && (
+            <button
+              type="button"
+              className="hidden max-w-[80px] truncate rounded bg-sky-500/80 px-1 py-0.5 text-[9px] font-medium leading-none text-white shadow transition-colors hover:bg-sky-400/90 group-hover:inline"
+              onClick={(e) => { e.stopPropagation(); onNavigateToPerformer(shot.performer_id!, shot.performer_username!) }}
+              title={`View @${shot.performer_username}'s profile`}
+            >
+              @{shot.performer_username}
+            </button>
+          )}
+          {shot.performer_username && (!shot.performer_id || !onNavigateToPerformer) && (
+            <span className="hidden max-w-[80px] truncate rounded bg-sky-500/80 px-1 py-0.5 text-[9px] font-medium leading-none text-white shadow group-hover:inline">
+              @{shot.performer_username}
+            </span>
+          )}
         </div>
-      </div>
+
+        {vid && !batchMode && (
+          <div className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:hidden">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,0 10,5 2,10" /></svg>
+          </div>
+        )}
+
+        {favorite && (
+          <div className="absolute top-1.5 right-1.5 text-sm text-red-400 drop-shadow">&#9829;</div>
+        )}
+
+        {(shot.rating ?? 0) > 0 ? (
+          <div className="absolute bottom-1.5 left-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+            <StarRating value={shot.rating ?? 0} onChange={onRate} compact />
+          </div>
+        ) : (
+          !batchMode && (
+            <div className="absolute bottom-1.5 left-1.5 z-10 hidden group-hover:block" onClick={(e) => e.stopPropagation()}>
+              <StarRating value={0} onChange={onRate} compact />
+            </div>
+          )
+        )}
+
+        {batchMode && (
+          <div className={cn(
+            "absolute top-1.5 left-1.5 flex h-5 w-5 items-center justify-center rounded border text-[10px]",
+            selected ? "border-blue-500 bg-blue-500 text-white" : "border-white/40 bg-black/50 text-transparent"
+          )}>
+            {selected && "✓"}
+          </div>
+        )}
+
+        {!batchMode && (
+          <div className="absolute bottom-1.5 right-1.5 hidden gap-1 group-hover:flex">
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors hover:text-red-400"
+              title={favorite ? "Unfavorite" : "Favorite"}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill={favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDescribe() }}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors hover:text-purple-400"
+              title="AI Describe"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z" />
+                <path d="M18 15l.75 2.25L21 18l-2.25.75L18 21l-.75-2.25L15 18l2.25-.75z" />
+              </svg>
+            </button>
+            {shot.page_url && (
+              <a
+                href={shot.page_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors hover:text-blue-400"
+                title="Open source"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </a>
+            )}
+          </div>
+        )}
+
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pb-2 pt-6 opacity-0 transition-opacity group-hover:opacity-100">
+          <p className="truncate text-xs font-medium text-white">{shot.term}</p>
+          <p className="text-[10px] text-white/60">{sourceLabel(shot.source)}</p>
+        </div>
       </div>
     </article>
   )
@@ -679,13 +735,8 @@ const MosaicCard = memo(function MosaicCard({
   onToggleFavorite: () => void
   onContextMenu?: (e: React.MouseEvent) => void
 }) {
-  const src = getScreenshotMediaSrc(shot)
-  const previewSrc = getScreenshotPreviewSrc(shot)
+  const { mediaSrc: src, previewSrc, isVideo: vid, isGif: gif, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const mediaLabel = getMediaDebugLabel(shot)
-  const vid = isVideoShot(shot) || (src ? isVideo(src) : false)
-  const gif = src ? isGif(src) : false
-  const [broken, setBroken] = useState(false)
-  const previewPending = vid && !previewSrc && !!src
 
   return (
     <article
@@ -699,73 +750,77 @@ const MosaicCard = memo(function MosaicCard({
       className="group relative mb-1 cursor-pointer overflow-hidden rounded-lg bg-white/5 break-inside-avoid"
       style={{ breakInside: "avoid" }}
     >
-      <div style={{  }}>
-      {previewSrc && !broken ? (
-        <img
-          src={previewSrc}
-          alt={shot.ai_summary || `${shot.term} — ${sourceLabel(shot.source)}`}
-          loading="lazy"
-          decoding="async"
-          fetchPriority="low"
-          onError={() => setBroken(true)}
-          className="w-full transition-[filter] duration-200 group-hover:brightness-110"
-          style={{ display: "block" }}
-        />
-      ) : vid && src ? (
-        <video
-          src={src}
-          muted
-          playsInline
-          preload="metadata"
-          onError={() => setBroken(true)}
-          className="w-full object-cover min-h-[10rem]"
-        />
-      ) : (
-        <MediaUnavailableTile
-          title={shot.term}
-          detail={mediaLabel}
-          statusLabel={broken ? "Media unavailable" : "Loading"}
-          className="min-h-[10rem]"
-        />
-      )}
+      <div style={{ contentVisibility: "auto", containIntrinsicSize: "220px" }}>
+        {!previewSrc ? (
+          vid && src ? (
+            <video
+              src={src}
+              muted
+              playsInline
+              preload="metadata"
+              onError={markMediaBroken}
+              className="w-full transition-[filter] duration-200 group-hover:brightness-110"
+              style={{ display: "block" }}
+            />
+          ) : (
+            <MediaUnavailableTile
+              title={shot.term}
+              detail={mediaLabel}
+              statusLabel="Media unavailable"
+              className="min-h-[10rem]"
+            />
+          )
+        ) : (
+          <img
+            src={previewSrc}
+            alt={shot.ai_summary || `${shot.term} — ${sourceLabel(shot.source)}`}
+            loading="lazy"
+            decoding="async"
+            fetchPriority="low"
+            onError={markPreviewBroken}
+            className="w-full transition-[filter] duration-200 group-hover:brightness-110"
+            style={{ display: "block" }}
+          />
+        )}
 
-      {/* Badges */}
-      <div className="absolute top-1.5 left-1.5 flex gap-1">
-        {gif && <span className="rounded bg-emerald-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white">GIF</span>}
-        {vid && <span className="rounded bg-purple-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white">VIDEO</span>}
-      </div>
-
-      {/* Favorite */}
-      {favorite && (
-        <div className="absolute top-1.5 right-1.5 text-red-400 text-sm drop-shadow">&#9829;</div>
-      )}
-
-      {/* Star rating */}
-      {(shot.rating ?? 0) > 0 && (
-        <div className="absolute bottom-8 left-1.5 z-10" onClick={(e) => e.stopPropagation()}>
-          <span className="text-[10px] text-yellow-400">{"★".repeat(shot.rating ?? 0)}</span>
+        <div className="absolute top-1.5 left-1.5 flex gap-1">
+          {gif && <span className="rounded bg-emerald-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white">GIF</span>}
+          {vid && <span className="rounded bg-purple-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white">VIDEO</span>}
         </div>
-      )}
 
-      {/* Card metadata — always visible */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-2 pt-8">
-        <p className="truncate text-xs font-medium text-white drop-shadow-sm">{shot.term}</p>
-        <p className="text-[10px] text-white/60">{sourceLabel(shot.source)}</p>
-      </div>
+        {favorite && (
+          <div className="absolute top-1.5 right-1.5 text-sm text-red-400 drop-shadow">&#9829;</div>
+        )}
 
-      {/* Favorite toggle */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
-        className="absolute top-1.5 right-1.5 hidden h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors group-hover:flex hover:text-red-400"
-        title={favorite ? "Unfavorite" : "Favorite"}
-      >
-        {favorite ? "♥" : "♡"}
-      </button>
+        {(shot.rating ?? 0) > 0 && (
+          <div className="absolute bottom-8 left-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+            <span className="text-[10px] text-yellow-400">{"★".repeat(shot.rating ?? 0)}</span>
+          </div>
+        )}
+
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-2 pt-8 opacity-0 transition-opacity group-hover:opacity-100">
+          <p className="truncate text-xs font-medium text-white">{shot.term}</p>
+          <p className="text-[10px] text-white/60">{sourceLabel(shot.source)}</p>
+        </div>
+
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
+          className={cn(
+            "absolute bottom-1.5 right-1.5 hidden h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors group-hover:flex",
+            favorite ? "text-red-400" : "hover:text-red-300",
+          )}
+          title={favorite ? "Unfavorite" : "Favorite"}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill={favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+        </button>
       </div>
     </article>
   )
 }, (prev, next) =>
   prev.shot.id === next.shot.id &&
+  prev.shot.rating === next.shot.rating &&
   prev.shot.local_url === next.shot.local_url &&
   prev.favorite === next.favorite
 )
@@ -817,7 +872,7 @@ const AIDescribedSection = memo(function AIDescribedSection({
       {!collapsed && (
         <div className="hide-scrollbar mt-2 flex gap-3 overflow-x-auto pb-1">
           {described.map((shot) => {
-            const src = getScreenshotPreviewSrc(shot)
+            const src = getBestAvailablePreviewSrc(shot)
             if (!src) return null
             return (
               <button
@@ -1236,6 +1291,41 @@ export function MediaPage() {
   const screenshotRunning = useAppStore((s) => s.screenshotRunning)
   const [statusPollingEnabled, setStatusPollingEnabled] = useState(true)
   const qc = useQueryClient()
+
+  const applyMediaNavigationIntent = useCallback((intent: { query?: string; term?: string; tag?: string }) => {
+    const nextQuery = intent.query?.trim() ?? ""
+    const nextTerm = intent.term?.trim() ?? ""
+    const nextTag = intent.tag?.trim() ?? ""
+    if (!nextQuery && !nextTerm && !nextTag) return
+
+    setSearch(nextQuery)
+    setTerm(nextTerm || null)
+    setActiveTagFilter(nextTag || null)
+    setTab("all")
+    setAdvancedFilters(EMPTY_FILTERS)
+    setAdvancedOpen(false)
+    setDiscoveryOpen(false)
+    setActivePlaylistId(null)
+    setFilterDescribed(false)
+    setOnlyUnlinked(false)
+    setOnlyUnrated(false)
+    setOnlyRecent(false)
+    setMediaCreator(null)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }, [setMediaCreator])
+
+  useEffect(() => {
+    const pendingIntent = consumeMediaNavigationIntent()
+    if (pendingIntent) applyMediaNavigationIntent(pendingIntent)
+
+    const listener: EventListener = (event) => {
+      applyMediaNavigationIntent((event as CustomEvent<{ query?: string; term?: string; tag?: string }>).detail ?? {})
+      clearMediaNavigationIntent()
+    }
+
+    window.addEventListener(MEDIA_NAVIGATION_EVENT, listener)
+    return () => window.removeEventListener(MEDIA_NAVIGATION_EVENT, listener)
+  }, [applyMediaNavigationIntent])
 
   // On mount: if the global store has a pending date filter (set from heatmap click),
   // pre-populate advancedFilters and open the panel, then clear the store filters.
@@ -2387,7 +2477,7 @@ export function MediaPage() {
   function openMedia(shot: Screenshot) {
     pushViewHistory(shot.id)
     setViewHistory(loadViewHistory())
-    const src = getScreenshotMediaSrc(shot)
+    const src = getBestAvailableMediaSrc(shot)
     if (isVideo(src)) {
       void preloadInlineVideoPlayer()
       setExpandedVideoId(shot.id)
@@ -2397,8 +2487,8 @@ export function MediaPage() {
     }
   }
 
-  function renderCard(shot: Screenshot, index = 0) {
-    const src = getScreenshotMediaSrc(shot)
+  function renderCard(shot: Screenshot) {
+    const src = getBestAvailableMediaSrc(shot)
     const prefetchViewer = () => {
       if (src && isVideo(src)) void preloadInlineVideoPlayer()
       else void preloadMediaLightbox()
@@ -2425,7 +2515,7 @@ export function MediaPage() {
   }
 
   function renderListItem(shot: Screenshot) {
-    const src = getScreenshotMediaSrc(shot)
+    const src = getBestAvailableMediaSrc(shot)
     const prefetchViewer = () => {
       if (src && isVideo(src)) void preloadInlineVideoPlayer()
       else void preloadMediaLightbox()
@@ -3116,8 +3206,8 @@ export function MediaPage() {
             {!recentlyViewedCollapsed && (
               <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-white/10">
                 {recentShots.map((shot) => {
-                  const src = getScreenshotPreviewSrc(shot)
-                  const mediaSrc = getScreenshotMediaSrc(shot)
+                  const src = getBestAvailablePreviewSrc(shot)
+                  const mediaSrc = getBestAvailableMediaSrc(shot)
                   const vid = isVideo(mediaSrc)
                   return (
                     <button
