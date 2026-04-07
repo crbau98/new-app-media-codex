@@ -11,7 +11,12 @@ function normalizeMediaUrl(url: string | null | undefined): string {
 }
 
 function isRenderableRemoteUrl(url: string): boolean {
-  return Boolean(url) && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/api/screenshots/proxy-media?url="))
+  return Boolean(url) && (
+    url.startsWith("http://") ||
+    url.startsWith("https://") ||
+    url.startsWith("/api/screenshots/proxy-media?url=") ||
+    url.startsWith("/cached-")
+  )
 }
 
 function uniqueMediaCandidates(candidates: Array<string | null | undefined>): string[] {
