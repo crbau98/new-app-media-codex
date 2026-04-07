@@ -12,7 +12,7 @@ const PREFETCH_FALLBACK_DELAY = 300
 const INPUT_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
 
 function isOnboardingComplete() {
-  try { return localStorage.getItem("onboarding_complete") === "true" } catch { return false }
+  return true
 }
 
 // ── Lazy-loaded views ────────────────────────────────────────────────

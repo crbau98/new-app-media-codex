@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
 
-const STORAGE_KEY = "onboarding_complete"
-
 interface Step {
   title: string
   description: string
@@ -92,7 +90,6 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const isLast = step === STEPS.length - 1
 
   const complete = useCallback(() => {
-    localStorage.setItem(STORAGE_KEY, "true")
     onComplete()
   }, [onComplete])
 
@@ -186,5 +183,5 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 }
 
 export function resetOnboarding() {
-  localStorage.removeItem(STORAGE_KEY)
+  // storage removed
 }

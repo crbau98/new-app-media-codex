@@ -18,19 +18,6 @@ function parseUserTags(raw: string | null | undefined): string[] {
   } catch { return [] }
 }
 
-const FAVORITES_KEY = "screenshot-favorites"
-
-function loadFavorites(): Set<number> {
-  try {
-    const raw = localStorage.getItem(FAVORITES_KEY)
-    return new Set((raw ? JSON.parse(raw) : []).filter((v: unknown): v is number => typeof v === "number"))
-  } catch { return new Set() }
-}
-
-function saveFavorites(s: Set<number>) {
-  localStorage.setItem(FAVORITES_KEY, JSON.stringify([...s]))
-}
-
 // ── Icons ────────────────────────────────────────────────────────────────────
 
 function HeartIcon({ filled }: { filled: boolean }) {
@@ -524,7 +511,7 @@ interface VideoFeedProps {
 
 export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [favorites, setFavorites] = useState<Set<number>>(() => loadFavorites())
+  const [favorites, setFavorites] = useState<Set<number>>(new Set())
   const [describingIds, setDescribingIds] = useState<Set<number>>(new Set())
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set())
   const addToast = useAppStore((s) => s.addToast)
@@ -629,7 +616,6 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
-      saveFavorites(next)
       return next
     })
   }, [])

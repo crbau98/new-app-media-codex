@@ -31,45 +31,43 @@ const VIEW_DESCRIPTIONS: Record<string, string> = {
   settings: "Tune streaming, capture, and playback preferences for publish-ready performance",
 }
 
-const RECENT_SEARCHES_KEY = "codex_recent_searches"
 const MAX_RECENT = 8
-const MEDIA_NAVIGATION_INTENT_KEY = "codex:media-navigation-intent"
 const MEDIA_NAVIGATION_EVENT = "codex:media-navigation"
+
+// Module-level in-memory navigation intent (replaces sessionStorage)
+let _pendingNavigationIntent: { query?: string; term?: string; tag?: string } | null = null
+
+export function consumeNavigationIntent(): { query?: string; term?: string; tag?: string } | null {
+  const v = _pendingNavigationIntent
+  _pendingNavigationIntent = null
+  return v
+}
+
+// Module-level in-memory recent searches (replaces localStorage)
+let _recentSearchesStore: string[] = []
+
+function loadRecentSearches(): string[] {
+  return _recentSearchesStore.slice(0, MAX_RECENT)
+}
+
+function saveRecentSearch(query: string): string[] {
+  const prev = _recentSearchesStore
+  const next = [query, ...prev.filter((q) => q !== query)].slice(0, MAX_RECENT)
+  _recentSearchesStore = next
+  return next
+}
+
+function clearRecentSearches() {
+  _recentSearchesStore = []
+}
 
 type CreatorSuggestionItem = { kind: "creator"; id: string; label: string; meta: string; performer: Performer }
 type TermSuggestionItem = { kind: "term"; id: string; label: string; meta: string; value: string }
 type TagSuggestionItem = { kind: "tag"; id: string; label: string; meta: string; value: string }
 type SearchSuggestionItem = CreatorSuggestionItem | TermSuggestionItem | TagSuggestionItem
 
-function loadRecentSearches(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_SEARCHES_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.slice(0, MAX_RECENT) : []
-  } catch {
-    return []
-  }
-}
-
-function saveRecentSearch(query: string) {
-  const prev = loadRecentSearches()
-  const next = [query, ...prev.filter((q) => q !== query)].slice(0, MAX_RECENT)
-  localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next))
-  return next
-}
-
-function clearRecentSearches() {
-  localStorage.removeItem(RECENT_SEARCHES_KEY)
-}
-
 function queueMediaNavigationIntent(intent: { query?: string; term?: string; tag?: string }) {
-  try {
-    window.sessionStorage.setItem(MEDIA_NAVIGATION_INTENT_KEY, JSON.stringify(intent))
-  } catch {
-    // Ignore storage failures and still dispatch the event.
-  }
-
+  _pendingNavigationIntent = intent
   window.dispatchEvent(new CustomEvent(MEDIA_NAVIGATION_EVENT, { detail: intent }))
 }
 

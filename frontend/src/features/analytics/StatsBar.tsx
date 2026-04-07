@@ -45,7 +45,6 @@ function useCountUp(target: number, duration = 800): number {
 }
 
 // ─── Trend snapshot helpers ───────────────────────────────────────────────────
-const SNAPSHOT_KEY = 'stats_prev_snapshot'
 
 interface StatSnapshot {
   item_count: number
@@ -55,21 +54,11 @@ interface StatSnapshot {
 }
 
 function loadSnapshot(): StatSnapshot | null {
-  try {
-    const raw = localStorage.getItem(SNAPSHOT_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as StatSnapshot
-  } catch {
-    return null
-  }
+  return null
 }
 
-function saveSnapshot(s: StatSnapshot) {
-  try {
-    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(s))
-  } catch {
-    // ignore storage errors
-  }
+function saveSnapshot(_s: StatSnapshot) {
+  // no-op: snapshots are session-only
 }
 
 type TrendDir = 'up' | 'down' | 'neutral'

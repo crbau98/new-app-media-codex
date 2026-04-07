@@ -1516,7 +1516,7 @@ export default function PerformersPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [focusedIdx, setFocusedIdx] = useState(-1)
   const [queueReady, setQueueReady] = useState(false)
-  const [tableView, setTableView] = useState(() => localStorage.getItem("performers-view") === "table")
+  const [tableView, setTableView] = useState(false)
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [showTagCloud, setShowTagCloud] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -1756,11 +1756,7 @@ export default function PerformersPage() {
       if (e.key === "t" && !inInput) {
         e.preventDefault()
         runUiTransition(() => {
-          setTableView((v) => {
-            const next = !v
-            localStorage.setItem("performers-view", next ? "table" : "grid")
-            return next
-          })
+          setTableView((v) => !v)
         })
         return
       }
@@ -1996,7 +1992,7 @@ export default function PerformersPage() {
         {/* View toggle */}
         <div className="ml-auto flex items-center gap-1 rounded-xl border border-white/8 bg-white/[0.02] p-1">
           <button
-            onClick={() => runUiTransition(() => { setTableView(false); localStorage.setItem("performers-view", "grid") })}
+            onClick={() => runUiTransition(() => { setTableView(false) })}
             className={cn("rounded-lg p-1.5 transition-colors", !tableView ? "bg-white/10 text-text-primary" : "text-text-muted hover:text-text-secondary")}
             title="Grid view"
           >
@@ -2005,7 +2001,7 @@ export default function PerformersPage() {
             </svg>
           </button>
           <button
-            onClick={() => runUiTransition(() => { setTableView(true); localStorage.setItem("performers-view", "table") })}
+            onClick={() => runUiTransition(() => { setTableView(true) })}
             className={cn("rounded-lg p-1.5 transition-colors", tableView ? "bg-white/10 text-text-primary" : "text-text-muted hover:text-text-secondary")}
             title="Table view"
           >

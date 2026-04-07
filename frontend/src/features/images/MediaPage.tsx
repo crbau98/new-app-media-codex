@@ -11,9 +11,8 @@ import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
 import { getPerformerAvatarSrc } from "@/lib/performer"
 import { getBestAvailablePreviewSrc, getMediaDebugLabel, getScreenshotMediaSrc, isVideoShot, useResolvedScreenshotMedia } from "@/lib/media"
+import { consumeNavigationIntent } from "@/components/TopBar"
 
-const AUTO_DESCRIBE_KEY = "auto-describe-screenshots"
-const MEDIA_NAVIGATION_INTENT_KEY = "codex:media-navigation-intent"
 const MEDIA_NAVIGATION_EVENT = "codex:media-navigation"
 
 const loadMediaAnalyticsDashboard = () =>
@@ -55,23 +54,11 @@ function writeTermToHash(term: string | null) {
 }
 
 function consumeMediaNavigationIntent(): { query?: string; term?: string; tag?: string } | null {
-  try {
-    const raw = window.sessionStorage.getItem(MEDIA_NAVIGATION_INTENT_KEY)
-    if (!raw) return null
-    window.sessionStorage.removeItem(MEDIA_NAVIGATION_INTENT_KEY)
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === "object" ? parsed as { query?: string; term?: string; tag?: string } : null
-  } catch {
-    return null
-  }
+  return consumeNavigationIntent()
 }
 
 function clearMediaNavigationIntent() {
-  try {
-    window.sessionStorage.removeItem(MEDIA_NAVIGATION_INTENT_KEY)
-  } catch {
-    // Ignore storage failures.
-  }
+  // No-op: intent is consumed on first read from module-level variable
 }
 
 type ShotClientMeta = {
@@ -87,8 +74,6 @@ function buildShotClientMeta(shot: Screenshot): ShotClientMeta {
   }
 }
 
-const FAVORITES_KEY = "screenshot-favorites"
-const GRID_DENSITY_KEY = "media-grid-density"
 
 function isVideo(src: string) {
   return /\.(mp4|webm|mov)/i.test(src)
@@ -98,15 +83,6 @@ function isGif(src: string) {
   return /\.gif$/i.test(src)
 }
 
-function loadFavorites(): Set<number> {
-  try {
-    const raw = localStorage.getItem(FAVORITES_KEY)
-    return new Set((raw ? JSON.parse(raw) : []).filter((v: unknown): v is number => typeof v === "number"))
-  } catch { return new Set() }
-}
-function saveFavorites(s: Set<number>) {
-  localStorage.setItem(FAVORITES_KEY, JSON.stringify([...s]))
-}
 
 function sourceLabel(s: string) {
   if (s === "ddg") return "DDG"
@@ -156,67 +132,6 @@ type SearchSuggestion =
   | { type: "tag"; value: string; meta?: string }
   | { type: "creator"; value: string; meta?: string }
 
-const VIEW_MODE_KEY = "media-view-mode"
-const MEDIA_TAB_KEY = "media-tab"
-const CREATOR_MEDIA_PREFS_KEY = "media-creator-prefs"
-const DISCOVERY_PREFS_KEY = "media-discovery-prefs"
-
-function loadViewMode(): ViewMode {
-  const stored = localStorage.getItem(VIEW_MODE_KEY)
-  // Only grid and feed are exposed in the UI now
-  if (stored === "grid" || stored === "feed") return stored
-  return "grid"
-}
-
-function loadTab(): TabFilter {
-  const stored = localStorage.getItem(MEDIA_TAB_KEY)
-  // Only simplified tabs are exposed in the UI now
-  if (stored === "all" || stored === "favorites" || stored === "videos" || stored === "images") {
-    return stored
-  }
-  return "all"
-}
-
-function loadCreatorPrefs(): {
-  platform: string
-  sort: "shots" | "name"
-  favoritesOnly: boolean
-} {
-  try {
-    const raw = localStorage.getItem(CREATOR_MEDIA_PREFS_KEY)
-    if (!raw) return { platform: "all", sort: "shots", favoritesOnly: false }
-    const parsed = JSON.parse(raw)
-    return {
-      platform: typeof parsed.platform === "string" ? parsed.platform : "all",
-      sort: parsed.sort === "name" ? "name" : "shots",
-      favoritesOnly: Boolean(parsed.favoritesOnly),
-    }
-  } catch {
-    return { platform: "all", sort: "shots", favoritesOnly: false }
-  }
-}
-
-function saveCreatorPrefs(prefs: { platform: string; sort: "shots" | "name"; favoritesOnly: boolean }) {
-  localStorage.setItem(CREATOR_MEDIA_PREFS_KEY, JSON.stringify(prefs))
-}
-
-function loadDiscoveryPrefs(): { query: string; platform: string } {
-  try {
-    const raw = localStorage.getItem(DISCOVERY_PREFS_KEY)
-    if (!raw) return { query: "", platform: "all" }
-    const parsed = JSON.parse(raw)
-    return {
-      query: typeof parsed.query === "string" ? parsed.query : "",
-      platform: typeof parsed.platform === "string" ? parsed.platform : "all",
-    }
-  } catch {
-    return { query: "", platform: "all" }
-  }
-}
-
-function saveDiscoveryPrefs(prefs: { query: string; platform: string }) {
-  localStorage.setItem(DISCOVERY_PREFS_KEY, JSON.stringify(prefs))
-}
 
 function getTimelineGroup(dateStr: string | undefined): string {
   if (!dateStr) return "Older"
@@ -270,11 +185,6 @@ function estimateGridSectionHeight(itemCount: number, colCount: number, density:
   return 56 + rows * GRID_ROW_SIZE_ESTIMATE[density]
 }
 
-function loadGridDensity(): GridDensity {
-  const stored = localStorage.getItem(GRID_DENSITY_KEY)
-  if (stored === "compact" || stored === "normal" || stored === "spacious") return stored
-  return "normal"
-}
 
 function MediaUnavailableTile({
   title,
@@ -311,21 +221,6 @@ function InlineLoadingFallback({ className, label = "Loading" }: { className?: s
 
 // ── View History ──────────────────────────────────────────────────────────────
 
-const VIEW_HISTORY_KEY = "media-view-history"
-const VIEW_HISTORY_MAX = 20
-
-function loadViewHistory(): number[] {
-  try {
-    const raw = localStorage.getItem(VIEW_HISTORY_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch { return [] }
-}
-
-function pushViewHistory(id: number) {
-  const hist = loadViewHistory().filter((h) => h !== id)
-  hist.unshift(id)
-  localStorage.setItem(VIEW_HISTORY_KEY, JSON.stringify(hist.slice(0, VIEW_HISTORY_MAX)))
-}
 
 // ── MediaStatsBar ────────────────────────────────────────────────────────────
 
@@ -1010,20 +905,6 @@ const EMPTY_FILTERS: AdvancedFilters = {
   mediaType: "any",
 }
 
-const ADVANCED_FILTERS_KEY = "media-advanced-filters"
-
-function loadAdvancedFilters(): AdvancedFilters {
-  try {
-    const raw = localStorage.getItem(ADVANCED_FILTERS_KEY)
-    if (!raw) return EMPTY_FILTERS
-    const parsed = JSON.parse(raw)
-    return { ...EMPTY_FILTERS, ...parsed }
-  } catch { return EMPTY_FILTERS }
-}
-
-function saveAdvancedFilters(f: AdvancedFilters) {
-  localStorage.setItem(ADVANCED_FILTERS_KEY, JSON.stringify(f))
-}
 
 function AdvancedSearchPanel({
   filters,
@@ -1214,25 +1095,21 @@ function AdvancedSearchPanel({
 
 export function MediaPage() {
   const [term, setTerm] = useState<string | null>(() => readTermFromHash())
-  const [tab, setTab] = useState<TabFilter>(() => loadTab())
+  const [tab, setTab] = useState<TabFilter>("all")
   const [search, setSearch] = useState("")
   const [searchFocused, setSearchFocused] = useState(false)
-  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("media-recent-searches") ?? "[]") } catch { return [] }
-  })
-  const [sortOrder, setSortOrder] = useState<SortOrder>(
-    () => (localStorage.getItem("media-sort-order") as SortOrder) ?? "newest"
-  )
+  const [recentSearches, setRecentSearches] = useState<string[]>([])
+  const [sortOrder, setSortOrder] = useState<SortOrder>("newest")
   const [expandedVideoId, setExpandedVideoId] = useState<number | null>(null)
   const [lightboxShotId, setLightboxShotId] = useState<number | null>(null)
   const [batchMode, setBatchMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-  const [favorites, setFavorites] = useState<Set<number>>(() => loadFavorites())
+  const [favorites, setFavorites] = useState<Set<number>>(new Set())
   const [ftsResults, setFtsResults] = useState<Screenshot[] | null>(null)
   const [ftsSearching, setFtsSearching] = useState(false)
-  const [autoDescribe, setAutoDescribe] = useState(() => localStorage.getItem(AUTO_DESCRIBE_KEY) === "true")
+  const [autoDescribe, setAutoDescribe] = useState(false)
   const [describeProgress, setDescribeProgress] = useState<{ done: number; total: number } | null>(null)
-  const [gridDensity, setGridDensity] = useState<GridDensity>(() => loadGridDensity())
+  const [gridDensity, setGridDensity] = useState<GridDensity>("normal")
   const [filterDescribed, setFilterDescribed] = useState(false)
   const [playlistDropdownOpen, setPlaylistDropdownOpen] = useState(false)
   const [createPlaylistOpen, setCreatePlaylistOpen] = useState(false)
@@ -1240,14 +1117,14 @@ export function MediaPage() {
   const [addToPlaylistOpen, setAddToPlaylistOpen] = useState(false)
   const [createPlaylistWithIds, setCreatePlaylistWithIds] = useState<number[] | undefined>(undefined)
 
-  const [viewHistory, setViewHistory] = useState<number[]>(() => loadViewHistory())
+  const [viewHistory, setViewHistory] = useState<number[]>([])
   const [recentlyViewedCollapsed, setRecentlyViewedCollapsed] = useState(false)
-  const [viewMode, setViewMode] = useState<ViewMode>(() => loadViewMode())
+  const [viewMode, setViewMode] = useState<ViewMode>("grid")
   const [slideshowActive, setSlideshowActive] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; shot: Screenshot } | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [mediaStatsEnabled, setMediaStatsEnabled] = useState(false)
-  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>(loadAdvancedFilters)
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>(EMPTY_FILTERS)
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null)
   const [urlInputOpen, setUrlInputOpen] = useState(false)
   const [urlInput, setUrlInput] = useState("")
@@ -1256,15 +1133,13 @@ export function MediaPage() {
   const [autoTagging, setAutoTagging] = useState(false)
   const [analyticsOpen, setAnalyticsOpen] = useState(false)
   const [creatorSearch, setCreatorSearch] = useState("")
-  const creatorPrefs = useMemo(() => loadCreatorPrefs(), [])
-  const discoveryPrefs = useMemo(() => loadDiscoveryPrefs(), [])
-  const [creatorPlatformFilter, setCreatorPlatformFilter] = useState(creatorPrefs.platform)
-  const [creatorSort, setCreatorSort] = useState<"shots" | "name">(creatorPrefs.sort)
-  const [creatorFavoritesOnly, setCreatorFavoritesOnly] = useState(creatorPrefs.favoritesOnly)
+  const [creatorPlatformFilter, setCreatorPlatformFilter] = useState("all")
+  const [creatorSort, setCreatorSort] = useState<"shots" | "name">("shots")
+  const [creatorFavoritesOnly, setCreatorFavoritesOnly] = useState(false)
   const [capturingAll, setCapturingAll] = useState(false)
   const [discoveryOpen, setDiscoveryOpen] = useState(false)
-  const [discoveryQuery, setDiscoveryQuery] = useState(discoveryPrefs.query)
-  const [discoveryPlatform, setDiscoveryPlatform] = useState(discoveryPrefs.platform)
+  const [discoveryQuery, setDiscoveryQuery] = useState("")
+  const [discoveryPlatform, setDiscoveryPlatform] = useState("all")
   const [discoveryResults, setDiscoveryResults] = useState<DiscoveredCreator[]>([])
   const [discoveredUsernames, setDiscoveredUsernames] = useState<Set<string>>(new Set())
   const [onlyUnlinked, setOnlyUnlinked] = useState(false)
@@ -1366,17 +1241,6 @@ export function MediaPage() {
 
   // Sync term to hash
   useEffect(() => { writeTermToHash(term) }, [term])
-  useEffect(() => { localStorage.setItem(MEDIA_TAB_KEY, tab) }, [tab])
-  useEffect(() => {
-    saveCreatorPrefs({
-      platform: creatorPlatformFilter,
-      sort: creatorSort,
-      favoritesOnly: creatorFavoritesOnly,
-    })
-  }, [creatorPlatformFilter, creatorSort, creatorFavoritesOnly])
-  useEffect(() => {
-    saveDiscoveryPrefs({ query: discoveryQuery, platform: discoveryPlatform })
-  }, [discoveryPlatform, discoveryQuery])
 
   useEffect(() => {
     if (mediaCreatorId != null) {
@@ -1426,7 +1290,6 @@ export function MediaPage() {
         label: "View new",
         onClick: () => {
           setSortOrder("newest")
-          localStorage.setItem("media-sort-order", "newest")
           setTerm(null)
           setTab("all")
           window.scrollTo({ top: 0, behavior: "smooth" })
@@ -1680,7 +1543,7 @@ export function MediaPage() {
       qc.invalidateQueries({ queryKey: ["screenshot-sources"] })
       qc.invalidateQueries({ queryKey: ["media-stats"] })
       setSelectedIds((p) => { const n = new Set(p); n.delete(id); return n })
-      setFavorites((p) => { const n = new Set(p); n.delete(id); saveFavorites(n); return n })
+      setFavorites((p) => { const n = new Set(p); n.delete(id); return n })
       addToast("Deleted", "success")
     },
     onError: () => addToast("Delete failed", "error"),
@@ -1734,7 +1597,6 @@ export function MediaPage() {
       setRecentSearches((prev) => {
         const trimmed = deferredSearch.trim()
         const updated = [trimmed, ...prev.filter((s) => s !== trimmed)].slice(0, 8)
-        localStorage.setItem("media-recent-searches", JSON.stringify(updated))
         return updated
       })
     }, 1500)
@@ -1943,7 +1805,6 @@ export function MediaPage() {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
-      saveFavorites(next)
       return next
     })
   }
@@ -1992,7 +1853,6 @@ export function MediaPage() {
     setFavorites((prev) => {
       const next = new Set(prev)
       selectedIds.forEach((id) => next.add(id))
-      saveFavorites(next)
       return next
     })
     addToast(`${selectedIds.size} favorited`, "success")
@@ -2222,9 +2082,6 @@ export function MediaPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shortcutsOpen])
 
-  // ── Persist advanced filters to localStorage ─────────────────────────────
-  useEffect(() => { saveAdvancedFilters(advancedFilters) }, [advancedFilters])
-
   // ── Infinite scroll sentinel ─────────────────────────────────────────────
 
   const observerRef = useRef<IntersectionObserver | null>(null)
@@ -2278,12 +2135,10 @@ export function MediaPage() {
 
   function handleDensityChange(d: GridDensity) {
     startTransition(() => setGridDensity(d))
-    localStorage.setItem(GRID_DENSITY_KEY, d)
   }
 
   function handleViewModeChange(mode: ViewMode) {
     startTransition(() => setViewMode(mode))
-    localStorage.setItem(VIEW_MODE_KEY, mode)
   }
 
   const filteredCreators = useMemo(() => {
@@ -2496,8 +2351,7 @@ export function MediaPage() {
   const gridClass = GRID_CLASSES[gridDensity]
 
   function openMedia(shot: Screenshot) {
-    pushViewHistory(shot.id)
-    setViewHistory(loadViewHistory())
+    setViewHistory((prev) => [shot.id, ...prev.filter((h) => h !== shot.id)].slice(0, 20))
     const src = getScreenshotMediaSrc(shot)
     if (isVideo(src)) {
       void preloadInlineVideoPlayer()
@@ -2734,7 +2588,7 @@ export function MediaPage() {
                 <div className="px-3 py-1.5 border-b border-white/5 flex items-center justify-between">
                   <span className="text-[10px] text-white/30 font-mono uppercase tracking-widest">Recent</span>
                   <button
-                    onMouseDown={(e) => { e.preventDefault(); setRecentSearches([]); localStorage.removeItem("media-recent-searches") }}
+                    onMouseDown={(e) => { e.preventDefault(); setRecentSearches([]) }}
                     className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
                   >
                     clear
@@ -2800,7 +2654,6 @@ export function MediaPage() {
             onChange={(e) => {
               const v = e.target.value as SortOrder
               setSortOrder(v)
-              localStorage.setItem("media-sort-order", v)
             }}
             className="rounded-xl border border-white/10 bg-black/20 px-2.5 py-2 text-xs text-[var(--color-text-secondary)]"
             aria-label="Sort order"
@@ -2955,7 +2808,6 @@ export function MediaPage() {
                         checked={autoDescribe}
                         onChange={(e) => {
                           setAutoDescribe(e.target.checked)
-                          localStorage.setItem(AUTO_DESCRIBE_KEY, String(e.target.checked))
                         }}
                         className="h-3 w-3 rounded border-white/20 bg-black/30 accent-[var(--color-accent)]"
                       />

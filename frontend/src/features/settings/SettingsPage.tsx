@@ -9,14 +9,12 @@ import { resetOnboarding } from "@/components/Onboarding"
 // Helpers
 // ---------------------------------------------------------------------------
 
-function lsGet(key: string, defaultValue: boolean): boolean {
-  const stored = localStorage.getItem(key)
-  if (stored === null) return defaultValue
-  return stored === "true"
+function lsGet(_key: string, defaultValue: boolean): boolean {
+  return defaultValue
 }
 
-function lsSet(key: string, value: boolean): void {
-  localStorage.setItem(key, String(value))
+function lsSet(_key: string, _value: boolean): void {
+  // settings kept in memory only
 }
 
 // ---------------------------------------------------------------------------
@@ -659,13 +657,11 @@ function AppearanceSection() {
 
 function AccentColorInline() {
   const [accent, setAccent] = useState<string>(
-    () => localStorage.getItem("accent-color") ?? "#3b82f6"
+    () => "#f59e0b"
   )
 
   useEffect(() => {
-    const secondary = localStorage.getItem("accent-color-secondary") ?? "#06b6d4"
     document.documentElement.style.setProperty("--color-accent", accent)
-    document.documentElement.style.setProperty("--color-accent-secondary", secondary)
     document.documentElement.style.setProperty("--color-accent-glow", accent + "50")
   }, [accent])
 
@@ -673,8 +669,6 @@ function AccentColorInline() {
     document.documentElement.style.setProperty("--color-accent", primary)
     document.documentElement.style.setProperty("--color-accent-secondary", secondary)
     document.documentElement.style.setProperty("--color-accent-glow", primary + "50")
-    localStorage.setItem("accent-color", primary)
-    localStorage.setItem("accent-color-secondary", secondary)
     setAccent(primary)
     updateSettings({ accent_primary: primary, accent_secondary: secondary }).catch(() => {})
   }
@@ -749,10 +743,6 @@ function DataManagementSection() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       addToast("All settings have been reset", "success")
       setConfirmReset(false)
-      // Clear localStorage settings keys
-      Object.keys(localStorage).forEach((k) => {
-        if (k.startsWith("settings_")) localStorage.removeItem(k)
-      })
     } catch {
       addToast("Failed to reset settings", "error")
     } finally {

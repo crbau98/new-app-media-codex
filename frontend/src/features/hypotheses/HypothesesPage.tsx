@@ -198,15 +198,6 @@ export function HypothesesPage() {
   const [offset, setOffset] = useState(0)
   const [pinnedIds, setPinnedIds] = useState<number[]>(() => getPinnedIds())
 
-  // Keep pinnedIds in sync with localStorage changes (from HypothesisCard toggles)
-  useEffect(() => {
-    function onStorage() {
-      setPinnedIds(getPinnedIds())
-    }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [])
-
   // Reset offset when filters or sort change
   useEffect(() => {
     setOffset(0)

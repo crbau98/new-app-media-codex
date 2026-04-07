@@ -11,18 +11,12 @@ const STATUS_VARIANT: Record<string, 'default' | 'amber' | 'green' | 'red'> = {
   new: 'default', reviewing: 'amber', promoted: 'green', dismissed: 'red',
 }
 
-const PINNED_KEY = 'pinned_hypotheses'
-
 function getPinnedIds(): number[] {
-  try {
-    return JSON.parse(localStorage.getItem(PINNED_KEY) ?? '[]')
-  } catch {
-    return []
-  }
+  return []
 }
 
-function setPinnedIds(ids: number[]): void {
-  localStorage.setItem(PINNED_KEY, JSON.stringify(ids))
+function setPinnedIds(_ids: number[]): void {
+  // pinned state is kept in memory only
 }
 
 function computeConfidence(text: string): number {

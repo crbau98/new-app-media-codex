@@ -22,8 +22,7 @@ import { TimelineView } from './TimelineView'
 type ViewMode = 'grid' | 'timeline'
 
 function getStoredViewMode(): ViewMode {
-  const v = localStorage.getItem('items-view-mode')
-  return v === 'timeline' ? 'timeline' : 'grid'
+  return 'grid'
 }
 
 const PAGE_SIZE = 25
@@ -94,7 +93,6 @@ export function ItemsPage() {
 
   const setViewMode = useCallback((mode: ViewMode) => {
     setViewModeState(mode)
-    localStorage.setItem('items-view-mode', mode)
   }, [])
 
   // Track which item IDs the user has clicked (visited), purely client-side
@@ -112,11 +110,6 @@ export function ItemsPage() {
   useEffect(() => {
     setFocusedIdx(0)
   }, [page])
-
-  // Record lastVisit so SourceCard can highlight items added since the previous visit
-  useEffect(() => {
-    localStorage.setItem('lastVisit', new Date().toISOString())
-  }, [])
 
   // Build params for the API, stripping empty/default values (memoized to avoid query key churn)
   const params = useMemo(() => {

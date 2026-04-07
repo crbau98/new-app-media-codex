@@ -355,24 +355,12 @@ export function Sidebar() {
       ? currentImageCount - lastSeenImageCount
       : 0
 
-  // Load last-seen count from localStorage on mount
-  useEffect(() => {
-    const stored = localStorage.getItem("media-seen-count")
-    if (stored != null) setLastSeenImageCount(parseInt(stored, 10))
-  }, [])
-
   // When user visits images view, mark all as seen
   useEffect(() => {
     if (activeView === "images" && currentImageCount > 0) {
-      localStorage.setItem("media-seen-count", String(currentImageCount))
       setLastSeenImageCount(currentImageCount)
     }
   }, [activeView, currentImageCount])
-
-  useEffect(() => {
-    const stored = localStorage.getItem("sidebar-collapsed")
-    if (stored === "true") setSidebarCollapsed(true)
-  }, [setSidebarCollapsed])
 
   useEffect(() => {
     let cancelled = false
@@ -399,7 +387,6 @@ export function Sidebar() {
   function toggleCollapse() {
     const next = !collapsed
     setSidebarCollapsed(next)
-    localStorage.setItem("sidebar-collapsed", String(next))
   }
 
   function closeMobile() {

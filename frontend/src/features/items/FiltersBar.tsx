@@ -28,17 +28,12 @@ const SORTS = [
   { value: 'source', label: 'By source' },
 ]
 
-const PRESETS_KEY = 'filter-presets'
-
 function loadPresets(): Record<string, Partial<Filters>> {
-  try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || '{}') }
-  catch { return {} }
+  return {}
 }
 
-function savePreset(name: string, filters: Filters) {
-  const p = loadPresets()
-  p[name] = filters
-  localStorage.setItem(PRESETS_KEY, JSON.stringify(p))
+function savePreset(_name: string, _filters: Filters) {
+  // presets kept in memory only
 }
 
 const controlClass =
@@ -64,7 +59,6 @@ function SavePresetInline({
   function commit() {
     const trimmed = name.trim()
     if (!trimmed) return
-    savePreset(trimmed, filters)
     onSaved(trimmed)
     addToast(`Preset "${trimmed}" saved`)
     setName('')
@@ -211,10 +205,11 @@ export function FiltersBar() {
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   function deletePreset(name: string) {
-    const p = loadPresets()
-    delete p[name]
-    localStorage.setItem(PRESETS_KEY, JSON.stringify(p))
-    setPresets({ ...p })
+    setPresets((prev) => {
+      const p = { ...prev }
+      delete p[name]
+      return p
+    })
   }
 
   // Active filter chips (excluding search which is displayed inline)
@@ -522,7 +517,7 @@ export function FiltersBar() {
           {hasAnyActive && (
             <SavePresetInline
               filters={filters}
-              onSaved={(_name) => setPresets(loadPresets())}
+              onSaved={(name) => setPresets((prev) => ({ ...prev, [name]: filters }))}
             />
           )}
         </div>

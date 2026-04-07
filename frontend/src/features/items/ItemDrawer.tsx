@@ -572,10 +572,7 @@ interface ItemDrawerProps {
 
 export function ItemDrawer({ itemIds = [], currentIndex = -1 }: ItemDrawerProps = {}) {
   const [activeTab, setActiveTab] = useState<DrawerTab>('summary')
-  const [drawerWidth, setDrawerWidth] = useState<number>(() => {
-    const stored = localStorage.getItem('drawerWidth')
-    return stored ? Math.min(720, Math.max(340, parseInt(stored, 10))) : 480
-  })
+  const [drawerWidth, setDrawerWidth] = useState<number>(480)
   const isResizing = useRef(false)
   const resizeStartX = useRef(0)
   const resizeStartWidth = useRef(0)
@@ -589,7 +586,6 @@ export function ItemDrawer({ itemIds = [], currentIndex = -1 }: ItemDrawerProps 
       const delta = resizeStartX.current - ev.clientX
       const newWidth = Math.min(720, Math.max(340, resizeStartWidth.current + delta))
       setDrawerWidth(newWidth)
-      localStorage.setItem('drawerWidth', String(newWidth))
     }
     function onMouseUp() {
       isResizing.current = false

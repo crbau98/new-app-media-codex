@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 
 export function InstallPrompt() {
   const [show, setShow] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const deferredPrompt = useRef<any>(null);
 
   useEffect(() => {
-    if (localStorage.getItem('pwa-install-dismissed')) return;
+    if (dismissed) return;
 
     const handler = (e: Event) => {
       e.preventDefault();
@@ -14,7 +15,7 @@ export function InstallPrompt() {
     };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+  }, [dismissed]);
 
   if (!show) return null;
 
@@ -30,7 +31,7 @@ export function InstallPrompt() {
 
   const handleDismiss = () => {
     setShow(false);
-    localStorage.setItem('pwa-install-dismissed', '1');
+    setDismissed(true);
   };
 
   return (

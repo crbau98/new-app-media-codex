@@ -90,28 +90,18 @@ function HighlightedText({ text, indices }: { text: string; indices: number[] })
   )
 }
 
-const RECENT_KEY = "cmd_recent"
 const MAX_RECENT = 8
 
-function loadRecent(): RecentItem[] {
-  try {
-    return JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]")
-  } catch {
-    return []
-  }
-}
+// In-memory recent items store (replaces localStorage)
+let _recentItemsStore: RecentItem[] = []
 
-function saveRecent(items: RecentItem[]) {
-  try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(items))
-  } catch {
-    // ignore storage errors
-  }
+function loadRecent(): RecentItem[] {
+  return _recentItemsStore.slice(0, MAX_RECENT)
 }
 
 function addToRecent(item: RecentItem) {
-  const existing = loadRecent().filter((r) => r.id !== item.id)
-  saveRecent([item, ...existing].slice(0, MAX_RECENT))
+  const existing = _recentItemsStore.filter((r) => r.id !== item.id)
+  _recentItemsStore = [item, ...existing].slice(0, MAX_RECENT)
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {

@@ -75,8 +75,7 @@ export const SourceCard = memo(function SourceCard({
   const setActiveView = useAppStore((s) => s.setActiveView)
   const addToast = useAppStore((s) => s.addToast)
   const reviewVariant: BadgeVariant = REVIEW_VARIANT[item.review_status] ?? 'default'
-  const lastVisit = localStorage.getItem('lastVisit')
-  const isNew = !!(item.first_seen_at && lastVisit && new Date(item.first_seen_at) > new Date(lastVisit))
+  const isNew = false // lastVisit tracking removed
 
   // Copy excerpt state
   const [copied, setCopied] = useState(false)

@@ -1,10 +1,8 @@
 import { useCallback, useState } from "react"
 import type { Screenshot } from "./api"
 
-const BROKEN_MEDIA_STORAGE_KEY = "codex:broken-media-urls"
 const BROKEN_MEDIA_LIMIT = 300
 const brokenMediaUrls = new Set<string>()
-let brokenMediaLoaded = false
 
 function normalizeMediaUrl(url: string | null | undefined): string {
   return (url ?? "").trim()
@@ -45,39 +43,11 @@ function isGifUrl(url: string): boolean {
   return /\.gif$/i.test(url)
 }
 
-function ensureBrokenMediaUrlsLoaded() {
-  if (brokenMediaLoaded || typeof window === "undefined") return
-  brokenMediaLoaded = true
-  try {
-    const raw = window.sessionStorage.getItem(BROKEN_MEDIA_STORAGE_KEY)
-    if (!raw) return
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return
-    for (const entry of parsed) {
-      const normalized = normalizeMediaUrl(typeof entry === "string" ? entry : "")
-      if (normalized) brokenMediaUrls.add(normalized)
-    }
-  } catch {
-    brokenMediaUrls.clear()
-  }
-}
-
-function persistBrokenMediaUrls() {
-  if (typeof window === "undefined") return
-  try {
-    window.sessionStorage.setItem(BROKEN_MEDIA_STORAGE_KEY, JSON.stringify([...brokenMediaUrls]))
-  } catch {
-    // Ignore storage write failures.
-  }
-}
-
 function pickUsableMediaUrl(candidates: Array<string | null | undefined>): string {
-  ensureBrokenMediaUrlsLoaded()
   return uniqueMediaCandidates(candidates).find((url) => !brokenMediaUrls.has(url)) ?? ""
 }
 
 export function rememberBrokenMediaUrl(url: string | null | undefined): boolean {
-  ensureBrokenMediaUrlsLoaded()
   const normalized = normalizeMediaUrl(url)
   if (!normalized || brokenMediaUrls.has(normalized)) return false
   brokenMediaUrls.add(normalized)
@@ -86,12 +56,10 @@ export function rememberBrokenMediaUrl(url: string | null | undefined): boolean 
     if (!oldest) break
     brokenMediaUrls.delete(oldest)
   }
-  persistBrokenMediaUrls()
   return true
 }
 
 export function isKnownBrokenMediaUrl(url: string | null | undefined): boolean {
-  ensureBrokenMediaUrlsLoaded()
   const normalized = normalizeMediaUrl(url)
   return normalized ? brokenMediaUrls.has(normalized) : false
 }

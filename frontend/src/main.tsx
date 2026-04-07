@@ -6,42 +6,8 @@ import App from './App'
 import { useAppStore, getViewFromHash } from './store'
 import type { ApiError } from './lib/api'
 
-// ââ Constants ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-const STORAGE_KEYS = {
-  THEME: 'theme',
-  ACCENT: 'accent-color',
-  ACCENT_SECONDARY: 'accent-color-secondary',
-} as const
-
-const QUERY_DEFAULTS = {
-  STALE_TIME: 60_000,         // 1 minute
-  GC_TIME: 10 * 60_000,      // 10 minutes
-  MAX_RETRIES: 2,
-  MAX_RETRIES_503: 5,        // more retries for 503 (Render cold start)
-  BASE_RETRY_DELAY: 750,     // ms
-  BASE_RETRY_DELAY_503: 2_000, // longer base delay for 503
-  MAX_RETRY_DELAY: 10_000,   // ms
-  MAX_RETRY_DELAY_503: 30_000, // allow longer waits for cold starts
-} as const
-
-// ââ Safe localStorage ââââââââââââââââââââââââââââââââââââââââââââââââ
-function safeLocalStorageGet(key: string): string | null {
-  try { return window.localStorage.getItem(key) } catch { return null }
-}
-
-// ââ Theme & accent restoration (runs before React renders) âââââââââââ
-const savedTheme = safeLocalStorageGet(STORAGE_KEYS.THEME) || 'dark'
-document.documentElement.dataset.theme = savedTheme
-
-const savedAccent = safeLocalStorageGet(STORAGE_KEYS.ACCENT)
-if (savedAccent) {
-  document.documentElement.style.setProperty('--color-accent', savedAccent)
-  document.documentElement.style.setProperty('--color-accent-glow', savedAccent + '50')
-}
-const savedAccentSecondary = safeLocalStorageGet(STORAGE_KEYS.ACCENT_SECONDARY)
-if (savedAccentSecondary) {
-  document.documentElement.style.setProperty('--color-accent-secondary', savedAccentSecondary)
-}
+// ── Theme initialization (default 'dark') ───────────────────────────
+document.documentElement.dataset.theme = 'dark'
 
 // ââ Hash sync (back/forward navigation) ââââââââââââââââââââââââââââââ
 window.addEventListener('hashchange', () => {

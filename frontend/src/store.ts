@@ -3,17 +3,7 @@ import { create } from "zustand"
 // ── Constants ────────────────────────────────────────────────────────
 export type ActiveView = "overview" | "items" | "images" | "hypotheses" | "graph" | "performers" | "settings"
 
-const STORAGE_KEYS = {
-  NOTIFICATIONS: 'codex_notifications',
-  THEME: 'theme',
-  ACCENT: 'accent-color',
-  ONBOARDING: 'onboarding_complete',
-  SIDEBAR: 'codex_sidebar_collapsed',
-} as const
-
 const MAX_NOTIFICATIONS = 50
-const NOTIFICATION_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
-const PERSIST_DEBOUNCE_MS = 500
 
 const VIEW_HASHES: Record<string, ActiveView> = {
   '#/overview': 'overview',
@@ -38,15 +28,6 @@ const HASH_VIEWS: Record<ActiveView, string> = {
 export function getViewFromHash(): ActiveView {
   const hash = window.location.hash || '#/media'
   return VIEW_HASHES[hash.split('?')[0]] || 'images'
-}
-
-// ── Safe localStorage helpers ────────────────────────────────────────
-function safeGetItem(key: string): string | null {
-  try { return localStorage.getItem(key) } catch { return null }
-}
-
-function safeSetItem(key: string, value: string): void {
-  try { localStorage.setItem(key, value) } catch { /* quota exceeded or unavailable */ }
 }
 
 // ── Unique ID generation ─────────────────────────────────────────────
@@ -103,41 +84,6 @@ export interface Notification {
   read: boolean
 }
 
-function isValidNotification(n: unknown): n is Notification {
-  if (!n || typeof n !== 'object') return false
-  const obj = n as Record<string, unknown>
-  return typeof obj.id === 'string' &&
-    typeof obj.message === 'string' &&
-    typeof obj.type === 'string' &&
-    typeof obj.timestamp === 'number' &&
-    typeof obj.read === 'boolean'
-}
-
-function loadNotifications(): Notification[] {
-  try {
-    const raw = safeGetItem(STORAGE_KEYS.NOTIFICATIONS)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    const now = Date.now()
-    return parsed
-      .filter(isValidNotification)
-      .filter(n => now - n.timestamp < NOTIFICATION_TTL_MS)
-      .slice(0, MAX_NOTIFICATIONS)
-  } catch {
-    return []
-  }
-}
-
-// Debounced persistence to avoid blocking the main thread
-let _persistTimer: ReturnType<typeof setTimeout> | null = null
-function persistNotifications(notifications: Notification[]) {
-  if (_persistTimer) clearTimeout(_persistTimer)
-  _persistTimer = setTimeout(() => {
-    safeSetItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications.slice(0, MAX_NOTIFICATIONS)))
-    _persistTimer = null
-  }, PERSIST_DEBOUNCE_MS)
-}
 
 // ── Toast types ──────────────────────────────────────────────────────
 export interface ToastAction {
@@ -226,12 +172,11 @@ interface AppState {
 // ── Theme helpers ────────────────────────────────────────────────────
 function applyTheme(theme: ThemeMode) {
   document.documentElement.dataset.theme = theme
-  safeSetItem(STORAGE_KEYS.THEME, theme)
 }
 
 // ── Store ────────────────────────────────────────────────────────────
 export const useAppStore = create<AppState>((set) => ({
-  theme: (safeGetItem(STORAGE_KEYS.THEME) as ThemeMode) || 'dark',
+  theme: 'dark',
   setTheme: (theme) => {
     applyTheme(theme)
     set({ theme })
@@ -292,8 +237,8 @@ export const useAppStore = create<AppState>((set) => ({
   removeToast: (id) =>
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
-  // Notifications – with debounced persistence, TTL cleanup, and validation
-  notifications: loadNotifications(),
+  // Notifications
+  notifications: [],
   addNotification: (message, type) =>
     set((s) => {
       const n: Notification = {
@@ -304,7 +249,6 @@ export const useAppStore = create<AppState>((set) => ({
         read: false,
       }
       const next = [n, ...s.notifications].slice(0, MAX_NOTIFICATIONS)
-      persistNotifications(next)
       return { notifications: next }
     }),
   markNotificationRead: (id) =>
@@ -312,17 +256,14 @@ export const useAppStore = create<AppState>((set) => ({
       const next = s.notifications.map((n) =>
         n.id === id ? { ...n, read: true } : n
       )
-      persistNotifications(next)
       return { notifications: next }
     }),
   markAllRead: () =>
     set((s) => {
       const next = s.notifications.map((n) => ({ ...n, read: true }))
-      persistNotifications(next)
       return { notifications: next }
     }),
   clearNotifications: () => {
-    persistNotifications([])
     set({ notifications: [] })
   },
   unreadCount: (): number => {
@@ -335,10 +276,9 @@ export const useAppStore = create<AppState>((set) => ({
   apiUnreachable: false,
   setApiUnreachable: (apiUnreachable) => set({ apiUnreachable }),
 
-  // Sidebar – persisted to localStorage
-  sidebarCollapsed: safeGetItem(STORAGE_KEYS.SIDEBAR) === 'true',
+  // Sidebar
+  sidebarCollapsed: false,
   setSidebarCollapsed: (sidebarCollapsed) => {
-    safeSetItem(STORAGE_KEYS.SIDEBAR, String(sidebarCollapsed))
     set({ sidebarCollapsed })
   },
   mobileNavOpen: false,
