@@ -9,6 +9,18 @@ import type { ApiError } from './lib/api'
 // ── Theme initialization (default 'dark') ───────────────────────────
 document.documentElement.dataset.theme = 'dark'
 
+// ── Query client defaults ───────────────────────────────────────────
+const QUERY_DEFAULTS = {
+  STALE_TIME: 30_000,
+  GC_TIME: 5 * 60_000,
+  MAX_RETRIES: 2,
+  MAX_RETRIES_503: 4,
+  BASE_RETRY_DELAY: 500,
+  BASE_RETRY_DELAY_503: 2_000,
+  MAX_RETRY_DELAY: 8_000,
+  MAX_RETRY_DELAY_503: 30_000,
+}
+
 // ââ Hash sync (back/forward navigation) ââââââââââââââââââââââââââââââ
 window.addEventListener('hashchange', () => {
   const view = getViewFromHash()

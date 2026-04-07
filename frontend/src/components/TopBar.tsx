@@ -109,6 +109,7 @@ export function TopBar() {
   const [creatorResults, setCreatorResults] = useState<Performer[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
+  const [triggering, setTriggering] = useState(false)
 
   const openShortcuts = useCallback(() => setShortcutsOpen(true), [])
   const containerRef = useRef<HTMLDivElement>(null)
