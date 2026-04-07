@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/EmptyState"
 import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
 import { getPerformerAvatarSrc } from "@/lib/performer"
-import { getBestAvailablePreviewSrc, getMediaDebugLabel, getScreenshotMediaSrc, useResolvedScreenshotMedia } from "@/lib/media"
+import { getBestAvailablePreviewSrc, getMediaDebugLabel, getScreenshotMediaSrc, isVideoShot, useResolvedScreenshotMedia } from "@/lib/media"
 
 const AUTO_DESCRIBE_KEY = "auto-describe-screenshots"
 const MEDIA_NAVIGATION_INTENT_KEY = "codex:media-navigation-intent"
