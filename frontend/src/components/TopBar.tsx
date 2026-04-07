@@ -696,3 +696,41 @@ export function TopBar() {
     </>
   )
 }
+
+function TopBarSummaryChips({
+  ready,
+  onNavigate,
+}: {
+  ready: boolean
+  onNavigate: (view: "overview" | "images" | "performers" | "settings") => void
+}) {
+  const { data: summary } = useAppShellSummary(ready)
+
+  if (!ready) {
+    return <div className="hidden items-center gap-2 lg:flex" aria-hidden="true" />
+  }
+
+  const mediaCount = summary?.stats?.totals?.image_count ?? 0
+
+  return (
+    <div className="hidden items-center gap-2 lg:flex">
+      <button
+        type="button"
+        onClick={() => startTransition(() => onNavigate("images"))}
+        className="flex items-center gap-1.5 rounded-xl border border-border bg-bg-subtle px-2.5 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent/30 hover:text-text-primary"
+        title="Open Media"
+      >
+        <span className="font-mono font-semibold text-text-primary">{mediaCount.toLocaleString()}</span>
+        <span className="text-text-muted">media</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => startTransition(() => onNavigate("performers"))}
+        className="flex items-center gap-1.5 rounded-xl border border-border bg-bg-subtle px-2.5 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent/30 hover:text-text-primary"
+        title="Open Creators"
+      >
+        <span className="text-text-muted">creators</span>
+      </button>
+    </div>
+  )
+}
