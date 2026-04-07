@@ -124,4 +124,4 @@ export function MediaListItem({ shot, onClick, favorite, onToggleFavorite, onRat
       </button>
     </button>
   )
-})
+}
