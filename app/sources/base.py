@@ -361,7 +361,7 @@ def cache_image(session: requests.Session, settings: Settings, image_url: str) -
     Returns (thumb_path, orig_path) as absolute path strings.
     Returns ("", "") on any error or when image downloads are disabled.
     """
-    if not settings.enable_image_downloads or not image_url:
+    if settings.stream_only_media or not settings.enable_image_downloads or not image_url:
         return ("", "")
     try:
         settings.image_dir.mkdir(parents=True, exist_ok=True)

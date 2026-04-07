@@ -131,6 +131,9 @@ async def scan_channel(
 
             try:
                 if message.photo:
+                    if settings.stream_only_media:
+                        skipped += 1
+                        continue
                     await _handle_photo(
                         message, channel_username, screenshots_dir, db, settings
                     )

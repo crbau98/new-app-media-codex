@@ -9,6 +9,7 @@ import { SkeletonGrid } from "@/components/Skeleton"
 import { EmptyState } from "@/components/EmptyState"
 import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
+import { getPerformerAvatarSrc } from "@/lib/performer"
 import { getBestAvailablePreviewSrc, getMediaDebugLabel, getScreenshotMediaSrc, useResolvedScreenshotMedia } from "@/lib/media"
 
 const AUTO_DESCRIBE_KEY = "auto-describe-screenshots"
@@ -459,7 +460,7 @@ const CreatorCard = memo(function CreatorCard({
   onFavorite?: (e: React.MouseEvent) => void
   onHover?: () => void
 }) {
-  const avatarSrc = performer.avatar_local ?? performer.avatar_url
+  const avatarSrc = getPerformerAvatarSrc(performer)
   const platformColor = PLATFORM_BADGE_COLORS[performer.platform] ?? "bg-white/20"
   const isFav = Boolean(performer.is_favorite)
 
@@ -521,7 +522,12 @@ const CreatorCard = memo(function CreatorCard({
 }, (prev, next) =>
   prev.performer.id === next.performer.id &&
   prev.performer.is_favorite === next.performer.is_favorite &&
-  prev.performer.avatar_local === next.performer.avatar_local &&
+  prev.performer.username === next.performer.username &&
+  prev.performer.display_name === next.performer.display_name &&
+  prev.performer.platform === next.performer.platform &&
+  prev.performer.profile_url === next.performer.profile_url &&
+  prev.performer.is_verified === next.performer.is_verified &&
+  prev.performer.tags === next.performer.tags &&
   prev.performer.avatar_url === next.performer.avatar_url &&
   prev.performer.screenshots_count === next.performer.screenshots_count &&
   prev.performer.media_count === next.performer.media_count

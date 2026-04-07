@@ -109,7 +109,7 @@ def get_playlist(
 
         items = conn.execute(
             """
-            SELECT s.id, s.term, s.source, s.page_url, s.local_path,
+            SELECT s.id, s.term, s.source, s.page_url, s.local_path, s.source_url, s.thumbnail_url,
                    s.captured_at, s.ai_summary, s.ai_tags, s.performer_id,
                    pi.position, pi.added_at AS playlist_added_at
             FROM playlist_items pi
@@ -125,11 +125,10 @@ def get_playlist(
     playlist["item_count"] = total
 
     screenshots = []
+    from app.api.screenshots import _decorate_screenshot_media
+
     for s in items:
-        d = dict(s)
-        lp = d.get("local_path") or ""
-        d["local_url"] = "/cached-screenshots/" + lp.split("/")[-1] if lp else None
-        screenshots.append(d)
+        screenshots.append(_decorate_screenshot_media(request.app.state, dict(s)))
 
     return JSONResponse({
         "playlist": playlist,

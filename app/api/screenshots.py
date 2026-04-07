@@ -78,6 +78,66 @@ def _disk_has_space(path: str, min_free_mb: int = 500) -> bool:
     except Exception:
         return True  # Don't block on check failure
 
+
+def _is_remote_media_url(url: str | None) -> bool:
+    return bool(url) and url.startswith(("http://", "https://"))
+
+
+def proxy_media_url(url: str) -> str:
+    from urllib.parse import quote
+
+    return f"/api/screenshots/proxy-media?url={quote(url, safe='')}"
+
+
+def _screenshot_is_video(record: dict) -> bool:
+    source = str(record.get("source") or "").lower()
+    media_url = str(record.get("source_url") or record.get("local_url") or record.get("local_path") or record.get("page_url") or "")
+    ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
+    return ext in _VIDEO_EXTS or source in {"redgifs", "ytdlp"}
+
+
+def _decorate_screenshot_media(app_state, record: dict) -> dict:
+    """Attach stream-first media URLs to a screenshot record."""
+    shot = dict(record)
+    stream_only = bool(getattr(getattr(app_state, "settings", None), "stream_only_media", False))
+    local_path = Path(shot.get("local_path", "") or "")
+    source_url = str(shot.get("source_url") or "")
+    thumbnail_url = str(shot.get("thumbnail_url") or "")
+
+    if not stream_only and local_path.name and _cached_local_media_exists(app_state, local_path):
+        shot["local_url"] = f"/cached-screenshots/{local_path.name}"
+        preview_url = _get_preview_url_if_ready(app_state, local_path)
+        if preview_url is None:
+            preview_url = _warm_preview_generation(app_state, local_path)
+        shot["preview_url"] = preview_url
+        return shot
+
+    if _is_remote_media_url(source_url):
+        shot["local_url"] = proxy_media_url(source_url)
+        shot["source_url"] = source_url
+        if _is_remote_media_url(thumbnail_url):
+            shot["preview_url"] = proxy_media_url(thumbnail_url)
+        else:
+            shot["preview_url"] = None if _screenshot_is_video(shot) else shot["local_url"]
+        return shot
+
+    if not stream_only and local_path.name and local_path.exists():
+        shot["local_url"] = f"/cached-screenshots/{local_path.name}"
+        preview_url = _get_preview_url_if_ready(app_state, local_path)
+        if preview_url is None:
+            preview_url = _warm_preview_generation(app_state, local_path)
+        shot["preview_url"] = preview_url
+        return shot
+
+    shot["local_url"] = None
+    if "preview_url" not in shot:
+        shot["preview_url"] = None
+    return shot
+
+
+def _decorate_rows(app_state, rows: list[dict]) -> list[dict]:
+    return [_decorate_screenshot_media(app_state, row) for row in rows]
+
 router = APIRouter(prefix="/api/screenshots", tags=["screenshots"])
 
 
@@ -541,7 +601,7 @@ def browse_screenshots(
                         else:
                             _queue_preview_generation(request.app.state, local)
                     s["preview_url"] = preview_url
-                    valid.append(s)
+                    valid.append(_decorate_screenshot_media(request.app.state, s))
                 else:
                     # Remote-only entry — must have a direct media URL (not a webpage)
                     media_url = s.get("source_url") or ""
@@ -573,7 +633,7 @@ def browse_screenshots(
                             thumb = media_url.replace(".mp4", "-poster.jpg")
                         s["preview_url"] = thumb or (None if is_vid else media_url)
                     s["source_url"] = media_url
-                    valid.append(s)
+                    valid.append(_decorate_screenshot_media(request.app.state, s))
                 if len(valid) >= effective_limit:
                     break
                 if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
@@ -893,11 +953,7 @@ async def search_screenshots(request: Request, q: str = "", limit: int = 50):
     except Exception:
         # FTS might not have data yet
         results = []
-    # Add local_url
-    for r in results:
-        if r.get("local_path"):
-            r["local_url"] = "/cached-screenshots/" + r["local_path"].split("/")[-1]
-    return results
+    return _decorate_rows(request.app.state, results)
 
 
 _SUMMARIZE_PROMPT = (
@@ -930,13 +986,7 @@ def top_rated_screenshots(request: Request):
     db = request.app.state.db
     def build():
         screenshots = db.top_rated_screenshots(limit=20)
-        valid = []
-        for s in screenshots:
-            local = Path(s.get("local_path", "") or "")
-            if local.exists():
-                s["local_url"] = f"/cached-screenshots/{local.name}"
-                valid.append(s)
-        return {"screenshots": valid}
+        return {"screenshots": _decorate_rows(request.app.state, screenshots)}
 
     return _get_cached_screenshots_payload(request.app.state, "top-rated", 15.0, build)
 
@@ -950,11 +1000,8 @@ def rate_screenshot(screenshot_id: int, request: Request, body: dict = Body(...)
     updated = db.rate_screenshot(screenshot_id, rating)
     if not updated:
         raise HTTPException(status_code=404, detail="Screenshot not found")
-    local = Path(updated.get("local_path", "") or "")
-    if local.exists():
-        updated["local_url"] = f"/cached-screenshots/{local.name}"
     _invalidate_screenshots_cache(request.app.state)
-    return updated
+    return _decorate_screenshot_media(request.app.state, updated)
 
 
 @router.get("/media-stats")
@@ -1080,7 +1127,7 @@ async def find_related(request: Request, screenshot_id: int, limit: int = 12):
 
         # Fetch candidates — grab more than needed so we can score and rank
         candidates = conn.execute(
-            "SELECT id, term, source, page_url, local_path, ai_summary, ai_tags, rating, performer_id, captured_at "
+            "SELECT id, term, source, page_url, local_path, source_url, thumbnail_url, ai_summary, ai_tags, rating, performer_id, captured_at "
             "FROM screenshots WHERE id != ? LIMIT 500",
             (screenshot_id,),
         ).fetchall()
@@ -1127,11 +1174,11 @@ async def find_related(request: Request, screenshot_id: int, limit: int = 12):
                     p = Path(local)
                     if p.exists():
                         d["local_url"] = "/cached-screenshots/" + p.name
-                    else:
-                        continue  # skip missing files
-                else:
+                    elif not d.get("source_url"):
+                        continue  # skip missing files when there is no remote fallback
+                elif not d.get("source_url"):
                     continue
-                scored.append((score, d))
+                scored.append((score, _decorate_screenshot_media(request.app.state, d)))
 
         # Sort by score descending, then by recency
         scored.sort(key=lambda x: (-x[0], -(x[1].get("id") or 0)))
@@ -1522,14 +1569,17 @@ def capture_from_url(request: Request, body: dict = Body(...)):
     performer_id = body.get("performer_id")
 
     db = request.app.state.db
-    image_dir = Path(request.app.state.settings.image_dir).parent / "screenshots"
-    image_dir.mkdir(parents=True, exist_ok=True)
-
-    if not _disk_has_space(str(image_dir.parent)):
-        raise HTTPException(status_code=507, detail="Insufficient disk space (< 500 MB free)")
+    settings = request.app.state.settings
+    stream_only = bool(getattr(settings, "stream_only_media", False))
+    image_dir = Path(settings.image_dir).parent / "screenshots"
+    if not stream_only:
+        image_dir.mkdir(parents=True, exist_ok=True)
+        if not _disk_has_space(str(image_dir.parent)):
+            raise HTTPException(status_code=507, detail="Insufficient disk space (< 500 MB free)")
 
     download_url = url
     source = "url"
+    thumbnail_url: str | None = None
 
     # Handle Redgifs URLs
     if "redgifs.com" in url.lower():
@@ -1538,65 +1588,73 @@ def capture_from_url(request: Request, body: dict = Body(...)):
             raise HTTPException(status_code=422, detail="Could not extract video URL from Redgifs")
         download_url = resolved
         source = "redgifs"
+        if download_url.endswith(".mp4"):
+            thumbnail_url = download_url.replace(".mp4", "-poster.jpg")
 
     # Handle Twitter/X media URLs (direct media links)
     elif "pbs.twimg.com" in url.lower() or "video.twimg.com" in url.lower():
         source = "x"
 
-    # Download the file
-    try:
-        resp = http_requests.get(
-            download_url,
-            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
-            timeout=30,
-            stream=True,
-        )
-        resp.raise_for_status()
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Download failed: {exc}")
+    local_path: str | None = None
+    out_path: Path | None = None
+    if not stream_only:
+        # Download the file to disk for legacy cache mode
+        try:
+            resp = http_requests.get(
+                download_url,
+                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
+                timeout=30,
+                stream=True,
+            )
+            resp.raise_for_status()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Download failed: {exc}")
 
-    # Determine extension
-    ct = resp.headers.get("Content-Type", "")
-    ext = _guess_ext_from_content_type(ct) or _guess_ext_from_url(download_url)
-    if ext not in _ALLOWED_EXTS:
-        ext = ".jpg"
+        # Determine extension
+        ct = resp.headers.get("Content-Type", "")
+        ext = _guess_ext_from_content_type(ct) or _guess_ext_from_url(download_url)
+        if ext not in _ALLOWED_EXTS:
+            ext = ".jpg"
 
-    # Generate filename
-    slug = re.sub(r"[^a-z0-9]", "_", (term or "url").lower())[:30]
-    short_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-    filename = f"{slug}_{short_hash}{ext}"
-    out_path = image_dir / filename
+        # Generate filename
+        slug = re.sub(r"[^a-z0-9]", "_", (term or "url").lower())[:30]
+        short_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        filename = f"{slug}_{short_hash}{ext}"
+        out_path = image_dir / filename
 
-    # Write file
-    with open(out_path, "wb") as f:
-        for chunk in resp.iter_content(8192):
-            f.write(chunk)
+        # Write file
+        with open(out_path, "wb") as f:
+            for chunk in resp.iter_content(8192):
+                f.write(chunk)
+        local_path = str(out_path)
 
     # Insert DB record
     db.insert_screenshot(
         term=term or "",
         source=source,
         page_url=url,
-        local_path=str(out_path),
+        local_path=local_path or "",
         performer_id=performer_id,
+        source_url=download_url,
+        thumbnail_url=thumbnail_url,
     )
 
     # Fetch the created record
     with db.connect() as conn:
         row = conn.execute(
-            "SELECT * FROM screenshots WHERE local_path = ? ORDER BY id DESC LIMIT 1",
-            (str(out_path),),
+            "SELECT * FROM screenshots WHERE page_url = ? ORDER BY id DESC LIMIT 1",
+            (url,),
         ).fetchone()
 
     if not row:
         raise HTTPException(status_code=500, detail="Failed to create screenshot record")
 
-    result = dict(row)
-    result["local_url"] = f"/cached-screenshots/{out_path.name}"
-    try:
-        _warm_preview_generation(request.app.state, out_path)
-    except Exception:
-        pass
+    result = _decorate_screenshot_media(request.app.state, dict(row))
+    if out_path is not None and not stream_only:
+        try:
+            _warm_preview_generation(request.app.state, out_path)
+        except Exception:
+            pass
     _invalidate_screenshots_cache(request.app.state)
     return result
 
@@ -1696,11 +1754,8 @@ def update_user_tags(screenshot_id: int, request: Request, body: dict = Body(...
     updated = db.set_screenshot_user_tags(screenshot_id, json.dumps(clean))
     if not updated:
         raise HTTPException(status_code=404, detail="Screenshot not found")
-    local = Path(updated.get("local_path", "") or "")
-    if local.exists():
-        updated["local_url"] = f"/cached-screenshots/{local.name}"
     _invalidate_screenshots_cache(request.app.state)
-    return updated
+    return _decorate_screenshot_media(request.app.state, updated)
 
 
 @router.post("/purge-women")

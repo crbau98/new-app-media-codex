@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { useAppStore, type ActiveView } from "../store"
 import { api, type Performer } from "../lib/api"
+import { getPerformerAvatarSrc } from "@/lib/performer"
 
 type CommandType = "nav" | "run" | "shortcut"
 
@@ -560,8 +561,8 @@ export function CommandPalette() {
                           onClick={() => trackAndRun(cmd)}
                         >
                           <div className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-bg-elevated">
-                            {performer.avatar_local || performer.avatar_url ? (
-                              <img src={performer.avatar_local || performer.avatar_url || ""} alt="" className="h-7 w-7 shrink-0 rounded-full bg-white/5 object-cover" />
+                            {getPerformerAvatarSrc(performer) ? (
+                              <img src={getPerformerAvatarSrc(performer)} alt="" className="h-7 w-7 shrink-0 rounded-full bg-white/5 object-cover" />
                             ) : (
                               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold" style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>
                                 {(performer.display_name || performer.username).charAt(0).toUpperCase()}

@@ -84,6 +84,8 @@ def cache_image_record(session: Any, settings: Settings, image: dict[str, Any]) 
     from app.sources.base import cache_image
 
     record = dict(image)
+    if settings.stream_only_media:
+        return record
     if record.get("local_path"):
         return record
     target = record.get("image_url") or record.get("thumb_url") or ""
@@ -681,6 +683,10 @@ class ResearchService:
         serialized: list[dict[str, Any]] = []
         for image in images:
             payload = dict(image)
-            payload["local_url"] = f"/cached-images/{Path(payload['local_path']).name}" if payload.get("local_path") else ""
+            image_url = str(payload.get("image_url") or "")
+            if image_url.startswith(("http://", "https://")):
+                payload["local_url"] = image_url
+            else:
+                payload["local_url"] = f"/cached-images/{Path(payload['local_path']).name}" if payload.get("local_path") else ""
             serialized.append(payload)
         return serialized

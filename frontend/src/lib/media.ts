@@ -10,6 +10,10 @@ function normalizeMediaUrl(url: string | null | undefined): string {
   return (url ?? "").trim()
 }
 
+function isRenderableRemoteUrl(url: string): boolean {
+  return Boolean(url) && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/api/screenshots/proxy-media?url="))
+}
+
 function uniqueMediaCandidates(candidates: Array<string | null | undefined>): string[] {
   const seen = new Set<string>()
   const urls: string[] = []
@@ -82,16 +86,16 @@ export function isKnownBrokenMediaUrl(url: string | null | undefined): boolean {
 }
 
 export function getScreenshotMediaSrc(s: Screenshot): string {
-  // Prefer backend-resolved local_url (direct CDN URL or local path)
-  if (s.local_url) return s.local_url
-  // Legacy: local file on disk
-  if (s.local_path) {
-    const name = s.local_path.split("/").pop() || ""
-    if (name) return `/cached-screenshots/${name}`
-  }
-  // Remote-only: use source URL directly (browser loads from CDN)
-  if (s.source_url) return s.source_url
-  return s.page_url || ""
+  const localUrl = normalizeMediaUrl(s.local_url)
+  if (isRenderableRemoteUrl(localUrl)) return localUrl
+
+  const sourceUrl = normalizeMediaUrl(s.source_url)
+  if (isRenderableRemoteUrl(sourceUrl)) return sourceUrl
+
+  const pageUrl = normalizeMediaUrl(s.page_url)
+  if (isRenderableRemoteUrl(pageUrl)) return pageUrl
+
+  return ""
 }
 
 export function getScreenshotPreviewSrc(s: Screenshot): string {

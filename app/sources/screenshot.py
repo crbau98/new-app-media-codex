@@ -714,20 +714,14 @@ def _ytdlp_search_urls(query: str) -> list[str]:
 
 
 def _check_thumbnail_vision(session: requests.Session, thumbnail_url: str, settings) -> bool:
-    """Download a thumbnail URL to a temp file and run the vision filter. Returns True to keep."""
+    """Run the vision filter against a remote thumbnail URL without downloading it locally."""
     if not thumbnail_url or settings is None:
         return True
-    import tempfile
-    from app.vision_filter import passes_strict_content_filter
-    tmp = Path(tempfile.mktemp(suffix=".jpg"))
-    try:
-        ok = _download_file(session, thumbnail_url, tmp, ("image/",))
-        if not ok:
-            return False
-        result = passes_strict_content_filter(settings, str(tmp))
-        return result
-    finally:
-        tmp.unlink(missing_ok=True)
+    if not thumbnail_url.startswith(("http://", "https://")):
+        return True
+    from app.vision_filter import passes_strict_content_filter_url
+
+    return passes_strict_content_filter_url(settings, thumbnail_url)
 
 
 def _check_downloaded_video_vision(local_path: Path, settings) -> bool:

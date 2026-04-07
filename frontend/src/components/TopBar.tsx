@@ -6,6 +6,7 @@ import { api, type Performer, type ScreenshotTerm, type UserTagCount } from "../
 import { Button } from "./Button"
 import { Spinner } from "./Spinner"
 import { cn } from "@/lib/cn"
+import { getPerformerAvatarSrc, getPerformerMeta } from "@/lib/performer"
 
 const ShortcutModal = lazy(() => import("./ShortcutModal").then((m) => ({ default: m.ShortcutModal })))
 const NotificationCenter = lazy(() => import("./NotificationCenter").then((m) => ({ default: m.NotificationCenter })))
@@ -142,7 +143,7 @@ export function TopBar() {
       kind: "creator",
       id: `creator-${performer.id}`,
       label: performer.display_name || performer.username,
-      meta: `${performer.platform}${performer.username !== (performer.display_name || performer.username) ? ` · @${performer.username}` : ""}`,
+      meta: getPerformerMeta(performer),
       performer,
     }))
   }, [creatorResults])
@@ -527,17 +528,23 @@ export function TopBar() {
                                 role="option"
                                 aria-selected={activeIndex === idx}
                               >
-                                {item.performer.avatar_local || item.performer.avatar_url ? (
-                                  <img
-                                    src={item.performer.avatar_local || item.performer.avatar_url || ""}
-                                    alt=""
-                                    className="h-7 w-7 shrink-0 rounded-full bg-white/5 object-cover"
-                                  />
-                                ) : (
-                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/12 text-[11px] font-semibold text-accent">
-                                    {(item.label || "?").charAt(0).toUpperCase()}
-                                  </span>
-                                )}
+                                {(() => {
+                                  const avatarSrc = getPerformerAvatarSrc(item.performer)
+                                  if (avatarSrc) {
+                                    return (
+                                      <img
+                                        src={avatarSrc}
+                                        alt=""
+                                        className="h-7 w-7 shrink-0 rounded-full bg-white/5 object-cover"
+                                      />
+                                    )
+                                  }
+                                  return (
+                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/12 text-[11px] font-semibold text-accent">
+                                      {(item.label || "?").charAt(0).toUpperCase()}
+                                    </span>
+                                  )
+                                })()}
                                 <span className="min-w-0 flex-1">
                                   <span className="block truncate text-xs font-medium text-text-primary">
                                     {highlightMatch(item.label, searchVal)}

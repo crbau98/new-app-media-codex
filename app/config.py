@@ -62,6 +62,7 @@ class Settings:
     openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip())
     x_bearer_token: str = field(default_factory=lambda: os.getenv("X_BEARER_TOKEN", "").strip())
     admin_token: str = field(default_factory=lambda: os.getenv("ADMIN_TOKEN", "").strip())
+    stream_only_media: bool = field(default_factory=lambda: _flag("STREAM_ONLY_MEDIA", True))
     enable_image_downloads: bool = field(default_factory=lambda: _flag("ENABLE_IMAGE_DOWNLOADS", False))
     reddit_results: int = field(default_factory=lambda: _int_env("REDDIT_RESULTS", 4))
     x_results: int = field(default_factory=lambda: _int_env("X_RESULTS", 4))

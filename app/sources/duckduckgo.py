@@ -100,10 +100,11 @@ def collect_images(session: requests.Session, settings: Settings, theme: Theme, 
             continue
         local_path = ""
         original_path = ""
-        try:
-            local_path, original_path = cache_image(session, settings, image_url)
-        except Exception:
-            local_path = ""
+        if not settings.stream_only_media:
+            try:
+                local_path, original_path = cache_image(session, settings, image_url)
+            except Exception:
+                local_path = ""
         images.append(
             ImageRecord(
                 source_type="image_search",
@@ -134,10 +135,11 @@ def collect_images(session: requests.Session, settings: Settings, theme: Theme, 
             continue
         local_path = ""
         original_path = ""
-        try:
-            local_path, original_path = cache_image(session, settings, image_url)
-        except Exception:
-            local_path = ""
+        if not settings.stream_only_media:
+            try:
+                local_path, original_path = cache_image(session, settings, image_url)
+            except Exception:
+                local_path = ""
         images.append(
             ImageRecord(
                 source_type="page_image_search",

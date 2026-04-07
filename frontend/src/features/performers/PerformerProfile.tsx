@@ -3,6 +3,7 @@ import { createPortal } from "react-dom"
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/cn"
 import { api, type Performer, type PerformerMedia, type PerformerLink, type Screenshot } from "@/lib/api"
+import { getPerformerAvatarSrc } from "@/lib/performer"
 import { getScreenshotMediaSrc } from "@/lib/media"
 import { useAppStore } from "@/store"
 import { Skeleton } from "@/components/Skeleton"
@@ -257,8 +258,8 @@ function SimilarCreators({
             className="flex items-center gap-2 rounded-xl border border-white/8 bg-white/[0.02] p-2.5 text-left transition-colors hover:border-white/15 hover:bg-white/5"
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-sm font-bold text-text-muted overflow-hidden">
-              {p.avatar_local || p.avatar_url ? (
-                <img src={p.avatar_local ?? p.avatar_url ?? ""} alt={p.username} className="h-full w-full object-cover" />
+              {getPerformerAvatarSrc(p) ? (
+                <img src={getPerformerAvatarSrc(p)} alt={p.username} className="h-full w-full object-cover" />
               ) : (
                 p.username.charAt(0).toUpperCase()
               )}
@@ -982,10 +983,10 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
         <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
           {/* Avatar */}
           <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-full bg-white/10 ring-4 ring-white/5">
-            {(performer.avatar_local || performer.avatar_url) ? (
+            {getPerformerAvatarSrc(performer) ? (
               <>
                 <img
-                  src={performer.avatar_local || performer.avatar_url || undefined}
+                  src={getPerformerAvatarSrc(performer)}
                   alt={performer.username}
                   className="h-full w-full object-cover"
                   onError={(e) => { e.currentTarget.style.display = "none"; const sib = e.currentTarget.nextElementSibling as HTMLElement; if (sib) sib.style.display = "flex" }}

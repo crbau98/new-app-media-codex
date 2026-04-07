@@ -4,6 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import json
 import os
+import shutil
 from pathlib import Path
 import re
 import sqlite3
@@ -63,11 +64,28 @@ async def _start_telegram_client(app: FastAPI) -> None:
         print(f"[telegram] WARNING: Could not start Pyrogram client: {e}")
 
 
+def _purge_directory_contents(directory: Path) -> None:
+    if not directory.exists():
+        return
+    for child in directory.iterdir():
+        try:
+            if child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
+            else:
+                child.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = db
     app.state.settings = settings
     app.state.service = service
+    if settings.stream_only_media:
+        _purge_directory_contents(settings.image_dir)
+        _purge_directory_contents(_screenshots_dir)
+        _purge_directory_contents(_previews_dir)
     app.state.http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(connect=10, read=120, write=10, pool=10),
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
@@ -262,38 +280,16 @@ def index(request: Request) -> HTMLResponse:
         # Embed initial API data to eliminate HTML->JS->API waterfall
         try:
             browse_result = db.browse_screenshots(limit=24, offset=0)
-            _vid_exts = {"mp4", "webm", "mov"}
-            _vid_sources = {"redgifs", "ytdlp"}
-            _img_exts = {"jpg", "jpeg", "png", "gif", "webp"}
-            _media_exts = _vid_exts | _img_exts
             shots = []
+            from app.api.screenshots import _decorate_screenshot_media
+
             for s in browse_result.get("screenshots", []):
-                local_p = s.get("local_path") or ""
-                media_url = s.get("source_url") or ""
-                if local_p and (Path(settings.image_dir).parent / "screenshots" / Path(local_p).name).exists():
-                    s["local_url"] = f"/cached-screenshots/{Path(local_p).name}"
-                elif media_url.startswith(("http://", "https://")):
-                    from urllib.parse import quote
-                    ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
-                    src = s.get("source", "")
-                    if ext not in _media_exts and src not in ("redgifs", "coomer"):
-                        continue
-                    is_vid = ext in _vid_exts or src in _vid_sources
-                    if "coomer.st" in media_url:
-                        s["local_url"] = f"/api/screenshots/proxy-media?url={quote(media_url, safe='')}"
-                        s["preview_url"] = None if is_vid else s["local_url"]
-                    else:
-                        s["local_url"] = media_url
-                        thumb = s.get("thumbnail_url")
-                        if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
-                            thumb = media_url.replace(".mp4", "-poster.jpg")
-                        s["preview_url"] = thumb or (None if is_vid else media_url)
-                    s["source_url"] = media_url
-                else:
+                decorated = _decorate_screenshot_media(request.app.state, s)
+                if not decorated.get("local_url"):
                     continue
                 for k in ("ai_summary", "ai_tags", "user_tags"):
-                    s.pop(k, None)
-                shots.append(s)
+                    decorated.pop(k, None)
+                shots.append(decorated)
             screenshots_payload = {
                 "screenshots": shots,
                 "total": browse_result.get("total", 0),

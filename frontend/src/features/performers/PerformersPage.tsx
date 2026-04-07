@@ -1,8 +1,10 @@
-import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense, startTransition, memo } from "react"
+import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense, startTransition, memo, useDeferredValue } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { QueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/cn"
 import { api, type Performer, type DiscoveredCreator, type CaptureQueueEntry } from "@/lib/api"
+import { getPerformerAvatarSrc } from "@/lib/performer"
+import { getBestAvailablePreviewSrc, getScreenshotMediaSrc, isVideoShot } from "@/lib/media"
 import { useAppStore } from "@/store"
 import { useDebounce } from "@/hooks/useDebounce"
 import { Skeleton } from "@/components/Skeleton"
@@ -671,6 +673,7 @@ const PerformerCard = memo(function PerformerCard({
   const setMediaCreator = useAppStore((s) => s.setMediaCreator)
   const setActiveView = useAppStore((s) => s.setActiveView)
   const [hovered, setHovered] = useState(false)
+  const avatarSrc = getPerformerAvatarSrc(performer)
 
   function handleViewMedia(e: React.MouseEvent) {
     e.stopPropagation()
@@ -732,9 +735,9 @@ const PerformerCard = memo(function PerformerCard({
               "h-full w-full overflow-hidden rounded-full ring-2 shadow-lg shadow-black/20",
               performer.is_favorite ? "ring-rose-500/40" : "ring-white/10"
             )}>
-              {performer.avatar_local || performer.avatar_url ? (
+              {avatarSrc ? (
                 <img
-                  src={performer.avatar_local ?? performer.avatar_url ?? ""}
+                  src={avatarSrc}
                   alt={performer.username}
                   className="h-full w-full object-cover"
                 />
@@ -883,10 +886,15 @@ const PerformerCard = memo(function PerformerCard({
   prev.selectMode === next.selectMode &&
   prev.performer.is_favorite === next.performer.is_favorite &&
   prev.performer.is_subscribed === next.performer.is_subscribed &&
+  prev.performer.username === next.performer.username &&
+  prev.performer.display_name === next.performer.display_name &&
+  prev.performer.platform === next.performer.platform &&
+  prev.performer.profile_url === next.performer.profile_url &&
+  prev.performer.is_verified === next.performer.is_verified &&
+  prev.performer.tags === next.performer.tags &&
   prev.performer.media_count === next.performer.media_count &&
   prev.performer.screenshots_count === next.performer.screenshots_count &&
-  prev.performer.avatar_url === next.performer.avatar_url &&
-  prev.performer.avatar_local === next.performer.avatar_local
+  prev.performer.avatar_url === next.performer.avatar_url
 )
 
 /* ── Analytics Panel ───────────────────────────────────────────────────── */
@@ -905,6 +913,7 @@ function BillingRow({
   onRenewToday: (id: number) => void
 }) {
   const platformClass = PLATFORM_COLORS[p.platform] ?? "bg-white/10 text-text-secondary border-white/10"
+  const avatarSrc = getPerformerAvatarSrc(p)
 
   const urgencyClass =
     p.daysUntil === null
@@ -931,8 +940,8 @@ function BillingRow({
         className="flex min-w-0 flex-1 items-center gap-3 text-left"
       >
         <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full ring-1 ring-white/10">
-          {p.avatar_local || p.avatar_url ? (
-            <img src={p.avatar_local ?? p.avatar_url ?? ""} alt="" className="h-full w-full object-cover" />
+          {avatarSrc ? (
+            <img src={avatarSrc} alt="" className="h-full w-full object-cover" />
           ) : (
             <AvatarPlaceholder username={p.username} size="sm" />
           )}
@@ -1115,7 +1124,7 @@ function PerformerThumbs({ performerId, username, visible }: { performerId: numb
     staleTime: 120_000,
   })
 
-  const shots = (data?.screenshots ?? []).filter((s) => s.local_url)
+  const shots = (data?.screenshots ?? []).filter((s) => getBestAvailablePreviewSrc(s) || getScreenshotMediaSrc(s))
   if (shots.length === 0) return null
 
   return (
@@ -1127,7 +1136,19 @@ function PerformerThumbs({ performerId, username, visible }: { performerId: numb
           className="group/thumb relative aspect-square flex-1 overflow-hidden rounded-lg bg-white/5"
           title={s.term ?? ""}
         >
-          <img src={s.local_url!} alt="" className="h-full w-full object-cover opacity-70 transition-opacity group-hover/thumb:opacity-100" />
+          {getBestAvailablePreviewSrc(s) ? (
+            <img src={getBestAvailablePreviewSrc(s)} alt="" className="h-full w-full object-cover opacity-70 transition-opacity group-hover/thumb:opacity-100" />
+          ) : isVideoShot(s) ? (
+            <video
+              src={getScreenshotMediaSrc(s)}
+              muted
+              playsInline
+              preload="metadata"
+              className="h-full w-full object-cover opacity-70 transition-opacity group-hover/thumb:opacity-100"
+            />
+          ) : (
+            <img src={getScreenshotMediaSrc(s)} alt="" className="h-full w-full object-cover opacity-70 transition-opacity group-hover/thumb:opacity-100" />
+          )}
         </button>
       ))}
     </div>
@@ -1181,6 +1202,7 @@ function PerformerRow({
   const addToast = useAppStore((s) => s.addToast)
   const setMediaCreator = useAppStore((s) => s.setMediaCreator)
   const setActiveView = useAppStore((s) => s.setActiveView)
+  const avatarSrc = getPerformerAvatarSrc(performer)
 
   const favMutation = useMutation({
     mutationFn: () => api.updatePerformer(performer.id, { is_favorite: performer.is_favorite ? 0 : 1 }),
@@ -1230,8 +1252,8 @@ function PerformerRow({
       {/* Avatar */}
       <div className="relative h-7 w-7 flex-shrink-0">
         <div className="h-full w-full overflow-hidden rounded-full ring-1 ring-white/10">
-          {performer.avatar_local || performer.avatar_url ? (
-            <img src={performer.avatar_local ?? performer.avatar_url ?? ""} alt={performer.username} className="h-full w-full object-cover" />
+          {avatarSrc ? (
+            <img src={avatarSrc} alt={performer.username} className="h-full w-full object-cover" />
           ) : (
             <AvatarPlaceholder username={performer.username} size="sm" />
           )}
@@ -1640,6 +1662,7 @@ export default function PerformersPage() {
     queryKey: ["performers", queryParams],
     queryFn: () => api.browsePerformers(queryParams),
     staleTime: 30_000,
+    placeholderData: (previousData) => previousData,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
@@ -1652,7 +1675,8 @@ export default function PerformersPage() {
       const tags = parseTags(p.tags)
       return tags.some((t) => t.toLowerCase() === tagFilter.toLowerCase())
     }), [allPerformers, subscribedOnly, tagFilter])
-  const performers = filteredPerformers.slice(0, visibleLimit)
+  const deferredFilteredPerformers = useDeferredValue(filteredPerformers)
+  const performers = deferredFilteredPerformers.slice(0, visibleLimit)
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
 
   const closeForm = useCallback(() => setShowAdd(false), [])
@@ -1671,18 +1695,18 @@ export default function PerformersPage() {
 
   useEffect(() => {
     const el = loadMoreRef.current
-    if (!el || performers.length >= filteredPerformers.length) return
+    if (!el || performers.length >= deferredFilteredPerformers.length) return
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setVisibleLimit((v) => Math.min(v + 24, filteredPerformers.length))
+          setVisibleLimit((v) => Math.min(v + 24, deferredFilteredPerformers.length))
         }
       },
       { rootMargin: "500px 0px" }
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [performers.length, filteredPerformers.length])
+  }, [performers.length, deferredFilteredPerformers.length])
 
   // Keyboard navigation
   useEffect(() => {
@@ -1758,64 +1782,71 @@ export default function PerformersPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-6 pb-24">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <h1 className="text-lg font-semibold text-text-primary">Creators</h1>
-        {statsData && (
-          <div className="flex items-center gap-3 text-xs text-text-muted">
-            <span><span className="font-mono font-medium text-text-secondary">{statsData.total ?? 0}</span> total</span>
-            {(statsData.with_media ?? 0) > 0 && (
-              <span><span className="font-mono font-medium text-text-secondary">{statsData.with_media}</span> with media</span>
-            )}
-          </div>
-        )}
-        <div className="relative ml-auto">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
-            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-          </svg>
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search... (/)"
-            className="w-44 rounded-xl border border-white/10 bg-white/5 py-1.5 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
-          />
+      <div className="flex flex-col gap-4 rounded-3xl border border-white/8 bg-white/[0.03] p-4 shadow-lg shadow-black/5 lg:flex-row lg:items-end">
+        <div className="space-y-2">
+          <h1 className="text-xl font-semibold text-text-primary">Creators</h1>
+          {statsData && (
+            <div className="flex flex-wrap items-center gap-3 text-xs text-text-muted">
+              <span><span className="font-mono font-medium text-text-secondary">{statsData.total ?? 0}</span> total</span>
+              {(statsData.with_media ?? 0) > 0 && (
+                <span><span className="font-mono font-medium text-text-secondary">{statsData.with_media}</span> with media</span>
+              )}
+            </div>
+          )}
         </div>
-        <button
-          onClick={() => runUiTransition(() => setShowDiscover(true))}
-          className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
-        >
-          Discover
-        </button>
-        <button
-          onClick={() => runUiTransition(() => { setShowAdd(!showAdd); setShowImportUrl(false); setShowBulkImport(false) })}
-          className="rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-          data-add-performer
-        >
-          {showAdd ? "Close" : "Add Creator"}
-        </button>
-        <MoreMenu
-          showBilling={showBilling}
-          showAnalytics={showAnalytics}
-          selectMode={selectMode}
-          watchlistCount={watchlistCount}
-          watchlistCapturing={watchlistCapturing}
-          captureAllRunning={captureAllRunning}
-          onBilling={() => runUiTransition(() => { setShowBilling(!showBilling); setShowAnalytics(false) })}
-          onAnalytics={() => runUiTransition(() => { setShowAnalytics(!showAnalytics); setShowBilling(false) })}
-          onImportUrl={() => runUiTransition(() => { setShowImportUrl(!showImportUrl); setShowBulkImport(false); setShowAdd(false) })}
-          onBulkImport={() => runUiTransition(() => { setShowBulkImport(!showBulkImport); setShowImportUrl(false); setShowAdd(false) })}
-          onExportCsv={() => {}}
-          exportUrl={api.exportPerformersUrl()}
-          onSelect={() => runUiTransition(() => { setSelectMode((v) => !v); setSelectedIds(new Set()) })}
-          onCaptureStale={() => {
-            api.captureStale().then((r) => {
-              addToast(`Queued ${r.queued} stale creators for capture`, "success")
-              qcMain.invalidateQueries({ queryKey: ["capture-queue"] })
-            }).catch(() => addToast("Failed to queue stale captures", "error"))
-          }}
-          onCaptureAll={handleCaptureAll}
-        />
+
+        <div className="flex flex-1 flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
+          <div className="relative w-full xl:max-w-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search creators... (/)"
+              className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => runUiTransition(() => setShowDiscover(true))}
+              className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
+            >
+              Discover
+            </button>
+            <button
+              onClick={() => runUiTransition(() => { setShowAdd(!showAdd); setShowImportUrl(false); setShowBulkImport(false) })}
+              className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              data-add-performer
+            >
+              {showAdd ? "Close" : "Add Creator"}
+            </button>
+            <MoreMenu
+              showBilling={showBilling}
+              showAnalytics={showAnalytics}
+              selectMode={selectMode}
+              watchlistCount={watchlistCount}
+              watchlistCapturing={watchlistCapturing}
+              captureAllRunning={captureAllRunning}
+              onBilling={() => runUiTransition(() => { setShowBilling(!showBilling); setShowAnalytics(false) })}
+              onAnalytics={() => runUiTransition(() => { setShowAnalytics(!showAnalytics); setShowBilling(false) })}
+              onImportUrl={() => runUiTransition(() => { setShowImportUrl(!showImportUrl); setShowBulkImport(false); setShowAdd(false) })}
+              onBulkImport={() => runUiTransition(() => { setShowBulkImport(!showBulkImport); setShowImportUrl(false); setShowAdd(false) })}
+              onExportCsv={() => {}}
+              exportUrl={api.exportPerformersUrl()}
+              onSelect={() => runUiTransition(() => { setSelectMode((v) => !v); setSelectedIds(new Set()) })}
+              onCaptureStale={() => {
+                api.captureStale().then((r) => {
+                  addToast(`Queued ${r.queued} stale creators for capture`, "success")
+                  qcMain.invalidateQueries({ queryKey: ["capture-queue"] })
+                }).catch(() => addToast("Failed to queue stale captures", "error"))
+              }}
+              onCaptureAll={handleCaptureAll}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Discovery modal */}
@@ -2064,7 +2095,7 @@ export default function PerformersPage() {
             ))}
           </div>
         )
-      ) : filteredPerformers.length === 0 ? (
+      ) : deferredFilteredPerformers.length === 0 ? (
         <EmptyState
           icon="👤"
           title="No creators yet"
@@ -2154,18 +2185,18 @@ export default function PerformersPage() {
         </div>
       )}
 
-      {performers.length < filteredPerformers.length && <div ref={loadMoreRef} className="h-1" />}
+      {performers.length < deferredFilteredPerformers.length && <div ref={loadMoreRef} className="h-1" />}
 
-      {filteredPerformers.length > 0 && (
+      {deferredFilteredPerformers.length > 0 && (
         <div className="text-center text-xs text-text-muted">
-          {performers.length < filteredPerformers.length ? (
+          {performers.length < deferredFilteredPerformers.length ? (
             <div className="flex flex-col items-center gap-2">
-              <span>Showing {performers.length} of {(subscribedOnly || tagFilter) ? filteredPerformers.length : (data?.total ?? filteredPerformers.length)} creators</span>
+              <span>Showing {performers.length} of {(subscribedOnly || tagFilter) ? deferredFilteredPerformers.length : (data?.total ?? deferredFilteredPerformers.length)} creators</span>
               <button
                 onClick={() => setVisibleLimit((v) => v + 24)}
                 className="rounded-xl border border-white/10 px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-white/5 hover:text-text-primary"
               >
-                Load more ({Math.min(24, filteredPerformers.length - performers.length)} more)
+                Load more ({Math.min(24, deferredFilteredPerformers.length - performers.length)} more)
               </button>
             </div>
           ) : !subscribedOnly && data?.total && data.total > allPerformers.length ? (

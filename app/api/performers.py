@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import html
+import math
 import json
 import re
 import uuid
+from difflib import SequenceMatcher
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
 import time
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests as req
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -239,6 +242,51 @@ def _parse_profile_url(url: str) -> tuple[str, str]:
         if m:
             return platform, m.group("user")
     raise ValueError(f"Unrecognised profile URL: {url}")
+
+
+def _extract_avatar_from_profile_url(profile_url: str) -> str | None:
+    """Best-effort avatar discovery from an official profile or social page."""
+    if not profile_url.startswith(("http://", "https://")):
+        return None
+    try:
+        resp = req.get(profile_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if not resp.ok:
+            return None
+        html_text = resp.text
+        patterns = (
+            r'<meta[^>]+property=["\']og:image[^"\']*["\'][^>]+content=["\']([^"\']+)["\']',
+            r'<meta[^>]+name=["\']twitter:image(?::src)?["\'][^>]+content=["\']([^"\']+)["\']',
+            r'"profile_image_url_https"\s*:\s*"([^"]+)"',
+            r'"avatar_url"\s*:\s*"([^"]+)"',
+        )
+        for pattern in patterns:
+            match = re.search(pattern, html_text, re.IGNORECASE)
+            if not match:
+                continue
+            candidate = html.unescape(match.group(1).replace("\\/", "/").strip())
+            if candidate.startswith("//"):
+                candidate = f"{urlparse(profile_url).scheme}:{candidate}"
+            elif candidate.startswith("/"):
+                candidate = urljoin(profile_url, candidate)
+            if candidate.startswith(("http://", "https://")):
+                return candidate
+    except Exception:
+        return None
+    return None
+
+
+def _candidate_avatar_urls(performer: dict) -> list[str]:
+    urls: list[str] = []
+    profile_url = str(performer.get("profile_url") or "").strip()
+    if profile_url:
+        urls.append(profile_url)
+    twitter_username = str(performer.get("twitter_username") or "").strip()
+    if twitter_username:
+        urls.extend([f"https://x.com/{twitter_username}", f"https://twitter.com/{twitter_username}"])
+    reddit_username = str(performer.get("reddit_username") or "").strip()
+    if reddit_username:
+        urls.append(f"https://www.reddit.com/user/{reddit_username}")
+    return urls
 
 
 # ── Stats (must be before /{id} routes) ────────────────────────────────
@@ -1662,7 +1710,7 @@ def capture_stale(
 
 @router.post("/enrich/{performer_id}")
 def enrich_performer(performer_id: int, request: Request):
-    """Attempt to fetch avatar_url from Redgifs user profile (best-effort)."""
+    """Attempt to discover a real creator avatar from official or social profile sources."""
     db = request.app.state.db
     performer = db.get_performer(performer_id)
     if not performer:
@@ -1681,10 +1729,16 @@ def enrich_performer(performer_id: int, request: Request):
             avatar_url = user.get("profileImageUrl") or user.get("poster") or None
     except Exception as exc:
         print(f"[enrich] redgifs error for {username}: {exc}")
-    if avatar_url and not performer.get("avatar_url"):
-        db.update_performer(performer_id, avatar_url=avatar_url)
+    if not avatar_url:
+        for profile_url in _candidate_avatar_urls(performer):
+            avatar_url = _extract_avatar_from_profile_url(profile_url)
+            if avatar_url:
+                break
+    should_update = bool(avatar_url and (avatar_url != performer.get("avatar_url") or performer.get("avatar_local")))
+    if should_update:
+        db.update_performer(performer_id, avatar_url=avatar_url, avatar_local=None)
         _invalidate_performers_cache(request.app.state)
-    return {"avatar_url": avatar_url, "updated": bool(avatar_url and not performer.get("avatar_url"))}
+    return {"avatar_url": avatar_url, "updated": should_update}
 
 
 @router.post("/capture-all")
@@ -1761,13 +1815,16 @@ def export_performers_csv(request: Request):
 
 @router.get("/{performer_id}/similar")
 def find_similar_performers(performer_id: int, request: Request, limit: int = 8):
-    """Find performers with overlapping tags."""
+    """Find performers with overlapping tags and identity signals, not just broad tag overlap."""
     db = request.app.state.db
     cache_key = f"similar:{performer_id}:{limit}"
 
     def build():
         with db.connect() as conn:
-            source = conn.execute("SELECT id, tags, platform FROM performers WHERE id = ?", (performer_id,)).fetchone()
+            source = conn.execute(
+                "SELECT id, username, display_name, tags, platform, media_count, is_verified, is_favorite, status FROM performers WHERE id = ?",
+                (performer_id,),
+            ).fetchone()
             if not source:
                 return []
 
@@ -1783,12 +1840,12 @@ def find_similar_performers(performer_id: int, request: Request, limit: int = 8)
                     src_tags = {t.strip().lower() for t in source["tags"].split(",") if t.strip()}
 
             candidates = conn.execute(
-                "SELECT id, username, display_name, platform, avatar_url, avatar_local, tags, is_favorite, media_count, status "
+                "SELECT id, username, display_name, platform, avatar_url, avatar_local, tags, is_favorite, media_count, status, is_verified, profile_url "
                 "FROM performers WHERE id != ? LIMIT 200",
                 (performer_id,),
             ).fetchall()
 
-            scored: list[tuple[int, dict]] = []
+            scored: list[tuple[float, dict]] = []
             for row in candidates:
                 d = dict(row)
                 cand_tags: set[str] = set()
@@ -1802,11 +1859,47 @@ def find_similar_performers(performer_id: int, request: Request, limit: int = 8)
                     except (json.JSONDecodeError, TypeError):
                         cand_tags = {t.strip().lower() for t in d["tags"].split(",") if t.strip()}
 
+                score = 0.0
+                reasons: list[str] = []
+
                 overlap = len(src_tags & cand_tags) if src_tags else 0
                 if overlap > 0:
-                    scored.append((overlap, d))
+                    score += overlap * 3.0
+                    reasons.append(f"{overlap} shared tags")
 
-            scored.sort(key=lambda x: -x[0])
+                if source["platform"] == d.get("platform"):
+                    score += 1.5
+                    reasons.append("same platform")
+
+                src_name = " ".join(filter(None, [source["username"], source["display_name"] or ""])).lower()
+                cand_name = " ".join(filter(None, [d["username"], d.get("display_name") or ""])).lower()
+                name_similarity = SequenceMatcher(None, src_name, cand_name).ratio()
+                if name_similarity >= 0.55:
+                    score += name_similarity * 2.0
+                    reasons.append("name similarity")
+
+                if d.get("is_verified"):
+                    score += 0.5
+                    reasons.append("verified")
+                if d.get("is_favorite"):
+                    score += 0.25
+                    reasons.append("favorited")
+                if d.get("status") == "active":
+                    score += 0.25
+                media_count = int(d.get("media_count") or 0)
+                if media_count > 0:
+                    score += min(1.5, math.log1p(media_count) / 3.5)
+
+                if d.get("avatar_url"):
+                    score += 0.25
+
+                if score > 0:
+                    d["similarity_score"] = round(score, 2)
+                    if reasons:
+                        d["match_reason"] = ", ".join(reasons[:3])
+                    scored.append((score, d))
+
+            scored.sort(key=lambda x: (-x[0], -(x[1].get("media_count") or 0), x[1].get("username") or ""))
             return [item for _, item in scored[:limit]]
 
     return _get_cached_performers_payload(request.app.state, cache_key, 60.0, build)

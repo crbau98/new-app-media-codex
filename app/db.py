@@ -1712,7 +1712,7 @@ class Database:
         def build():
             with self.connect() as conn:
                 rows = conn.execute(
-                    """SELECT s.id, s.term, s.source, s.page_url, s.local_path, s.captured_at,
+                    """SELECT s.id, s.term, s.source, s.page_url, s.local_path, s.source_url, s.thumbnail_url, s.captured_at,
                               s.ai_summary, s.ai_tags, s.rating, s.performer_id,
                               p.username AS performer_username
                        FROM screenshots_fts f
@@ -1924,9 +1924,23 @@ class Database:
         elif has_performer is False:
             where.append("performer_id IS NULL")
         if media_type == "video":
-            where.append("(local_path LIKE '%.mp4' OR local_path LIKE '%.webm' OR local_path LIKE '%.mov')")
+            where.append(
+                "("
+                "LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) LIKE '%.mp4' "
+                "OR LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) LIKE '%.webm' "
+                "OR LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) LIKE '%.mov' "
+                "OR LOWER(COALESCE(source, '')) IN ('redgifs', 'ytdlp')"
+                ")"
+            )
         elif media_type == "image":
-            where.append("local_path NOT LIKE '%.mp4' AND local_path NOT LIKE '%.webm' AND local_path NOT LIKE '%.mov'")
+            where.append(
+                "("
+                "LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) NOT LIKE '%.mp4' "
+                "AND LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) NOT LIKE '%.webm' "
+                "AND LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) NOT LIKE '%.mov' "
+                "AND LOWER(COALESCE(source, '')) NOT IN ('redgifs', 'ytdlp')"
+                ")"
+            )
         if date_from:
             where.append("captured_at >= ?")
             params.append(date_from)
