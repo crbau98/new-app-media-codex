@@ -2608,8 +2608,8 @@ export function MediaPage() {
       )}
 
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
-      <div className="sticky top-14 z-20 px-4 py-2 backdrop-blur-xl">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0c1424]/80 px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+      <div className="sticky top-14 z-20 px-4 py-2 backdrop-blur-lg">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0c1424]/80 px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.18)] backdrop-blur-lg">
           {/* Search input */}
           <div className="relative flex-1 max-w-md">
             <input
@@ -2635,7 +2635,7 @@ export function MediaPage() {
             )}
             {/* Recent searches dropdown */}
             {searchFocused && !search && recentSearches.length > 0 && (
-              <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
+              <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-lg shadow-xl overflow-hidden">
                 <div className="px-3 py-1.5 border-b border-white/5 flex items-center justify-between">
                   <span className="text-[10px] text-white/30 font-mono uppercase tracking-widest">Recent</span>
                   <button
@@ -2660,7 +2660,7 @@ export function MediaPage() {
               </div>
             )}
             {showSearchSuggestions && searchSuggestions.length > 0 && (
-              <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
+              <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-lg shadow-xl overflow-hidden">
                 <div className="px-3 py-1.5 border-b border-white/5">
                   <span className="text-[10px] text-white/30 font-mono uppercase tracking-widest">Jump to</span>
                 </div>
@@ -2769,7 +2769,7 @@ export function MediaPage() {
             {overflowMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setOverflowMenuOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-xl overflow-hidden">
+                <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-lg shadow-xl overflow-hidden">
                   <div className="py-1">
                     <button
                       onClick={() => { setSlideshowActive(true); setOverflowMenuOpen(false) }}
@@ -3637,7 +3637,7 @@ export function MediaPage() {
       {/* ── Batch action bar ─────────────────────────────────────────────── */}
       {batchMode && selectedIds.size > 0 && (
         <div
-          className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-between border-t border-white/10 bg-[#0a1020]/95 px-4 py-3 backdrop-blur-xl"
+          className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-between border-t border-white/10 bg-[#0a1020]/95 px-4 py-3 backdrop-blur-lg"
           style={{ paddingBottom: "env(safe-area-inset-bottom, 12px)" }}
         >
           <span className="text-sm text-[var(--color-text-secondary)]">{selectedIds.size} selected</span>

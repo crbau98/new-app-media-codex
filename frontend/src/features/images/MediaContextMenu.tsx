@@ -88,7 +88,7 @@ export function MediaContextMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[70] min-w-[180px] rounded-lg border border-white/10 bg-[#0c1424]/95 backdrop-blur-xl p-1 shadow-2xl animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-[70] min-w-[180px] rounded-lg border border-white/10 bg-[#0c1424]/95 backdrop-blur-lg p-1 shadow-2xl animate-in fade-in zoom-in-95 duration-100"
       style={{ left: pos.x, top: pos.y }}
       role="menu"
     >
@@ -106,7 +106,7 @@ export function MediaContextMenu({
           <span className="ml-auto text-white/30">&#9654;</span>
         </button>
         {rateOpen && (
-          <div className="absolute left-full top-0 ml-1 rounded-lg border border-white/10 bg-[#0c1424]/95 backdrop-blur-xl p-1 shadow-xl">
+          <div className="absolute left-full top-0 ml-1 rounded-lg border border-white/10 bg-[#0c1424]/95 backdrop-blur-lg p-1 shadow-xl">
             {[1, 2, 3, 4, 5].map((r) => (
               <button
                 key={r}
@@ -143,7 +143,7 @@ export function MediaContextMenu({
           <span className="ml-auto text-white/30">&#9654;</span>
         </button>
         {playlistOpen && (
-          <div className="absolute left-full top-0 ml-1 min-w-[140px] rounded-lg border border-white/10 bg-[#0c1424]/95 backdrop-blur-xl p-1 shadow-xl">
+          <div className="absolute left-full top-0 ml-1 min-w-[140px] rounded-lg border border-white/10 bg-[#0c1424]/95 backdrop-blur-lg p-1 shadow-xl">
             {playlists.length === 0 ? (
               <p className="px-3 py-1.5 text-xs text-white/40">No playlists</p>
             ) : (
@@ -236,7 +236,7 @@ export function MediaContextMenu({
           </button>
           {tagOpen && (
             <div
-              className="absolute left-full top-0 ml-1 min-w-[180px] rounded-lg border border-white/10 bg-[#0c1424]/95 backdrop-blur-xl p-2 shadow-xl"
+              className="absolute left-full top-0 ml-1 min-w-[180px] rounded-lg border border-white/10 bg-[#0c1424]/95 backdrop-blur-lg p-2 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Current tags */}

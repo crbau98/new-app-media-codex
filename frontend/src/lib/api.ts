@@ -346,6 +346,16 @@ export interface PerformerAnalytics {
   media_stats: { total_photos: number; total_videos: number; avg_per_performer: number }
 }
 
+export interface PerformerActivityBucket {
+  week: string
+  count: number
+}
+
+export interface PerformerActivity {
+  weeks: PerformerActivityBucket[]
+  total: number
+}
+
 export interface BrowsePerformersPayload {
   performers: Performer[]
   total: number
@@ -676,6 +686,8 @@ export const api = {
     apiFetch<{ ok: boolean }>(`/api/performers/${id}/links/${linkId}`, { method: 'DELETE' }),
   browsePerformerMedia: (id: number, params?: Record<string, string | number>) =>
     apiFetch<{ items: PerformerMedia[]; total: number; offset: number; limit: number; has_more: boolean }>(`/api/performers/${id}/media${buildQuery(params)}`),
+  performerActivity: (id: number, weeks = 12) =>
+    apiFetch<PerformerActivity>(`/api/performers/${id}/activity?weeks=${weeks}`),
   performerStats: () =>
     apiFetch<PerformerStats>('/api/performers/stats'),
   performerAnalytics: () =>

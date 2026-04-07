@@ -6,6 +6,7 @@ import json
 import re
 import uuid
 from difflib import SequenceMatcher
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
@@ -289,6 +290,74 @@ def _candidate_avatar_urls(performer: dict) -> list[str]:
     return urls
 
 
+def _normalize_identity_alias(value: str | None) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+
+
+def _performer_identity_aliases(performer: dict) -> list[str]:
+    aliases: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str | None) -> None:
+        alias = _normalize_identity_alias(value)
+        if len(alias) < 3 or alias in seen:
+            return
+        seen.add(alias)
+        aliases.append(alias)
+
+    add(str(performer.get("username") or "").strip())
+    add(str(performer.get("display_name") or "").strip())
+    add(str(performer.get("twitter_username") or "").strip())
+    add(str(performer.get("reddit_username") or "").strip())
+
+    profile_url = str(performer.get("profile_url") or "").strip()
+    if profile_url:
+        try:
+            _, parsed_username = _parse_profile_url(profile_url)
+            add(parsed_username)
+        except Exception:
+            parts = [part for part in urlparse(profile_url).path.split("/") if part]
+            if parts:
+                add(parts[-1])
+
+    return aliases
+
+
+def _candidate_mentions_identity(candidate: object, aliases: list[str]) -> bool:
+    if not aliases:
+        return False
+
+    if isinstance(candidate, dict):
+        pieces = [
+            candidate.get("title"),
+            candidate.get("source"),
+            candidate.get("url"),
+            candidate.get("image"),
+            candidate.get("page_url"),
+            candidate.get("name"),
+            candidate.get("username"),
+            candidate.get("userName"),
+            candidate.get("display_name"),
+            candidate.get("description"),
+            candidate.get("caption"),
+            candidate.get("summary"),
+            candidate.get("text"),
+        ]
+    else:
+        pieces = [candidate]
+
+    haystack = " ".join(str(piece) for piece in pieces if piece)
+    if not haystack:
+        return False
+
+    compact_haystack = _normalize_identity_alias(haystack)
+    if any(alias in compact_haystack for alias in aliases):
+        return True
+
+    lowered = haystack.lower()
+    return any(re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", lowered) for alias in aliases)
+
+
 # ── Stats (must be before /{id} routes) ────────────────────────────────
 
 @router.get("/stats")
@@ -309,46 +378,50 @@ def performer_analytics(request: Request):
 
 @router.post("/auto-link")
 def auto_link_performers(request: Request):
-    """Match existing screenshots to performers by username/aliases in term/page_url/ai_summary."""
+    """Match existing screenshots to performers by strict identity evidence."""
     db = request.app.state.db
     linked = 0
     performers_matched = 0
 
     with db.connect() as conn:
         performers = conn.execute(
-            "SELECT id, username, display_name, twitter_username, reddit_username FROM performers"
+            "SELECT id, username, display_name, twitter_username, reddit_username, profile_url FROM performers"
+        ).fetchall()
+        screenshots = conn.execute(
+            """
+            SELECT id, term, page_url, source_url, thumbnail_url, ai_summary
+            FROM screenshots
+            WHERE performer_id IS NULL
+            """
         ).fetchall()
 
-    with db.connect() as conn:
-        for p in performers:
-            pid = p["id"]
-            # Build list of all name forms to match against
-            names: list[str] = [p["username"].lower()]
-            for alias_col in ("display_name", "twitter_username", "reddit_username"):
-                val = p[alias_col]
-                if val:
-                    names.append(val.lower())
+    performer_aliases: dict[int, list[str]] = {
+        int(row["id"]): _performer_identity_aliases(dict(row))
+        for row in performers
+    }
 
-            count = 0
-            for name in names:
+    with db.connect() as conn:
+        for shot in screenshots:
+            shot_payload = {
+                "term": shot["term"],
+                "page_url": shot["page_url"],
+                "source": shot["source_url"],
+                "url": shot["source_url"],
+                "image": shot["thumbnail_url"],
+                "summary": shot["ai_summary"],
+            }
+            for performer in performers:
+                aliases = performer_aliases.get(int(performer["id"])) or []
+                if not _candidate_mentions_identity(shot_payload, aliases):
+                    continue
                 cur = conn.execute(
-                    """
-                    UPDATE screenshots
-                    SET performer_id = ?
-                    WHERE performer_id IS NULL
-                      AND (
-                        LOWER(term) = ?
-                        OR LOWER(term) LIKE ?
-                        OR LOWER(page_url) LIKE ?
-                        OR LOWER(COALESCE(ai_summary, '')) LIKE ?
-                      )
-                    """,
-                    (pid, name, f"%{name}%", f"%{name}%", f"%{name}%"),
+                    "UPDATE screenshots SET performer_id = ? WHERE id = ? AND performer_id IS NULL",
+                    (performer["id"], shot["id"]),
                 )
-                count += cur.rowcount
-            if count > 0:
-                linked += count
-                performers_matched += 1
+                if cur.rowcount:
+                    linked += cur.rowcount
+                    performers_matched += 1
+                break
         conn.commit()
 
     if linked:
@@ -1133,16 +1206,6 @@ def get_performer(performer_id: int, request: Request):
             if source_url.startswith(("http://", "https://")):
                 performer["avatar_url"] = source_url
                 break
-    if not performer.get("avatar_url") and not performer.get("avatar_local"):
-        screenshot_result = db.browse_screenshots(performer_id=performer_id, limit=1, offset=0, sort="newest")
-        for shot in screenshot_result.get("screenshots", []):
-            for candidate in (shot.get("source_url"), shot.get("thumbnail_url")):
-                source_url = str(candidate or "").strip()
-                if source_url.startswith(("http://", "https://")):
-                    performer["avatar_url"] = source_url
-                    break
-            if performer.get("avatar_url"):
-                break
     return performer
 
 
@@ -1221,6 +1284,40 @@ def browse_media(
     )
 
 
+@router.get("/{performer_id}/activity")
+def performer_activity(
+    performer_id: int,
+    request: Request,
+    weeks: int = Query(12, ge=1, le=52),
+):
+    db = request.app.state.db
+    if not db.get_performer(performer_id):
+        raise HTTPException(404, detail="Performer not found")
+
+    with db.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT strftime('%Y-%W', captured_at) AS week_key, COUNT(*) AS count
+            FROM screenshots
+            WHERE performer_id = ?
+            GROUP BY week_key
+            """,
+            (performer_id,),
+        ).fetchall()
+
+    counts = {str(row["week_key"] or ""): int(row["count"] or 0) for row in rows}
+    now = datetime.utcnow()
+    buckets = []
+    for index in range(weeks - 1, -1, -1):
+        week_key = (now - timedelta(weeks=index)).strftime("%Y-%W")
+        buckets.append({"week": week_key, "count": counts.get(week_key, 0)})
+
+    return {
+        "weeks": buckets,
+        "total": sum(bucket["count"] for bucket in buckets),
+    }
+
+
 @router.post("/{performer_id}/media")
 def add_media(performer_id: int, body: AddMediaBody, request: Request):
     db = request.app.state.db
@@ -1263,6 +1360,14 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
     from copy import copy as _copy
 
     db = app_state.db
+    tracked_performer = db.get_performer(performer_id) or {
+        "username": username,
+        "display_name": display_name,
+        "twitter_username": None,
+        "reddit_username": None,
+        "profile_url": None,
+    }
+    identity_aliases = _performer_identity_aliases(tracked_performer)
     # Apply DB-configured vision settings so vision filter calls use the user's key
     _settings = app_state.settings
     if _settings is not None:
@@ -1377,12 +1482,17 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
             seen_urls.add(image_url)
             if _page_url_exists(page_url):
                 continue
-            ddg_candidates.append({
+            candidate = {
                 "term": display_name or username,
-                "source": "ddg",
+                "source": row.get("source") or "ddg",
                 "page_url": page_url,
                 "url": image_url,
-            })
+                "title": row.get("title"),
+                "text": row.get("title"),
+            }
+            if not _candidate_mentions_identity(candidate, identity_aliases):
+                continue
+            ddg_candidates.append(candidate)
         if not ddg_candidates:
             continue
 
@@ -1483,6 +1593,16 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 if _page_url_exists(page_url):
                     continue
                 poster_url = (gif.get("urls") or {}).get("poster") or None
+                candidate = {
+                    "page_url": page_url,
+                    "source": "redgifs",
+                    "title": gif.get("title"),
+                    "username": gif.get("userName") or gif.get("username"),
+                    "url": video_url,
+                    "image": poster_url,
+                }
+                if not _candidate_mentions_identity(candidate, identity_aliases):
+                    continue
                 db.insert_screenshot(
                     term=display_name or username,
                     source="redgifs",

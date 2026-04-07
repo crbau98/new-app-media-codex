@@ -27,7 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
   private: "bg-purple-500/20 text-purple-400 border-purple-500/30",
 }
 
-const MEDIA_PAGE_SIZE = 24
+const MEDIA_PAGE_SIZE = 18
 
 function parseTags(tags: string | null): string[] {
   if (!tags) return []
@@ -475,27 +475,18 @@ function RecentCaptures({ performerId, onViewAll }: { performerId: number; onVie
 function CaptureActivitySparkline({ performerId }: { performerId: number }) {
   const { data, isLoading } = useQuery({
     queryKey: ["performer-activity", performerId],
-    queryFn: () => api.browseScreenshots({ performer_id: performerId, limit: 300, offset: 0 }),
+    queryFn: () => api.performerActivity(performerId),
     staleTime: 60_000,
   })
 
   if (isLoading) return <div className="h-10 animate-pulse rounded-lg bg-white/5" />
 
-  const shots = data?.screenshots ?? []
-  if (shots.length === 0) return null
+  const buckets = data?.weeks ?? []
+  if (buckets.length === 0 || buckets.every((bucket) => bucket.count === 0)) return null
 
-  const WEEKS = 12
-  const now = Date.now()
-  const buckets = Array.from({ length: WEEKS }, () => 0)
-  shots.forEach((s) => {
-    const age = now - new Date(s.captured_at).getTime()
-    const w = Math.floor(age / (7 * 24 * 60 * 60 * 1000))
-    if (w >= 0 && w < WEEKS) buckets[WEEKS - 1 - w]++
-  })
-
-  const maxVal = Math.max(...buckets, 1)
-  const total = data?.total ?? shots.length
-  const avgPerWeek = (buckets.reduce((a, b) => a + b, 0) / WEEKS).toFixed(1)
+  const maxVal = Math.max(...buckets.map((bucket) => bucket.count), 1)
+  const total = data?.total ?? buckets.reduce((sum, bucket) => sum + bucket.count, 0)
+  const avgPerWeek = (total / Math.max(buckets.length, 1)).toFixed(1)
 
   return (
     <div>
@@ -504,8 +495,9 @@ function CaptureActivitySparkline({ performerId }: { performerId: number }) {
         <span className="text-[10px] text-text-muted">{total} total · {avgPerWeek}/wk</span>
       </div>
       <div className="flex h-10 items-end gap-px">
-        {buckets.map((count, i) => {
-          const isRecent = i >= WEEKS - 4
+        {buckets.map((bucket, i) => {
+          const count = bucket.count
+          const isRecent = i >= buckets.length - 4
           return (
             <div key={i} className="relative flex-1" style={{ height: "100%" }}>
               <div
@@ -518,7 +510,7 @@ function CaptureActivitySparkline({ performerId }: { performerId: number }) {
                     : "bg-accent/35 hover:bg-accent/55"
                 )}
                 style={{ height: count > 0 ? `${Math.max((count / maxVal) * 100, 10)}%` : "2px" }}
-                title={`Week ${WEEKS - i}: ${count} capture${count !== 1 ? "s" : ""}`}
+                title={`${bucket.week}: ${count} capture${count !== 1 ? "s" : ""}`}
               />
             </div>
           )
@@ -531,6 +523,7 @@ function CaptureActivitySparkline({ performerId }: { performerId: number }) {
 /* ── Media Gallery ────────────────────────────────────────────────────── */
 
 type MediaFilter = "all" | "photo" | "video"
+type ProfileSection = "overview" | "media"
 
 function MediaGallery({
   performerId,
@@ -700,7 +693,7 @@ function PerformerMediaLightbox({
       role="dialog"
       aria-modal="true"
       aria-label="Media lightbox"
-      className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center"
+      className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-lg flex items-center justify-center"
       onClick={onClose}
     >
       {/* Close */}
@@ -799,6 +792,7 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
   const [notes, setNotes] = useState("")
   const [showAddLink, setShowAddLink] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [profileSection, setProfileSection] = useState<ProfileSection>("overview")
 
   // Lightbox
   const [lightbox, setLightbox] = useState<{ media: PerformerMedia[]; idx: number } | null>(null)
@@ -919,7 +913,7 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
 
   if (isLoading || !performer) {
     return createPortal(
-      <div className="fixed inset-0 z-50 bg-[#0a1628]/95 backdrop-blur-xl flex items-center justify-center">
+      <div className="fixed inset-0 z-50 bg-[#0a1628]/95 backdrop-blur-lg flex items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
       </div>,
       document.body
@@ -930,16 +924,18 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
   const platformClass = PLATFORM_COLORS[performer.platform] ?? "bg-white/10 text-text-secondary border-white/10"
   const statusClass = STATUS_COLORS[performer.status] ?? STATUS_COLORS.inactive
   const capturedCount = performer.media_count_actual ?? performer.media_count ?? 0
-  const renewalSummary = useMemo(() => {
+  const renewalSummary = (() => {
     try {
-      if (performer?.is_subscribed !== 1 || !performer?.subscription_renewed_at) return null
+      if (performer.is_subscribed !== 1 || !performer.subscription_renewed_at) return null
       const renewed = new Date(performer.subscription_renewed_at)
-      if (isNaN(renewed.getTime())) return null
+      if (Number.isNaN(renewed.getTime())) return null
       const nextRenewal = new Date(renewed.getTime() + 30 * 24 * 60 * 60 * 1000)
       const daysUntil = Math.round((nextRenewal.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
       return { nextRenewal, daysUntil }
-    } catch { return null }
-  }, [performer?.is_subscribed, performer?.subscription_renewed_at])
+    } catch {
+      return null
+    }
+  })()
   const renewalText = renewalSummary
     ? renewalSummary.daysUntil < 0 ? `Subscription overdue by ${Math.abs(renewalSummary.daysUntil)}d`
       : renewalSummary.daysUntil === 0 ? "Renews today"
@@ -958,9 +954,9 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
   ].join(" · ")
 
   return createPortal(
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#0a1628]/98 backdrop-blur-xl">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#0a1628]/98 backdrop-blur-lg">
       {/* Top bar */}
-      <div className="sticky top-0 z-40 flex items-center justify-between border-b border-white/8 bg-[#0a1628]/80 backdrop-blur-xl px-6 py-3">
+      <div className="sticky top-0 z-40 flex items-center justify-between border-b border-white/8 bg-[#0a1628]/80 backdrop-blur-lg px-6 py-3">
         <button
           onClick={onClose}
           className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-white/10 hover:text-text-primary"
@@ -1150,284 +1146,302 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
                 </button>
               )}
             </div>
-          </div>
-        </div>
-        </div>
-
-        {/* ── Quick Stats ─────────────────────────────────────────────── */}
-        <section>
-          <h2 className="mb-2 text-[11px] font-medium text-text-muted uppercase tracking-wider">Quick Stats</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-            <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-              <p className="text-[10px] text-text-muted">Total Media</p>
-              <p className="mt-1 text-lg font-semibold text-text-primary">
-                {performer.media_count_actual ?? performer.media_count ?? 0}
-              </p>
-            </div>
-            <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-              <p className="text-[10px] text-text-muted">Captured Shots</p>
-              <p className="mt-1 text-lg font-semibold text-text-primary">
-                {performer.screenshots_count ?? 0}
-              </p>
-            </div>
-            <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-              <p className="text-[10px] text-text-muted">First Tracked</p>
-              <p className="mt-1 text-sm font-medium text-text-primary">
-                {performer.first_seen_at
-                  ? new Date(performer.first_seen_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
-                  : "--"}
-              </p>
-            </div>
-            <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-              <p className="text-[10px] text-text-muted">Last Checked</p>
-              <p className="mt-1 text-sm font-medium text-text-primary">
-                {performer.last_checked_at
-                  ? (() => {
-                      const days = Math.floor(
-                        (Date.now() - new Date(performer.last_checked_at).getTime()) / 86_400_000
-                      )
-                      return days === 0 ? "Today" : days === 1 ? "Yesterday" : `${days}d ago`
-                    })()
-                  : "Never"}
-              </p>
-            </div>
-            <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-              <p className="text-[10px] text-text-muted">Platform Links</p>
-              <p className="mt-1 text-lg font-semibold text-text-primary">
-                {(performer.link_count ?? performer.links?.length ?? 0) + (performer.profile_url ? 1 : 0)}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* ── Tags Row ────────────────────────────────────────────────── */}
-        <section>
-          <h2 className="mb-2 text-[11px] font-medium text-text-muted uppercase tracking-wider">Tags</h2>
-          <TagsRow tags={tags} onUpdate={handleTagUpdate} disabled={false} />
-        </section>
-
-        {/* ── Bio ─────────────────────────────────────────────────────── */}
-        <section>
-          <h2 className="mb-2 text-[11px] font-medium text-text-muted uppercase tracking-wider">Bio</h2>
-          {editing ? (
-            <textarea
-              value={editBio}
-              onChange={(e) => setEditBio(e.target.value)}
-              rows={4}
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none resize-none"
-              placeholder="Bio..."
-            />
-          ) : performer.bio ? (
-            <p className="text-sm leading-relaxed text-text-secondary whitespace-pre-wrap">{performer.bio}</p>
-          ) : (
-            <p className="text-sm text-text-muted italic">No bio</p>
-          )}
-        </section>
-
-        {/* ── Platform Links ──────────────────────────────────────────── */}
-        <section>
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-[11px] font-medium text-text-muted uppercase tracking-wider">Platform Links</h2>
-            <button
-              onClick={() => setShowAddLink(true)}
-              className="rounded-lg border border-dashed border-white/15 px-2.5 py-1 text-[10px] text-text-muted transition-colors hover:border-accent hover:text-accent"
-            >
-              + Add link
-            </button>
-          </div>
-
-          {performer.profile_url && (
-            <a
-              href={performer.profile_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mb-2 flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-sm text-accent transition-colors hover:bg-white/5"
-            >
-              <PlatformIcon platform={performer.platform} />
-              <span className="truncate">{performer.profile_url}</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-text-muted">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-            </a>
-          )}
-
-          {performer.links && performer.links.length > 0 && (
-            <div className="space-y-1.5">
-              {performer.links.map((link: PerformerLink) => (
-                <div key={link.id} className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2">
-                  <PlatformIcon platform={link.platform} />
-                  <a
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 truncate text-sm text-accent hover:underline"
-                  >
-                    {link.username ? `@${link.username}` : link.url}
-                  </a>
-                  <span className="text-[10px] text-text-muted">{link.platform}</span>
-                  <button
-                    onClick={() => deleteLinkMutation.mutate(link.id)}
-                    className="rounded p-1 text-text-muted transition-colors hover:text-red-400"
-                    aria-label="Remove link"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
-                  </button>
-                </div>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+              {(["overview", "media"] as const).map((section) => (
+                <button
+                  key={section}
+                  onClick={() => setProfileSection(section)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs transition-colors",
+                    profileSection === section
+                      ? "border-accent/30 bg-accent/10 text-accent"
+                      : "border-white/10 bg-white/5 text-text-muted hover:text-text-primary hover:bg-white/10"
+                  )}
+                >
+                  {section === "overview" ? "Overview" : "Media"}
+                </button>
               ))}
             </div>
-          )}
+          </div>
+        </div>
+        </div>
 
-          {showAddLink && (
-            <div className="mt-2">
-              <AddLinkForm performerId={performer.id} onDone={() => setShowAddLink(false)} />
-            </div>
-          )}
-
-          {!performer.profile_url && (!performer.links || performer.links.length === 0) && !showAddLink && (
-            <p className="text-sm text-text-muted italic">No links</p>
-          )}
-        </section>
-
-        {/* ── Notes ───────────────────────────────────────────────────── */}
-        <section>
-          <h2 className="mb-2 text-[11px] font-medium text-text-muted uppercase tracking-wider">Notes</h2>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={4}
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none resize-none"
-            placeholder="Private notes... (auto-saves)"
-          />
-          <p className="mt-1 text-[10px] text-text-muted">Auto-saves after 500ms</p>
-        </section>
-
-        {/* ── Subscription tracking ────────────────────────────────── */}
-        <section>
-          <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4 space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Subscription</h3>
-            <div className="flex flex-wrap gap-3">
-              <label className="flex flex-col gap-1 text-[10px] text-text-muted">
-                Price ($/mo)
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  defaultValue={performer.subscription_price ?? ""}
-                  onBlur={(e) => {
-                    const val = e.target.value === "" ? null : parseFloat(e.target.value)
-                    updateMutation.mutate({ subscription_price: val } as Parameters<typeof api.updatePerformer>[1])
-                  }}
-                  className="w-24 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-text-primary"
-                  placeholder="e.g. 9.99"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-[10px] text-text-muted">
-                Status
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="checkbox"
-                    defaultChecked={performer.is_subscribed === 1}
-                    onChange={(e) => updateMutation.mutate({ is_subscribed: e.target.checked ? 1 : 0 } as Parameters<typeof api.updatePerformer>[1])}
-                    className="h-4 w-4 rounded accent-accent"
-                  />
-                  <span className="text-xs text-text-secondary">Subscribed</span>
+        {profileSection === "overview" ? (
+          <div className="space-y-8">
+            <section>
+              <h2 className="mb-2 text-[11px] font-medium text-text-muted uppercase tracking-wider">Quick Stats</h2>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                  <p className="text-[10px] text-text-muted">Total Media</p>
+                  <p className="mt-1 text-lg font-semibold text-text-primary">
+                    {performer.media_count_actual ?? performer.media_count ?? 0}
+                  </p>
                 </div>
-              </label>
-              <div className="flex flex-col gap-1 text-[10px] text-text-muted">
-                Last renewed
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs text-text-secondary">
-                    {performer.subscription_renewed_at
-                      ? new Date(performer.subscription_renewed_at).toLocaleDateString()
-                      : <span className="italic text-text-muted">not set</span>}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => updateMutation.mutate({ subscription_renewed_at: new Date().toISOString() } as Parameters<typeof api.updatePerformer>[1])}
-                    className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
-                  >
-                    Set today
-                  </button>
-                  {performer.subscription_renewed_at && (() => {
-                    const renewed = new Date(performer.subscription_renewed_at)
-                    const nextRenewal = new Date(renewed.getTime() + 30 * 24 * 60 * 60 * 1000)
-                    const daysUntil = Math.round((nextRenewal.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-                    if (daysUntil < 0) return (
-                      <span className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[9px] font-medium text-red-400">
-                        overdue {Math.abs(daysUntil)}d
-                      </span>
-                    )
-                    if (daysUntil <= 7) return (
-                      <span className="rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[9px] font-medium text-orange-400">
-                        renews in {daysUntil}d
-                      </span>
-                    )
-                    return (
-                      <span className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] text-text-muted">
-                        next: {nextRenewal.toLocaleDateString()}
-                      </span>
-                    )
-                  })()}
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                  <p className="text-[10px] text-text-muted">Captured Shots</p>
+                  <p className="mt-1 text-lg font-semibold text-text-primary">
+                    {performer.screenshots_count ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                  <p className="text-[10px] text-text-muted">First Tracked</p>
+                  <p className="mt-1 text-sm font-medium text-text-primary">
+                    {performer.first_seen_at
+                      ? new Date(performer.first_seen_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+                      : "--"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                  <p className="text-[10px] text-text-muted">Last Checked</p>
+                  <p className="mt-1 text-sm font-medium text-text-primary">
+                    {performer.last_checked_at
+                      ? (() => {
+                          const days = Math.floor(
+                            (Date.now() - new Date(performer.last_checked_at).getTime()) / 86_400_000
+                          )
+                          return days === 0 ? "Today" : days === 1 ? "Yesterday" : `${days}d ago`
+                        })()
+                      : "Never"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                  <p className="text-[10px] text-text-muted">Platform Links</p>
+                  <p className="mt-1 text-lg font-semibold text-text-primary">
+                    {(performer.link_count ?? performer.links?.length ?? 0) + (performer.profile_url ? 1 : 0)}
+                  </p>
                 </div>
               </div>
-              <label className="flex flex-col gap-1 text-[10px] text-text-muted">
-                Reddit username
-                <input
-                  type="text"
-                  defaultValue={performer.reddit_username ?? ""}
-                  onBlur={(e) => { if (e.target.value !== (performer.reddit_username ?? "")) updateMutation.mutate({ reddit_username: e.target.value || null } as Parameters<typeof api.updatePerformer>[1]) }}
-                  className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-text-primary"
-                  placeholder="u/username"
+            </section>
+
+            <section>
+              <h2 className="mb-2 text-[11px] font-medium text-text-muted uppercase tracking-wider">Activity</h2>
+              <CaptureActivitySparkline performerId={performer.id} />
+            </section>
+
+            <section>
+              <h2 className="mb-2 text-[11px] font-medium text-text-muted uppercase tracking-wider">Tags</h2>
+              <TagsRow tags={tags} onUpdate={handleTagUpdate} disabled={false} />
+            </section>
+
+            <section>
+              <h2 className="mb-2 text-[11px] font-medium text-text-muted uppercase tracking-wider">Bio</h2>
+              {editing ? (
+                <textarea
+                  value={editBio}
+                  onChange={(e) => setEditBio(e.target.value)}
+                  rows={4}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none resize-none"
+                  placeholder="Bio..."
                 />
-              </label>
-              <label className="flex flex-col gap-1 text-[10px] text-text-muted">
-                Twitter/X handle
-                <input
-                  type="text"
-                  defaultValue={performer.twitter_username ?? ""}
-                  onBlur={(e) => { if (e.target.value !== (performer.twitter_username ?? "")) updateMutation.mutate({ twitter_username: e.target.value || null } as Parameters<typeof api.updatePerformer>[1]) }}
-                  className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-text-primary"
-                  placeholder="@handle"
+              ) : performer.bio ? (
+                <p className="text-sm leading-relaxed text-text-secondary whitespace-pre-wrap">{performer.bio}</p>
+              ) : (
+                <p className="text-sm text-text-muted italic">No bio</p>
+              )}
+            </section>
+
+            <section>
+              <div className="mb-2 flex items-center justify-between">
+                <h2 className="text-[11px] font-medium text-text-muted uppercase tracking-wider">Platform Links</h2>
+                <button
+                  onClick={() => setShowAddLink(true)}
+                  className="rounded-lg border border-dashed border-white/15 px-2.5 py-1 text-[10px] text-text-muted transition-colors hover:border-accent hover:text-accent"
+                >
+                  + Add link
+                </button>
+              </div>
+
+              {performer.profile_url && (
+                <a
+                  href={performer.profile_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mb-2 flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-sm text-accent transition-colors hover:bg-white/5"
+                >
+                  <PlatformIcon platform={performer.platform} />
+                  <span className="truncate">{performer.profile_url}</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-text-muted">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+              )}
+
+              {performer.links && performer.links.length > 0 && (
+                <div className="space-y-1.5">
+                  {performer.links.map((link: PerformerLink) => (
+                    <div key={link.id} className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2">
+                      <PlatformIcon platform={link.platform} />
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 truncate text-sm text-accent hover:underline"
+                      >
+                        {link.username ? `@${link.username}` : link.url}
+                      </a>
+                      <span className="text-[10px] text-text-muted">{link.platform}</span>
+                      <button
+                        onClick={() => deleteLinkMutation.mutate(link.id)}
+                        className="rounded p-1 text-text-muted transition-colors hover:text-red-400"
+                        aria-label="Remove link"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {showAddLink && (
+                <div className="mt-2">
+                  <AddLinkForm performerId={performer.id} onDone={() => setShowAddLink(false)} />
+                </div>
+              )}
+
+              {!performer.profile_url && (!performer.links || performer.links.length === 0) && !showAddLink && (
+                <p className="text-sm text-text-muted italic">No links</p>
+              )}
+            </section>
+
+            <section>
+              <h2 className="mb-2 text-[11px] font-medium text-text-muted uppercase tracking-wider">Notes</h2>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={4}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none resize-none"
+                placeholder="Private notes... (auto-saves)"
+              />
+              <p className="mt-1 text-[10px] text-text-muted">Auto-saves after 500ms</p>
+            </section>
+
+            <section>
+              <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4 space-y-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Subscription</h3>
+                <div className="flex flex-wrap gap-3">
+                  <label className="flex flex-col gap-1 text-[10px] text-text-muted">
+                    Price ($/mo)
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={performer.subscription_price ?? ""}
+                      onBlur={(e) => {
+                        const val = e.target.value === "" ? null : parseFloat(e.target.value)
+                        updateMutation.mutate({ subscription_price: val } as Parameters<typeof api.updatePerformer>[1])
+                      }}
+                      className="w-24 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-text-primary"
+                      placeholder="e.g. 9.99"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-[10px] text-text-muted">
+                    Status
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="checkbox"
+                        defaultChecked={performer.is_subscribed === 1}
+                        onChange={(e) => updateMutation.mutate({ is_subscribed: e.target.checked ? 1 : 0 } as Parameters<typeof api.updatePerformer>[1])}
+                        className="h-4 w-4 rounded accent-accent"
+                      />
+                      <span className="text-xs text-text-secondary">Subscribed</span>
+                    </div>
+                  </label>
+                  <div className="flex flex-col gap-1 text-[10px] text-text-muted">
+                    Last renewed
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-text-secondary">
+                        {performer.subscription_renewed_at
+                          ? new Date(performer.subscription_renewed_at).toLocaleDateString()
+                          : <span className="italic text-text-muted">not set</span>}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => updateMutation.mutate({ subscription_renewed_at: new Date().toISOString() } as Parameters<typeof api.updatePerformer>[1])}
+                        className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                      >
+                        Set today
+                      </button>
+                      {performer.subscription_renewed_at && (() => {
+                        const renewed = new Date(performer.subscription_renewed_at)
+                        const nextRenewal = new Date(renewed.getTime() + 30 * 24 * 60 * 60 * 1000)
+                        const daysUntil = Math.round((nextRenewal.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                        if (daysUntil < 0) return (
+                          <span className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[9px] font-medium text-red-400">
+                            overdue {Math.abs(daysUntil)}d
+                          </span>
+                        )
+                        if (daysUntil <= 7) return (
+                          <span className="rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[9px] font-medium text-orange-400">
+                            renews in {daysUntil}d
+                          </span>
+                        )
+                        return (
+                          <span className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] text-text-muted">
+                            next: {nextRenewal.toLocaleDateString()}
+                          </span>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                  <label className="flex flex-col gap-1 text-[10px] text-text-muted">
+                    Reddit username
+                    <input
+                      type="text"
+                      defaultValue={performer.reddit_username ?? ""}
+                      onBlur={(e) => { if (e.target.value !== (performer.reddit_username ?? "")) updateMutation.mutate({ reddit_username: e.target.value || null } as Parameters<typeof api.updatePerformer>[1]) }}
+                      className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-text-primary"
+                      placeholder="u/username"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-[10px] text-text-muted">
+                    Twitter/X handle
+                    <input
+                      type="text"
+                      defaultValue={performer.twitter_username ?? ""}
+                      onBlur={(e) => { if (e.target.value !== (performer.twitter_username ?? "")) updateMutation.mutate({ twitter_username: e.target.value || null } as Parameters<typeof api.updatePerformer>[1]) }}
+                      className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-text-primary"
+                      placeholder="@handle"
+                    />
+                  </label>
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            <section>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-[11px] font-medium text-text-muted uppercase tracking-wider">Recent Captures</h2>
+              </div>
+              <div className="space-y-3">
+                <CaptureActivitySparkline performerId={performer.id} />
+                <RecentCaptures
+                  performerId={performer.id}
+                  onViewAll={() => {
+                    setMediaCreator(performer.id, performer.username)
+                    setActiveView("images")
+                  }}
                 />
-              </label>
-            </div>
-          </div>
-        </section>
+              </div>
+            </section>
 
-        {/* ── Recent Captures ─────────────────────────────────────────── */}
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[11px] font-medium text-text-muted uppercase tracking-wider">Recent Captures</h2>
-          </div>
-          <div className="space-y-3">
-            <CaptureActivitySparkline performerId={performer.id} />
-            <RecentCaptures
-              performerId={performer.id}
-              onViewAll={() => {
-                setMediaCreator(performer.id, performer.username)
-                setActiveView("images")
-              }}
-            />
-          </div>
-        </section>
+            <section>
+              <h2 className="mb-3 text-[11px] font-medium text-text-muted uppercase tracking-wider">Similar Creators</h2>
+              <SimilarCreators
+                performerId={performer.id}
+                onSelect={(id) => onNavigate ? onNavigate(id) : undefined}
+              />
+            </section>
 
-        {/* ── Similar Creators ────────────────────────────────────────── */}
-        <section>
-          <h2 className="mb-3 text-[11px] font-medium text-text-muted uppercase tracking-wider">Similar Creators</h2>
-          <SimilarCreators
-            performerId={performer.id}
-            onSelect={(id) => onNavigate ? onNavigate(id) : undefined}
-          />
-        </section>
-
-        {/* ── Media Gallery ───────────────────────────────────────────── */}
-        <section>
-          <h2 className="mb-3 text-[11px] font-medium text-text-muted uppercase tracking-wider">Media</h2>
-          <MediaGallery
-            performerId={performer.id}
-            onOpenLightbox={(media, idx) => setLightbox({ media, idx })}
-          />
-        </section>
+            <section>
+              <h2 className="mb-3 text-[11px] font-medium text-text-muted uppercase tracking-wider">Media</h2>
+              <MediaGallery
+                performerId={performer.id}
+                onOpenLightbox={(media, idx) => setLightbox({ media, idx })}
+              />
+            </section>
+          </div>
+        )}
 
         {/* ── Action Bar ──────────────────────────────────────────────── */}
         <section className="flex items-center gap-3 border-t border-white/8 pt-6">
