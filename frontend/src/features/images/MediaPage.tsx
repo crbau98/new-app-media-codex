@@ -545,6 +545,7 @@ const MediaCard = memo(function MediaCard({
   onHover,
   favorite,
   onToggleFavorite,
+  onRate,
   onContextMenu,
   onNavigateToPerformer,
 }: {
@@ -557,6 +558,7 @@ const MediaCard = memo(function MediaCard({
   onSelect: () => void
   favorite: boolean
   onToggleFavorite: () => void
+  onRate: (rating: number) => void
   onContextMenu?: (e: React.MouseEvent) => void
   onNavigateToPerformer?: (performerId: number, username: string) => void
 }) {
