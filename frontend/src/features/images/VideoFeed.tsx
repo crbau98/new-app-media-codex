@@ -6,12 +6,6 @@ import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
 import { useResolvedScreenshotMedia } from "@/lib/media"
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function isVideo(src: string) {
-  return /\.(mp4|webm|mov)/i.test(src)
-}
-
 function sourceLabel(s: string) {
   return s === "ddg" ? "DDG" : s === "redgifs" ? "Redgifs" : s === "x" ? "X" : s
 }
@@ -169,7 +163,7 @@ const VideoSlide = memo(function VideoSlide({
   const lastTapSideRef = useRef<"left" | "right" | null>(null)
   const addToast = useAppStore((s) => s.addToast)
 
-  const { mediaSrc: src, posterSrc, markMediaBroken } = useResolvedScreenshotMedia(shot)
+  const { mediaSrc: src, previewSrc, posterSrc, isVideo: currentIsVideo, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const isFav = favorites.has(shot.id)
   const userTags = parseUserTags(shot.user_tags)
   const shouldLoadVideo = isActive
@@ -319,17 +313,7 @@ const VideoSlide = memo(function VideoSlide({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {!src ? (
-        <div className="flex h-full w-full items-center justify-center px-8 text-center">
-          <div className="flex max-w-md flex-col items-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-6 py-8">
-            <div className="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100">
-              Video unavailable
-            </div>
-            <p className="text-lg font-medium text-white/85">{shot.term}</p>
-            <p className="text-sm text-amber-100/70">The feed skipped this item because its media source failed to load.</p>
-          </div>
-        </div>
-      ) : (
+      {currentIsVideo && src ? (
         <video
           ref={videoRef}
           src={videoSrc}
@@ -342,6 +326,26 @@ const VideoSlide = memo(function VideoSlide({
           onClick={handleTap}
           onError={markMediaBroken}
         />
+      ) : previewSrc ? (
+        <img
+          src={previewSrc}
+          alt={shot.term}
+          loading={isActive ? "eager" : "lazy"}
+          decoding="async"
+          className="h-full w-full object-contain select-none"
+          onClick={handleTap}
+          onError={markPreviewBroken}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center px-8 text-center">
+          <div className="flex max-w-md flex-col items-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-6 py-8">
+            <div className="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100">
+              Video unavailable
+            </div>
+            <p className="text-lg font-medium text-white/85">{shot.term}</p>
+            <p className="text-sm text-amber-100/70">The feed skipped this item because its media source failed to load.</p>
+          </div>
+        </div>
       )}
 
       {/* Play/Pause flash */}

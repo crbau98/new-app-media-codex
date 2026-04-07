@@ -96,61 +96,64 @@ export function getScreenshotMediaSrc(s: Screenshot): string {
 
 export function getScreenshotPreviewSrc(s: Screenshot): string {
   if (s.preview_url) return s.preview_url
-  // For videos without a preview, don't return the video URL as an image src
-  if (isVideoShot(s)) return ""
-  return getScreenshotMediaSrc(s)
+  const mediaSrc = getScreenshotMediaSrc(s)
+  return isVideoShot(s) ? "" : mediaSrc
 }
 
 export function getScreenshotPosterSrc(s: Screenshot): string {
   if (s.preview_url) return s.preview_url
-  return ""
+  const mediaSrc = getScreenshotMediaSrc(s)
+  return isVideoShot(s) ? "" : mediaSrc
 }
 
 export function getBestAvailableMediaSrc(s: Screenshot): string {
-  const mediaSrc = getScreenshotMediaSrc(s)
-  const previewSrc = getScreenshotPreviewSrc(s)
-  return pickUsableMediaUrl([mediaSrc, previewSrc])
+  return pickUsableMediaUrl([getScreenshotMediaSrc(s)])
 }
 
 export function getBestAvailablePreviewSrc(s: Screenshot): string {
-  const mediaSrc = getScreenshotMediaSrc(s)
   const previewSrc = getScreenshotPreviewSrc(s)
-  return pickUsableMediaUrl([previewSrc, !isVideoUrl(mediaSrc) ? mediaSrc : null])
+  if (previewSrc) return pickUsableMediaUrl([previewSrc])
+  const mediaSrc = getScreenshotMediaSrc(s)
+  return isVideoUrl(mediaSrc) ? "" : pickUsableMediaUrl([mediaSrc])
 }
 
 export function getBestAvailablePosterSrc(s: Screenshot): string {
-  return pickUsableMediaUrl([getScreenshotPosterSrc(s), getScreenshotPreviewSrc(s), getScreenshotMediaSrc(s)])
+  const previewSrc = getScreenshotPreviewSrc(s)
+  if (previewSrc) return pickUsableMediaUrl([previewSrc])
+  const mediaSrc = getScreenshotMediaSrc(s)
+  return isVideoUrl(mediaSrc) ? "" : pickUsableMediaUrl([mediaSrc])
 }
 
 export function useResolvedScreenshotMedia(s: Screenshot) {
   const [, setVersion] = useState(0)
+  const rawMediaSrc = getScreenshotMediaSrc(s)
   const mediaSrc = getBestAvailableMediaSrc(s)
   const previewSrc = getBestAvailablePreviewSrc(s)
   const posterSrc = getBestAvailablePosterSrc(s)
-  const mediaKindUrl = mediaSrc || getScreenshotMediaSrc(s) || previewSrc || posterSrc
+  const displaySrc = previewSrc || mediaSrc
 
   const markPreviewBroken = useCallback(() => {
-    const target = previewSrc || getScreenshotPreviewSrc(s) || mediaSrc
+    const target = previewSrc || displaySrc
     if (rememberBrokenMediaUrl(target)) {
       setVersion((version) => version + 1)
     }
-  }, [mediaSrc, previewSrc, s])
+  }, [displaySrc, previewSrc])
 
   const markMediaBroken = useCallback(() => {
-    const target = mediaSrc || getScreenshotMediaSrc(s) || previewSrc
-    if (rememberBrokenMediaUrl(target)) {
+    if (rememberBrokenMediaUrl(rawMediaSrc)) {
       setVersion((version) => version + 1)
     }
-  }, [mediaSrc, previewSrc, s])
+  }, [rawMediaSrc])
 
   return {
     mediaSrc,
     previewSrc,
     posterSrc,
-    isVideo: isVideoUrl(mediaKindUrl),
-    isGif: isGifUrl(mediaKindUrl),
-    hasRenderableMedia: Boolean(mediaSrc || previewSrc || posterSrc),
-    previewPending: isVideoUrl(mediaKindUrl) && Boolean(mediaSrc) && !previewSrc,
+    displaySrc,
+    isVideo: isVideoShot(s),
+    isGif: isGifUrl(rawMediaSrc),
+    hasRenderableMedia: Boolean(displaySrc),
+    previewPending: isVideoShot(s) && Boolean(rawMediaSrc) && !previewSrc,
     markPreviewBroken,
     markMediaBroken,
   }

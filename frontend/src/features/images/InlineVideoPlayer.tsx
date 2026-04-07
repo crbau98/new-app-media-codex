@@ -96,7 +96,7 @@ interface Props {
 }
 
 export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleFavorite, onRate, onOpenRelated, userTags = [], onAddTag, onRemoveTag }: Props) {
-  const { mediaSrc: src, posterSrc, markMediaBroken } = useResolvedScreenshotMedia(shot)
+  const { mediaSrc: src, previewSrc, posterSrc, isVideo: currentIsVideo, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const qc = useQueryClient()
 
   /* refs */
@@ -504,17 +504,7 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
         onMouseMove={showControls}
         onMouseLeave={() => { if (playing) setControlsVisible(false) }}
       >
-        {!src ? (
-          <div className="flex min-h-[24rem] items-center justify-center px-6 py-10 text-center">
-            <div className="flex max-w-xl flex-col items-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-8 py-8">
-              <div className="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100">
-                Media unavailable
-              </div>
-              <p className="text-lg font-medium text-white/85">{shot.term}</p>
-              <p className="text-sm text-amber-100/70">This media could not be loaded right now. You can still open the original source from the actions below.</p>
-            </div>
-          </div>
-        ) : (
+        {currentIsVideo && src ? (
           <>
             {/* Video element - no native controls */}
             <video
@@ -539,6 +529,26 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
               <div className="absolute inset-0 z-[5]" onClick={handleVideoClick} />
             )}
           </>
+        ) : previewSrc ? (
+          <img
+            src={previewSrc}
+            alt={shot.term}
+            loading="eager"
+            decoding="async"
+            draggable={false}
+            onError={markPreviewBroken}
+            className="mx-auto max-h-[70vh] w-full object-contain select-none"
+          />
+        ) : (
+          <div className="flex min-h-[24rem] items-center justify-center px-6 py-10 text-center">
+            <div className="flex max-w-xl flex-col items-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-8 py-8">
+              <div className="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100">
+                Media unavailable
+              </div>
+              <p className="text-lg font-medium text-white/85">{shot.term}</p>
+              <p className="text-sm text-amber-100/70">This media could not be loaded right now. You can still open the original source from the actions below.</p>
+            </div>
+          </div>
         )}
 
         {/* Seek indicator overlays */}

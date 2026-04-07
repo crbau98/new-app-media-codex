@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import type { Screenshot } from "@/lib/api"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/cn"
-import { getBestAvailableMediaSrc, useResolvedScreenshotMedia } from "@/lib/media"
+import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getScreenshotMediaSrc, useResolvedScreenshotMedia } from "@/lib/media"
 
 interface ScreenshotLightboxProps {
   shots: Screenshot[]
@@ -40,7 +40,7 @@ function sourceLabel(source: string) {
 
 export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites, onToggleFavorite, onRate, onAddTag, onRemoveTag, allTags, onViewCreator }: ScreenshotLightboxProps) {
   const shot = shots[idx]
-  const { mediaSrc: src, posterSrc, isVideo: currentIsVideo, markMediaBroken } = useResolvedScreenshotMedia(shot)
+  const { mediaSrc: src, previewSrc, posterSrc, isVideo: currentIsVideo, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
 
   const qc = useQueryClient()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -226,7 +226,7 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
         // D — download current media
         e.preventDefault()
         const s = shotsRef.current[cur]
-        const url = getBestAvailableMediaSrc(s) || s.page_url
+        const url = getBestAvailableMediaSrc(s) || getBestAvailablePreviewSrc(s) || s.page_url
         if (url) {
           const a = document.createElement("a")
           a.href = url
@@ -238,7 +238,7 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
         // C — copy URL to clipboard
         e.preventDefault()
         const s = shotsRef.current[cur]
-        const url = getBestAvailableMediaSrc(s) || s.page_url
+        const url = getBestAvailableMediaSrc(s) || getBestAvailablePreviewSrc(s) || s.page_url
         if (url) copyToClipboard(url).then((ok) => {
           if (ratingToastTimerRef.current) clearTimeout(ratingToastTimerRef.current)
           setShareToast(ok ? "URL copied" : "Copy failed")
@@ -551,15 +551,7 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
             transition: zoomScale === 1 ? "transform 0.2s ease" : undefined,
           }}
         >
-          {!src ? (
-            <div className="flex w-[min(95vw,56rem)] flex-col items-center justify-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-8 py-10 text-center">
-              <div className="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100">
-                Media unavailable
-              </div>
-              <p className="text-lg font-medium text-white/85">{shot.term}</p>
-              <p className="max-w-full truncate text-sm text-amber-100/70" title={shot.page_url}>{shot.page_url}</p>
-            </div>
-          ) : currentIsVideo ? (
+          {currentIsVideo && src ? (
             <div className="relative inline-block">
               <video
                 ref={videoRef}
@@ -604,10 +596,10 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
                 )}
               </div>
             </div>
-          ) : (
+          ) : previewSrc ? (
             <img
-              key={src}
-              src={src}
+              key={previewSrc}
+              src={previewSrc}
               alt={shot.term}
               loading="lazy"
               decoding="async"
@@ -616,9 +608,17 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
                 const el = e.currentTarget
                 setImgDimensions({ w: el.naturalWidth, h: el.naturalHeight })
               }}
-              onError={markMediaBroken}
+              onError={markPreviewBroken}
               className="max-h-[80vh] max-w-[95vw] object-contain mx-auto select-none rounded-lg"
             />
+          ) : (
+            <div className="flex w-[min(95vw,56rem)] flex-col items-center justify-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-8 py-10 text-center">
+              <div className="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100">
+                Media unavailable
+              </div>
+              <p className="text-lg font-medium text-white/85">{shot.term}</p>
+              <p className="max-w-full truncate text-sm text-amber-100/70" title={shot.page_url}>{shot.page_url}</p>
+            </div>
           )}
         </div>
       </div>
@@ -821,8 +821,9 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
           className="flex items-end gap-1.5 h-full px-4 pb-2 overflow-x-auto hide-scrollbar"
         >
           {shots.map((s, i) => {
-            const thumbSrc = getBestAvailableMediaSrc(s)
-            const isVideoThumb = thumbSrc ? isVideo(thumbSrc) : false
+            const thumbMediaSrc = getScreenshotMediaSrc(s)
+            const thumbPreviewSrc = getBestAvailablePreviewSrc(s)
+            const isVideoThumb = thumbMediaSrc ? isVideo(thumbMediaSrc) : false
             return (
               <button
                 key={s.id}
@@ -835,10 +836,10 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
                 )}
                 aria-label={`Go to image ${i + 1}`}
               >
-                {isVideoThumb ? (
-                  <video src={thumbSrc ?? undefined} className="h-full w-full object-cover" muted />
+                {isVideoThumb && getBestAvailableMediaSrc(s) ? (
+                  <video src={getBestAvailableMediaSrc(s) ?? undefined} className="h-full w-full object-cover" muted />
                 ) : (
-                  <img src={thumbSrc ?? ""} alt="" className="h-full w-full object-cover" loading="lazy" />
+                  <img src={thumbPreviewSrc || thumbMediaSrc} alt="" className="h-full w-full object-cover" loading="lazy" />
                 )}
               </button>
             )

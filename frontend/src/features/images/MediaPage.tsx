@@ -9,7 +9,7 @@ import { SkeletonGrid } from "@/components/Skeleton"
 import { EmptyState } from "@/components/EmptyState"
 import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
-import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
+import { getBestAvailablePreviewSrc, getMediaDebugLabel, getScreenshotMediaSrc, useResolvedScreenshotMedia } from "@/lib/media"
 
 const AUTO_DESCRIBE_KEY = "auto-describe-screenshots"
 const MEDIA_NAVIGATION_INTENT_KEY = "codex:media-navigation-intent"
@@ -79,7 +79,7 @@ type ShotClientMeta = {
 }
 
 function buildShotClientMeta(shot: Screenshot): ShotClientMeta {
-  const src = getBestAvailableMediaSrc(shot)
+  const src = getScreenshotMediaSrc(shot)
   return {
     isVideo: isVideoShot(shot),
     searchText: [shot.term, shot.source, shot.page_url, shot.ai_summary ?? ""].join(" ").toLowerCase(),
@@ -2477,7 +2477,7 @@ export function MediaPage() {
   function openMedia(shot: Screenshot) {
     pushViewHistory(shot.id)
     setViewHistory(loadViewHistory())
-    const src = getBestAvailableMediaSrc(shot)
+    const src = getScreenshotMediaSrc(shot)
     if (isVideo(src)) {
       void preloadInlineVideoPlayer()
       setExpandedVideoId(shot.id)
@@ -2488,7 +2488,7 @@ export function MediaPage() {
   }
 
   function renderCard(shot: Screenshot) {
-    const src = getBestAvailableMediaSrc(shot)
+    const src = getScreenshotMediaSrc(shot)
     const prefetchViewer = () => {
       if (src && isVideo(src)) void preloadInlineVideoPlayer()
       else void preloadMediaLightbox()
@@ -2515,7 +2515,7 @@ export function MediaPage() {
   }
 
   function renderListItem(shot: Screenshot) {
-    const src = getBestAvailableMediaSrc(shot)
+    const src = getScreenshotMediaSrc(shot)
     const prefetchViewer = () => {
       if (src && isVideo(src)) void preloadInlineVideoPlayer()
       else void preloadMediaLightbox()
@@ -3207,7 +3207,7 @@ export function MediaPage() {
               <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-white/10">
                 {recentShots.map((shot) => {
                   const src = getBestAvailablePreviewSrc(shot)
-                  const mediaSrc = getBestAvailableMediaSrc(shot)
+                  const mediaSrc = getScreenshotMediaSrc(shot)
                   const vid = isVideo(mediaSrc)
                   return (
                     <button

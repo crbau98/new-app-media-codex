@@ -2,13 +2,9 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { createPortal } from "react-dom"
 import type { Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
-import { getBestAvailableMediaSrc, getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
+import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
 
 type SlideshowSpeed = 3 | 5 | 8 | 15
-
-function isVideo(src: string): boolean {
-  return /\.(mp4|webm|mov)$/i.test(src)
-}
 
 interface SlideshowModeProps {
   shots: Screenshot[]
@@ -24,7 +20,8 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
   const [showControls, setShowControls] = useState(true)
   const [transitioning, setTransitioning] = useState(false)
   const [showSpeedMenu, setShowSpeedMenu] = useState(false)
-  const [loadFailed, setLoadFailed] = useState(false)
+  const [videoLoadFailed, setVideoLoadFailed] = useState(false)
+  const [previewLoadFailed, setPreviewLoadFailed] = useState(false)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -47,13 +44,13 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
   useEffect(() => { onCloseRef.current = onClose }, [onClose])
 
   const shot = shots[idx]
-  const { mediaSrc: resolvedSrc, markMediaBroken } = useResolvedScreenshotMedia(shot)
+  const { mediaSrc: resolvedSrc, previewSrc, isVideo: currentIsVideo, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const src = shot ? resolvedSrc : ""
   const mediaLabel = shot ? getMediaDebugLabel(shot) : "missing-slide"
-  const currentIsVideo = isVideo(src)
 
   useEffect(() => {
-    setLoadFailed(false)
+    setVideoLoadFailed(false)
+    setPreviewLoadFailed(false)
   }, [src])
 
   // Preload next image
@@ -61,7 +58,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
     ? Math.floor(Math.random() * shots.length)
     : Math.min(idx + 1, shots.length - 1)
   const nextShot = shots[nextIdx]
-  const nextSrc = nextShot ? getBestAvailableMediaSrc(nextShot) : ""
+  const nextSrc = nextShot ? getBestAvailablePreviewSrc(nextShot) : ""
 
   useEffect(() => {
     if (!nextSrc || isVideo(nextSrc)) return
@@ -194,15 +191,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
         className="absolute inset-0 flex items-center justify-center transition-opacity duration-200"
         style={{ opacity: transitioning ? 0 : 1 }}
       >
-        {!src || loadFailed ? (
-          <div className="flex max-h-[90vh] w-[min(95vw,56rem)] flex-col items-center justify-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-8 py-10 text-center">
-            <div className="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100">
-              Slide unavailable
-            </div>
-            <p className="text-lg font-medium text-white/85">{shot?.term ?? "Missing media"}</p>
-            <p className="max-w-full truncate text-sm text-amber-100/70" title={mediaLabel}>{mediaLabel}</p>
-          </div>
-        ) : currentIsVideo ? (
+        {currentIsVideo && src && !videoLoadFailed ? (
           <video
             ref={videoRef}
             key={src}
@@ -210,18 +199,26 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
             autoPlay
             playsInline
             onEnded={handleVideoEnded}
-            onError={() => { markMediaBroken(); setLoadFailed(true) }}
+            onError={() => { markMediaBroken(); setVideoLoadFailed(true) }}
             className="max-h-[90vh] max-w-[95vw] object-contain"
           />
-        ) : (
+        ) : previewSrc && !previewLoadFailed ? (
           <img
-            key={src}
-            src={src}
+            key={previewSrc}
+            src={previewSrc}
             alt={shot?.term ?? ""}
             draggable={false}
-            onError={() => { markMediaBroken(); setLoadFailed(true) }}
+            onError={() => { markPreviewBroken(); setPreviewLoadFailed(true) }}
             className="max-h-[90vh] max-w-[95vw] object-contain select-none"
           />
+        ) : (
+          <div className="flex max-h-[90vh] w-[min(95vw,56rem)] flex-col items-center justify-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-8 py-10 text-center">
+            <div className="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100">
+              Slide unavailable
+            </div>
+            <p className="text-lg font-medium text-white/85">{shot?.term ?? "Missing media"}</p>
+            <p className="max-w-full truncate text-sm text-amber-100/70" title={mediaLabel}>{mediaLabel}</p>
+          </div>
         )}
       </div>
 
