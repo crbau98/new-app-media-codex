@@ -399,17 +399,7 @@ export function TopBar() {
     <>
       {isFetching > 0 && (
         <div className="fixed inset-x-0 top-0 z-[55] h-0.5 overflow-hidden" aria-hidden="true">
-          <div
-            className="h-full animate-[topbar-loading_1.5s_ease-in-out_infinite]"
-            style={{ background: "var(--color-accent, #7cc6ff)" }}
-          />
-          <style>{`
-            @keyframes topbar-loading {
-              0% { width: 0%; margin-left: 0%; }
-              50% { width: 60%; margin-left: 20%; }
-              100% { width: 0%; margin-left: 100%; }
-            }
-          `}</style>
+          <div className="topbar-loading-bar h-full" />
         </div>
       )}
       <header
@@ -445,7 +435,7 @@ export function TopBar() {
                 }}
                 onFocus={() => setDropdownOpen(true)}
                 onKeyDown={handleKeyDown}
-                className="w-full rounded-full border border-white/[0.08] bg-white/[0.04] py-1.5 pl-8 pr-14 text-xs text-text-primary placeholder:text-text-muted transition-all focus:border-accent/40 focus:bg-white/[0.06] focus:outline-none"
+                className="w-full rounded-full border border-white/[0.08] bg-white/[0.04] py-1.5 pl-8 pr-14 text-xs text-text-primary placeholder:text-text-muted transition-[background-color,border-color,box-shadow] focus:border-accent/40 focus:bg-white/[0.06] focus:outline-none"
                 role="combobox"
                 aria-expanded={showDropdown}
                 aria-haspopup="listbox"

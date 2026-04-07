@@ -83,11 +83,11 @@ export function OfflineBanner() {
       aria-live="polite"
       className={[
         "fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium shadow-md",
-        "animate-[slide-down_300ms_ease-out]",
+        "offline-banner-enter",
         showWarning
           ? "bg-amber-500/90 text-amber-950 dark:bg-amber-600/90 dark:text-amber-50"
           : "bg-emerald-500/90 text-emerald-950 dark:bg-emerald-600/90 dark:text-emerald-50",
-        state === "back-online" ? "animate-[slide-down_300ms_ease-out]" : "",
+        state === "back-online" ? "offline-banner-enter" : "",
       ].join(" ")}
     >
       {state === "offline" ? <WifiOffIcon /> : state === "api-error" ? <AlertIcon /> : <CheckIcon />}
@@ -107,18 +107,6 @@ export function OfflineBanner() {
         <CloseIcon />
       </button>
 
-      <style>{`
-        @keyframes slide-down {
-          from {
-            transform: translateY(-100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateY(0);
-            opacity: 1;
-          }
-        }
-      `}</style>
     </div>
   )
 }

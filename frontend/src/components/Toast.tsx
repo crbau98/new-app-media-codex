@@ -89,13 +89,12 @@ function ToastItem({
   action?: ToastAction
 }) {
   const removeToast = useAppStore((s) => s.removeToast)
-  const [progress, setProgress] = useState(100)
   const [visible, setVisible] = useState(false)
   const [exiting, setExiting] = useState(false)
+  const [paused, setPaused] = useState(false)
   const startRef = useRef<number>(Date.now())
-  const rafRef = useRef<number | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dismissedRef = useRef(false)
-  const pausedRef = useRef(false)
   const remainingRef = useRef(TOAST_DURATION)
 
   // Slide-in on mount
@@ -104,57 +103,50 @@ function ToastItem({
     return () => cancelAnimationFrame(frame)
   }, [])
 
+  const clearTimer = () => {
+    if (timeoutRef.current !== null) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+  }
+
+  const startTimer = (duration: number) => {
+    clearTimer()
+    startRef.current = Date.now()
+    timeoutRef.current = setTimeout(dismiss, duration)
+  }
+
   const dismiss = () => {
     if (dismissedRef.current) return
     dismissedRef.current = true
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+    clearTimer()
     setExiting(true)
     // Wait for slide-out animation before removing from DOM
-    setTimeout(() => removeToast(id), 280)
+    setTimeout(() => removeToast(id), 240)
   }
 
   const pause = () => {
-    if (pausedRef.current) return
-    pausedRef.current = true
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-    // Save how much time is left
+    if (paused || dismissedRef.current) return
+    clearTimer()
     const elapsed = Date.now() - startRef.current
     remainingRef.current = Math.max(0, remainingRef.current - elapsed)
+    setPaused(true)
   }
 
   const resume = () => {
-    if (!pausedRef.current) return
-    pausedRef.current = false
-    startRef.current = Date.now()
-    startTick()
-  }
-
-  const startTick = () => {
-    const tick = () => {
-      if (pausedRef.current || dismissedRef.current) return
-      const elapsed = Date.now() - startRef.current
-      const remaining = Math.max(0, remainingRef.current - elapsed)
-      const pct = (remaining / TOAST_DURATION) * 100
-      setProgress(pct)
-      if (remaining <= 0) {
-        dismiss()
-      } else {
-        rafRef.current = requestAnimationFrame(tick)
-      }
-    }
-    rafRef.current = requestAnimationFrame(tick)
+    if (!paused || dismissedRef.current) return
+    setPaused(false)
+    startTimer(Math.max(remainingRef.current, 0))
   }
 
   // Progress bar countdown
   useEffect(() => {
-    startRef.current = Date.now()
     remainingRef.current = TOAST_DURATION
-    startTick()
+    startTimer(TOAST_DURATION)
 
     return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      clearTimer()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   const style = TYPE_STYLES[type ?? "info"] ?? TYPE_STYLES.info
@@ -174,7 +166,7 @@ function ToastItem({
       className={cn(
         "relative flex items-start gap-3 pl-4 pr-3 py-3 rounded-lg",
         "border-l-4 border border-white/10",
-        "bg-white/5 backdrop-blur-xl shadow-xl",
+        "bg-white/5 backdrop-blur-[2px] shadow-md shadow-black/20",
         "text-sm text-text-primary select-none overflow-hidden",
         style.border,
       )}
@@ -224,11 +216,11 @@ function ToastItem({
       {/* Progress bar */}
       <div
         aria-hidden="true"
-        className={cn("absolute bottom-0 left-0 h-[2px]", style.progressColor)}
+        className={cn("toast-progress absolute bottom-0 left-0 h-[2px] origin-left", style.progressColor)}
         style={{
-          width: `${progress}%`,
           opacity: 0.6,
-          transition: "width 100ms linear",
+          animationDuration: `${TOAST_DURATION}ms`,
+          animationPlayState: paused ? "paused" : "running",
         }}
       />
     </div>
@@ -248,7 +240,7 @@ export function ToastContainer() {
     <div
       aria-live="polite"
       aria-atomic="false"
-      className="fixed bottom-20 right-5 z-50 flex flex-col gap-2 w-80 pointer-events-none"
+      className="fixed bottom-20 right-5 z-50 flex w-80 flex-col gap-2 pointer-events-none"
       aria-label="Notifications"
     >
       {visible.map((t) => (

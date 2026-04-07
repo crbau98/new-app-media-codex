@@ -2334,8 +2334,8 @@ class Database:
                         params + [limit + 1, offset],
                     ).fetchall()
                     performers = [dict(r) for r in rows[:limit]]
-                    performer_ids = [p["id"] for p in performers]
                     counts_by_id: dict[int, int] = {}
+                    performer_ids = [int(p["id"]) for p in performers]
                     if performer_ids:
                         placeholders = ",".join("?" for _ in performer_ids)
                         count_rows = conn.execute(
@@ -2347,6 +2347,60 @@ class Database:
                         counts_by_id = {int(r["performer_id"]): int(r["cnt"]) for r in count_rows}
                     for performer in performers:
                         performer["screenshots_count"] = counts_by_id.get(int(performer["id"]), 0)
+                performer_by_id = {int(p["id"]): p for p in performers}
+                missing_avatar_ids = [
+                    performer_id
+                    for performer_id, performer in performer_by_id.items()
+                    if not (performer.get("avatar_url") or performer.get("avatar_local"))
+                ]
+                if missing_avatar_ids:
+                    placeholders = ",".join("?" for _ in missing_avatar_ids)
+                    fallback_rows = conn.execute(
+                        f"SELECT performer_id, source_url FROM performer_media "
+                        f"WHERE performer_id IN ({placeholders}) AND source_url IS NOT NULL AND source_url != '' "
+                        f"ORDER BY performer_id, captured_at DESC",
+                        missing_avatar_ids,
+                    ).fetchall()
+                    fallback_by_id: dict[int, str] = {}
+                    for row in fallback_rows:
+                        performer_id = int(row["performer_id"])
+                        source_url = str(row["source_url"] or "").strip()
+                        if performer_id not in fallback_by_id and source_url.startswith(("http://", "https://")):
+                            fallback_by_id[performer_id] = source_url
+                    for performer in performers:
+                        if performer.get("avatar_url") or performer.get("avatar_local"):
+                            continue
+                        fallback = fallback_by_id.get(int(performer["id"]))
+                        if fallback:
+                            performer["avatar_url"] = fallback
+                    still_missing_ids = [
+                        performer_id
+                        for performer_id in missing_avatar_ids
+                        if performer_id not in fallback_by_id
+                    ]
+                    if still_missing_ids:
+                        placeholders = ",".join("?" for _ in still_missing_ids)
+                        screenshot_rows = conn.execute(
+                            f"SELECT performer_id, source_url, thumbnail_url FROM screenshots "
+                            f"WHERE performer_id IN ({placeholders}) AND ((source_url IS NOT NULL AND source_url != '') OR (thumbnail_url IS NOT NULL AND thumbnail_url != '')) "
+                            f"ORDER BY performer_id, captured_at DESC",
+                            still_missing_ids,
+                        ).fetchall()
+                        for row in screenshot_rows:
+                            performer_id = int(row["performer_id"])
+                            if performer_id in fallback_by_id:
+                                continue
+                            for candidate in (row["source_url"], row["thumbnail_url"]):
+                                candidate_url = str(candidate or "").strip()
+                                if candidate_url.startswith(("http://", "https://")):
+                                    fallback_by_id[performer_id] = candidate_url
+                                    break
+                        for performer in performers:
+                            if performer.get("avatar_url") or performer.get("avatar_local"):
+                                continue
+                            fallback = fallback_by_id.get(int(performer["id"]))
+                            if fallback:
+                                performer["avatar_url"] = fallback
                 if offset == 0:
                     total = conn.execute(f"SELECT COUNT(*) FROM performers {clause}", params).fetchone()[0]
                 else:

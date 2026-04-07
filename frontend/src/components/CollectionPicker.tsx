@@ -155,7 +155,7 @@ export function CollectionPicker({ itemIds, onDone }: CollectionPickerProps) {
                     <button
                       key={color}
                       onClick={() => setNewColor(color)}
-                      className="w-5 h-5 rounded-full border-2 transition-all"
+                      className="h-5 w-5 rounded-full border-2 transition-[border-color,box-shadow,transform]"
                       style={{
                         backgroundColor: color,
                         borderColor: newColor === color ? 'white' : 'transparent',

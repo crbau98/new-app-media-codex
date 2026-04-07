@@ -1127,6 +1127,22 @@ def get_performer(performer_id: int, request: Request):
     performer["link_count"] = len(links)
     performer["media_count_actual"] = media_result["total"]
     performer["screenshots_count"] = screenshots_count
+    if not performer.get("avatar_url") and not performer.get("avatar_local"):
+        for media in media_result.get("items", []):
+            source_url = str(media.get("source_url") or "").strip()
+            if source_url.startswith(("http://", "https://")):
+                performer["avatar_url"] = source_url
+                break
+    if not performer.get("avatar_url") and not performer.get("avatar_local"):
+        screenshot_result = db.browse_screenshots(performer_id=performer_id, limit=1, offset=0, sort="newest")
+        for shot in screenshot_result.get("screenshots", []):
+            for candidate in (shot.get("source_url"), shot.get("thumbnail_url")):
+                source_url = str(candidate or "").strip()
+                if source_url.startswith(("http://", "https://")):
+                    performer["avatar_url"] = source_url
+                    break
+            if performer.get("avatar_url"):
+                break
     return performer
 
 

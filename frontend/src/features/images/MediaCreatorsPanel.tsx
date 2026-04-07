@@ -77,7 +77,8 @@ const CreatorCard = memo(function CreatorCard({
 
   return (
     <article
-      className="group overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] transition-all hover:border-white/15 hover:bg-white/[0.06]"
+      className="group overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] transition-[background-color,border-color,box-shadow,transform] hover:border-white/15 hover:bg-white/[0.06]"
+      style={{ contentVisibility: "auto", containIntrinsicSize: "320px 172px" }}
       onMouseEnter={() => onHover(creator)}
       onFocus={() => onHover(creator)}
     >

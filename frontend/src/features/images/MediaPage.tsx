@@ -1516,7 +1516,7 @@ export function MediaPage() {
         ...(mediaCreatorId != null ? { performer_id: mediaCreatorId } : {}),
         ...(tab === "videos" ? { media_type: "video" } : {}),
         ...(tab === "images" ? { media_type: "image" } : {}),
-        limit: 24,
+        limit: 18,
         offset: pageParam as number,
       }),
     getNextPageParam: (last) => (last.has_more ? (last.next_offset ?? (last.offset + last.screenshots.length)) : undefined),
@@ -2582,7 +2582,7 @@ export function MediaPage() {
         <div className="flex items-center gap-3 px-4 py-2">
           <div className="h-1 flex-1 rounded-full bg-white/10 overflow-hidden">
             <div
-              className="h-full bg-[var(--color-accent)] rounded-full transition-all duration-500"
+              className="h-full rounded-full bg-[var(--color-accent)] transition-[width] duration-500"
               style={{ width: `${((statusData.terms_done || 0) / (statusData.terms_total || 1)) * 100}%` }}
             />
           </div>
@@ -3221,7 +3221,7 @@ export function MediaPage() {
                     <button
                       key={shot.id}
                       onClick={() => openMedia(shot)}
-                      className="group/rv relative flex-shrink-0 h-16 w-16 overflow-hidden rounded-md bg-white/5 transition-all hover:ring-2 hover:ring-[var(--color-accent)]"
+                      className="group/rv relative flex-shrink-0 h-16 w-16 overflow-hidden rounded-md bg-white/5 transition-[border-color,box-shadow,transform] hover:ring-2 hover:ring-[var(--color-accent)]"
                       title={shot.term}
                     >
                       {src ? (
@@ -3343,7 +3343,7 @@ export function MediaPage() {
         />
       )}
       {tab !== "creators" && !isLoading && visibleShots.length === 0 && allShots.length > 0 && (
-        <div className="mx-4 my-8 flex flex-col items-center justify-center gap-4 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,32,0.92),rgba(8,13,24,0.98))] px-6 py-20 text-center shadow-[0_24px_80px_rgba(0,0,0,0.24)] animate-[slideUp_400ms_ease-out]">
+        <div className="mx-4 my-8 flex flex-col items-center justify-center gap-4 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,32,0.92),rgba(8,13,24,0.98))] px-6 py-20 text-center shadow-[0_24px_80px_rgba(0,0,0,0.24)] animate-fade-in">
           <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-slate-400">
             No matches
           </div>
@@ -3824,11 +3824,11 @@ export function MediaPage() {
       {/* ── Keyboard Shortcuts Help Overlay ──────────────────────────────── */}
       {shortcutsOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]"
           onClick={() => setShortcutsOpen(false)}
         >
           <div
-            className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-xl shadow-2xl p-6"
+            className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-lg shadow-2xl p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-5">

@@ -56,7 +56,7 @@ export function StarRating({ value, onChange, compact, className }: StarRatingPr
           }}
           onMouseEnter={() => setHoverValue(star)}
           className={cn(
-            "transition-all duration-150 ease-out",
+            "transition-[color,transform,filter] duration-150 ease-out",
             compact ? "h-3.5 w-3.5" : "h-5 w-5",
             star <= displayValue
               ? "text-amber-400 scale-110"

@@ -81,7 +81,7 @@ function NavGroup({
                 aria-current={isActive ? "page" : undefined}
                 title={collapsed ? item.label : undefined}
                 className={cn(
-                  "group relative flex w-full items-center gap-2.5 overflow-hidden rounded-xl px-3 py-2.5 text-left transition-all duration-150",
+                  "group relative flex w-full items-center gap-2.5 overflow-hidden rounded-xl px-3 py-2.5 text-left transition-[background-color,color,box-shadow,transform] duration-150",
                   collapsed ? "justify-center px-2" : "",
                   isActive
                     ? "bg-white/[0.07] text-text-primary"
@@ -268,7 +268,7 @@ function CrawlFooter({ collapsed, ready }: { collapsed: boolean; ready: boolean 
           </div>
           <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
             <div
-              className="h-full rounded-full bg-teal transition-all duration-500"
+              className="h-full rounded-full bg-teal transition-[width] duration-500"
               style={{
                 width: captureProgress.terms_total
                   ? `${Math.round(((captureProgress.terms_done ?? 0) / captureProgress.terms_total) * 100)}%`
@@ -337,8 +337,10 @@ export function Sidebar() {
     queryKey: ["sidebar-media-stats"],
     queryFn: () => api.mediaStats(),
     enabled: sidebarEnhancementsReady,
-    staleTime: 15_000,
-    refetchOnMount: true,
+    staleTime: 60_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 
   const counts: Partial<Record<string, number>> = {
@@ -408,7 +410,7 @@ export function Sidebar() {
     <>
       <div
         className={cn(
-          "fixed inset-0 z-30 hidden bg-[#02060c]/70 backdrop-blur-sm transition-opacity",
+          "fixed inset-0 z-30 hidden bg-[#02060c]/65 backdrop-blur-[2px] transition-opacity",
           mobileNavOpen ? "opacity-100" : "pointer-events-none opacity-0"
         )}
         onClick={closeMobile}
@@ -417,7 +419,7 @@ export function Sidebar() {
       <aside
         style={{ transitionProperty: "width", transitionDuration: "200ms", transitionTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)" }}
         className={cn(
-          "fixed left-0 top-0 z-40 hidden h-screen flex-col border-r border-white/[0.06] bg-bg-base/95 backdrop-blur-2xl md:flex",
+          "fixed left-0 top-0 z-40 hidden h-screen flex-col border-r border-white/[0.06] bg-bg-base/92 backdrop-blur-lg md:flex",
           collapsed ? "md:w-[72px]" : "md:w-[240px]"
         )}
         aria-label="Main navigation"

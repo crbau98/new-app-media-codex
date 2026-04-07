@@ -116,7 +116,7 @@ export function Scratchpad({ open, onClose }: ScratchpadProps) {
       {/* Backdrop */}
       <div
         className={cn(
-          "fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-200",
+          "fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] transition-opacity duration-200",
           open ? "opacity-100" : "pointer-events-none opacity-0"
         )}
         onClick={onClose}
@@ -127,7 +127,7 @@ export function Scratchpad({ open, onClose }: ScratchpadProps) {
       <div
         ref={panelRef}
         className={cn(
-          "fixed right-0 top-0 z-50 flex h-full w-[350px] max-w-[90vw] flex-col border-l border-white/8 bg-[#0a1520]/95 backdrop-blur-2xl transition-transform duration-300 ease-out glass",
+          "fixed right-0 top-0 z-50 flex h-full w-[350px] max-w-[90vw] flex-col border-l border-white/8 bg-[#0a1520]/95 backdrop-blur-lg transition-transform duration-300 ease-out glass",
           open ? "translate-x-0" : "translate-x-full"
         )}
         role="dialog"

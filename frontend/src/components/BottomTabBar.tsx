@@ -51,7 +51,7 @@ export function BottomTabBar() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] bg-bg-base/90 backdrop-blur-2xl md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] bg-bg-base/90 backdrop-blur-lg md:hidden"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       aria-label="Mobile navigation"
     >

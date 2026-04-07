@@ -10,8 +10,8 @@ interface EmptyStateProps {
 
 export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
-    <div className="empty-state-panel flex flex-col items-center justify-center px-8 py-16 text-center sm:px-10 sm:py-20 animate-[slideUp_400ms_ease-out]">
-      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-4xl text-white/80 shadow-[0_12px_32px_rgba(0,0,0,0.18)] select-none animate-pulse">
+    <div className="empty-state-panel animate-fade-in flex flex-col items-center justify-center px-8 py-16 text-center sm:px-10 sm:py-20">
+      <div className="mb-5 flex h-16 w-16 select-none items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-4xl text-white/80 shadow-[0_8px_22px_rgba(0,0,0,0.14)]">
         {icon}
       </div>
       <p className="eyebrow mb-2">Nothing here yet</p>
@@ -20,7 +20,7 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
       {action && (
         <button
           onClick={action.onClick}
-          className="mt-7 rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:shadow-[0_0_0_1px_var(--color-accent-glow)]"
+          className="mt-7 rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-white transition-[background-color,box-shadow,transform] hover:bg-accent-hover hover:shadow-[0_0_0_1px_var(--color-accent-glow)]"
         >
           {action.label}
         </button>

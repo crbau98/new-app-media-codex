@@ -52,7 +52,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || busy}
         aria-busy={busy || undefined}
         className={cn(
-          'relative inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 overflow-hidden',
+          'relative inline-flex items-center justify-center gap-2 overflow-hidden font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-150',
           'cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed',
           'active:scale-[0.97]',
           variants[variant],

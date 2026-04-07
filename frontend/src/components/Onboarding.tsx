@@ -140,7 +140,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const slideClass = animating ? (direction === "next" ? "translate-x-4 opacity-0" : "-translate-x-4 opacity-0") : "translate-x-0 opacity-100"
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-[2px]">
       <div className="relative mx-4 w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-bg-surface shadow-2xl">
         {!isLast && (
           <button onClick={complete} className="absolute right-4 top-4 z-10 text-xs text-text-muted transition-colors hover:text-text-primary">
@@ -148,7 +148,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           </button>
         )}
 
-        <div className={`px-8 pb-6 pt-10 transition-all duration-200 ease-out ${slideClass}`}>
+        <div className={`px-8 pb-6 pt-10 transition-[transform,opacity] duration-200 ease-out ${slideClass}`}>
           <div className="mb-6 flex justify-center text-text-muted">{current.icon}</div>
           <h2 className="mb-2 text-center text-lg font-semibold text-text-primary">{current.title}</h2>
           <p className="text-center text-sm leading-relaxed text-text-muted">{current.description}</p>
@@ -159,7 +159,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             {STEPS.map((_, i) => (
               <span
                 key={i}
-                className={`h-1.5 rounded-full transition-all duration-200 ${i === step ? "w-6 bg-accent" : "w-1.5 bg-white/15"}`}
+                className={`h-1.5 rounded-full transition-[width,background-color] duration-200 ${i === step ? "w-6 bg-accent" : "w-1.5 bg-white/15"}`}
               />
             ))}
           </div>

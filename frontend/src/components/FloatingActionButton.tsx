@@ -267,7 +267,7 @@ export function FloatingActionButton() {
             <button
               key={item.label}
               onClick={() => handleSpeedDialAction(item)}
-              className="flex items-center gap-2 rounded-full bg-surface-2 px-4 py-2 text-sm font-medium text-text-primary shadow-lg shadow-black/20 transition-all hover:bg-surface-3"
+              className="flex items-center gap-2 rounded-full bg-surface-2 px-4 py-2 text-sm font-medium text-text-primary shadow-lg shadow-black/20 transition-[background-color,color,box-shadow,transform] hover:bg-surface-3"
               style={{
                 animation: `fab-fan-in 200ms ease-out ${i * 50}ms both`,
               }}

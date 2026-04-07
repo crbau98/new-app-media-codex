@@ -16,7 +16,9 @@ export function useAppShellSummary(enabled = true) {
       return res.json()
     },
     enabled,
-    staleTime: 10_000,
-    refetchOnMount: true,
+    staleTime: 60_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 }

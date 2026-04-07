@@ -34,7 +34,7 @@ export function InstallPrompt() {
   };
 
   return (
-    <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-xl px-4 py-2.5 glass border border-white/10 shadow-lg slide-up">
+    <div className="fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 shadow-md shadow-black/20 backdrop-blur-[2px] animate-slide-up">
       <span className="text-sm text-[var(--color-text-primary)]">Install Codex for quick access</span>
       <button
         onClick={handleInstall}

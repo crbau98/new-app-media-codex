@@ -279,7 +279,7 @@ def index(request: Request) -> HTMLResponse:
     if dist_index_html is not None:
         # Embed initial API data to eliminate HTML->JS->API waterfall
         try:
-            browse_result = db.browse_screenshots(limit=24, offset=0)
+            browse_result = db.browse_screenshots(limit=18, offset=0)
             shots = []
             from app.api.screenshots import _decorate_screenshot_media
 
@@ -294,9 +294,9 @@ def index(request: Request) -> HTMLResponse:
                 "screenshots": shots,
                 "total": browse_result.get("total", 0),
                 "offset": 0,
-                "limit": 24,
+                "limit": 18,
                 "has_more": browse_result.get("has_more", False),
-                "next_offset": browse_result.get("next_offset", 24),
+                "next_offset": browse_result.get("next_offset", 18),
             }
             running = getattr(request.app.state, "screenshot_running", False)
             progress = getattr(request.app.state, "screenshot_progress", None)

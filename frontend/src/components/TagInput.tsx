@@ -136,7 +136,7 @@ export function TagInput({ itemId }: TagInputProps) {
             onFocus={() => setShowSuggestions(true)}
             onKeyDown={handleKeyDown}
             placeholder="+ tag"
-            className="w-20 focus:w-36 transition-all bg-transparent text-[11px] text-text-secondary placeholder:text-text-muted outline-none border-b border-transparent focus:border-accent/40 py-0.5 px-1"
+            className="w-20 bg-transparent px-1 py-0.5 text-[11px] text-text-secondary placeholder:text-text-muted outline-none border-b border-transparent transition-[border-color,width,color] focus:w-36 focus:border-accent/40"
           />
 
           {/* Suggestions dropdown */}

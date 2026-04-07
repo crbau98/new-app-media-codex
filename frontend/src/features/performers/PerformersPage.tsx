@@ -275,7 +275,7 @@ function DiscoveryModal({ onClose }: { onClose: () => void }) {
   }, [results, addedSet, addMutation])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-6 pt-20 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-6 pt-20 backdrop-blur-[2px]" onClick={onClose}>
       <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#0d1a30] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">Discover Creators</h2>
@@ -700,9 +700,10 @@ const PerformerCard = memo(function PerformerCard({
     <div
       ref={cardRef}
       className={cn(
-        "group rounded-2xl border bg-white/[0.03] transition-all hover:border-white/15 hover:bg-white/[0.05]",
+        "group rounded-2xl border bg-white/[0.03] transition-[background-color,border-color,box-shadow,transform] hover:border-white/15 hover:bg-white/[0.05]",
         isFocused ? "border-accent/50 ring-1 ring-accent/30" : "border-white/8"
       )}
+      style={{ contentVisibility: "auto", containIntrinsicSize: "360px 120px" }}
       onMouseEnter={() => { setHovered(true); handlePrefetch() }}
       onMouseLeave={() => setHovered(false)}
       onFocus={handlePrefetch}
@@ -740,6 +741,9 @@ const PerformerCard = memo(function PerformerCard({
                   src={avatarSrc}
                   alt={performer.username}
                   className="h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                  fetchPriority="low"
                 />
               ) : (
                 <AvatarPlaceholder username={performer.username} size="md" />
@@ -1119,7 +1123,7 @@ function PerformerThumbs({ performerId, username, visible }: { performerId: numb
 
   const { data } = useQuery({
     queryKey: ["performer-thumbs", performerId],
-    queryFn: () => api.browseScreenshots({ performer_id: performerId, limit: 5, sort: "newest", offset: 0 }),
+    queryFn: () => api.browseScreenshots({ performer_id: performerId, limit: 4, sort: "newest", offset: 0 }),
     enabled: visible,
     staleTime: 120_000,
   })
@@ -1137,7 +1141,14 @@ function PerformerThumbs({ performerId, username, visible }: { performerId: numb
           title={s.term ?? ""}
         >
           {getBestAvailablePreviewSrc(s) ? (
-            <img src={getBestAvailablePreviewSrc(s)} alt="" className="h-full w-full object-cover opacity-70 transition-opacity group-hover/thumb:opacity-100" />
+            <img
+              src={getBestAvailablePreviewSrc(s)}
+              alt=""
+              className="h-full w-full object-cover opacity-70 transition-opacity group-hover/thumb:opacity-100"
+              loading="lazy"
+              decoding="async"
+              fetchPriority="low"
+            />
           ) : isVideoShot(s) ? (
             <video
               src={getScreenshotMediaSrc(s)}
@@ -1147,7 +1158,14 @@ function PerformerThumbs({ performerId, username, visible }: { performerId: numb
               className="h-full w-full object-cover opacity-70 transition-opacity group-hover/thumb:opacity-100"
             />
           ) : (
-            <img src={getScreenshotMediaSrc(s)} alt="" className="h-full w-full object-cover opacity-70 transition-opacity group-hover/thumb:opacity-100" />
+            <img
+              src={getScreenshotMediaSrc(s)}
+              alt=""
+              className="h-full w-full object-cover opacity-70 transition-opacity group-hover/thumb:opacity-100"
+              loading="lazy"
+              decoding="async"
+              fetchPriority="low"
+            />
           )}
         </button>
       ))}
@@ -1176,7 +1194,7 @@ function prefetchPerformerProfile(qc: QueryClient, performerId: number) {
   })
   void qc.prefetchQuery({
     queryKey: ["performer-shots-preview", performerId],
-    queryFn: () => api.browseScreenshots({ performer_id: performerId, limit: 6, offset: 0 }),
+    queryFn: () => api.browseScreenshots({ performer_id: performerId, limit: 4, offset: 0 }),
     staleTime: 30_000,
   })
 }
@@ -2067,19 +2085,13 @@ export default function PerformersPage() {
         tableView ? (
           <div className="overflow-hidden rounded-2xl border border-white/8">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="animate-[slideUp_300ms_ease-out_both]" style={{ animationDelay: `${i * 50}ms` }}>
-                <Skeleton variant="card" height="44px" />
-              </div>
+              <Skeleton key={i} variant="card" height="44px" />
             ))}
           </div>
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 9 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-40 rounded-xl border border-white/8 bg-white/[0.03] animate-[slideUp_300ms_ease-out_both]"
-                style={{ animationDelay: `${i * 50}ms` }}
-              >
+              <div key={i} className="h-40 rounded-xl border border-white/8 bg-white/[0.03]">
                 <div className="flex gap-3.5 p-4">
                   <div className="h-14 w-14 shrink-0 animate-pulse rounded-full bg-white/10 ring-2 ring-white/5" />
                   <div className="flex-1 space-y-2 pt-1">
@@ -2150,7 +2162,7 @@ export default function PerformersPage() {
           {!selectMode && !search && platformFilter === "all" && !tagFilter && (
             <button
               onClick={() => runUiTransition(() => setShowDiscover(true))}
-              className="group/cta flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-accent/30 bg-gradient-to-br from-accent/5 via-transparent to-violet-500/5 p-6 text-center transition-all hover:border-accent/50 hover:from-accent/10 hover:to-violet-500/10 hover:shadow-lg hover:shadow-accent/5 animate-[slideUp_300ms_ease-out_both]"
+              className="group/cta flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-accent/30 bg-gradient-to-br from-accent/5 via-transparent to-violet-500/5 p-6 text-center transition-[background-color,border-color,box-shadow,transform] hover:border-accent/50 hover:from-accent/10 hover:to-violet-500/10 hover:shadow-lg hover:shadow-accent/5"
             >
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/15 text-accent transition-transform group-hover/cta:scale-110">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2164,23 +2176,18 @@ export default function PerformersPage() {
             </button>
           )}
           {performers.map((p, idx) => (
-            <div
+            <PerformerCard
               key={p.id}
-              className="animate-[slideUp_300ms_ease-out_both]"
-              style={{ animationDelay: `${Math.min(idx * 30, 600)}ms` }}
-            >
-              <PerformerCard
-                performer={p}
-                onSelect={(id) => handleCardSelect(id, idx)}
-                onTagClick={handleTagClick}
-                selected={selectedIds.has(p.id)}
-                onToggleSelect={toggleSelect}
-                selectMode={selectMode}
-                isInQueue={activePerformerIds.has(p.id)}
-                isFocused={focusedIdx === idx}
-                cardRef={focusedIdx === idx ? focusedCardRef : undefined}
-              />
-            </div>
+              performer={p}
+              onSelect={(id) => handleCardSelect(id, idx)}
+              onTagClick={handleTagClick}
+              selected={selectedIds.has(p.id)}
+              onToggleSelect={toggleSelect}
+              selectMode={selectMode}
+              isInQueue={activePerformerIds.has(p.id)}
+              isFocused={focusedIdx === idx}
+              cardRef={focusedIdx === idx ? focusedCardRef : undefined}
+            />
           ))}
         </div>
       )}
