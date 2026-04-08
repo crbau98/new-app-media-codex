@@ -610,7 +610,7 @@ function AboutSection() {
                 className="rounded-lg bg-bg-subtle border border-border px-4 py-3 text-center"
               >
                 <p className="text-lg font-bold text-text-primary">
-                  {s.value.toLocaleString()}
+                  {(s.value ?? 0).toLocaleString()}
                 </p>
                 <p className="text-xs text-text-muted">{s.label}</p>
               </div>
@@ -934,7 +934,7 @@ function StorageSection() {
                 <div key={name} className="rounded-lg bg-bg-subtle border border-border px-4 py-3 text-center">
                   <p className="text-lg font-bold text-text-primary">{info.size_mb} MB</p>
                   <p className="text-xs text-text-muted capitalize">{name}</p>
-                  <p className="text-[10px] text-text-muted">{info.file_count.toLocaleString()} files</p>
+                  <p className="text-[10px] text-text-muted">{(info.file_count ?? 0).toLocaleString()} files</p>
                 </div>
               ))}
             </div>
@@ -943,8 +943,8 @@ function StorageSection() {
             {usage.disk && (
               <div>
                 <div className="flex justify-between text-xs text-text-muted mb-1">
-                  <span>Disk: {usage.disk.used_mb.toLocaleString()} / {usage.disk.total_mb.toLocaleString()} MB used</span>
-                  <span>{usage.disk.free_mb.toLocaleString()} MB free</span>
+                  <span>Disk: {(usage.disk.used_mb ?? 0).toLocaleString()} / {(usage.disk.total_mb ?? 1).toLocaleString()} MB used</span>
+                  <span>{(usage.disk.free_mb ?? 0).toLocaleString()} MB free</span>
                 </div>
                 <div className="h-2 rounded-full bg-white/10 overflow-hidden">
                   <div

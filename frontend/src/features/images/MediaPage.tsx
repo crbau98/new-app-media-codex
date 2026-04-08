@@ -474,7 +474,7 @@ const MediaCard = memo(function MediaCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); batchMode ? onSelect() : onClick() } }}
       onContextMenu={onContextMenu}
       className={cn(
-        "group content-card content-card-interactive relative aspect-square cursor-pointer overflow-hidden rounded-[24px] border border-white/10 bg-black/25 shadow-[0_12px_32px_rgba(0,0,0,0.18)]",
+        "group content-card content-card-interactive relative aspect-square cursor-pointer overflow-hidden rounded-[24px] border border-white/10 bg-black/25 shadow-[0_12px_32px_rgba(0,0,0,0.18)] hover:scale-[1.02] transition-transform duration-200",
         selected && "ring-2 ring-blue-500"
       )}
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
@@ -485,14 +485,21 @@ const MediaCard = memo(function MediaCard({
         )}
         {!previewSrc ? (
           vid && src ? (
-            <video
-              src={src}
-              muted
-              playsInline
-              preload="metadata"
-              onError={markMediaBroken}
-              className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
-            />
+            <>
+              <video
+                src={src}
+                muted
+                playsInline
+                preload="metadata"
+                onError={markMediaBroken}
+                className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
+              />
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="rounded-full bg-black/50 p-3 backdrop-blur-sm">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
+                </div>
+              </div>
+            </>
           ) : (
             <MediaUnavailableTile
               title={shot.term}
@@ -507,7 +514,16 @@ const MediaCard = memo(function MediaCard({
             loading={isAboveFold ? "eager" : "lazy"}
             decoding={isAboveFold ? "sync" : "async"}
             fetchPriority={isAboveFold ? "high" : "low"}
-            onError={markPreviewBroken}
+            onError={(e) => {
+              const img = e.currentTarget
+              const retries = parseInt(img.dataset.retries || '0')
+              if (retries < 1) {
+                img.dataset.retries = '1'
+                img.src = img.src + (img.src.includes('?') ? '&_r=1' : '?_r=1')
+              } else {
+                markPreviewBroken()
+              }
+            }}
             onLoad={() => setImgLoaded(true)}
             className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
           />
@@ -542,6 +558,16 @@ const MediaCard = memo(function MediaCard({
             </span>
           )}
         </div>
+
+        {Array.isArray(shot.ai_tags) && shot.ai_tags.length > 0 && (
+          <div className="absolute bottom-8 left-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-wrap gap-0.5 overflow-hidden max-h-6">
+            {shot.ai_tags.slice(0, 4).map((tag: string) => (
+              <span key={tag} className="rounded bg-purple-500/75 px-1 py-0.5 text-[8px] font-medium leading-none text-white shadow truncate max-w-[70px]">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
 
         {vid && !batchMode && (
           <div className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:hidden">
@@ -1247,6 +1273,19 @@ export function MediaPage() {
 
   // Sync term to hash
   useEffect(() => { writeTermToHash(term) }, [term])
+
+  useEffect(() => {
+    const base = "Codex Media"
+    if (term) {
+      document.title = `${term} — ${base}`
+    } else if (tab === "favorites") {
+      document.title = `Favorites — ${base}`
+    } else if (tab === "videos") {
+      document.title = `Videos — ${base}`
+    } else {
+      document.title = base
+    }
+  }, [term, tab])
 
   useEffect(() => {
     if (mediaCreatorId != null) {
@@ -2550,19 +2589,19 @@ export function MediaPage() {
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
               <p className="eyebrow">Visible now</p>
-              <p className="mt-2 text-2xl font-semibold text-text-primary">{visibleSummary.total.toLocaleString()}</p>
+              <p className="mt-2 text-2xl font-semibold text-text-primary">{(visibleSummary.total ?? 0).toLocaleString()}</p>
             </div>
             <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
               <p className="eyebrow">Creator linked</p>
-              <p className="mt-2 text-2xl font-semibold text-text-primary">{visibleSummary.linked.toLocaleString()}</p>
+              <p className="mt-2 text-2xl font-semibold text-text-primary">{(visibleSummary.linked ?? 0).toLocaleString()}</p>
             </div>
             <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
               <p className="eyebrow">Videos</p>
-              <p className="mt-2 text-2xl font-semibold text-text-primary">{visibleSummary.videos.toLocaleString()}</p>
+              <p className="mt-2 text-2xl font-semibold text-text-primary">{(visibleSummary.videos ?? 0).toLocaleString()}</p>
             </div>
             <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
               <p className="eyebrow">Needs rating</p>
-              <p className="mt-2 text-2xl font-semibold text-text-primary">{visibleSummary.unrated.toLocaleString()}</p>
+              <p className="mt-2 text-2xl font-semibold text-text-primary">{(visibleSummary.unrated ?? 0).toLocaleString()}</p>
             </div>
           </div>
 
@@ -2681,7 +2720,10 @@ export function MediaPage() {
             aria-label="Sort order"
           >
             <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
             <option value="rating">Top Rated</option>
+            <option value="az">A–Z</option>
+            <option value="random">Random</option>
           </select>
 
           {/* View mode toggle — Grid / Feed */}
@@ -2722,7 +2764,7 @@ export function MediaPage() {
 
           {/* Visible count */}
           <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] text-slate-300 whitespace-nowrap">
-            {visibleShots.length.toLocaleString()} items
+            {(visibleShots.length ?? 0).toLocaleString()} items
           </span>
 
           {/* Overflow menu */}
@@ -2752,6 +2794,7 @@ export function MediaPage() {
                     </button>
                     <button
                       onClick={() => { handleSurpriseMe(); setOverflowMenuOpen(false) }}
+                      title="Pick a random top-rated item"
                       className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
                     >
                       Surprise me
@@ -2791,6 +2834,7 @@ export function MediaPage() {
                     >
                       {capturing ? "Capturing..." : "Capture"}
                     </button>
+                    <div className="my-1 border-t border-white/10" />
                     <button
                       onClick={() => { handleCaptureVideos(); setOverflowMenuOpen(false) }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-teal-300 hover:bg-white/[0.06] transition-colors"
@@ -2817,11 +2861,12 @@ export function MediaPage() {
                     >
                       Creators Only
                     </button>
+                    <div className="my-1 border-t border-red-500/20" />
                     <button
                       onClick={() => { handlePurgeWomen(); setOverflowMenuOpen(false) }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-red-400 hover:bg-white/[0.06] transition-colors"
                     >
-                      Purge
+                      Purge female content
                     </button>
                     <div className="border-t border-white/5 my-1" />
                     <label className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none">
@@ -2944,31 +2989,31 @@ export function MediaPage() {
         <div className="mt-1.5 flex flex-wrap items-center gap-1 px-1">
           <button
             onClick={() => setOnlyUnlinked((v) => !v)}
-            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnlinked ? "bg-sky-500/20 text-sky-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnlinked ? "bg-sky-500/20 text-sky-200 ring-1 ring-sky-400/50 border border-sky-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
             Unlinked
           </button>
           <button
             onClick={() => setOnlyUnrated((v) => !v)}
-            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnrated ? "bg-amber-500/20 text-amber-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnrated ? "bg-amber-500/20 text-amber-200 ring-1 ring-amber-400/50 border border-amber-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
             Needs rating
           </button>
           <button
             onClick={() => setOnlyRecent((v) => !v)}
-            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyRecent ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyRecent ? "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/50 border border-emerald-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
             7 days
           </button>
           <button
             onClick={() => setFilterDescribed((v) => !v)}
-            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200 ring-1 ring-purple-400/50 border border-purple-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
             Described
           </button>
           <button
             onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
-            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", advancedFilters.hasPerformer === true ? "bg-indigo-500/20 text-indigo-200" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", advancedFilters.hasPerformer === true ? "bg-indigo-500/20 text-indigo-200 ring-1 ring-indigo-400/50 border border-indigo-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
           >
             Creator-linked
           </button>
@@ -2982,27 +3027,27 @@ export function MediaPage() {
             <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
               <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
                 <p className="text-[10px] text-slate-400">Visible</p>
-                <p className="text-lg font-semibold text-white">{visibleSummary.total.toLocaleString()}</p>
+                <p className="text-lg font-semibold text-white">{(visibleSummary.total ?? 0).toLocaleString()}</p>
               </div>
               <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
                 <p className="text-[10px] text-slate-400">Images</p>
-                <p className="text-lg font-semibold text-white">{visibleSummary.images.toLocaleString()}</p>
+                <p className="text-lg font-semibold text-white">{(visibleSummary.images ?? 0).toLocaleString()}</p>
               </div>
               <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
                 <p className="text-[10px] text-slate-400">Videos</p>
-                <p className="text-lg font-semibold text-white">{visibleSummary.videos.toLocaleString()}</p>
+                <p className="text-lg font-semibold text-white">{(visibleSummary.videos ?? 0).toLocaleString()}</p>
               </div>
               <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
                 <p className="text-[10px] text-slate-400">Linked</p>
-                <p className="text-lg font-semibold text-white">{visibleSummary.linked.toLocaleString()}</p>
+                <p className="text-lg font-semibold text-white">{(visibleSummary.linked ?? 0).toLocaleString()}</p>
               </div>
               <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
                 <p className="text-[10px] text-slate-400">Described</p>
-                <p className="text-lg font-semibold text-white">{visibleSummary.described.toLocaleString()}</p>
+                <p className="text-lg font-semibold text-white">{(visibleSummary.described ?? 0).toLocaleString()}</p>
               </div>
               <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
                 <p className="text-[10px] text-slate-400">Needs rating</p>
-                <p className="text-lg font-semibold text-white">{visibleSummary.unrated.toLocaleString()}</p>
+                <p className="text-lg font-semibold text-white">{(visibleSummary.unrated ?? 0).toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -3317,6 +3362,12 @@ export function MediaPage() {
       )}
       {tab !== "creators" && !isLoading && visibleShots.length === 0 && allShots.length > 0 && (
         <div className="mx-4 my-8 flex flex-col items-center justify-center gap-4 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,32,0.92),rgba(8,13,24,0.98))] px-6 py-20 text-center shadow-[0_24px_80px_rgba(0,0,0,0.24)] animate-fade-in">
+          <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-2">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-white/30">
+              <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </div>
+          <p className="text-sm font-medium text-text-primary mb-1">No media found</p>
           <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-slate-400">
             No matches
           </div>

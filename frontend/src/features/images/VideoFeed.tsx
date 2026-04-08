@@ -592,12 +592,12 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
       const container = containerRef.current
       if (!container) return
 
-      if (e.key === "ArrowDown" || e.key === "j") {
+      if (e.key === "ArrowDown" || e.key === "j" || e.key === "ArrowRight") {
         e.preventDefault()
         const slides = container.querySelectorAll("[data-video-slide]")
         const next = Math.min(activeIndex + 1, slides.length - 1)
         slides[next]?.scrollIntoView({ behavior: "smooth" })
-      } else if (e.key === "ArrowUp" || e.key === "k") {
+      } else if (e.key === "ArrowUp" || e.key === "k" || e.key === "ArrowLeft") {
         e.preventDefault()
         const slides = container.querySelectorAll("[data-video-slide]")
         const prev = Math.max(activeIndex - 1, 0)
@@ -727,7 +727,7 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
       </button>
 
       {/* Video count indicator */}
-      <div className="absolute right-3 top-3 z-40 rounded-full bg-black/40 px-3 py-1 text-xs text-white/50 backdrop-blur-sm">
+      <div className="absolute right-3 top-3 z-40 rounded-full bg-black/50 px-3 py-1 text-xs text-white/70 backdrop-blur-sm">
         {activeIndex + 1} / {videos.length}
       </div>
 
@@ -738,7 +738,7 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
         style={{ scrollBehavior: "smooth" }}
       >
         {videos.map((shot, idx) => (
-          <div key={shot.id} data-video-slide={idx} className="h-[calc(100vh-3.5rem)]">
+          <div key={shot.id} data-video-slide={idx} className="h-[calc(100vh-3.5rem)] transition-all duration-300">
             {Math.abs(idx - activeIndex) <= 2 ? (
               <VideoSlide
                 shot={shot}

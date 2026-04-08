@@ -104,7 +104,7 @@ function NavGroup({
                     <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-[var(--bg-base)]" />
                   )}
                   {collapsed && !hasNew && queueActive?.[item.id] && !(warning != null && warning > 0) && (
-                    <span className="absolute -right-1 -top-1 h-2.5 w-2.5 animate-pulse rounded-full bg-accent ring-2 ring-[var(--bg-base)]" />
+                    <span className="absolute -right-1 -top-1 h-2.5 w-2.5 animate-pulse rounded-full bg-accent ring-2 ring-[var(--bg-base)]" title="Syncing content in background" />
                   )}
                 </span>
                 {!collapsed && (
@@ -126,7 +126,7 @@ function NavGroup({
                   </span>
                 )}
                 {!collapsed && queueActive?.[item.id] && (
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-accent" title="Syncing content in background" />
                 )}
               </button>
             </li>

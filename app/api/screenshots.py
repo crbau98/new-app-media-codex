@@ -27,7 +27,7 @@ _logger = logging.getLogger(__name__)
 # Max 500 MB total, 1-hour TTL per entry.
 # ---------------------------------------------------------------------------
 _PROXY_CACHE_MAX_BYTES = 500 * 1024 * 1024  # 500 MB
-_PROXY_CACHE_TTL = 3600  # 1 hour
+_PROXY_CACHE_TTL = 7200  # 2 hours
 _proxy_cache: dict[str, tuple[float, str, bytes]] = {}  # url -> (expires_at, content_type, body)
 _proxy_cache_size = 0  # current total bytes
 _IMAGE_CONTENT_PREFIXES = ("image/",)
@@ -232,7 +232,7 @@ async def proxy_media(url: str = Query(...), request: Request = None):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Referer": referer,
         "Origin": referer.rstrip("/"),
-        "Accept": "image/webp,image/apng,image/*,video/*,*/*;q=0.8",
+        "Accept": "image/webp,image/avif,image/apng,image/*,video/*,*/*;q=0.8",
     }
     range_header = request.headers.get("range") if request else None
     if range_header:
@@ -295,6 +295,7 @@ async def proxy_media(url: str = Query(...), request: Request = None):
             await resp.aclose()
 
     resp_headers = {"Cache-Control": "public, max-age=86400", "X-Accel-Buffering": "no"}
+    resp_headers["Content-Disposition"] = "inline"
     # Propagate content-length and range headers for video seeking
     if content_length_str:
         resp_headers["Content-Length"] = content_length_str
@@ -329,7 +330,7 @@ _SYNC_PREVIEW_WARM_LIMIT_FIRST_PAGE = 0
 _SYNC_PREVIEW_WARM_LIMIT_OTHER_PAGES = 0
 _PREVIEW_WORKER_COUNT = 3
 _FIRST_PAGE_LIMIT_CAP = 48
-_MAX_BROWSE_SCAN_ROWS = 96
+_MAX_BROWSE_SCAN_ROWS = 200
 
 
 def _screenshots_cache_bucket(app_state):
@@ -751,6 +752,32 @@ def browse_screenshots(
         }
 
     return _get_cached_screenshots_payload(request.app.state, cache_key, 300.0, build, copy_payload=False)
+
+
+@router.get("/random-rated")
+def random_rated_screenshot(request: Request, min_rating: int = Query(default=3, ge=1, le=5)):
+    """Return a single random screenshot with rating >= min_rating for Surprise Me."""
+    db = request.app.state.db
+    try:
+        rows = db.browse_screenshots(
+            min_rating=min_rating,
+            sort="random",
+            limit=1,
+            offset=0,
+        )
+        shots = rows.get("screenshots", [])
+        if not shots:
+            # Fallback to any rating
+            rows = db.browse_screenshots(sort="random", limit=1, offset=0)
+            shots = rows.get("screenshots", [])
+        if not shots:
+            raise HTTPException(404, "No rated screenshots found")
+        shot = _decorate_screenshot_media(request.app.state, shots[0])
+        return JSONResponse(shot)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
 
 
 def _run_capture(app_state):

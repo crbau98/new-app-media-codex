@@ -392,6 +392,8 @@ class Database:
                 conn.execute("PRAGMA journal_mode = WAL")  # WAL enables concurrent reads + writes
                 conn.execute("PRAGMA cache_size = -65536")  # 64 MB page cache
                 conn.execute("PRAGMA synchronous = NORMAL")  # Safe with WAL, faster commits
+                conn.execute("PRAGMA temp_store = MEMORY")   # temp tables in RAM
+                conn.execute("PRAGMA journal_size_limit = 67108864")  # 64 MB WAL cap
                 conn.execute("SELECT 1")  # verify connection actually works
                 break
             except sqlite3.OperationalError:
@@ -2527,7 +2529,7 @@ class Database:
                     "SELECT platform, COUNT(*) as count FROM performers GROUP BY platform ORDER BY count DESC"
                 ).fetchall()
                 with_media = conn.execute(
-                    "SELECT COUNT(DISTINCT performer_id) FROM performer_media"
+                    "SELECT COUNT(DISTINCT performer_id) FROM screenshots WHERE performer_id IS NOT NULL"
                 ).fetchone()[0]
                 sub_row = conn.execute(
                     "SELECT COUNT(*) as cnt, COALESCE(SUM(subscription_price), 0.0) as total_spend "
@@ -2556,7 +2558,7 @@ class Database:
                 "renewing_soon_count": renewing_soon_count,
             }
 
-        return self._cached_snapshot("performer_stats", 15.0, build)
+        return self._cached_snapshot("performer_stats", 60.0, build)
 
     def get_performer_analytics(self) -> dict:
         def build():

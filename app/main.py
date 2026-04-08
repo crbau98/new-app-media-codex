@@ -272,7 +272,7 @@ def _get_app_shell_summary() -> dict:
         "performer_stats": performer_stats,
     }
     _APP_SHELL_SUMMARY_CACHE = payload
-    _APP_SHELL_SUMMARY_CACHE_EXPIRES_AT = now + 30.0
+    _APP_SHELL_SUMMARY_CACHE_EXPIRES_AT = now + 60.0
     return payload
 
 # Mount compiled frontend assets directory

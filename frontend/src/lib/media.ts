@@ -110,6 +110,7 @@ export function getBestAvailablePosterSrc(s: Screenshot): string {
 
 export function useResolvedScreenshotMedia(s: Screenshot) {
   const [, setVersion] = useState(0)
+  const [retryCount, setRetryCount] = useState(0)
   const rawMediaSrc = getScreenshotMediaSrc(s)
   const mediaSrc = getBestAvailableMediaSrc(s)
   const previewSrc = getBestAvailablePreviewSrc(s)
@@ -118,10 +119,31 @@ export function useResolvedScreenshotMedia(s: Screenshot) {
 
   const markPreviewBroken = useCallback(() => {
     const target = previewSrc || displaySrc
-    if (rememberBrokenMediaUrl(target)) {
-      setVersion((version) => version + 1)
+    if (retryCount === 0) {
+      // First error: attempt a cache-busted retry by marking the current URL broken
+      // and incrementing retry counter — the next render will pick the proxy variant
+      setRetryCount(1)
+      if (target && target.startsWith("/api/screenshots/proxy-media?url=") && !target.includes("&bust=")) {
+        // Already a proxy URL — add cache bust param to force fresh fetch
+        const bustedUrl = target + "&bust=1"
+        // Temporarily register the original as broken so the hook returns the busted URL
+        rememberBrokenMediaUrl(target)
+        // Unregister the busted URL so it can be tried
+        brokenMediaUrls.delete(bustedUrl)
+        setVersion((v) => v + 1)
+      } else {
+        // Non-proxy URL: mark broken and let the proxy variant be tried
+        if (rememberBrokenMediaUrl(target)) {
+          setVersion((v) => v + 1)
+        }
+      }
+    } else {
+      // Second error: give up and mark definitively broken
+      if (rememberBrokenMediaUrl(target)) {
+        setVersion((version) => version + 1)
+      }
     }
-  }, [displaySrc, previewSrc])
+  }, [displaySrc, previewSrc, retryCount])
 
   const markMediaBroken = useCallback(() => {
     if (rememberBrokenMediaUrl(rawMediaSrc)) {

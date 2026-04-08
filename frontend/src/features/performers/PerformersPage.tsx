@@ -800,7 +800,7 @@ const PerformerCard = memo(function PerformerCard({
               )}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-text-muted">
-              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5">
+              <span className={(performer.screenshots_count ?? 0) > 0 ? "rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-accent font-medium" : "rounded-full border border-white/10 bg-white/5 px-2 py-0.5"}>
                 {(performer.screenshots_count ?? 0).toLocaleString()} shots
               </span>
               {(performer.media_count ?? 0) > 0 && (
@@ -1824,7 +1824,7 @@ export default function PerformersPage() {
             {statsData && (
               <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
                 <span className="ui-chip"><span className="font-mono text-text-primary">{statsData.total ?? 0}</span> tracked</span>
-                <span className="ui-chip"><span className="font-mono text-text-primary">{statsData.with_media ?? 0}</span> with media</span>
+                <span className="ui-chip"><span className="font-mono text-text-primary">{allPerformers.filter(p => (p.screenshots_count ?? p.media_count ?? 0) > 0).length ?? 0}</span> with media</span>
                 <span className="ui-chip"><span className="font-mono text-text-primary">{watchlistCount}</span> favorites</span>
               </div>
             )}
