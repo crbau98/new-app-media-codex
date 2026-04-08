@@ -156,11 +156,12 @@ const VideoSlide = memo(function VideoSlide({
   const shouldLoadVideo = isActive
   const videoSrc = shouldLoadVideo ? src : undefined
 
-  // Autoplay via IntersectionObserver
+  // Autoplay via IntersectionObserver — re-connect when videoSrc changes so play
+  // fires after the src is actually assigned to the <video> element.
   useEffect(() => {
     const el = slideRef.current
     const v = videoRef.current
-    if (!el || !v) return
+    if (!el || !v || !videoSrc) return
 
     const obs = new IntersectionObserver(
       ([entry]) => {
@@ -174,7 +175,23 @@ const VideoSlide = memo(function VideoSlide({
     )
     obs.observe(el)
     return () => obs.disconnect()
-  }, [])
+  }, [videoSrc])
+
+  // Fallback: play when isActive flips to true and src is already available.
+  // This handles the case where the slide was already intersecting when isActive
+  // was set (IO won't re-fire for an already-visible element).
+  useEffect(() => {
+    if (!isActive || !videoSrc) return
+    const v = videoRef.current
+    if (!v) return
+    const tryPlay = () => { v.play().catch(() => {}) }
+    if (v.readyState >= 3) {
+      tryPlay()
+    } else {
+      v.addEventListener('canplay', tryPlay, { once: true })
+      return () => v.removeEventListener('canplay', tryPlay)
+    }
+  }, [isActive, videoSrc])
 
   // Sync playing state
   useEffect(() => {
@@ -308,10 +325,11 @@ const VideoSlide = memo(function VideoSlide({
           loop
           muted={muted}
           playsInline
-          preload={isActive ? "metadata" : "none"}
+          preload={isActive ? "auto" : "none"}
           className="h-full w-full cursor-pointer object-contain"
           onClick={handleTap}
           onError={markMediaBroken}
+          onCanPlay={(e) => { if (isActive) { (e.target as HTMLVideoElement).play().catch(() => {}) } }}
         />
       ) : previewSrc ? (
         <img

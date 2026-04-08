@@ -1133,6 +1133,7 @@ export function MediaPage() {
   const [recentSearches, setRecentSearches] = useState<string[]>([])
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest")
   const [expandedVideoId, setExpandedVideoId] = useState<number | null>(null)
+  const [expandedVideoShot, setExpandedVideoShot] = useState<Screenshot | null>(null)
   const [lightboxShotId, setLightboxShotId] = useState<number | null>(null)
   const [batchMode, setBatchMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -2178,6 +2179,7 @@ export function MediaPage() {
 
   // ── Lightbox ─────────────────────────────────────────────────────────────
 
+  const lightboxShot = lightboxShotId != null ? (shotById.get(lightboxShotId) ?? null) : null
   const lightboxIdx = lightboxShotId != null ? visibleShots.findIndex((s) => s.id === lightboxShotId) : -1
 
   // ── Tabs config ──────────────────────────────────────────────────────────
@@ -2408,14 +2410,16 @@ export function MediaPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  const expandedShot = expandedVideoId != null ? (shotById.get(expandedVideoId) ?? null) : null
+  const expandedShot = expandedVideoShot ?? (expandedVideoId != null ? (shotById.get(expandedVideoId) ?? null) : null)
   const gridClass = GRID_CLASSES[gridDensity]
 
   function openMedia(shot: Screenshot) {
     setViewHistory((prev) => [shot.id, ...prev.filter((h) => h !== shot.id)].slice(0, 20))
+    // Use isVideoShot (checks source + URL) as primary; fall back to URL-extension check
     const src = getScreenshotMediaSrc(shot)
-    if (isVideo(src)) {
+    if (isVideoShot(shot) || isVideo(src)) {
       void preloadInlineVideoPlayer()
+      setExpandedVideoShot(shot)
       setExpandedVideoId(shot.id)
     } else {
       void preloadMediaLightbox()
@@ -2484,8 +2488,8 @@ export function MediaPage() {
           <Suspense key={`vid-${shot.id}`} fallback={<InlineLoadingFallback className="col-span-full mx-2 my-2" label="Loading video player" />}>
             <InlineVideoPlayer
               shot={expandedShot}
-              onClose={() => setExpandedVideoId(null)}
-              onDelete={() => { deleteMutation.mutate(expandedShot.id); setExpandedVideoId(null) }}
+              onClose={() => { setExpandedVideoId(null); setExpandedVideoShot(null) }}
+              onDelete={() => { deleteMutation.mutate(expandedShot.id); setExpandedVideoId(null); setExpandedVideoShot(null) }}
               favorite={favorites.has(expandedShot.id)}
               onToggleFavorite={() => toggleFavorite(expandedShot.id)}
               onRate={(rating) => rateMutation.mutate({ id: expandedShot.id, rating })}
@@ -3761,13 +3765,13 @@ export function MediaPage() {
       )}
 
       {/* ── Lightbox (images only) ───────────────────────────────────────── */}
-      {lightboxShotId != null && lightboxIdx >= 0 && (
+      {lightboxShotId != null && lightboxShot != null && (
         <Suspense fallback={<InlineLoadingFallback className="mx-4 my-4" label="Loading viewer" />}>
           <ScreenshotLightbox
-            shots={visibleShots}
-            idx={lightboxIdx}
+            shots={lightboxIdx >= 0 ? visibleShots : [lightboxShot]}
+            idx={lightboxIdx >= 0 ? lightboxIdx : 0}
             onClose={() => setLightboxShotId(null)}
-            onNavigate={(i) => setLightboxShotId(visibleShots[i]?.id ?? null)}
+            onNavigate={(i) => { const shots = lightboxIdx >= 0 ? visibleShots : [lightboxShot]; setLightboxShotId(shots[i]?.id ?? null) }}
             favorites={favorites}
             onToggleFavorite={(id) => toggleFavorite(id)}
             onRate={(id, rating) => rateMutation.mutate({ id, rating })}
