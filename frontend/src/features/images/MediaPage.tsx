@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect, memo, lazy, Suspense, useDeferredValue, startTransition } from "react"
+import { createPortal } from "react-dom"
 import { useWindowVirtualizer } from "@tanstack/react-virtual"
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api, type Screenshot, type ScreenshotTerm, type Performer, type Playlist, type MediaStatsPayload, type UserTagCount, type DiscoveredCreator } from "@/lib/api"
@@ -2481,26 +2482,7 @@ export function MediaPage() {
     const items: React.ReactNode[] = []
     for (let i = 0; i < shots.length; i++) {
       const shot = shots[i]
-      // Insert inline video player after the expanded card
       items.push(renderCard(shot, i))
-      if (expandedShot && shot.id === expandedVideoId) {
-        items.push(
-          <Suspense key={`vid-${shot.id}`} fallback={<InlineLoadingFallback className="col-span-full mx-2 my-2" label="Loading video player" />}>
-            <InlineVideoPlayer
-              shot={expandedShot}
-              onClose={() => { setExpandedVideoId(null); setExpandedVideoShot(null) }}
-              onDelete={() => { deleteMutation.mutate(expandedShot.id); setExpandedVideoId(null); setExpandedVideoShot(null) }}
-              favorite={favorites.has(expandedShot.id)}
-              onToggleFavorite={() => toggleFavorite(expandedShot.id)}
-              onRate={(rating) => rateMutation.mutate({ id: expandedShot.id, rating })}
-              onOpenRelated={(rel) => openMedia(rel)}
-              userTags={parseUserTags(expandedShot.user_tags)}
-              onAddTag={(tag) => handleAddTag(expandedShot.id, tag)}
-              onRemoveTag={(tag) => handleRemoveTag(expandedShot.id, tag)}
-            />
-          </Suspense>
-        )
-      }
     }
     return items
   }
@@ -3785,6 +3767,35 @@ export function MediaPage() {
             }}
           />
         </Suspense>
+      )}
+
+      {/* ── Video Player (portal overlay — renders above grid regardless of layout) */}
+      {expandedShot != null && createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-auto"
+          onClick={(e) => { if (e.target === e.currentTarget) { setExpandedVideoId(null); setExpandedVideoShot(null) } }}
+          onKeyDown={(e) => { if (e.key === "Escape") { setExpandedVideoId(null); setExpandedVideoShot(null) } }}
+        >
+          <Suspense fallback={
+            <div className="flex h-64 w-full max-w-3xl items-center justify-center rounded-2xl bg-[#0a0e17]">
+              <InlineLoadingFallback label="Loading video player" />
+            </div>
+          }>
+            <InlineVideoPlayer
+              shot={expandedShot}
+              onClose={() => { setExpandedVideoId(null); setExpandedVideoShot(null) }}
+              onDelete={() => { deleteMutation.mutate(expandedShot.id); setExpandedVideoId(null); setExpandedVideoShot(null) }}
+              favorite={favorites.has(expandedShot.id)}
+              onToggleFavorite={() => toggleFavorite(expandedShot.id)}
+              onRate={(rating) => rateMutation.mutate({ id: expandedShot.id, rating })}
+              onOpenRelated={(rel) => openMedia(rel)}
+              userTags={parseUserTags(expandedShot.user_tags)}
+              onAddTag={(tag) => handleAddTag(expandedShot.id, tag)}
+              onRemoveTag={(tag) => handleRemoveTag(expandedShot.id, tag)}
+            />
+          </Suspense>
+        </div>,
+        document.body
       )}
 
       {/* ── Create Playlist Modal ────────────────────────────────────────── */}

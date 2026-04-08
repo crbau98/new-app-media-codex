@@ -35,6 +35,32 @@ _VIDEO_CONTENT_PREFIXES = ("video/",)
 _REMOTE_MEDIA_PROBE_TTL = 900
 _PROXY_ONLY_HOSTS: tuple[str, ...] = ()
 
+# Sources / netloc suffixes where server-side proxying HURTS rather than helps.
+# Cloudflare on these CDNs blocks datacenter IPs (like Render.com) but happily
+# serves residential browser IPs. Returning the raw CDN URL lets the browser
+# fetch directly, which actually works.
+_NO_PROXY_SOURCES: frozenset[str] = frozenset({"coomer", "kemono", "coomer.st", "kemono.su"})
+_NO_PROXY_NETLOC_SUFFIXES: tuple[str, ...] = (
+    "coomer.st",
+    "coomer.party",
+    "coomer.su",
+    "kemono.su",
+    "kemono.party",
+)
+
+
+def _should_proxy_media(source: str, url: str) -> bool:
+    """Return True only if the URL should be routed through the server proxy."""
+    if source.lower() in _NO_PROXY_SOURCES:
+        return False
+    try:
+        netloc = urlparse(url).netloc.lower()
+        if any(netloc.endswith(s) for s in _NO_PROXY_NETLOC_SUFFIXES):
+            return False
+    except Exception:
+        pass
+    return True
+
 
 def _proxy_cache_get(url: str) -> tuple[str, bytes] | None:
     entry = _proxy_cache.get(url)
@@ -185,12 +211,17 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
 
     if _is_remote_media_url(source_url):
         raw_local = existing_local if _is_remote_media_url(existing_local) else source_url
-        shot["local_url"] = proxy_media_url(raw_local)
+        source_field = str(shot.get("source") or "").lower()
+        use_proxy = _should_proxy_media(source_field, raw_local)
+        shot["local_url"] = proxy_media_url(raw_local) if use_proxy else raw_local
         shot["source_url"] = source_url
         if existing_preview:
-            shot["preview_url"] = proxy_media_url(existing_preview) if _is_remote_media_url(existing_preview) else existing_preview
+            if _is_remote_media_url(existing_preview):
+                shot["preview_url"] = proxy_media_url(existing_preview) if _should_proxy_media(source_field, existing_preview) else existing_preview
+            else:
+                shot["preview_url"] = existing_preview
         elif _is_remote_media_url(thumbnail_url):
-            shot["preview_url"] = proxy_media_url(thumbnail_url)
+            shot["preview_url"] = proxy_media_url(thumbnail_url) if _should_proxy_media(source_field, thumbnail_url) else thumbnail_url
         else:
             shot["preview_url"] = None if _screenshot_is_video(shot) else shot["local_url"]
         return shot

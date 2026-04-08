@@ -91,21 +91,44 @@ export function getScreenshotPosterSrc(s: Screenshot): string {
 
 export function getBestAvailableMediaSrc(s: Screenshot): string {
   const mediaSrc = getScreenshotMediaSrc(s)
-  return pickUsableMediaUrl([mediaSrc, buildProxyMediaUrl(mediaSrc)])
+  // When the proxy URL fails, fall back to the raw source_url so the browser
+  // can attempt a direct CDN request (works for coomer.st etc. from real IPs).
+  const rawSource = normalizeMediaUrl(s.source_url)
+  const directFallback = rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) ? rawSource : ""
+  return pickUsableMediaUrl([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)])
 }
 
 export function getBestAvailablePreviewSrc(s: Screenshot): string {
   const previewSrc = getScreenshotPreviewSrc(s)
-  if (previewSrc) return pickUsableMediaUrl([previewSrc, buildProxyMediaUrl(previewSrc)])
+  const rawThumb = normalizeMediaUrl(s.thumbnail_url)
+  const rawSource = normalizeMediaUrl(s.source_url)
+  if (previewSrc) {
+    // Thumbnail direct → proxy of preview as fallbacks
+    const directFallback =
+      (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb)) ? rawThumb :
+      (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? rawSource : ""
+    return pickUsableMediaUrl([previewSrc, directFallback, buildProxyMediaUrl(previewSrc)])
+  }
   const mediaSrc = getScreenshotMediaSrc(s)
-  return isVideoUrl(mediaSrc) ? "" : pickUsableMediaUrl([mediaSrc, buildProxyMediaUrl(mediaSrc)])
+  if (isVideoUrl(mediaSrc)) return ""
+  const directFallback = rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource) ? rawSource : ""
+  return pickUsableMediaUrl([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)])
 }
 
 export function getBestAvailablePosterSrc(s: Screenshot): string {
   const previewSrc = getScreenshotPreviewSrc(s)
-  if (previewSrc) return pickUsableMediaUrl([previewSrc, buildProxyMediaUrl(previewSrc)])
+  const rawThumb = normalizeMediaUrl(s.thumbnail_url)
+  const rawSource = normalizeMediaUrl(s.source_url)
+  if (previewSrc) {
+    const directFallback =
+      (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb)) ? rawThumb :
+      (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? rawSource : ""
+    return pickUsableMediaUrl([previewSrc, directFallback, buildProxyMediaUrl(previewSrc)])
+  }
   const mediaSrc = getScreenshotMediaSrc(s)
-  return isVideoUrl(mediaSrc) ? "" : pickUsableMediaUrl([mediaSrc, buildProxyMediaUrl(mediaSrc)])
+  if (isVideoUrl(mediaSrc)) return ""
+  const directFallback = rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource) ? rawSource : ""
+  return pickUsableMediaUrl([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)])
 }
 
 export function useResolvedScreenshotMedia(s: Screenshot) {
