@@ -466,9 +466,9 @@ const VideoSlide = memo(function VideoSlide({
         )}
 
         {/* Performer name */}
-        {shot.performer_id && (
-          <p className="mt-1.5 text-xs text-purple-300/80">
-            Linked performer #{shot.performer_id}
+        {shot.performer_username && (
+          <p className="mt-1.5 text-xs text-purple-300/80 font-medium">
+            @{shot.performer_username}
           </p>
         )}
       </div>

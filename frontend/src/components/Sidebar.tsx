@@ -415,9 +415,9 @@ export function Sidebar() {
           <div className={cn("panel-surface rounded-[24px] p-4", collapsed ? "items-center" : "")}>
             <div className={cn("flex items-start gap-3", collapsed ? "justify-center" : "justify-between")}>
               <div className={cn("min-w-0", collapsed && "hidden")}>
-                <p className="eyebrow mb-2">Streaming Workspace</p>
-                <h1 className="hero-title hero-gradient text-xl leading-none">Creator Library</h1>
-                <p className="mt-2 text-sm text-text-secondary">
+                <p className="eyebrow mb-2 truncate">Streaming Workspace</p>
+                <h1 className="hero-title hero-gradient text-xl leading-none truncate">Creator Library</h1>
+                <p className="mt-2 text-sm text-text-secondary line-clamp-3">
                   Stream across the web, keep creator matches trustworthy, and move between library and roster without friction.
                 </p>
               </div>

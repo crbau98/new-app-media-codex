@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _purge_directory_contents(_previews_dir)
     app.state.http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(connect=10, read=120, write=10, pool=10),
-        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
         follow_redirects=True,
         cookies=httpx.Cookies(),  # Persist cookies across requests (DDoS-Guard)
     )
@@ -134,7 +134,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
-app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=4)
 
 
 @app.exception_handler(sqlite3.OperationalError)
@@ -254,11 +254,22 @@ def _get_app_shell_summary() -> dict:
         return _APP_SHELL_SUMMARY_CACHE
 
     stats = db.get_stats()
+    # Pre-warm media-stats and performer-stats so the frontend never shows stale "0" counts
+    try:
+        media_stats = db.get_screenshot_media_stats()
+    except Exception:
+        media_stats = None
+    try:
+        performer_stats = db.get_performer_stats()
+    except Exception:
+        performer_stats = None
     payload = {
         "app_name": settings.app_name,
         "last_run": db.get_last_run(),
         "stats": {"totals": stats.get("totals", {})},
         "is_running": service.lock.locked(),
+        "media_stats": media_stats,
+        "performer_stats": performer_stats,
     }
     _APP_SHELL_SUMMARY_CACHE = payload
     _APP_SHELL_SUMMARY_CACHE_EXPIRES_AT = now + 30.0
@@ -283,7 +294,16 @@ def index(request: Request) -> HTMLResponse:
         try:
             running = getattr(request.app.state, "screenshot_running", False)
             progress = getattr(request.app.state, "screenshot_progress", None)
-            initial_data = json.dumps({"status": {"running": running, **(progress or {})}}, separators=(",", ":"))
+            # Use pre-warmed summary so stats are available on first paint
+            summary = _get_app_shell_summary()
+            initial_data = json.dumps(
+                {
+                    "status": {"running": running, **(progress or {})},
+                    "media_stats": summary.get("media_stats"),
+                    "performer_stats": summary.get("performer_stats"),
+                },
+                separators=(",", ":"),
+            )
             inject_script = f"<script>window.__INITIAL_DATA__={initial_data}</script>"
             dist_index_html = dist_index_html.replace("</head>", inject_script + "</head>")
         except Exception:

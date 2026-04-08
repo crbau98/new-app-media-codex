@@ -391,6 +391,7 @@ class Database:
                 conn.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
                 conn.execute("PRAGMA journal_mode = WAL")  # WAL enables concurrent reads + writes
                 conn.execute("PRAGMA cache_size = -65536")  # 64 MB page cache
+                conn.execute("PRAGMA synchronous = NORMAL")  # Safe with WAL, faster commits
                 conn.execute("SELECT 1")  # verify connection actually works
                 break
             except sqlite3.OperationalError:
@@ -754,6 +755,7 @@ class Database:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_status_created ON performers(status, created_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_favorite_created ON performers(is_favorite, created_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_username ON performers(username)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_source_url ON screenshots(source_url)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_display_name ON performers(display_name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_images_source_created ON images(source_type, created_at DESC)")
         conn.execute("PRAGMA optimize")

@@ -282,9 +282,12 @@ async def proxy_media(url: str = Query(...), request: Request = None):
                 headers={"Cache-Control": "public, max-age=86400"},
             )
 
+    # Use larger chunks for video to reduce syscall overhead
+    _chunk_size = 131072 if content_type.startswith("video/") else 65536
+
     async def stream_and_close():
         try:
-            async for chunk in resp.aiter_bytes(chunk_size=65536):
+            async for chunk in resp.aiter_bytes(chunk_size=_chunk_size):
                 if request is not None and await request.is_disconnected():
                     break
                 yield chunk
@@ -315,17 +318,17 @@ async def proxy_media(url: str = Query(...), request: Request = None):
 
 
 _FEMALE_METADATA_KEYWORDS = {
-    "female", "woman", "women", "girl", "girls", "lesbian", "straight",
+    "woman", "women", "girl", "girls", "lesbian",
     "pussy", "vagina", "wife", "girlfriend", "bikini", "boobs", "breasts",
-    "milf", "couple", "babes", "brunette", "blonde",
+    "milf", "babes",
 }
 _VIDEO_EXTS = {".mp4", ".webm", ".mov", ".avi", ".mkv"}
-_PREVIEW_MAX_SIZE = (256, 256)
-_PREVIEW_JPEG_QUALITY = 54
+_PREVIEW_MAX_SIZE = (512, 512)
+_PREVIEW_JPEG_QUALITY = 72
 _SYNC_PREVIEW_WARM_LIMIT_FIRST_PAGE = 0
 _SYNC_PREVIEW_WARM_LIMIT_OTHER_PAGES = 0
 _PREVIEW_WORKER_COUNT = 3
-_FIRST_PAGE_LIMIT_CAP = 18
+_FIRST_PAGE_LIMIT_CAP = 48
 _MAX_BROWSE_SCAN_ROWS = 96
 
 
@@ -433,7 +436,7 @@ def _write_image_preview(source_path: Path, dest_path: Path) -> bool:
             if img.mode != "RGB":
                 img = img.convert("RGB")
             img.thumbnail(_PREVIEW_MAX_SIZE, Image.Resampling.BILINEAR)
-            img.save(dest_path, format="JPEG", quality=_PREVIEW_JPEG_QUALITY, optimize=False, progressive=False)
+            img.save(dest_path, format="JPEG", quality=_PREVIEW_JPEG_QUALITY, optimize=False, progressive=True)
         return dest_path.exists() and dest_path.stat().st_size > 0
     except Exception:
         dest_path.unlink(missing_ok=True)
@@ -713,12 +716,13 @@ def browse_screenshots(
                             break
                         continue
                     is_vid = media_kind == "video"
+                    # Use stored thumbnail_url first; fall back to Redgifs poster pattern
                     thumb = str(s.get("thumbnail_url") or "").strip()
                     if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
                         thumb = media_url.replace(".mp4", "-poster.jpg")
-                    s["local_url"] = proxy_media_url(media_url) if _should_proxy_remote_media(media_url) else media_url
+                    s["local_url"] = proxy_media_url(media_url)
                     if _is_remote_media_url(thumb):
-                        s["preview_url"] = proxy_media_url(thumb) if _should_proxy_remote_media(thumb) else thumb
+                        s["preview_url"] = proxy_media_url(thumb)
                     else:
                         s["preview_url"] = None if is_vid else s["local_url"]
                     s["source_url"] = media_url
@@ -733,7 +737,7 @@ def browse_screenshots(
                 break
         compatible_offset = max(offset, raw_cursor - len(valid))
         # Strip heavy fields not needed for grid view (loaded on-demand in detail)
-        _BROWSE_STRIP_KEYS = ("ai_summary", "ai_tags", "user_tags")
+        _BROWSE_STRIP_KEYS = ("ai_summary", "user_tags")
         for s in valid:
             for k in _BROWSE_STRIP_KEYS:
                 s.pop(k, None)
@@ -746,7 +750,7 @@ def browse_screenshots(
             "next_offset": raw_cursor,
         }
 
-    return _get_cached_screenshots_payload(request.app.state, cache_key, 10.0, build, copy_payload=False)
+    return _get_cached_screenshots_payload(request.app.state, cache_key, 300.0, build, copy_payload=False)
 
 
 def _run_capture(app_state):

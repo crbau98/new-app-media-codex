@@ -113,6 +113,11 @@ const queryClient = new QueryClient({
   },
 })
 
+
+// Seed TanStack Query cache from server-injected __INITIAL_DATA__ to avoid first-paint flicker
+const _idata = typeof window !== "undefined" && (window as any).__INITIAL_DATA__
+if (_idata?.media_stats) queryClient.setQueryData(["media-stats"], _idata.media_stats)
+if (_idata?.performer_stats) queryClient.setQueryData(["performer-stats"], _idata.performer_stats)
 // ââ Render ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('Root element #root not found')
