@@ -464,7 +464,7 @@ const MediaCard = memo(function MediaCard({
   const mediaLabel = getMediaDebugLabel(shot)
   const [imgLoaded, setImgLoaded] = useState(false)
   const [videoPoster, setVideoPoster] = useState<string>("")
-  const isAboveFold = index <= 8
+  const isAboveFold = index <= 3  // only 4 eager loads; rest are lazy to avoid poster-endpoint flood
 
   // Reset canvas poster when the video src changes (prevent stale poster from previous card)
   const prevSrcRef = useRef<string>("")
@@ -516,8 +516,21 @@ const MediaCard = memo(function MediaCard({
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
     >
       <div style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
+        {/* Shimmer while image loads */}
         {!imgLoaded && previewSrc && (
           <div className="absolute inset-0 shimmer z-[1]" aria-hidden="true" />
+        )}
+        {/* Dark gradient placeholder for video cards with no poster yet */}
+        {!previewSrc && vid && !videoPoster && (
+          <div
+            className="absolute inset-0 z-[1] flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)" }}
+            aria-hidden="true"
+          >
+            <div className="rounded-full bg-white/10 p-3">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="white" opacity="0.5"><polygon points="5,3 19,12 5,21" /></svg>
+            </div>
+          </div>
         )}
         {!previewSrc ? (
           vid && src ? (
@@ -563,10 +576,17 @@ const MediaCard = memo(function MediaCard({
             fetchPriority={isAboveFold ? "high" : "low"}
             onError={(e) => {
               const img = e.currentTarget
+              const isSrc = img.src || ''
+              // Video-poster endpoint returns 503 when busy — skip retry, fall
+              // through to canvas extraction immediately for snappy UX.
+              if (isSrc.includes('/video-poster/')) {
+                markPreviewBroken()
+                return
+              }
               const retries = parseInt(img.dataset.retries || '0')
               if (retries < 1) {
                 img.dataset.retries = '1'
-                img.src = img.src + (img.src.includes('?') ? '&_r=1' : '?_r=1')
+                img.src = isSrc + (isSrc.includes('?') ? '&_r=1' : '?_r=1')
               } else {
                 markPreviewBroken()
               }
@@ -1485,7 +1505,7 @@ export function MediaPage() {
         ...(mediaCreatorId != null ? { performer_id: mediaCreatorId } : {}),
         ...(tab === "videos" ? { media_type: "video" } : {}),
         ...(tab === "images" ? { media_type: "image" } : {}),
-        limit: 40,
+        limit: 24,  // first page limited to 24; server further caps to _FIRST_PAGE_LIMIT_CAP=24
         offset: pageParam as number,
       }, { signal }),
     getNextPageParam: (last) => (last.has_more ? (last.next_offset ?? (last.offset + last.screenshots.length)) : undefined),
@@ -1496,7 +1516,7 @@ export function MediaPage() {
     enabled: tab !== "creators",
     staleTime: 60_000,
     gcTime: 10 * 60_000,
-    maxPages: 8,
+    maxPages: 5,  // keep ≤5 pages in memory; beyond this users rarely scroll anyway
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
