@@ -36,17 +36,12 @@ _REMOTE_MEDIA_PROBE_TTL = 900
 _PROXY_ONLY_HOSTS: tuple[str, ...] = ()
 
 # Sources / netloc suffixes where server-side proxying HURTS rather than helps.
-# Cloudflare on these CDNs blocks datacenter IPs (like Render.com) but happily
-# serves residential browser IPs. Returning the raw CDN URL lets the browser
-# fetch directly, which actually works.
-_NO_PROXY_SOURCES: frozenset[str] = frozenset({"coomer", "kemono", "coomer.st", "kemono.su"})
-_NO_PROXY_NETLOC_SUFFIXES: tuple[str, ...] = (
-    "coomer.st",
-    "coomer.party",
-    "coomer.su",
-    "kemono.su",
-    "kemono.party",
-)
+# NOTE: coomer.st and kemono.su were previously excluded because we suspected
+# datacenter IPs were blocked. Tests confirm the Render IP CAN reach both hosts.
+# More importantly, n1.coomer.st returns CORS:"https://coomer.st" only — the
+# browser is always blocked. We MUST proxy these URLs through the backend.
+_NO_PROXY_SOURCES: frozenset[str] = frozenset()  # all sources are proxied
+_NO_PROXY_NETLOC_SUFFIXES: tuple[str, ...] = ()  # all hosts are proxied
 
 
 def _should_proxy_media(source: str, url: str) -> bool:
@@ -215,6 +210,15 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
         use_proxy = _should_proxy_media(source_field, raw_local)
         shot["local_url"] = proxy_media_url(raw_local) if use_proxy else raw_local
         shot["source_url"] = source_url
+        # Derive coomer.st thumbnail URL if thumbnail_url is absent:
+        # video:  https://coomer.st/data/<h1>/<h2>/<hash>.mp4
+        # thumb:  https://coomer.st/thumbnail/data/<h1>/<h2>/<hash>.jpg
+        if not thumbnail_url and source_field in ("coomer", "coomer.st") and _screenshot_is_video(shot):
+            _m_src = raw_local
+            if "/data/" in _m_src and _m_src.lower().endswith((".mp4", ".webm", ".mov")):
+                _thumb_raw = re.sub(r"/data/", "/thumbnail/data/", _m_src, count=1)
+                _thumb_raw = re.sub(r"\.[a-z0-9]+$", ".jpg", _thumb_raw, flags=re.IGNORECASE)
+                thumbnail_url = _thumb_raw
         if existing_preview:
             if _is_remote_media_url(existing_preview):
                 shot["preview_url"] = proxy_media_url(existing_preview) if _should_proxy_media(source_field, existing_preview) else existing_preview
@@ -295,6 +299,18 @@ async def proxy_media(url: str = Query(...), request: Request = None):
         raise HTTPException(status_code, detail)
     content_type = resp.headers.get("content-type", "application/octet-stream")
     is_image = content_type.startswith(_IMAGE_CONTENT_PREFIXES)
+    # Reject DDoS-Guard / Cloudflare HTML challenge pages masquerading as media.
+    # If upstream returns HTML for a URL that should be an image or video, bail.
+    if content_type.startswith("text/html"):
+        _url_lower = url.lower().split("?")[0]
+        _is_media_url = any(_url_lower.endswith(ext) for ext in (".mp4", ".webm", ".mov", ".avi", ".mkv", ".jpg", ".jpeg", ".png", ".gif", ".webp"))
+        if _is_media_url:
+            await resp.aclose()
+            raise HTTPException(503, "Upstream returned HTML challenge instead of media")
+        # For non-media URLs, also reject HTML unless caller explicitly wants it
+        await resp.aclose()
+        raise HTTPException(502, "Upstream returned HTML; expected media")
+    is_video = content_type.startswith(_VIDEO_CONTENT_PREFIXES)
 
     # For small images without Range header, read fully and cache
     content_length_str = resp.headers.get("content-length")
@@ -314,7 +330,7 @@ async def proxy_media(url: str = Query(...), request: Request = None):
             )
 
     # Use larger chunks for video to reduce syscall overhead
-    _chunk_size = 131072 if content_type.startswith("video/") else 65536
+    _chunk_size = 131072 if is_video else 65536
 
     async def stream_and_close():
         try:
@@ -361,7 +377,7 @@ _SYNC_PREVIEW_WARM_LIMIT_FIRST_PAGE = 0
 _SYNC_PREVIEW_WARM_LIMIT_OTHER_PAGES = 0
 _PREVIEW_WORKER_COUNT = 3
 _FIRST_PAGE_LIMIT_CAP = 48
-_MAX_BROWSE_SCAN_ROWS = 200
+_MAX_BROWSE_SCAN_ROWS = 800  # scan more rows to surface more valid items per page
 
 
 def _screenshots_cache_bucket(app_state):
@@ -730,8 +746,14 @@ def browse_screenshots(
                 else:
                     # Remote-only entry — must have a direct media URL (not a webpage)
                     media_url = s.get("source_url") or ""
+                    # Fall back to local_url if it looks like a remote media URL
+                    # (some scrapers store the CDN URL in local_url, not source_url)
                     if not media_url or not media_url.startswith(("http://", "https://")):
-                        # No source_url — skip (page_url is a webpage, not loadable media)
+                        raw_local = s.get("local_url") or s.get("local_path") or ""
+                        if raw_local and raw_local.startswith(("http://", "https://")):
+                            media_url = raw_local
+                    if not media_url or not media_url.startswith(("http://", "https://")):
+                        # No usable URL found — skip
                         if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
                             break
                         continue

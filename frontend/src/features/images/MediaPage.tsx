@@ -463,7 +463,35 @@ const MediaCard = memo(function MediaCard({
   const { mediaSrc: src, previewSrc, isVideo: vid, isGif: gif, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const mediaLabel = getMediaDebugLabel(shot)
   const [imgLoaded, setImgLoaded] = useState(false)
+  const [videoPoster, setVideoPoster] = useState<string>("")
   const isAboveFold = index <= 8
+
+  // Capture first frame of video as a poster thumbnail once metadata loads
+  const handleVideoMeta = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    if (videoPoster) return
+    const video = e.currentTarget
+    video.currentTime = 0.001  // seek to near-first frame
+  }
+  const handleVideoSeeked = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    if (videoPoster) return
+    const video = e.currentTarget
+    if (!video.videoWidth || !video.videoHeight) return
+    try {
+      const canvas = document.createElement("canvas")
+      const maxDim = 320
+      const ratio = video.videoWidth / video.videoHeight
+      canvas.width = ratio >= 1 ? maxDim : Math.round(maxDim * ratio)
+      canvas.height = ratio >= 1 ? Math.round(maxDim / ratio) : maxDim
+      const ctx = canvas.getContext("2d")
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.65)
+        if (dataUrl && dataUrl !== "data:,") setVideoPoster(dataUrl)
+      }
+    } catch {
+      // canvas tainted or other error — ignore
+    }
+  }
 
   return (
     <article
@@ -487,14 +515,25 @@ const MediaCard = memo(function MediaCard({
         {!previewSrc ? (
           vid && src ? (
             <>
+              {/* Hidden video to extract first frame as poster — shown via videoPoster */}
               <video
                 src={src}
                 muted
                 playsInline
                 preload="metadata"
                 onError={markMediaBroken}
-                className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
+                onLoadedMetadata={handleVideoMeta}
+                onSeeked={handleVideoSeeked}
+                className={videoPoster ? "hidden" : "h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"}
               />
+              {videoPoster && (
+                <img
+                  src={videoPoster}
+                  alt={`Video: ${shot.term}`}
+                  className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
+                  aria-hidden="true"
+                />
+              )}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="rounded-full bg-black/50 p-3 backdrop-blur-sm">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
@@ -1439,7 +1478,7 @@ export function MediaPage() {
         ...(mediaCreatorId != null ? { performer_id: mediaCreatorId } : {}),
         ...(tab === "videos" ? { media_type: "video" } : {}),
         ...(tab === "images" ? { media_type: "image" } : {}),
-        limit: 18,
+        limit: 40,
         offset: pageParam as number,
       }, { signal }),
     getNextPageParam: (last) => (last.has_more ? (last.next_offset ?? (last.offset + last.screenshots.length)) : undefined),
@@ -1450,7 +1489,7 @@ export function MediaPage() {
     enabled: tab !== "creators",
     staleTime: 60_000,
     gcTime: 10 * 60_000,
-    maxPages: 6,
+    maxPages: 8,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
