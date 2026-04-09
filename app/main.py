@@ -101,12 +101,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _warmup_targets = ["https://coomer.st/", "https://kemono.su/"]
         for _url in _warmup_targets:
             try:
-                _r = await app.state.http_client.get(
-                    _url,
+                async with app.state.http_client.stream(
+                    "GET", _url,
                     headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
                     timeout=8.0,
-                )
-                _r.aclose()
+                ):
+                    pass  # just need cookies — don't read body
             except Exception:
                 pass
 
