@@ -13,6 +13,7 @@ function isRenderableRemoteUrl(url: string): boolean {
     url.startsWith("http://") ||
     url.startsWith("https://") ||
     url.startsWith("/api/screenshots/proxy-media?url=") ||
+    url.startsWith("/api/screenshots/video-poster/") ||
     url.startsWith("/cached-")
   )
 }
@@ -35,12 +36,33 @@ function uniqueMediaCandidates(candidates: Array<string | null | undefined>): st
   return urls
 }
 
-function isVideoUrl(url: string): boolean {
-  return /\.(mp4|webm|mov|avi|mkv)$/i.test(url)
+export function isVideoUrl(url: string): boolean {
+  return /\.(mp4|webm|mov|avi|mkv)($|\?)/i.test(url)
 }
 
 function isGifUrl(url: string): boolean {
-  return /\.gif$/i.test(url)
+  return /\.gif($|\?)/i.test(url)
+}
+
+/**
+ * Returns true if the URL is a video URL or a proxy URL wrapping a video URL.
+ * Used to prevent video files from being rendered as <img> preview thumbnails.
+ */
+function isVideoProxyUrl(url: string): boolean {
+  if (!url) return false
+  // Direct video URL
+  if (isVideoUrl(url)) return true
+  // Proxy URL wrapping a video
+  const PROXY_PREFIX = "/api/screenshots/proxy-media?url="
+  if (url.startsWith(PROXY_PREFIX)) {
+    try {
+      const inner = decodeURIComponent(url.slice(PROXY_PREFIX.length).split("&")[0])
+      if (isVideoUrl(inner)) return true
+    } catch {
+      // ignore decode errors
+    }
+  }
+  return false
 }
 
 function pickUsableMediaUrl(candidates: Array<string | null | undefined>): string {
@@ -77,14 +99,32 @@ export function getScreenshotMediaSrc(s: Screenshot): string {
   return ""
 }
 
+/**
+ * Returns a preview image src for the screenshot card.
+ * IMPORTANT: Must NEVER return a video URL — that would cause <img> to break.
+ * Video-poster endpoint URLs (/api/screenshots/video-poster/N) are images and are allowed.
+ */
 export function getScreenshotPreviewSrc(s: Screenshot): string {
-  if (s.preview_url) return s.preview_url
+  const preview = normalizeMediaUrl(s.preview_url)
+  // Only use preview_url if it's a renderable URL that isn't a raw video or a proxy
+  // wrapping a video (e.g. preview_url accidentally set to the .mp4 source URL).
+  if (preview && isRenderableRemoteUrl(preview) && !isVideoProxyUrl(preview)) {
+    return preview
+  }
+  // For non-video items, fall back to the media src
   const mediaSrc = getScreenshotMediaSrc(s)
   return isVideoShot(s) ? "" : mediaSrc
 }
 
+/**
+ * Returns a poster image src to show before a video starts playing.
+ * Same rules as preview src — never return a raw video URL.
+ */
 export function getScreenshotPosterSrc(s: Screenshot): string {
-  if (s.preview_url) return s.preview_url
+  const preview = normalizeMediaUrl(s.preview_url)
+  if (preview && isRenderableRemoteUrl(preview) && !isVideoProxyUrl(preview)) {
+    return preview
+  }
   const mediaSrc = getScreenshotMediaSrc(s)
   return isVideoShot(s) ? "" : mediaSrc
 }
@@ -92,7 +132,7 @@ export function getScreenshotPosterSrc(s: Screenshot): string {
 export function getBestAvailableMediaSrc(s: Screenshot): string {
   const mediaSrc = getScreenshotMediaSrc(s)
   // When the proxy URL fails, fall back to the raw source_url so the browser
-  // can attempt a direct CDN request (works for coomer.st etc. from real IPs).
+  // can attempt a direct CDN request (works for some hosts from real IPs).
   const rawSource = normalizeMediaUrl(s.source_url)
   const directFallback = rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) ? rawSource : ""
   return pickUsableMediaUrl([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)])
@@ -105,7 +145,7 @@ export function getBestAvailablePreviewSrc(s: Screenshot): string {
   if (previewSrc) {
     // Thumbnail direct → proxy of preview as fallbacks
     const directFallback =
-      (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb)) ? rawThumb :
+      (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? rawThumb :
       (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? rawSource : ""
     return pickUsableMediaUrl([previewSrc, directFallback, buildProxyMediaUrl(previewSrc)])
   }
@@ -116,12 +156,12 @@ export function getBestAvailablePreviewSrc(s: Screenshot): string {
 }
 
 export function getBestAvailablePosterSrc(s: Screenshot): string {
-  const previewSrc = getScreenshotPreviewSrc(s)
+  const previewSrc = getScreenshotPosterSrc(s)
   const rawThumb = normalizeMediaUrl(s.thumbnail_url)
   const rawSource = normalizeMediaUrl(s.source_url)
   if (previewSrc) {
     const directFallback =
-      (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb)) ? rawThumb :
+      (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? rawThumb :
       (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? rawSource : ""
     return pickUsableMediaUrl([previewSrc, directFallback, buildProxyMediaUrl(previewSrc)])
   }

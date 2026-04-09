@@ -95,6 +95,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         cookies=httpx.Cookies(),  # Persist cookies across requests (DDoS-Guard)
     )
 
+    # Warm up DDoS-Guard cookies for proxied sources so the first real media request
+    # already has valid session cookies (avoids initial 403/redirect loop).
+    async def _warmup_cookies():
+        _warmup_targets = ["https://coomer.st/", "https://kemono.su/"]
+        for _url in _warmup_targets:
+            try:
+                _r = await app.state.http_client.get(
+                    _url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                    timeout=8.0,
+                )
+                _r.aclose()
+            except Exception:
+                pass
+
+    asyncio.create_task(_warmup_cookies())
+
     service_start_task = asyncio.create_task(asyncio.to_thread(service.start))
     telegram_start_task: asyncio.Task[None] | None = None
     app.state.telegram_client = None
@@ -224,11 +241,11 @@ def _get_frontend_index_html() -> str | None:
             "",
             html,
         )
-        # Preconnect hints for external CDNs to reduce media load latency
+        # Preconnect hints for CDNs that the browser accesses directly.
+        # NOTE: coomer.st is intentionally excluded — all coomer media is routed
+        # through the server-side proxy, so the browser never connects directly.
         _preconnect_hints = (
-            '<link rel="preconnect" href="https://coomer.st" crossorigin>\n'
-            '    <link rel="dns-prefetch" href="https://coomer.st">\n'
-            '    <link rel="preconnect" href="https://thumbs44.redgifs.com" crossorigin>\n'
+            '<link rel="preconnect" href="https://thumbs44.redgifs.com" crossorigin>\n'
             '    <link rel="dns-prefetch" href="https://thumbs44.redgifs.com">\n'
             "    "
         )

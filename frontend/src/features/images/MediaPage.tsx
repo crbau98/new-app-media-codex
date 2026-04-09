@@ -466,6 +466,13 @@ const MediaCard = memo(function MediaCard({
   const [videoPoster, setVideoPoster] = useState<string>("")
   const isAboveFold = index <= 8
 
+  // Reset canvas poster when the video src changes (prevent stale poster from previous card)
+  const prevSrcRef = useRef<string>("")
+  if (src && src !== prevSrcRef.current) {
+    prevSrcRef.current = src
+    if (videoPoster) setVideoPoster("")
+  }
+
   // Capture first frame of video as a poster thumbnail once metadata loads
   const handleVideoMeta = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     if (videoPoster) return
@@ -535,8 +542,8 @@ const MediaCard = memo(function MediaCard({
                 />
               )}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="rounded-full bg-black/50 p-3 backdrop-blur-sm">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
+                <div className="rounded-full bg-black/60 p-3 backdrop-blur-sm shadow-lg transition-transform duration-200 group-hover:scale-110 group-hover:bg-white/20">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
                 </div>
               </div>
             </>
@@ -2163,6 +2170,10 @@ export function MediaPage() {
       if (e.key === "t" && !e.metaKey && !e.ctrlKey && !e.altKey) handleViewModeChange("timeline")
       if (e.key === "v" && !e.metaKey && !e.ctrlKey && !e.altKey) handleViewModeChange("feed")
       if (e.key === "o" && !e.metaKey && !e.ctrlKey && !e.altKey) handleViewModeChange("mosaic")
+      // Filter shortcuts: 1=All, 2=Videos, 3=Images
+      if (e.key === "1" && !e.metaKey && !e.ctrlKey && !e.altKey) setTab("all")
+      if (e.key === "2" && !e.metaKey && !e.ctrlKey && !e.altKey) setTab("videos")
+      if (e.key === "3" && !e.metaKey && !e.ctrlKey && !e.altKey) setTab("images")
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)

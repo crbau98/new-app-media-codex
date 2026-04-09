@@ -108,6 +108,7 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
   /* playback state */
   const [playing, setPlaying] = useState(false)
   const [hasStarted, setHasStarted] = useState(false)
+  const [buffering, setBuffering] = useState(true)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [buffered, setBuffered] = useState(0)
@@ -518,11 +519,21 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
               muted={muted}
               onWheel={handleWheel}
               onError={markMediaBroken}
+              onWaiting={() => setBuffering(true)}
+              onCanPlay={() => setBuffering(false)}
+              onPlaying={() => setBuffering(false)}
               className="mx-auto max-h-[70vh] w-full cursor-pointer object-contain"
             />
 
+            {/* Buffering spinner */}
+            {buffering && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+                <div className="h-10 w-10 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+              </div>
+            )}
+
             {/* Big play button when not started */}
-            {!hasStarted && !playing && <BigPlayButton onClick={togglePlay} />}
+            {!hasStarted && !playing && !buffering && <BigPlayButton onClick={togglePlay} />}
 
             {/* Click area for play/pause & double-tap seek */}
             {hasStarted && (

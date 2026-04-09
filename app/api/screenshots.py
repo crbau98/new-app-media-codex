@@ -186,6 +186,32 @@ def _screenshot_is_video(record: dict) -> bool:
     return ext in _VIDEO_EXTS or source in {"redgifs", "ytdlp"}
 
 
+def _is_video_url_str(url: str) -> bool:
+    """Return True if *url* points directly to a video file."""
+    return Path(url.split("?")[0]).suffix.lower() in _VIDEO_EXTS
+
+
+def _is_video_proxy_url(url: str) -> bool:
+    """Return True if *url* is a proxy URL wrapping a video resource.
+
+    Catches cases where preview_url was accidentally set to source_url (video)
+    and then proxied, which would cause the frontend to render <img src=...mp4>.
+    """
+    if not url:
+        return False
+    if _is_video_url_str(url):
+        return True
+    PROXY_PREFIX = "/api/screenshots/proxy-media?url="
+    if url.startswith(PROXY_PREFIX):
+        try:
+            from urllib.parse import unquote
+            inner = unquote(url[len(PROXY_PREFIX):].split("&")[0])
+            return _is_video_url_str(inner)
+        except Exception:
+            pass
+    return False
+
+
 def _decorate_screenshot_media(app_state, record: dict) -> dict:
     """Attach stream-first media URLs to a screenshot record."""
     shot = dict(record)
@@ -193,8 +219,14 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
     local_path = Path(shot.get("local_path", "") or "")
     source_url = str(shot.get("source_url") or "")
     thumbnail_url = str(shot.get("thumbnail_url") or "")
-    existing_preview = str(shot.get("preview_url") or "")
     existing_local = str(shot.get("local_url") or "")
+
+    # Guard: never treat a video URL as the preview image source.  DB columns can
+    # store source_url in preview_url; browse-loop mutations also leave proxy video
+    # URLs in preview_url across cache cycles.  Strip them here so downstream code
+    # never accidentally proxies a .mp4 as a thumbnail image.
+    _raw_preview = str(shot.get("preview_url") or "")
+    existing_preview = "" if _is_video_proxy_url(_raw_preview) else _raw_preview
 
     if not stream_only and local_path.name and _cached_local_media_exists(app_state, local_path):
         shot["local_url"] = f"/cached-screenshots/{local_path.name}"
@@ -210,15 +242,14 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
         use_proxy = _should_proxy_media(source_field, raw_local)
         shot["local_url"] = proxy_media_url(raw_local) if use_proxy else raw_local
         shot["source_url"] = source_url
-        # Derive coomer.st thumbnail URL if thumbnail_url is absent:
-        # video:  https://coomer.st/data/<h1>/<h2>/<hash>.mp4
-        # thumb:  https://coomer.st/thumbnail/data/<h1>/<h2>/<hash>.jpg
-        if not thumbnail_url and source_field in ("coomer", "coomer.st") and _screenshot_is_video(shot):
-            _m_src = raw_local
-            if "/data/" in _m_src and _m_src.lower().endswith((".mp4", ".webm", ".mov")):
-                _thumb_raw = re.sub(r"/data/", "/thumbnail/data/", _m_src, count=1)
-                _thumb_raw = re.sub(r"\.[a-z0-9]+$", ".jpg", _thumb_raw, flags=re.IGNORECASE)
-                thumbnail_url = _thumb_raw
+        # For videos with no stored thumbnail: use our server-side video-poster endpoint
+        # (extracts first frame via ffmpeg).  We intentionally do NOT derive coomer.st
+        # /thumbnail/ URLs here — they reliably return 404.
+        if not thumbnail_url and _screenshot_is_video(shot):
+            shot_id = shot.get("id")
+            if shot_id:
+                shot["preview_url"] = f"/api/screenshots/video-poster/{shot_id}"
+                return shot
         if existing_preview:
             if _is_remote_media_url(existing_preview):
                 shot["preview_url"] = proxy_media_url(existing_preview) if _should_proxy_media(source_field, existing_preview) else existing_preview
@@ -343,6 +374,7 @@ async def proxy_media(url: str = Query(...), request: Request = None):
 
     resp_headers = {"Cache-Control": "public, max-age=86400", "X-Accel-Buffering": "no"}
     resp_headers["Content-Disposition"] = "inline"
+    resp_headers["X-Content-Type-Options"] = "nosniff"
     # Propagate content-length and range headers for video seeking
     if content_length_str:
         resp_headers["Content-Length"] = content_length_str
@@ -362,6 +394,168 @@ async def proxy_media(url: str = Query(...), request: Request = None):
         status_code=status_code,
         media_type=content_type,
         headers=resp_headers,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Video poster extraction (server-side first-frame thumbnail via ffmpeg).
+# Cached to /app/data/posters/ on persistent disk.
+# ---------------------------------------------------------------------------
+_POSTER_EXTRACT_LOCKS: dict[int, asyncio.Lock] = {}
+_POSTER_EXTRACT_LOCKS_LOCK = Lock()
+
+
+def _get_poster_extract_lock(shot_id: int) -> asyncio.Lock:
+    """Return (or create) an asyncio.Lock for the given shot_id.
+    Must be called from within a running event loop (i.e. inside an async function).
+    """
+    with _POSTER_EXTRACT_LOCKS_LOCK:
+        if shot_id not in _POSTER_EXTRACT_LOCKS:
+            _POSTER_EXTRACT_LOCKS[shot_id] = asyncio.Lock()
+        # Evict very old entries to prevent unbounded growth
+        if len(_POSTER_EXTRACT_LOCKS) > 4096:
+            oldest_keys = list(_POSTER_EXTRACT_LOCKS.keys())[:512]
+            for k in oldest_keys:
+                _POSTER_EXTRACT_LOCKS.pop(k, None)
+        return _POSTER_EXTRACT_LOCKS[shot_id]
+
+
+@router.get("/video-poster/{shot_id}")
+async def video_poster(shot_id: int, request: Request):
+    """Extract and cache a JPEG thumbnail from the first frame of a proxied video.
+
+    Uses ffmpeg to decode the first decodable frame.  Cached to persistent disk
+    so subsequent requests are instant.  Falls back gracefully if ffmpeg fails.
+    """
+    import os
+    import tempfile
+
+    from fastapi.responses import FileResponse
+
+    posters_dir = Path("/app/data/posters")
+    try:
+        posters_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+    poster_path = posters_dir / f"{shot_id}.jpg"
+
+    # Fast path: already cached on disk
+    if poster_path.exists() and poster_path.stat().st_size > 0:
+        return FileResponse(
+            str(poster_path),
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "public, max-age=604800",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    # Look up the screenshot to get the source video URL
+    db = request.app.state.db
+    try:
+        with db.connect() as _conn:
+            _row = _conn.execute(
+                "SELECT source_url, local_url FROM screenshots WHERE id = ?",
+                (shot_id,),
+            ).fetchone()
+    except Exception:
+        _row = None
+
+    if not _row:
+        raise HTTPException(404, "Shot not found")
+
+    source_url = str(_row["source_url"] or "")
+    if not source_url.startswith(("http://", "https://")):
+        # Fall back to local_url column if source_url is empty
+        try:
+            _local = str(_row["local_url"] or "")
+            if _local.startswith(("http://", "https://")):
+                source_url = _local
+        except Exception:
+            pass
+    if not source_url.startswith(("http://", "https://")):
+        raise HTTPException(404, "No remote source URL for this shot")
+
+    # Prevent concurrent duplicate extractions for the same shot_id
+    lock = _get_poster_extract_lock(shot_id)
+    async with lock:
+        # Re-check after acquiring lock (another request may have completed first)
+        if poster_path.exists() and poster_path.stat().st_size > 0:
+            return FileResponse(
+                str(poster_path),
+                media_type="image/jpeg",
+                headers={"Cache-Control": "public, max-age=604800"},
+            )
+
+        # Download first 8 MB of the video through our proxy (handles cookies/CORS)
+        client: httpx.AsyncClient = request.app.state.http_client
+        target_origin = urlparse(source_url)
+        referer = f"{target_origin.scheme}://{target_origin.netloc}/" if target_origin.netloc else source_url
+        fetch_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Referer": referer,
+            "Origin": referer.rstrip("/"),
+            "Range": "bytes=0-8388607",  # First 8 MB — enough for fast-start MP4 moov atom
+        }
+
+        tmp_path: str | None = None
+        try:
+            async with client.stream("GET", source_url, headers=fetch_headers) as resp:
+                if resp.status_code >= 400:
+                    raise HTTPException(resp.status_code, "Could not fetch video for poster")
+                content_type = resp.headers.get("content-type", "")
+                if content_type.startswith("text/html"):
+                    raise HTTPException(503, "Got HTML challenge instead of video")
+
+                suffix = Path(source_url.split("?")[0]).suffix.lower() or ".mp4"
+                with tempfile.NamedTemporaryFile(
+                    suffix=suffix, delete=False, dir="/tmp"
+                ) as tmp_file:
+                    tmp_path = tmp_file.name
+                    async for chunk in resp.aiter_bytes(65536):
+                        tmp_file.write(chunk)
+
+            # Extract first decodable frame using ffmpeg
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-y",                        # overwrite output
+                "-i", tmp_path,              # input: partial video
+                "-vframes", "1",             # extract exactly 1 frame
+                "-vf", "scale=320:-2",       # resize to max 320px wide
+                "-q:v", "4",                 # JPEG quality (2=best, 31=worst)
+                "-f", "image2",              # force image2 muxer
+                str(poster_path),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=20)
+            except asyncio.TimeoutError:
+                proc.kill()
+                raise HTTPException(503, "Poster extraction timed out")
+
+            if proc.returncode != 0 or not poster_path.exists() or poster_path.stat().st_size == 0:
+                raise HTTPException(503, "ffmpeg failed to extract poster frame")
+
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(502, f"Poster extraction error: {exc}") from exc
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+
+    return FileResponse(
+        str(poster_path),
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "public, max-age=604800",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -723,7 +917,9 @@ def browse_screenshots(
                 raw_has_more = False
                 break
             inspected = 0
-            for s in rows:
+            for _s_cached in rows:
+                # Create a fresh copy so mutations here never corrupt the DB cache.
+                s = dict(_s_cached)
                 inspected += 1
                 scanned_rows += 1
                 if _looks_like_female_content(s):
