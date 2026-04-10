@@ -1962,6 +1962,8 @@ class Database:
         media_type: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
+        exclude_keywords: set[str] | None = None,
+        require_media_url: bool = False,
     ) -> dict:
         where, params = [], []
         if term:
@@ -2011,23 +2013,55 @@ class Database:
         if date_to:
             where.append("captured_at <= ?")
             params.append(date_to)
+        # Push keyword exclusion filter into SQL for efficiency
+        if exclude_keywords:
+            # Concatenate all searchable text into one LOWER() expression, then check each keyword
+            concat_expr = (
+                "LOWER("
+                "COALESCE(screenshots.term,'') || ' ' || "
+                "COALESCE(screenshots.source,'') || ' ' || "
+                "COALESCE(screenshots.page_url,'') || ' ' || "
+                "COALESCE(screenshots.ai_summary,'') || ' ' || "
+                "COALESCE(screenshots.user_tags,'') || ' ' || "
+                "COALESCE(p.username,'')"
+                ")"
+            )
+            kw_conditions = []
+            for kw in exclude_keywords:
+                kw_conditions.append(f"{concat_expr} LIKE ?")
+                params.append(f"%{kw}%")
+            where.append(f"NOT ({' OR '.join(kw_conditions)})")
+
+        # Only return items with a usable media URL
+        if require_media_url:
+            where.append(
+                "("
+                "(source_url IS NOT NULL AND source_url != '' AND (source_url LIKE 'http://%' OR source_url LIKE 'https://%'))"
+                " OR (local_url IS NOT NULL AND local_url != '' AND (local_url LIKE 'http://%' OR local_url LIKE 'https://%'))"
+                " OR (local_path IS NOT NULL AND local_path != '')"
+                ")"
+            )
         clause = ("WHERE " + " AND ".join(where)) if where else ""
         order = "rating DESC, captured_at DESC" if sort == "rating" else "captured_at DESC"
         cache_key = (
             "browse_screenshots:"
-            f"{limit}:{offset}:{term}:{source}:{min_rating}:{sort}:{tag}:{has_description}:{has_performer}:{performer_id}:{media_type}:{date_from}:{date_to}"
+            f"{limit}:{offset}:{term}:{source}:{min_rating}:{sort}:{tag}:{has_description}:{has_performer}:{performer_id}:{media_type}:{date_from}:{date_to}:{bool(exclude_keywords)}:{require_media_url}"
         )
+
+        _from_clause = "screenshots LEFT JOIN performers p ON screenshots.performer_id = p.id"
 
         def build():
             with self.connect() as conn:
                 rows = conn.execute(
                     f"SELECT screenshots.*, p.username AS performer_username "
-                    f"FROM screenshots LEFT JOIN performers p ON screenshots.performer_id = p.id "
+                    f"FROM {_from_clause} "
                     f"{clause} ORDER BY {order} LIMIT ? OFFSET ?",
                     params + [limit + 1, offset]
                 ).fetchall()
                 if offset == 0:
-                    total = conn.execute(f"SELECT COUNT(*) FROM screenshots {clause}", params).fetchone()[0]
+                    total = conn.execute(
+                        f"SELECT COUNT(*) FROM {_from_clause} {clause}", params
+                    ).fetchone()[0]
                 else:
                     total = offset + len(rows)
             has_more = len(rows) > limit

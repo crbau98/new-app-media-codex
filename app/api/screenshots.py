@@ -685,8 +685,8 @@ _PREVIEW_JPEG_QUALITY = 72
 _SYNC_PREVIEW_WARM_LIMIT_FIRST_PAGE = 0
 _SYNC_PREVIEW_WARM_LIMIT_OTHER_PAGES = 0
 _PREVIEW_WORKER_COUNT = 3
-_FIRST_PAGE_LIMIT_CAP = 24  # keep first page small for fast initial load
-_MAX_BROWSE_SCAN_ROWS = 300  # scan up to 300 rows per browse page (balances completeness vs latency)
+_FIRST_PAGE_LIMIT_CAP = 48  # first page shows enough content without feeling empty
+_MAX_BROWSE_SCAN_ROWS = 3500  # scan entire DB if needed — filter-heavy data requires deep scans
 
 
 def _screenshots_cache_bucket(app_state):
@@ -1017,7 +1017,8 @@ def browse_screenshots(
         raw_total = 0
         raw_has_more = False
         scanned_rows = 0
-        chunk_limit = min(max(effective_limit * 4, effective_limit), 48)
+        # Fetch big chunks — the SQL filter already removes most junk rows
+        chunk_limit = max(effective_limit * 3, 150)
         sync_preview_budget = _SYNC_PREVIEW_WARM_LIMIT_FIRST_PAGE if offset == 0 else _SYNC_PREVIEW_WARM_LIMIT_OTHER_PAGES
         while len(valid) < effective_limit and scanned_rows < _MAX_BROWSE_SCAN_ROWS:
             result = db.browse_screenshots(
@@ -1025,6 +1026,8 @@ def browse_screenshots(
                 limit=chunk_limit, offset=raw_cursor, tag=tag, has_description=has_description,
                 has_performer=has_performer, performer_id=performer_id,
                 media_type=media_type, date_from=date_from, date_to=date_to,
+                exclude_keywords=_FEMALE_METADATA_KEYWORDS,
+                require_media_url=True,
             )
             raw_total = max(raw_total, int(result.get("total", 0) or 0))
             rows = result.get("screenshots", [])
@@ -1037,10 +1040,7 @@ def browse_screenshots(
                 s = dict(_s_cached)
                 inspected += 1
                 scanned_rows += 1
-                if _looks_like_female_content(s):
-                    if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
-                        break
-                    continue
+                # Female content filter is now in SQL — no Python re-check needed
                 local = Path(s.get("local_path", "") or "")
                 if _allow_local_media(request.app.state) and local.name and _cached_local_media_exists(request.app.state, local):
                     # Local file exists (yt-dlp or legacy) — serve from disk
@@ -1055,18 +1055,14 @@ def browse_screenshots(
                     s["preview_url"] = preview_url
                     valid.append(_decorate_screenshot_media(request.app.state, s))
                 else:
-                    # Remote-only entry — must have a direct media URL (not a webpage)
+                    # Remote-only entry — must have a direct media URL
                     media_url = s.get("source_url") or ""
-                    # Fall back to local_url if it looks like a remote media URL
-                    # (some scrapers store the CDN URL in local_url, not source_url)
                     if not media_url or not media_url.startswith(("http://", "https://")):
                         raw_local = s.get("local_url") or s.get("local_path") or ""
                         if raw_local and raw_local.startswith(("http://", "https://")):
                             media_url = raw_local
                     if not media_url or not media_url.startswith(("http://", "https://")):
-                        # No usable URL found — skip
-                        if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
-                            break
+                        # SQL filter should have caught this, but guard anyway
                         continue
                     src = s.get("source", "")
                     ext = Path(media_url.split("?", 1)[0]).suffix.lower()
@@ -1077,8 +1073,6 @@ def browse_screenshots(
                     else:
                         media_kind = _probe_remote_media_kind(request.app.state, media_url)
                     if media_kind not in {"image", "video"}:
-                        if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
-                            break
                         continue
                     is_vid = media_kind == "video"
                     # Use stored thumbnail_url first; fall back to Redgifs poster pattern
@@ -1088,13 +1082,13 @@ def browse_screenshots(
                     s["local_url"] = proxy_media_url(media_url)
                     if _is_remote_media_url(thumb):
                         s["preview_url"] = proxy_media_url(thumb)
+                    elif is_vid:
+                        s["preview_url"] = f"/api/screenshots/video-poster/{s.get('id')}"
                     else:
-                        s["preview_url"] = None if is_vid else s["local_url"]
+                        s["preview_url"] = s["local_url"]
                     s["source_url"] = media_url
                     valid.append(_decorate_screenshot_media(request.app.state, s))
                 if len(valid) >= effective_limit:
-                    break
-                if scanned_rows >= _MAX_BROWSE_SCAN_ROWS:
                     break
             raw_cursor += inspected
             raw_has_more = bool(result.get("has_more")) or raw_cursor < raw_total
@@ -1162,6 +1156,48 @@ def random_rated_screenshot(request: Request, min_rating: int = Query(default=3,
         return JSONResponse(shot)
     except HTTPException:
         raise
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@router.get("/stats")
+def db_stats(request: Request):
+    """Quick diagnostic: total items, items by source, items with valid URLs, etc."""
+    db = request.app.state.db
+    try:
+        with db.connect() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM screenshots").fetchone()[0]
+            by_source = {
+                row[0]: row[1]
+                for row in conn.execute(
+                    "SELECT source, COUNT(*) FROM screenshots GROUP BY source ORDER BY COUNT(*) DESC"
+                ).fetchall()
+            }
+            with_source_url = conn.execute(
+                "SELECT COUNT(*) FROM screenshots WHERE source_url LIKE 'http%'"
+            ).fetchone()[0]
+            with_local_path = conn.execute(
+                "SELECT COUNT(*) FROM screenshots WHERE local_path IS NOT NULL AND local_path != ''"
+            ).fetchone()[0]
+            with_thumbnail = conn.execute(
+                "SELECT COUNT(*) FROM screenshots WHERE thumbnail_url LIKE 'http%'"
+            ).fetchone()[0]
+            with_page_url = conn.execute(
+                "SELECT COUNT(*) FROM screenshots WHERE page_url LIKE 'http%'"
+            ).fetchone()[0]
+        return {
+            "total": total,
+            "by_source": by_source,
+            "with_source_url": with_source_url,
+            "with_local_path": with_local_path,
+            "with_thumbnail_url": with_thumbnail,
+            "with_page_url": with_page_url,
+            "without_any_media_url": total - with_source_url - with_local_path + min(with_source_url, with_local_path),
+            "config": {
+                "first_page_limit_cap": _FIRST_PAGE_LIMIT_CAP,
+                "max_browse_scan_rows": _MAX_BROWSE_SCAN_ROWS,
+            },
+        }
     except Exception as exc:
         raise HTTPException(500, str(exc)) from exc
 

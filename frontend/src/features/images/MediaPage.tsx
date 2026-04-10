@@ -1494,7 +1494,7 @@ export function MediaPage() {
         ...(mediaCreatorId != null ? { performer_id: mediaCreatorId } : {}),
         ...(tab === "videos" ? { media_type: "video" } : {}),
         ...(tab === "images" ? { media_type: "image" } : {}),
-        limit: 24,  // first page limited to 24; server further caps to _FIRST_PAGE_LIMIT_CAP=24
+        limit: 48,  // match backend _FIRST_PAGE_LIMIT_CAP=48 for richer first page
         offset: pageParam as number,
       }, { signal }),
     getNextPageParam: (last) => (last.has_more ? (last.next_offset ?? (last.offset + last.screenshots.length)) : undefined),
