@@ -463,42 +463,17 @@ const MediaCard = memo(function MediaCard({
   const { mediaSrc: src, previewSrc, isVideo: vid, isGif: gif, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const mediaLabel = getMediaDebugLabel(shot)
   const [imgLoaded, setImgLoaded] = useState(false)
-  const [videoPoster, setVideoPoster] = useState<string>("")
   const isAboveFold = index <= 3  // only 4 eager loads; rest are lazy to avoid poster-endpoint flood
+  const parsedTags = parseAiTags(shot.ai_tags)
+  const videoPosterSrc = shot.thumbnail_url || `/api/screenshots/${shot.id}/video-poster`
 
-  // Reset canvas poster when the video src changes (prevent stale poster from previous card)
-  const prevSrcRef = useRef<string>("")
-  if (src && src !== prevSrcRef.current) {
-    prevSrcRef.current = src
-    if (videoPoster) setVideoPoster("")
-  }
-
-  // Capture first frame of video as a poster thumbnail once metadata loads
-  const handleVideoMeta = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-    if (videoPoster) return
-    const video = e.currentTarget
-    video.currentTime = 0.001  // seek to near-first frame
-  }
-  const handleVideoSeeked = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-    if (videoPoster) return
-    const video = e.currentTarget
-    if (!video.videoWidth || !video.videoHeight) return
-    try {
-      const canvas = document.createElement("canvas")
-      const maxDim = 320
-      const ratio = video.videoWidth / video.videoHeight
-      canvas.width = ratio >= 1 ? maxDim : Math.round(maxDim * ratio)
-      canvas.height = ratio >= 1 ? Math.round(maxDim / ratio) : maxDim
-      const ctx = canvas.getContext("2d")
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.65)
-        if (dataUrl && dataUrl !== "data:,") setVideoPoster(dataUrl)
-      }
-    } catch {
-      // canvas tainted or other error — ignore
+  const prevSrcRef = useRef("")
+  useEffect(() => {
+    if (src && src !== prevSrcRef.current) {
+      prevSrcRef.current = src
+      setImgLoaded(false)
     }
-  }
+  }, [src])
 
   return (
     <article
@@ -520,8 +495,7 @@ const MediaCard = memo(function MediaCard({
         {!imgLoaded && previewSrc && (
           <div className="absolute inset-0 shimmer z-[1]" aria-hidden="true" />
         )}
-        {/* Dark gradient placeholder for video cards with no poster yet */}
-        {!previewSrc && vid && !videoPoster && (
+        {vid && (
           <div
             className="absolute inset-0 z-[1] flex items-center justify-center"
             style={{ background: "linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)" }}
@@ -532,41 +506,32 @@ const MediaCard = memo(function MediaCard({
             </div>
           </div>
         )}
-        {!previewSrc ? (
-          vid && src ? (
-            <>
-              {/* Hidden video to extract first frame as poster — shown via videoPoster */}
-              <video
-                src={src}
-                muted
-                playsInline
-                preload="metadata"
-                onError={markMediaBroken}
-                onLoadedMetadata={handleVideoMeta}
-                onSeeked={handleVideoSeeked}
-                className={videoPoster ? "hidden" : "h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"}
-              />
-              {videoPoster && (
-                <img
-                  src={videoPoster}
-                  alt={`Video: ${shot.term}`}
-                  className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
-                  aria-hidden="true"
-                />
-              )}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="rounded-full bg-black/60 p-3 backdrop-blur-sm shadow-lg transition-transform duration-200 group-hover:scale-110 group-hover:bg-white/20">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
-                </div>
-              </div>
-            </>
-          ) : (
-            <MediaUnavailableTile
-              title={shot.term}
-              detail={mediaLabel}
-              statusLabel="Media unavailable"
+        {vid ? (
+          <>
+            <img
+              src={videoPosterSrc}
+              loading={isAboveFold ? "eager" : "lazy"}
+              decoding={isAboveFold ? "sync" : "async"}
+              fetchPriority={isAboveFold ? "high" : "low"}
+              onLoad={() => setImgLoaded(true)}
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none'
+              }}
+              className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
+              alt=""
             />
-          )
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="rounded-full bg-black/60 p-3 shadow-lg transition-transform duration-200 group-hover:scale-110 group-hover:bg-white/20">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
+              </div>
+            </div>
+          </>
+        ) : !previewSrc ? (
+          <MediaUnavailableTile
+            title={shot.term}
+            detail={mediaLabel}
+            statusLabel="Media unavailable"
+          />
         ) : (
           <img
             src={previewSrc}
@@ -577,23 +542,6 @@ const MediaCard = memo(function MediaCard({
             onError={(e) => {
               const img = e.currentTarget
               const isSrc = img.src || ''
-              // Video-poster endpoint returns 503 when busy — retry after a
-              // staggered delay so posters load once the queue clears.
-              if (isSrc.includes('/video-poster/')) {
-                const posterRetries = parseInt(img.dataset.posterRetries || '0')
-                if (posterRetries < 3) {
-                  img.dataset.posterRetries = String(posterRetries + 1)
-                  const delay = (posterRetries + 1) * 3000 + Math.random() * 2000
-                  setTimeout(() => {
-                    if (img.isConnected) {
-                      img.src = isSrc + (isSrc.includes('?') ? '&' : '?') + `_r=${posterRetries + 1}`
-                    }
-                  }, delay)
-                } else {
-                  markPreviewBroken()
-                }
-                return
-              }
               const retries = parseInt(img.dataset.retries || '0')
               if (retries < 1) {
                 img.dataset.retries = '1'
@@ -637,9 +585,9 @@ const MediaCard = memo(function MediaCard({
           )}
         </div>
 
-        {Array.isArray(shot.ai_tags) && shot.ai_tags.length > 0 && (
+        {parsedTags.length > 0 && (
           <div className="absolute bottom-8 left-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-wrap gap-0.5 overflow-hidden max-h-6">
-            {shot.ai_tags.slice(0, 4).map((tag: string) => (
+            {parsedTags.slice(0, 4).map((tag) => (
               <span key={tag} className="rounded bg-purple-500/75 px-1 py-0.5 text-[8px] font-medium leading-none text-white shadow truncate max-w-[70px]">
                 {tag}
               </span>
@@ -1858,6 +1806,21 @@ export function MediaPage() {
     setLightboxShotId(pick.id)
   }
 
+  useEffect(() => {
+    if (!allShots.length) return
+    const id = typeof window !== "undefined" && "requestIdleCallback" in window
+      ? window.requestIdleCallback(() => {
+          void qc.prefetchQuery({ queryKey: ["top-rated-screenshots"], queryFn: api.topRatedScreenshots, staleTime: 300000 })
+        })
+      : window.setTimeout(() => {
+          void qc.prefetchQuery({ queryKey: ["top-rated-screenshots"], queryFn: api.topRatedScreenshots, staleTime: 300000 })
+        }, 2000)
+    return () => {
+      if (typeof window !== "undefined" && "cancelIdleCallback" in window) window.cancelIdleCallback(id as number)
+      else window.clearTimeout(id as number)
+    }
+  }, [allShots.length, qc])
+
   const grouped = useMemo<Map<string, Screenshot[]>>(() => {
     if (!showGrouped) return new Map()
     const m = new Map<string, Screenshot[]>()
@@ -2239,20 +2202,6 @@ export function MediaPage() {
     }, { rootMargin: "1200px 0px" })
     observerRef.current.observe(node)
   }, [fetchNextPage, hasNextPage, isFetchingNextPage])
-
-  // Prefetch next page when user reaches 80% scroll depth
-  useEffect(() => {
-    if (!hasNextPage || isFetchingNextPage) return
-    const onScroll = () => {
-      const scrolled = window.scrollY + window.innerHeight
-      const total = document.documentElement.scrollHeight
-      if (total > 0 && scrolled / total >= 0.8) {
-        void fetchNextPage()
-      }
-    }
-    window.addEventListener("scroll", onScroll, { passive: true })
-    return () => window.removeEventListener("scroll", onScroll)
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   const mosaicObserverRef = useRef<IntersectionObserver | null>(null)
   const mosaicSentinelRef = useCallback((node: HTMLDivElement | null) => {
@@ -3692,7 +3641,7 @@ export function MediaPage() {
                 <button
                   key={r}
                   onClick={() => {
-                    Promise.all([...selectedIds].map((id) => api.rateScreenshot(id, r))).then(() => {
+                    api.bulkRateScreenshots([...selectedIds], r).then(() => {
                       qc.invalidateQueries({ queryKey: ["screenshots"] })
                       qc.invalidateQueries({ queryKey: ["top-rated-screenshots"] })
                       qc.invalidateQueries({ queryKey: ["media-stats"] })

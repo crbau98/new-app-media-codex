@@ -10,7 +10,7 @@ export type ApiError = Error & {
 function buildQuery(params?: Record<string, string | number | boolean | null | undefined>) {
   const search = new URLSearchParams(
     Object.entries(params ?? {})
-      .filter(([, value]) => value !== "" && value !== false && value !== undefined && value !== null)
+      .filter(([, value]) => value !== "" && value !== undefined && value !== null)
       .map(([key, value]) => [key, String(value)])
   ).toString()
 
@@ -573,6 +573,11 @@ export const api = {
     apiFetch<{ running: boolean; last_result: { removed: number; kept: number } | null }>("/api/screenshots/scan/status"),
   rateScreenshot: (id: number, rating: number) =>
     apiFetch<Screenshot>(`/api/screenshots/${id}/rate`, { method: "PATCH", body: JSON.stringify({ rating }) }),
+  bulkRateScreenshots: (ids: number[], rating: number) =>
+    apiFetch<{ updated: number }>("/api/screenshots/bulk-rate", {
+      method: "PATCH",
+      body: JSON.stringify({ ids, rating }),
+    }),
   topRatedScreenshots: () =>
     apiFetch<{ screenshots: Screenshot[] }>("/api/screenshots/top-rated").then((r) => r.screenshots),
   screenshotAllTags: () =>

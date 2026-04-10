@@ -389,11 +389,6 @@ class Database:
                 conn.row_factory = sqlite3.Row
                 conn.execute("PRAGMA foreign_keys = ON")
                 conn.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
-                conn.execute("PRAGMA journal_mode = WAL")  # WAL enables concurrent reads + writes
-                conn.execute("PRAGMA cache_size = -65536")  # 64 MB page cache
-                conn.execute("PRAGMA synchronous = NORMAL")  # Safe with WAL, faster commits
-                conn.execute("PRAGMA temp_store = MEMORY")   # temp tables in RAM
-                conn.execute("PRAGMA journal_size_limit = 67108864")  # 64 MB WAL cap
                 conn.execute("SELECT 1")  # verify connection actually works
                 break
             except sqlite3.OperationalError:
@@ -417,6 +412,11 @@ class Database:
 
     def init(self) -> None:
         with self.connect() as conn:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA cache_size = -65536")
+            conn.execute("PRAGMA synchronous = NORMAL")
+            conn.execute("PRAGMA temp_store = MEMORY")
+            conn.execute("PRAGMA journal_size_limit = 67108864")
             conn.executescript(SCHEMA)
             self._migrate(conn)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_review_status ON items(review_status)")
@@ -558,9 +558,31 @@ class Database:
             CREATE VIRTUAL TABLE IF NOT EXISTS screenshots_fts
             USING fts5(ai_summary, ai_tags, content=screenshots, content_rowid=id)
         """)
-        # Rebuild FTS index
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS screenshots_fts_ai AFTER INSERT ON screenshots BEGIN
+              INSERT INTO screenshots_fts(rowid, ai_summary, ai_tags)
+              VALUES (new.id, new.ai_summary, new.ai_tags);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS screenshots_fts_au AFTER UPDATE OF ai_summary, ai_tags ON screenshots BEGIN
+              INSERT INTO screenshots_fts(screenshots_fts, rowid, ai_summary, ai_tags)
+              VALUES('delete', old.id, old.ai_summary, old.ai_tags);
+              INSERT INTO screenshots_fts(rowid, ai_summary, ai_tags)
+              VALUES (new.id, new.ai_summary, new.ai_tags);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS screenshots_fts_ad AFTER DELETE ON screenshots BEGIN
+              INSERT INTO screenshots_fts(screenshots_fts, rowid, ai_summary, ai_tags)
+              VALUES('delete', old.id, old.ai_summary, old.ai_tags);
+            END
+        """)
+        # Only rebuild FTS if the index is empty (first-time population)
         try:
-            conn.execute("INSERT INTO screenshots_fts(screenshots_fts) VALUES('rebuild')")
+            fts_count = conn.execute("SELECT COUNT(*) FROM screenshots_fts").fetchone()[0]
+            if fts_count == 0:
+                conn.execute("INSERT INTO screenshots_fts(screenshots_fts) VALUES('rebuild')")
         except Exception:
             pass
         # user_settings table

@@ -127,6 +127,7 @@ function TransitionIndicator({ isTransitioning }: { isTransitioning: boolean }) 
 function App() {
   const activeView = useAppStore((s) => s.activeView)
   const setActiveView = useAppStore((s) => s.setActiveView)
+  const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen)
   const deferredActiveView = useDeferredValue(activeView)
   const isTransitioning = activeView !== deferredActiveView
 
@@ -202,7 +203,7 @@ function App() {
           </Suspense>
         </div>
         <Suspense fallback={null}>
-          <CommandPalette />
+          {commandPaletteOpen && <CommandPalette />}
           {showShortcuts && <KeyboardShortcutsOverlay onClose={closeShortcuts} />}
         </Suspense>
       </AppShell>

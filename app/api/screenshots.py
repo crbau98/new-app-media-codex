@@ -10,9 +10,11 @@ import re
 import shutil
 import time
 import uuid
+from copy import deepcopy
 from queue import Empty, Full, Queue
 from pathlib import Path
 from threading import Event, Lock, Thread
+from threading import Lock as _ThreadLock
 from urllib.parse import urlparse
 
 import httpx
@@ -20,6 +22,8 @@ import requests as http_requests
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from PIL import Image, ImageOps
+
+from app.db import Database
 
 _logger = logging.getLogger(__name__)
 
@@ -31,6 +35,7 @@ _PROXY_CACHE_MAX_BYTES = 500 * 1024 * 1024  # 500 MB
 _PROXY_CACHE_TTL = 7200  # 2 hours
 _proxy_cache: dict[str, tuple[float, str, bytes]] = {}  # url -> (expires_at, content_type, body)
 _proxy_cache_size = 0  # current total bytes
+_PROXY_CACHE_LOCK = _ThreadLock()
 _IMAGE_CONTENT_PREFIXES = ("image/",)
 _VIDEO_CONTENT_PREFIXES = ("video/",)
 _REMOTE_MEDIA_PROBE_TTL = 900
@@ -59,14 +64,15 @@ def _should_proxy_media(source: str, url: str) -> bool:
 
 
 def _proxy_cache_get(url: str) -> tuple[str, bytes] | None:
-    entry = _proxy_cache.get(url)
-    if entry is None:
-        return None
-    expires_at, content_type, body = entry
-    if time.monotonic() > expires_at:
-        _proxy_cache_evict(url)
-        return None
-    return content_type, body
+    with _PROXY_CACHE_LOCK:
+        entry = _proxy_cache.get(url)
+        if entry is None:
+            return None
+        expires_at, content_type, body = entry
+        if time.monotonic() > expires_at:
+            _proxy_cache_evict(url)
+            return None
+        return content_type, body
 
 
 def _proxy_cache_evict(url: str) -> None:
@@ -82,17 +88,18 @@ def _proxy_cache_put(url: str, content_type: str, body: bytes) -> None:
     # Don't cache entries larger than 10 MB individually
     if size > 10 * 1024 * 1024:
         return
-    # Evict expired entries first, then oldest until under budget
-    now = time.monotonic()
-    expired = [k for k, (exp, _, _) in _proxy_cache.items() if now > exp]
-    for k in expired:
-        _proxy_cache_evict(k)
-    # Evict oldest until we have room
-    while _proxy_cache_size + size > _PROXY_CACHE_MAX_BYTES and _proxy_cache:
-        oldest_key = next(iter(_proxy_cache))
-        _proxy_cache_evict(oldest_key)
-    _proxy_cache[url] = (now + _PROXY_CACHE_TTL, content_type, body)
-    _proxy_cache_size += size
+    with _PROXY_CACHE_LOCK:
+        # Evict expired entries first, then oldest until under budget
+        now = time.monotonic()
+        expired = [k for k, (exp, _, _) in _proxy_cache.items() if now > exp]
+        for k in expired:
+            _proxy_cache_evict(k)
+        # Evict oldest until we have room
+        while _proxy_cache_size + size > _PROXY_CACHE_MAX_BYTES and _proxy_cache:
+            oldest_key = next(iter(_proxy_cache))
+            _proxy_cache_evict(oldest_key)
+        _proxy_cache[url] = (now + _PROXY_CACHE_TTL, content_type, body)
+        _proxy_cache_size += size
 
 
 def _disk_has_space(path: str, min_free_mb: int = 500) -> bool:
@@ -598,16 +605,14 @@ async def video_poster(shot_id: int, request: Request):
             headers={"Cache-Control": "public, max-age=604800", "X-Content-Type-Options": "nosniff"},
         )
 
-    # 2. Semaphore check — wait briefly (up to 8s) for a slot to open.
-    #    Frontend retries with staggered delays, so a short wait avoids
-    #    unnecessary 503 responses when the queue is just about to clear.
+    if not _POSTER_SEMAPHORE._value:  # No slots immediately available
+        return _placeholder_poster_response()
     try:
-        acquired = await asyncio.wait_for(_POSTER_SEMAPHORE.acquire(), timeout=8.0)
+        acquired = await asyncio.wait_for(_POSTER_SEMAPHORE.acquire(), timeout=0.5)
     except asyncio.TimeoutError:
         acquired = False
     if not acquired:
-        raise HTTPException(503, "Poster extraction queue full \u2014 retry later",
-                            headers={"Retry-After": "3"})
+        return _placeholder_poster_response()
 
     try:
         lock = _get_poster_extract_lock(shot_id)
@@ -702,12 +707,12 @@ def _get_cached_screenshots_payload(app_state, key: str, ttl_seconds: float, bui
     with lock:
         entry = cache.get(key)
         if entry and now < entry["expires_at"]:
-            return json.loads(json.dumps(entry["payload"])) if copy_payload else entry["payload"]
+            return deepcopy(entry["payload"]) if copy_payload else entry["payload"]
 
     payload = builder()
     with lock:
         cache[key] = {
-            "payload": json.loads(json.dumps(payload)) if copy_payload else payload,
+            "payload": deepcopy(payload) if copy_payload else payload,
             "expires_at": time.monotonic() + ttl_seconds,
         }
     return payload
@@ -1503,6 +1508,28 @@ def rate_screenshot(screenshot_id: int, request: Request, body: dict = Body(...)
         raise HTTPException(status_code=404, detail="Screenshot not found")
     _invalidate_screenshots_cache(request.app.state)
     return _decorate_screenshot_media(request.app.state, updated)
+
+
+@router.patch("/bulk-rate")
+def bulk_rate(request: Request, body: dict = Body(...)):
+    """Rate multiple screenshots in one call."""
+    ids = body.get("ids", [])
+    rating = body.get("rating")
+    if not ids or rating is None:
+        raise HTTPException(400, "ids and rating required")
+    rating = max(0, min(5, int(rating)))
+    db: Database = request.app.state.db
+    updated = 0
+    with db.connect() as conn:
+        for sid in ids:
+            try:
+                conn.execute("UPDATE screenshots SET rating = ? WHERE id = ?", (rating, sid))
+                updated += 1
+            except Exception:
+                pass
+        conn.commit()
+    _invalidate_screenshots_cache(request.app.state)
+    return JSONResponse({"updated": updated})
 
 
 @router.get("/media-stats")

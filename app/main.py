@@ -33,6 +33,7 @@ db = Database(
     busy_timeout_ms=settings.sqlite_busy_timeout_ms,
 )
 service = ResearchService(settings, db)
+_COMMIT_HASH = "dev"
 
 
 class CacheControlStaticFiles(StaticFiles):
@@ -86,6 +87,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.service = service
     Path("/app/data/posters").mkdir(parents=True, exist_ok=True)
+    global _COMMIT_HASH
+    _COMMIT_HASH = _resolve_commit_hash()
     if settings.stream_only_media:
         _purge_directory_contents(settings.image_dir)
         _purge_directory_contents(_screenshots_dir)
@@ -177,7 +180,11 @@ async def apply_response_headers(request: Request, call_next):
         "camera=(), microphone=(), geolocation=(), fullscreen=(self)",
     )
     if request.url.path.startswith("/api/") or request.url.path == "/healthz":
-        response.headers.setdefault("Cache-Control", "no-store")
+        _cacheable = {"/api/version", "/api/app-shell-summary", "/api/screenshots/terms", "/api/screenshots/sources"}
+        if request.url.path in _cacheable:
+            response.headers.setdefault("Cache-Control", "public, max-age=10, stale-while-revalidate=30")
+        else:
+            response.headers.setdefault("Cache-Control", "no-store")
     return response
 
 
@@ -392,7 +399,7 @@ def healthz() -> JSONResponse:
     )
 
 
-def _current_commit_hash() -> str:
+def _resolve_commit_hash() -> str:
     try:
         return (
             subprocess.check_output(
@@ -410,7 +417,7 @@ def _current_commit_hash() -> str:
 
 @app.get("/api/version")
 def api_version() -> JSONResponse:
-    return JSONResponse({"version": "1.0", "commit": _current_commit_hash()})
+    return JSONResponse({"version": "1.0", "commit": _COMMIT_HASH})
 
 
 from app.api.crawl import router as crawl_router
