@@ -406,7 +406,7 @@ async def proxy_media(url: str = Query(...), request: Request = None):
 # CPU/memory.  Returns HTTP 503 immediately when full so the frontend falls
 # through to canvas extraction without waiting.
 # ---------------------------------------------------------------------------
-_POSTER_SEMAPHORE = asyncio.Semaphore(3)
+_POSTER_SEMAPHORE = asyncio.Semaphore(5)
 
 _POSTER_EXTRACT_LOCKS: dict[int, asyncio.Lock] = {}
 _POSTER_EXTRACT_LOCKS_LOCK = Lock()
@@ -572,13 +572,15 @@ async def video_poster(shot_id: int, request: Request):
             headers={"Cache-Control": "public, max-age=604800", "X-Content-Type-Options": "nosniff"},
         )
 
-    # 2. Semaphore check — reject immediately when capacity is full
+    # 2. Semaphore check — wait briefly (up to 8s) for a slot to open.
+    #    Frontend retries with staggered delays, so a short wait avoids
+    #    unnecessary 503 responses when the queue is just about to clear.
     try:
-        acquired = await asyncio.wait_for(_POSTER_SEMAPHORE.acquire(), timeout=0.05)
+        acquired = await asyncio.wait_for(_POSTER_SEMAPHORE.acquire(), timeout=8.0)
     except asyncio.TimeoutError:
         acquired = False
     if not acquired:
-        raise HTTPException(503, "Poster extraction queue full — retry later",
+        raise HTTPException(503, "Poster extraction queue full \u2014 retry later",
                             headers={"Retry-After": "3"})
 
     try:

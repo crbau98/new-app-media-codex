@@ -577,10 +577,21 @@ const MediaCard = memo(function MediaCard({
             onError={(e) => {
               const img = e.currentTarget
               const isSrc = img.src || ''
-              // Video-poster endpoint returns 503 when busy — skip retry, fall
-              // through to canvas extraction immediately for snappy UX.
+              // Video-poster endpoint returns 503 when busy — retry after a
+              // staggered delay so posters load once the queue clears.
               if (isSrc.includes('/video-poster/')) {
-                markPreviewBroken()
+                const posterRetries = parseInt(img.dataset.posterRetries || '0')
+                if (posterRetries < 3) {
+                  img.dataset.posterRetries = String(posterRetries + 1)
+                  const delay = (posterRetries + 1) * 3000 + Math.random() * 2000
+                  setTimeout(() => {
+                    if (img.isConnected) {
+                      img.src = isSrc + (isSrc.includes('?') ? '&' : '?') + `_r=${posterRetries + 1}`
+                    }
+                  }, delay)
+                } else {
+                  markPreviewBroken()
+                }
                 return
               }
               const retries = parseInt(img.dataset.retries || '0')
@@ -792,7 +803,24 @@ const MosaicCard = memo(function MosaicCard({
             loading="lazy"
             decoding="async"
             fetchPriority="low"
-            onError={markPreviewBroken}
+            onError={(e) => {
+              const img = e.currentTarget
+              const isSrc = img.src || ''
+              if (isSrc.includes('/video-poster/')) {
+                const posterRetries = parseInt(img.dataset.posterRetries || '0')
+                if (posterRetries < 3) {
+                  img.dataset.posterRetries = String(posterRetries + 1)
+                  const delay = (posterRetries + 1) * 3000 + Math.random() * 2000
+                  setTimeout(() => {
+                    if (img.isConnected) {
+                      img.src = isSrc + (isSrc.includes('?') ? '&' : '?') + `_r=${posterRetries + 1}`
+                    }
+                  }, delay)
+                  return
+                }
+              }
+              markPreviewBroken()
+            }}
             className="w-full transition-[filter] duration-200 group-hover:brightness-110"
             style={{ display: "block" }}
           />
