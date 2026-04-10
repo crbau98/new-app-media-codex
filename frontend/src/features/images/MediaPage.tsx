@@ -254,10 +254,10 @@ const TermBrowser = memo(function TermBrowser({
   const hasMore = filtered.length > 60 && !expanded
 
   return (
-    <div className="border-b border-white/5 px-4 py-1.5">
+    <div className="relative ml-auto shrink-0">
       <button
         onClick={() => setSectionOpen((v) => !v)}
-        className="flex items-center gap-1.5 text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+        className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] text-[var(--color-text-muted)] transition-colors hover:bg-white/[0.07] hover:text-[var(--color-text-secondary)]"
       >
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={cn("transition-transform", sectionOpen ? "rotate-0" : "-rotate-90")}>
           <path d="M6 9l6 6 6-6" />
@@ -265,20 +265,20 @@ const TermBrowser = memo(function TermBrowser({
         Categories ({terms.length})
       </button>
       {sectionOpen && (
-        <div className="mt-1.5 space-y-1.5">
+        <div className="absolute right-0 top-full z-30 mt-2 w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#0d1526]/95 p-3 shadow-xl backdrop-blur-lg">
           <div className="flex items-center gap-2">
-            <div className="relative">
+            <div className="relative min-w-0 flex-1">
               <input
                 type="text"
                 value={termSearch}
                 onChange={(e) => setTermSearch(e.target.value)}
                 placeholder="Search categories…"
-                className="h-6 w-36 rounded-full border border-white/10 bg-black/20 px-2.5 text-[10px] text-[var(--color-text-primary)] placeholder:text-white/25 focus:outline-none focus:border-white/25"
+                className="h-8 w-full rounded-full border border-white/10 bg-black/20 px-3 text-[11px] text-[var(--color-text-primary)] placeholder:text-white/25 focus:outline-none focus:border-white/25"
               />
               {termSearch && (
                 <button
                   onClick={() => setTermSearch("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 text-[10px]"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 text-[10px]"
                 >
                   ×
                 </button>
@@ -287,14 +287,14 @@ const TermBrowser = memo(function TermBrowser({
             {activeTerm && (
               <button
                 onClick={() => onSelect(null)}
-                className="shrink-0 rounded-full bg-[var(--color-accent)]/20 px-2.5 py-0.5 text-[10px] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/30 transition-colors"
+                className="shrink-0 rounded-full bg-[var(--color-accent)]/20 px-2.5 py-1 text-[10px] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/30 transition-colors"
               >
                 Clear ×
               </button>
             )}
-            <span className="ml-auto text-[10px] text-white/20">{filtered.length} categories</span>
+            <span className="shrink-0 text-[10px] text-white/30">{filtered.length} categories</span>
           </div>
-          <div className="hide-scrollbar flex flex-wrap gap-1">
+          <div className="hide-scrollbar mt-2 flex max-h-[180px] flex-wrap gap-1 overflow-y-auto pr-1">
             {visible.map(({ term, count }) => (
               <button
                 key={term}
@@ -2621,91 +2621,26 @@ export function MediaPage() {
         </Suspense>
       )}
 
-      <div className="px-4 pb-3">
-        <div className="hero-surface rounded-[30px] px-4 py-5 sm:px-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="eyebrow mb-2">Media Library</p>
-              <h1 className="hero-title text-[clamp(1.8rem,3vw,2.8rem)] leading-none text-text-primary">
-                {mediaCreatorName ? `@${mediaCreatorName}` : term ? term : "Publish-Ready Stream"}
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-text-secondary sm:text-[15px]">
-                {mediaCreatorName
-                  ? "A focused creator stream with faster playback, cleaner matching, and fewer dead ends."
-                  : term
-                  ? "A tighter themed stream tuned for fast scanning, confident creator labels, and smoother playback."
-                  : "A faster cross-web stream with creator-aware curation, lighter first paint, and cleaner controls."}
-              </p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:w-[360px]">
-              <button
-                onClick={handleCapture}
-                disabled={capturing}
-                className="rounded-2xl border border-accent/30 bg-accent/12 px-4 py-3 text-left text-sm font-medium text-text-primary transition-colors hover:bg-accent/18 disabled:opacity-50"
-              >
-                {capturing ? "Capture running" : "Capture new media"}
-              </button>
-              <button
-                onClick={() => handleViewModeChange("feed")}
-                className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-medium text-text-primary transition-colors hover:bg-white/[0.07]"
-              >
-                Open video feed
-              </button>
-              <button
-                onClick={() => {
-                  setDiscoveryOpen(true)
-                  if (!discoveryResults.length) handleRunDiscovery()
-                }}
-                className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-left text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-400/16"
-              >
-                Discover similar creators
-              </button>
-              <button
-                onClick={clearMediaFilters}
-                disabled={activeFilterPills.length === 0}
-                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm font-medium text-text-secondary transition-colors hover:bg-white/[0.06] disabled:opacity-40"
-              >
-                Reset current view
-              </button>
-            </div>
+      <div className="px-4 pb-2 pt-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold text-text-primary">Media</h1>
+            <p className="mt-1 text-sm text-text-secondary">
+              {(visibleSummary.total ?? 0).toLocaleString()} total
+              <span className="text-white/20"> · </span>
+              {(visibleSummary.videos ?? 0).toLocaleString()} videos
+              <span className="text-white/20"> · </span>
+              {(visibleSummary.unrated ?? 0).toLocaleString()} needs rating
+            </p>
           </div>
-
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
-              <p className="eyebrow">Visible now</p>
-              <p className="mt-2 text-2xl font-semibold text-text-primary">{(visibleSummary.total ?? 0).toLocaleString()}</p>
-            </div>
-            <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
-              <p className="eyebrow">Creator linked</p>
-              <p className="mt-2 text-2xl font-semibold text-text-primary">{(visibleSummary.linked ?? 0).toLocaleString()}</p>
-            </div>
-            <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
-              <p className="eyebrow">Videos</p>
-              <p className="mt-2 text-2xl font-semibold text-text-primary">{(visibleSummary.videos ?? 0).toLocaleString()}</p>
-            </div>
-            <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3">
-              <p className="eyebrow">Needs rating</p>
-              <p className="mt-2 text-2xl font-semibold text-text-primary">{(visibleSummary.unrated ?? 0).toLocaleString()}</p>
-            </div>
-          </div>
-
-          {activeFilterPills.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {activeFilterPills.map((pill) => (
-                <span key={pill} className="ui-chip ui-chip-active">
-                  {pill}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
       </div>
 
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
       <div className="sticky top-14 z-20 px-4 py-2 backdrop-blur-lg">
-        <div className="section-shell flex items-center gap-2 rounded-[24px] px-3 py-2.5 shadow-[0_10px_26px_rgba(0,0,0,0.2)] backdrop-blur-lg">
+        <div className="section-shell flex flex-wrap items-center gap-2 rounded-[20px] px-3 py-2 shadow-[0_10px_26px_rgba(0,0,0,0.2)] backdrop-blur-lg">
           {/* Search input */}
-          <div className="relative flex-1 max-w-md">
+          <div className="relative min-w-[220px] max-w-md flex-1">
             <input
               ref={searchInputRef}
               type="text"
@@ -2713,7 +2648,7 @@ export function MediaPage() {
               onChange={(e) => setSearch(e.target.value)}
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-              placeholder="Search..."
+              placeholder="Search media"
               className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
             />
             {search && (
@@ -2777,7 +2712,39 @@ export function MediaPage() {
             )}
           </div>
 
-          {/* Filters toggle */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => setOnlyUnlinked((v) => !v)}
+              className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnlinked ? "bg-sky-500/20 text-sky-200 ring-1 ring-sky-400/50 border border-sky-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+            >
+              Unlinked
+            </button>
+            <button
+              onClick={() => setOnlyUnrated((v) => !v)}
+              className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnrated ? "bg-amber-500/20 text-amber-200 ring-1 ring-amber-400/50 border border-amber-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+            >
+              Needs rating
+            </button>
+            <button
+              onClick={() => setOnlyRecent((v) => !v)}
+              className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyRecent ? "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/50 border border-emerald-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+            >
+              7 days
+            </button>
+            <button
+              onClick={() => setFilterDescribed((v) => !v)}
+              className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200 ring-1 ring-purple-400/50 border border-purple-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+            >
+              Described
+            </button>
+            <button
+              onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
+              className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", advancedFilters.hasPerformer === true ? "bg-indigo-500/20 text-indigo-200 ring-1 ring-indigo-400/50 border border-indigo-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+            >
+              Creator-linked
+            </button>
+          </div>
+
           <button
             onClick={() => setFiltersVisible((v) => !v)}
             className={cn(
@@ -2793,7 +2760,6 @@ export function MediaPage() {
             Filters{Object.values(advancedFilters).some((v) => v !== "" && v !== 0 && v !== null && v !== "any" && !(Array.isArray(v) && v.length === 0)) ? " *" : ""}
           </button>
 
-          {/* Sort dropdown */}
           <select
             value={sortOrder}
             onChange={(e) => {
@@ -2810,7 +2776,6 @@ export function MediaPage() {
             <option value="random">Random</option>
           </select>
 
-          {/* View mode toggle — Grid / Feed */}
           <div className="flex rounded-lg border border-white/10 bg-black/20 overflow-hidden">
             <button
               onClick={() => handleViewModeChange("grid")}
@@ -2846,140 +2811,143 @@ export function MediaPage() {
             </button>
           </div>
 
-          {/* Visible count */}
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] text-slate-300 whitespace-nowrap">
+          <span className="text-xs text-slate-400 whitespace-nowrap">
             {(visibleShots.length ?? 0).toLocaleString()} items
           </span>
 
-          {/* Overflow menu */}
-          <div className="relative ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             <button
-              onClick={() => setOverflowMenuOpen((v) => !v)}
-              className="rounded-lg px-2 py-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-white/5 transition-colors"
-              title="More actions"
+              onClick={handleCapture}
+              disabled={capturing}
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-white/[0.07] hover:text-text-primary disabled:opacity-50"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="5" r="2" />
-                <circle cx="12" cy="12" r="2" />
-                <circle cx="12" cy="19" r="2" />
-              </svg>
+              {capturing ? "Capture running" : "Capture new media"}
             </button>
-            {overflowMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setOverflowMenuOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-lg shadow-xl overflow-hidden">
-                  <div className="py-1">
-                    <button
-                      onClick={() => { setSlideshowActive(true); setOverflowMenuOpen(false) }}
-                      onMouseEnter={() => { void preloadSlideshowMode() }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
-                    >
-                      Slideshow
-                    </button>
-                    <button
-                      onClick={() => { handleSurpriseMe(); setOverflowMenuOpen(false) }}
-                      title="Pick a random top-rated item"
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
-                    >
-                      Surprise me
-                    </button>
-                    <button
-                      onClick={() => { setBatchMode((v) => { if (v) setSelectedIds(new Set()); return !v }); setOverflowMenuOpen(false) }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
-                    >
-                      {batchMode ? "Cancel select" : "Select"}
-                    </button>
-                    <div className="border-t border-white/5 my-1" />
-                    <button
-                      onClick={() => { setPlaylistDropdownOpen((v) => !v); setOverflowMenuOpen(false) }}
-                      onMouseEnter={() => { void preloadPlaylistPanel() }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
-                    >
-                      Playlists
-                    </button>
-                    <button
-                      onClick={() => { setAnalyticsOpen((v) => !v); setOverflowMenuOpen(false) }}
-                      onMouseEnter={() => { void loadMediaAnalyticsDashboard() }}
-                      className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", analyticsOpen ? "text-emerald-400" : "text-white/70 hover:text-white")}
-                    >
-                      Analytics
-                    </button>
-                    <button
-                      onClick={() => { setDiscoveryOpen((v) => !v); setOverflowMenuOpen(false) }}
-                      className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", discoveryOpen ? "text-emerald-400" : "text-white/70 hover:text-white")}
-                    >
-                      AI discovery
-                    </button>
-                    <div className="border-t border-white/5 my-1" />
-                    <button
-                      onClick={() => { handleCapture(); setOverflowMenuOpen(false) }}
-                      disabled={capturing}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-[var(--color-accent)] hover:bg-white/[0.06] transition-colors disabled:opacity-50"
-                    >
-                      {capturing ? "Capturing..." : "Capture"}
-                    </button>
-                    <div className="my-1 border-t border-white/10" />
-                    <button
-                      onClick={() => { handleCaptureVideos(); setOverflowMenuOpen(false) }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-teal-300 hover:bg-white/[0.06] transition-colors"
-                    >
-                      + Videos
-                    </button>
-                    <button
-                      onClick={() => { setUrlInputOpen((v) => !v); setOverflowMenuOpen(false) }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
-                    >
-                      + URL
-                    </button>
-                    <div className="border-t border-white/5 my-1" />
-                    <button
-                      onClick={() => { handleAutoTag(); setOverflowMenuOpen(false) }}
-                      disabled={autoTagging}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-purple-300 hover:bg-white/[0.06] transition-colors disabled:opacity-50"
-                    >
-                      {autoTagging ? "Tagging..." : "Auto-Tag"}
-                    </button>
-                    <button
-                      onClick={() => { setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true })); setOverflowMenuOpen(false) }}
-                      className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", advancedFilters.hasPerformer === true ? "text-sky-300" : "text-white/70 hover:text-white")}
-                    >
-                      Creators Only
-                    </button>
-                    <div className="my-1 border-t border-red-500/20" />
-                    <button
-                      onClick={() => { handlePurgeWomen(); setOverflowMenuOpen(false) }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-red-400 hover:bg-white/[0.06] transition-colors"
-                    >
-                      Purge female content
-                    </button>
-                    <div className="border-t border-white/5 my-1" />
-                    <label className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={autoDescribe}
-                        onChange={(e) => {
-                          setAutoDescribe(e.target.checked)
-                        }}
-                        className="h-3 w-3 rounded border-white/20 bg-black/30 accent-[var(--color-accent)]"
-                      />
-                      <span className="text-xs text-[var(--color-text-muted)]">Auto-describe</span>
-                    </label>
-                    <button
-                      onClick={() => { setShortcutsOpen(true); setOverflowMenuOpen(false) }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
-                    >
-                      Keyboard shortcuts
-                    </button>
-                    <button
-                      onClick={() => { setHeroCollapsed((v) => !v); setOverflowMenuOpen(false) }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
-                    >
-                      {heroCollapsed ? "Show stats panel" : "Hide stats panel"}
-                    </button>
+            <button
+              onClick={() => handleViewModeChange("feed")}
+              onMouseEnter={() => { void preloadVideoFeed() }}
+              onFocus={() => { void preloadVideoFeed() }}
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-white/[0.07] hover:text-text-primary"
+            >
+              Open video feed
+            </button>
+
+            {/* Overflow menu */}
+            <div className="relative">
+              <button
+                onClick={() => setOverflowMenuOpen((v) => !v)}
+                className="rounded-lg px-2 py-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-white/5 transition-colors"
+                title="More actions"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="5" r="2" />
+                  <circle cx="12" cy="12" r="2" />
+                  <circle cx="12" cy="19" r="2" />
+                </svg>
+              </button>
+              {overflowMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setOverflowMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-lg shadow-xl overflow-hidden">
+                    <div className="py-1">
+                      <button
+                        onClick={() => { setSlideshowActive(true); setOverflowMenuOpen(false) }}
+                        onMouseEnter={() => { void preloadSlideshowMode() }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        Slideshow
+                      </button>
+                      <button
+                        onClick={() => { handleSurpriseMe(); setOverflowMenuOpen(false) }}
+                        title="Pick a random top-rated item"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        Surprise me
+                      </button>
+                      <button
+                        onClick={() => { setBatchMode((v) => { if (v) setSelectedIds(new Set()); return !v }); setOverflowMenuOpen(false) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        {batchMode ? "Cancel select" : "Select"}
+                      </button>
+                      <div className="border-t border-white/5 my-1" />
+                      <button
+                        onClick={() => { setPlaylistDropdownOpen((v) => !v); setOverflowMenuOpen(false) }}
+                        onMouseEnter={() => { void preloadPlaylistPanel() }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        Playlists
+                      </button>
+                      <button
+                        onClick={() => { setAnalyticsOpen((v) => !v); setOverflowMenuOpen(false) }}
+                        onMouseEnter={() => { void loadMediaAnalyticsDashboard() }}
+                        className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", analyticsOpen ? "text-emerald-400" : "text-white/70 hover:text-white")}
+                      >
+                        Analytics
+                      </button>
+                      <button
+                        onClick={() => { setDiscoveryOpen((v) => !v); setOverflowMenuOpen(false) }}
+                        className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", discoveryOpen ? "text-emerald-400" : "text-white/70 hover:text-white")}
+                      >
+                        AI discovery
+                      </button>
+                      <div className="border-t border-white/5 my-1" />
+                      <button
+                        onClick={() => { handleCaptureVideos(); setOverflowMenuOpen(false) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-teal-300 hover:bg-white/[0.06] transition-colors"
+                      >
+                        + Videos
+                      </button>
+                      <button
+                        onClick={() => { setUrlInputOpen((v) => !v); setOverflowMenuOpen(false) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        + URL
+                      </button>
+                      <div className="border-t border-white/5 my-1" />
+                      <button
+                        onClick={() => { handleAutoTag(); setOverflowMenuOpen(false) }}
+                        disabled={autoTagging}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-purple-300 hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                      >
+                        {autoTagging ? "Tagging..." : "Auto-Tag"}
+                      </button>
+                      <button
+                        onClick={() => { setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true })); setOverflowMenuOpen(false) }}
+                        className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06]", advancedFilters.hasPerformer === true ? "text-sky-300" : "text-white/70 hover:text-white")}
+                      >
+                        Creators only
+                      </button>
+                      <div className="my-1 border-t border-red-500/20" />
+                      <button
+                        onClick={() => { handlePurgeWomen(); setOverflowMenuOpen(false) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-red-400 hover:bg-white/[0.06] transition-colors"
+                      >
+                        Purge female content
+                      </button>
+                      <div className="border-t border-white/5 my-1" />
+                      <label className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={autoDescribe}
+                          onChange={(e) => {
+                            setAutoDescribe(e.target.checked)
+                          }}
+                          className="h-3 w-3 rounded border-white/20 bg-black/30 accent-[var(--color-accent)]"
+                        />
+                        <span className="text-xs text-[var(--color-text-muted)]">Auto-describe</span>
+                      </label>
+                      <button
+                        onClick={() => { setShortcutsOpen(true); setOverflowMenuOpen(false) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        Keyboard shortcuts
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -3033,16 +3001,10 @@ export function MediaPage() {
         {/* Filters panel -- shown when Filters button is clicked */}
         {filtersVisible && (
           <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-white/8 bg-[#0a1322]/70 px-3 py-2">
-            <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
-              <span className="ui-chip !px-2 !py-0.5">term</span>
-              <span className="ui-chip !px-2 !py-0.5">creator</span>
-              <span className="ui-chip !px-2 !py-0.5">URL</span>
-              <span className="ui-chip !px-2 !py-0.5">AI description</span>
-            </div>
             <button
               onClick={() => setAdvancedOpen((v) => !v)}
               className={cn(
-                "rounded-lg px-2 py-1 text-[11px] transition-colors whitespace-nowrap",
+                "rounded-lg px-2.5 py-1.5 text-[11px] transition-colors whitespace-nowrap",
                 advancedOpen
                   ? "bg-blue-500/20 text-blue-400"
                   : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
@@ -3058,6 +3020,15 @@ export function MediaPage() {
                 Showing described only &times;
               </button>
             )}
+            <button
+              onClick={() => {
+                setDiscoveryOpen(true)
+                if (!discoveryResults.length) handleRunDiscovery()
+              }}
+              className="rounded-lg px-2.5 py-1.5 text-[11px] text-emerald-200 transition-colors hover:bg-emerald-400/10"
+            >
+              Discover similar creators
+            </button>
             {activeFilterPills.length > 0 && (
               <button
                 onClick={clearMediaFilters}
@@ -3068,75 +3039,7 @@ export function MediaPage() {
             )}
           </div>
         )}
-
-        {/* Quick filters -- compact */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-1 px-1">
-          <button
-            onClick={() => setOnlyUnlinked((v) => !v)}
-            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnlinked ? "bg-sky-500/20 text-sky-200 ring-1 ring-sky-400/50 border border-sky-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
-          >
-            Unlinked
-          </button>
-          <button
-            onClick={() => setOnlyUnrated((v) => !v)}
-            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnrated ? "bg-amber-500/20 text-amber-200 ring-1 ring-amber-400/50 border border-amber-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
-          >
-            Needs rating
-          </button>
-          <button
-            onClick={() => setOnlyRecent((v) => !v)}
-            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyRecent ? "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/50 border border-emerald-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
-          >
-            7 days
-          </button>
-          <button
-            onClick={() => setFilterDescribed((v) => !v)}
-            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200 ring-1 ring-purple-400/50 border border-purple-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
-          >
-            Described
-          </button>
-          <button
-            onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
-            className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", advancedFilters.hasPerformer === true ? "bg-indigo-500/20 text-indigo-200 ring-1 ring-indigo-400/50 border border-indigo-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
-          >
-            Creator-linked
-          </button>
-        </div>
       </div>
-
-      {/* ── Hero stats panel (hidden by default, toggled from overflow menu) ── */}
-      {!heroCollapsed && (
-        <div className="px-4 pb-2">
-          <div className="rounded-xl border border-white/8 bg-black/10 p-3">
-            <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
-              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
-                <p className="text-[10px] text-slate-400">Visible</p>
-                <p className="text-lg font-semibold text-white">{(visibleSummary.total ?? 0).toLocaleString()}</p>
-              </div>
-              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
-                <p className="text-[10px] text-slate-400">Images</p>
-                <p className="text-lg font-semibold text-white">{(visibleSummary.images ?? 0).toLocaleString()}</p>
-              </div>
-              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
-                <p className="text-[10px] text-slate-400">Videos</p>
-                <p className="text-lg font-semibold text-white">{(visibleSummary.videos ?? 0).toLocaleString()}</p>
-              </div>
-              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
-                <p className="text-[10px] text-slate-400">Linked</p>
-                <p className="text-lg font-semibold text-white">{(visibleSummary.linked ?? 0).toLocaleString()}</p>
-              </div>
-              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
-                <p className="text-[10px] text-slate-400">Described</p>
-                <p className="text-lg font-semibold text-white">{(visibleSummary.described ?? 0).toLocaleString()}</p>
-              </div>
-              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
-                <p className="text-[10px] text-slate-400">Needs rating</p>
-                <p className="text-lg font-semibold text-white">{(visibleSummary.unrated ?? 0).toLocaleString()}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Advanced Search Panel ──────────────────────────────────────── */}
       {advancedOpen && (
@@ -3223,66 +3126,37 @@ export function MediaPage() {
       )}
 
       {/* ── Tabs ─────────────────────────────────────────────────────────── */}
-      <div className="hide-scrollbar flex gap-0 overflow-x-auto border-b border-white/10 px-4">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onMouseEnter={() => { if (t.key === "creators") void preloadMediaCreatorsPanel() }}
-            onClick={() => {
-              startTransition(() => {
-                setTab(t.key)
-                if (t.key !== "creators") setFilterDescribed(false)
-              })
-            }}
-            className={cn(
-              "whitespace-nowrap px-3 py-2 text-sm transition-colors border-b-2",
-              tab === t.key
-                ? "border-[var(--color-accent)] text-[var(--color-text-primary)]"
-                : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-            )}
-          >
-            {t.label}{t.count != null ? ` (${t.count})` : ""}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Popular tag chips ─────────────────────────────────────────────── */}
-      {userTags.length > 0 && tab !== "creators" && (
-        <div className="hide-scrollbar flex items-center gap-1.5 overflow-x-auto px-4 py-2 border-b border-white/5">
-          <span className="text-[10px] text-[var(--color-text-muted)] mr-1 whitespace-nowrap">Tags:</span>
-          {activeTagFilter && (
+      <div className="hide-scrollbar flex items-center gap-2 overflow-x-auto border-b border-white/10 px-4">
+        <div className="flex items-center gap-0">
+          {tabs.map((t) => (
             <button
-              onClick={() => setActiveTagFilter(null)}
-              className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-[var(--color-text-secondary)] hover:bg-white/15"
-            >
-              All
-            </button>
-          )}
-          {userTags.slice(0, 20).map((t) => (
-            <button
-              key={t.tag}
-              onClick={() => setActiveTagFilter(activeTagFilter === t.tag ? null : t.tag)}
+              key={t.key}
+              onMouseEnter={() => { if (t.key === "creators") void preloadMediaCreatorsPanel() }}
+              onClick={() => {
+                startTransition(() => {
+                  setTab(t.key)
+                  if (t.key !== "creators") setFilterDescribed(false)
+                })
+              }}
               className={cn(
-                "whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] transition-colors",
-                activeTagFilter === t.tag
-                  ? "bg-blue-500/30 text-blue-300"
-                  : "bg-white/5 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--color-text-secondary)]"
+                "whitespace-nowrap px-3 py-2 text-sm transition-colors border-b-2",
+                tab === t.key
+                  ? "border-[var(--color-accent)] text-[var(--color-text-primary)]"
+                  : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
               )}
             >
-              {t.tag} <span className="text-white/30">({t.count})</span>
+              {t.label}{t.count != null ? ` (${t.count})` : ""}
             </button>
           ))}
         </div>
-      )}
-
-      {/* ── Term Browser ─────────────────────────────────────────────────── */}
-      {showTermBrowser && (
-        <TermBrowser
-          terms={termBrowserItems}
-          activeTerm={null}
-          onSelect={(t) => setTerm(t)}
-        />
-      )}
+        {showTermBrowser && (
+          <TermBrowser
+            terms={termBrowserItems}
+            activeTerm={null}
+            onSelect={(t) => setTerm(t)}
+          />
+        )}
+      </div>
 
       {/* ── AI Described section ─────────────────────────────────────────── */}
       {showDescribedRail && (

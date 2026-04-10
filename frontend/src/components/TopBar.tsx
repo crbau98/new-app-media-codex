@@ -1,9 +1,7 @@
-import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, startTransition } from "react"
+import { useState, useEffect, useMemo, useRef, lazy, Suspense, startTransition } from "react"
 import { useIsFetching, useQuery } from "@tanstack/react-query"
 import { useAppStore } from "../store"
-import { useAppShellSummary } from "@/hooks/useAppShellSummary"
 import { api, type Performer, type ScreenshotTerm, type UserTagCount } from "../lib/api"
-import { Button } from "./Button"
 import { Spinner } from "./Spinner"
 import { cn } from "@/lib/cn"
 import { getPerformerAvatarSrc, getPerformerMeta } from "@/lib/performer"
@@ -19,16 +17,6 @@ const VIEW_LABELS: Record<string, string> = {
   graph: "Media Library",
   performers: "Creator Roster",
   settings: "Settings",
-}
-
-const VIEW_DESCRIPTIONS: Record<string, string> = {
-  overview: "Stream faster, filter smarter, and jump straight into your strongest media",
-  items: "Stream faster, filter smarter, and jump straight into your strongest media",
-  images: "Browse, rate, and stream creator-linked media without the clutter",
-  hypotheses: "Stream faster, filter smarter, and jump straight into your strongest media",
-  graph: "Stream faster, filter smarter, and jump straight into your strongest media",
-  performers: "Verify creators, queue capture, and keep the roster clean and responsive",
-  settings: "Tune streaming, capture, and playback preferences for publish-ready performance",
 }
 
 const MAX_RECENT = 8
@@ -92,11 +80,9 @@ export function TopBar() {
   const activeView = useAppStore((s) => s.activeView)
   const theme = useAppStore((s) => s.theme)
   const toggleTheme = useAppStore((s) => s.toggleTheme)
-  const crawlRunning = useAppStore((s) => s.crawlRunning)
   const collapsed = useAppStore((s) => s.sidebarCollapsed)
   const mobileNavOpen = useAppStore((s) => s.mobileNavOpen)
   const setMobileNavOpen = useAppStore((s) => s.setMobileNavOpen)
-  const addToast = useAppStore((s) => s.addToast)
   const setActiveView = useAppStore((s) => s.setActiveView)
   const setPendingPerformer = useAppStore((s) => s.setPendingPerformer)
 
@@ -109,9 +95,7 @@ export function TopBar() {
   const [creatorResults, setCreatorResults] = useState<Performer[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
-  const [triggering, setTriggering] = useState(false)
 
-  const openShortcuts = useCallback(() => setShortcutsOpen(true), [])
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -276,20 +260,6 @@ export function TopBar() {
     setActiveIndex(-1)
   }, [recentSearches.length, resultEntries.length, trimmedSearch])
 
-  async function handleRunCrawl() {
-    if (crawlRunning || triggering) return
-    setTriggering(true)
-    try {
-      await api.triggerCrawl()
-      addToast("Crawl started", "success")
-    } catch (err) {
-      console.error("[TopBar] triggerCrawl error", err)
-      addToast("Failed to start crawl", "error")
-    } finally {
-      setTriggering(false)
-    }
-  }
-
   function runMediaSearch(query: string) {
     const nextQuery = query.trim()
     if (!nextQuery) return
@@ -407,7 +377,7 @@ export function TopBar() {
           leftOffset,
         )}
       >
-        <div className="glass mx-auto flex max-w-[1600px] items-center gap-3 rounded-2xl px-3 py-2 sm:px-4">
+        <div className="glass mx-auto flex max-w-[1600px] items-center gap-4 rounded-2xl px-4 py-3 sm:gap-5 sm:px-5">
           <button
             onClick={() => setMobileNavOpen(!mobileNavOpen)}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text-primary md:hidden"
@@ -416,11 +386,11 @@ export function TopBar() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
           </button>
 
-          <h2 className="min-w-0 shrink-0 text-sm font-semibold text-text-primary">
+          <h2 className="min-w-0 shrink-0 text-base font-semibold tracking-tight text-text-primary sm:text-lg">
             {VIEW_LABELS[activeView] ?? activeView}
           </h2>
 
-          <div ref={containerRef} className="relative hidden max-w-md flex-1 md:block">
+          <div ref={containerRef} className="relative hidden max-w-lg flex-1 md:block">
             <form onSubmit={handleSearch}>
               <svg className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-text-muted" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
               <input
@@ -434,7 +404,7 @@ export function TopBar() {
                 }}
                 onFocus={() => setDropdownOpen(true)}
                 onKeyDown={handleKeyDown}
-                className="w-full rounded-full border border-white/[0.08] bg-white/[0.04] py-1.5 pl-8 pr-14 text-xs text-text-primary placeholder:text-text-muted transition-[background-color,border-color,box-shadow] focus:border-accent/40 focus:bg-white/[0.06] focus:outline-none"
+                className="w-full rounded-full border border-white/[0.08] bg-white/[0.04] py-2 pl-8 pr-14 text-sm text-text-primary placeholder:text-text-muted transition-[background-color,border-color,box-shadow] focus:border-accent/40 focus:bg-white/[0.06] focus:outline-none"
                 role="combobox"
                 aria-expanded={showDropdown}
                 aria-haspopup="listbox"
@@ -638,43 +608,25 @@ export function TopBar() {
 
           <div className="flex-1" />
 
-          <TopBarSummaryChips ready={topBarEnhancementsReady} onNavigate={setActiveView} />
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <button
+              onClick={toggleTheme}
+              className="hidden h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-white/[0.06] hover:text-text-primary sm:flex"
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              )}
+            </button>
 
-          <div
-            className={cn(
-              "flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5",
-              crawlRunning ? "border-green/30 bg-green/10" : "border-border bg-bg-subtle",
+            {topBarEnhancementsReady && (
+              <Suspense fallback={null}>
+                <NotificationCenter />
+              </Suspense>
             )}
-            role="status"
-            aria-live="polite"
-            title={crawlRunning ? "Crawler active" : "Crawler idle"}
-          >
-            {crawlRunning
-              ? <Spinner size={11} className="text-green" label="Crawl running" />
-              : <span className="h-1.5 w-1.5 rounded-full bg-text-muted/50" />
-            }
-            <span className={cn("hidden font-mono text-[11px] sm:inline", crawlRunning ? "text-green" : "text-text-muted")}>
-              {crawlRunning ? "running" : "idle"}
-            </span>
           </div>
-
-          <button
-            onClick={toggleTheme}
-            className="hidden h-7 w-7 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-white/[0.06] hover:text-text-primary sm:flex"
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            {theme === "dark" ? (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-            ) : (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            )}
-          </button>
-
-          {topBarEnhancementsReady && (
-            <Suspense fallback={null}>
-              <NotificationCenter />
-            </Suspense>
-          )}
         </div>
       </header>
       {(topBarEnhancementsReady || shortcutsOpen) && (
@@ -683,43 +635,5 @@ export function TopBar() {
         </Suspense>
       )}
     </>
-  )
-}
-
-function TopBarSummaryChips({
-  ready,
-  onNavigate,
-}: {
-  ready: boolean
-  onNavigate: (view: "overview" | "images" | "performers" | "settings") => void
-}) {
-  const { data: summary } = useAppShellSummary(ready)
-
-  if (!ready) {
-    return <div className="hidden items-center gap-2 lg:flex" aria-hidden="true" />
-  }
-
-  const mediaCount = summary?.stats?.totals?.image_count ?? 0
-
-  return (
-    <div className="hidden items-center gap-2 lg:flex">
-      <button
-        type="button"
-        onClick={() => startTransition(() => onNavigate("images"))}
-        className="flex items-center gap-1.5 rounded-xl border border-border bg-bg-subtle px-2.5 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent/30 hover:text-text-primary"
-        title="Open Media"
-      >
-        <span className="font-mono font-semibold text-text-primary">{mediaCount.toLocaleString()}</span>
-        <span className="text-text-muted">media</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => startTransition(() => onNavigate("performers"))}
-        className="flex items-center gap-1.5 rounded-xl border border-border bg-bg-subtle px-2.5 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent/30 hover:text-text-primary"
-        title="Open Creators"
-      >
-        <span className="text-text-muted">creators</span>
-      </button>
-    </div>
   )
 }

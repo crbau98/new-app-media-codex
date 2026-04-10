@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 import re
 import sqlite3
+import subprocess
 from typing import AsyncIterator
 import time
 import uuid
@@ -84,6 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = db
     app.state.settings = settings
     app.state.service = service
+    Path("/app/data/posters").mkdir(parents=True, exist_ok=True)
     if settings.stream_only_media:
         _purge_directory_contents(settings.image_dir)
         _purge_directory_contents(_screenshots_dir)
@@ -388,6 +390,27 @@ def healthz() -> JSONResponse:
         },
         status_code=200,
     )
+
+
+def _current_commit_hash() -> str:
+    try:
+        return (
+            subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=BASE_DIR.parent,
+                stderr=subprocess.DEVNULL,
+            )
+            .decode("utf-8")
+            .strip()
+            or "dev"
+        )
+    except Exception:
+        return "dev"
+
+
+@app.get("/api/version")
+def api_version() -> JSONResponse:
+    return JSONResponse({"version": "1.0", "commit": _current_commit_hash()})
 
 
 from app.api.crawl import router as crawl_router

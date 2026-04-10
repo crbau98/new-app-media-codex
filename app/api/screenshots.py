@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import io
 import json
 import logging
 import re
@@ -321,8 +322,21 @@ async def proxy_media(url: str = Query(...), request: Request = None):
             client.build_request("GET", url, headers=req_headers),
             stream=True,
         )
+    except httpx.TimeoutException:
+        return JSONResponse(
+            status_code=502,
+            content={"error": "upstream_timeout", "detail": "Upstream media request timed out"},
+        )
+    except httpx.RequestError as exc:
+        return JSONResponse(
+            status_code=502,
+            content={"error": "upstream_connection_error", "detail": f"Could not fetch media: {exc}"},
+        )
     except Exception as exc:
-        raise HTTPException(502, f"Could not fetch media: {exc}") from exc
+        return JSONResponse(
+            status_code=502,
+            content={"error": "proxy_media_failed", "detail": f"Could not fetch media: {exc}"},
+        )
     if resp.status_code >= 400:
         status_code = resp.status_code if resp.status_code in {401, 403, 404, 416} else 502
         detail = f"Upstream media returned {resp.status_code}"
@@ -421,6 +435,19 @@ def _get_poster_extract_lock(shot_id: int) -> asyncio.Lock:
             for k in list(_POSTER_EXTRACT_LOCKS.keys())[:512]:
                 _POSTER_EXTRACT_LOCKS.pop(k, None)
         return _POSTER_EXTRACT_LOCKS[shot_id]
+
+
+_POSTERS_DIR = Path("/app/data/posters")
+
+
+def _placeholder_poster_response() -> Response:
+    buffer = io.BytesIO()
+    Image.new("RGB", (1, 1), color=(32, 32, 32)).save(buffer, format="JPEG", quality=60)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=60", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 async def _poster_via_firecrawl(
@@ -522,7 +549,7 @@ async def _poster_via_ffmpeg(source_url: str, poster_path: Path, port: str) -> b
 
 async def _bg_extract_poster(app_state, shot_id: int, source_url: str, page_url: str) -> None:
     """Fire-and-forget background poster extraction for pre-warming the cache."""
-    poster_path = Path(f"/app/data/posters/{shot_id}.jpg")
+    poster_path = _POSTERS_DIR / f"{shot_id}.jpg"
     if poster_path.exists() and poster_path.stat().st_size > 0:
         return
     try:
@@ -532,7 +559,7 @@ async def _bg_extract_poster(app_state, shot_id: int, source_url: str, page_url:
             async with lock:
                 if poster_path.exists() and poster_path.stat().st_size > 0:
                     return
-                Path("/app/data/posters").mkdir(parents=True, exist_ok=True)
+                _POSTERS_DIR.mkdir(parents=True, exist_ok=True)
                 client: httpx.AsyncClient = app_state.http_client
                 fc_key: str = getattr(getattr(app_state, "settings", None), "firecrawl_api_key", "") or ""
                 port = __import__("os").environ.get("PORT", "10000")
@@ -561,9 +588,8 @@ async def video_poster(shot_id: int, request: Request):
     import os
     from fastapi.responses import FileResponse
 
-    posters_dir = Path("/app/data/posters")
-    posters_dir.mkdir(parents=True, exist_ok=True)
-    poster_path = posters_dir / f"{shot_id}.jpg"
+    _POSTERS_DIR.mkdir(parents=True, exist_ok=True)
+    poster_path = _POSTERS_DIR / f"{shot_id}.jpg"
 
     # 1. Fast path — disk cache
     if poster_path.exists() and poster_path.stat().st_size > 0:
@@ -615,7 +641,7 @@ async def video_poster(shot_id: int, request: Request):
                 except Exception:
                     pass
             if not source_url.startswith(("http://", "https://")):
-                raise HTTPException(404, "No remote source URL for this shot")
+                return _placeholder_poster_response()
 
             page_url_val = str(_row["page_url"] or "")
             client: httpx.AsyncClient = request.app.state.http_client
@@ -638,7 +664,7 @@ async def video_poster(shot_id: int, request: Request):
                     headers={"Cache-Control": "public, max-age=604800", "X-Content-Type-Options": "nosniff"},
                 )
 
-            raise HTTPException(503, "Poster extraction failed")
+            return _placeholder_poster_response()
     finally:
         _POSTER_SEMAPHORE.release()
 
@@ -1085,7 +1111,7 @@ def browse_screenshots(
             "next_offset": raw_cursor,
         }
 
-    payload = _get_cached_screenshots_payload(request.app.state, cache_key, 300.0, build, copy_payload=False)
+    payload = _get_cached_screenshots_payload(request.app.state, cache_key, 300.0, build, copy_payload=True)
 
     # Pre-warm poster cache for video items via BackgroundTasks (safe in sync endpoints).
     _warm_count = 0
