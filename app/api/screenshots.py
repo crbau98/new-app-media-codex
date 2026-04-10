@@ -1074,26 +1074,6 @@ def browse_screenshots(
             for k in _BROWSE_STRIP_KEYS:
                 s.pop(k, None)
 
-        # Pre-warm poster cache for video items in background (max 8 per page).
-        # Uses the same global semaphore so it never overwhelms the server.
-        _pre_warm_count = 0
-        for _s in valid:
-            if _pre_warm_count >= 8:
-                break
-            _s_id = _s.get("id")
-            if not _s_id or not _screenshot_is_video(_s):
-                continue
-            _poster_p = Path(f"/app/data/posters/{_s_id}.jpg")
-            if _poster_p.exists() and _poster_p.stat().st_size > 0:
-                continue
-            _s_source = str(_s.get("source_url") or "")
-            _s_page   = str(_s.get("page_url") or "")
-            if _s_source.startswith(("http://", "https://")):
-                asyncio.create_task(
-                    _bg_extract_poster(request.app.state, _s_id, _s_source, _s_page)
-                )
-                _pre_warm_count += 1
-
         return {
             "screenshots": valid,
             "total": raw_total,
@@ -1103,7 +1083,28 @@ def browse_screenshots(
             "next_offset": raw_cursor,
         }
 
-    return _get_cached_screenshots_payload(request.app.state, cache_key, 300.0, build, copy_payload=False)
+    payload = _get_cached_screenshots_payload(request.app.state, cache_key, 300.0, build, copy_payload=False)
+
+    # Pre-warm poster cache for video items via BackgroundTasks (safe in sync endpoints).
+    _warm_count = 0
+    for _s in payload.get("screenshots", []):
+        if _warm_count >= 8:
+            break
+        _s_id = _s.get("id")
+        if not _s_id or not _screenshot_is_video(_s):
+            continue
+        _poster_p = Path(f"/app/data/posters/{_s_id}.jpg")
+        if _poster_p.exists() and _poster_p.stat().st_size > 0:
+            continue
+        _s_source = str(_s.get("source_url") or "")
+        _s_page = str(_s.get("page_url") or "")
+        if _s_source.startswith(("http://", "https://")):
+            background_tasks.add_task(
+                _bg_extract_poster, request.app.state, _s_id, _s_source, _s_page
+            )
+            _warm_count += 1
+
+    return payload
 
 
 @router.get("/random-rated")
