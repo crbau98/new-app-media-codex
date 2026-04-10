@@ -182,8 +182,8 @@ def _probe_remote_media_kind(app_state, media_url: str) -> str | None:
 def _screenshot_is_video(record: dict) -> bool:
     source = str(record.get("source") or "").lower()
     media_url = str(record.get("source_url") or record.get("local_url") or record.get("local_path") or record.get("page_url") or "")
-    ext = media_url.split("?")[0].rsplit(".", 1)[-1].lower()
-    return ext in _VIDEO_EXTS or source in {"redgifs", "ytdlp"}
+    ext = Path(media_url.split("?")[0]).suffix.lower()
+    return ext in _VIDEO_EXTS or source in {"redgifs", "ytdlp", "coomer"}
 
 
 def _is_video_url_str(url: str) -> bool:
@@ -595,10 +595,11 @@ async def video_poster(shot_id: int, request: Request):
             try:
                 with db.connect() as _conn:
                     _row = _conn.execute(
-                        "SELECT source_url, local_url, page_url FROM screenshots WHERE id = ?",
+                        "SELECT source_url, local_path, page_url FROM screenshots WHERE id = ?",
                         (shot_id,),
                     ).fetchone()
-            except Exception:
+            except Exception as _db_err:
+                _logger.warning("video-poster DB error for shot %s: %s", shot_id, _db_err)
                 _row = None
             if not _row:
                 raise HTTPException(404, "Shot not found")
@@ -606,7 +607,7 @@ async def video_poster(shot_id: int, request: Request):
             source_url = str(_row["source_url"] or "")
             if not source_url.startswith(("http://", "https://")):
                 try:
-                    _local = str(_row["local_url"] or "")
+                    _local = str(_row["local_path"] or "")
                     if _local.startswith(("http://", "https://")):
                         source_url = _local
                 except Exception:
