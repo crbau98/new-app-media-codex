@@ -423,14 +423,57 @@ async def proxy_media(url: str = Query(...), request: Request = None):
 # Cached to /app/data/posters/ on persistent disk.
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# Global semaphore — cap concurrent poster extractions so we never saturate
-# CPU/memory.  Returns HTTP 503 immediately when full so the frontend falls
-# through to canvas extraction without waiting.
+# Global semaphore — cap concurrent poster extractions.  Render starter has
+# 0.5 CPU / 512 MB.  Firecrawl extractions are lightweight (HTTP only);
+# ffmpeg extractions are heavy (~50–100 MB each).  12 slots is a reasonable
+# balance: most slots will be occupied by Firecrawl (fast), with a few
+# ffmpeg fallbacks running concurrently.
 # ---------------------------------------------------------------------------
-_POSTER_SEMAPHORE = asyncio.Semaphore(8)
+_POSTER_SEMAPHORE = asyncio.Semaphore(12)
 
 _POSTER_EXTRACT_LOCKS: dict[int, asyncio.Lock] = {}
 _POSTER_EXTRACT_LOCKS_LOCK = Lock()
+
+# ---------------------------------------------------------------------------
+# In-memory set of shot IDs whose poster JPEG already exists on disk.
+# Avoids repeated stat() calls on the persistent disk for every browse
+# request — stat() on a networked disk can be surprisingly expensive at
+# scale when checking 48 files per page load.
+# ---------------------------------------------------------------------------
+_POSTER_DISK_CACHE: set[int] = set()
+_POSTER_DISK_CACHE_LOADED = False
+_POSTER_DISK_CACHE_LOCK = Lock()
+
+
+def _load_poster_disk_cache() -> None:
+    """Scan /app/data/posters/ once at startup and populate _POSTER_DISK_CACHE."""
+    global _POSTER_DISK_CACHE_LOADED
+    with _POSTER_DISK_CACHE_LOCK:
+        if _POSTER_DISK_CACHE_LOADED:
+            return
+        try:
+            for p in _POSTERS_DIR.iterdir():
+                if p.suffix == ".jpg" and p.stat().st_size > 0:
+                    try:
+                        _POSTER_DISK_CACHE.add(int(p.stem))
+                    except ValueError:
+                        pass
+        except FileNotFoundError:
+            pass
+        _POSTER_DISK_CACHE_LOADED = True
+        _logger.info("Poster disk cache loaded: %d posters on disk", len(_POSTER_DISK_CACHE))
+
+
+def _poster_is_cached(shot_id: int) -> bool:
+    """Check if a poster is already on disk (fast: checks in-memory set first)."""
+    if not _POSTER_DISK_CACHE_LOADED:
+        _load_poster_disk_cache()
+    return shot_id in _POSTER_DISK_CACHE
+
+
+def _mark_poster_cached(shot_id: int) -> None:
+    """Record that a poster has been successfully saved to disk."""
+    _POSTER_DISK_CACHE.add(shot_id)
 
 
 def _get_poster_extract_lock(shot_id: int) -> asyncio.Lock:
@@ -583,15 +626,23 @@ async def _poster_via_ffmpeg(source_url: str, poster_path: Path, port: str) -> b
 
 async def _bg_extract_poster(app_state, shot_id: int, source_url: str, page_url: str) -> None:
     """Fire-and-forget background poster extraction for pre-warming the cache."""
+    # Fast in-memory check — avoids disk stat entirely
+    if _poster_is_cached(shot_id):
+        return
     poster_path = _POSTERS_DIR / f"{shot_id}.jpg"
     if poster_path.exists() and poster_path.stat().st_size > 0:
+        _mark_poster_cached(shot_id)
         return
     try:
         await asyncio.sleep(0)  # yield so browse response sends first
         async with _POSTER_SEMAPHORE:
             lock = _get_poster_extract_lock(shot_id)
             async with lock:
+                # Re-check after acquiring lock
+                if _poster_is_cached(shot_id):
+                    return
                 if poster_path.exists() and poster_path.stat().st_size > 0:
+                    _mark_poster_cached(shot_id)
                     return
                 _POSTERS_DIR.mkdir(parents=True, exist_ok=True)
                 client: httpx.AsyncClient = app_state.http_client
@@ -599,8 +650,10 @@ async def _bg_extract_poster(app_state, shot_id: int, source_url: str, page_url:
                 port = __import__("os").environ.get("PORT", "10000")
                 if fc_key and page_url and page_url.startswith(("http://", "https://")):
                     if await _poster_via_firecrawl(client, fc_key, page_url, poster_path):
+                        _mark_poster_cached(shot_id)
                         return
-                await _poster_via_ffmpeg(source_url, poster_path, port)
+                if await _poster_via_ffmpeg(source_url, poster_path, port):
+                    _mark_poster_cached(shot_id)
     except Exception:
         pass
 
@@ -625,8 +678,15 @@ async def video_poster(shot_id: int, request: Request):
     _POSTERS_DIR.mkdir(parents=True, exist_ok=True)
     poster_path = _POSTERS_DIR / f"{shot_id}.jpg"
 
-    # 1. Fast path — disk cache
+    # 1. Fast path — in-memory disk-cache check (avoids stat() on persistent disk)
+    if _poster_is_cached(shot_id):
+        return FileResponse(
+            str(poster_path), media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=604800", "X-Content-Type-Options": "nosniff"},
+        )
+    # Fallback: stat check in case the in-memory cache missed (e.g. generated before cache init)
     if poster_path.exists() and poster_path.stat().st_size > 0:
+        _mark_poster_cached(shot_id)
         return FileResponse(
             str(poster_path), media_type="image/jpeg",
             headers={"Cache-Control": "public, max-age=604800", "X-Content-Type-Options": "nosniff"},
@@ -646,6 +706,7 @@ async def video_poster(shot_id: int, request: Request):
         async with lock:
             # Re-check inside lock (another request may have completed first)
             if poster_path.exists() and poster_path.stat().st_size > 0:
+                _mark_poster_cached(shot_id)
                 return FileResponse(
                     str(poster_path), media_type="image/jpeg",
                     headers={"Cache-Control": "public, max-age=604800"},
@@ -684,6 +745,7 @@ async def video_poster(shot_id: int, request: Request):
             # 3. Firecrawl (fast — no video download)
             if fc_key and page_url_val.startswith(("http://", "https://")):
                 if await _poster_via_firecrawl(client, fc_key, page_url_val, poster_path):
+                    _mark_poster_cached(shot_id)
                     return FileResponse(
                         str(poster_path), media_type="image/jpeg",
                         headers={"Cache-Control": "public, max-age=604800", "X-Content-Type-Options": "nosniff"},
@@ -691,6 +753,7 @@ async def video_poster(shot_id: int, request: Request):
 
             # 4. ffmpeg streaming fallback
             if await _poster_via_ffmpeg(source_url, poster_path, port):
+                _mark_poster_cached(shot_id)
                 return FileResponse(
                     str(poster_path), media_type="image/jpeg",
                     headers={"Cache-Control": "public, max-age=604800", "X-Content-Type-Options": "nosniff"},
@@ -1140,15 +1203,15 @@ def browse_screenshots(
     payload = _get_cached_screenshots_payload(request.app.state, cache_key, 300.0, build, copy_payload=True)
 
     # Pre-warm poster cache for video items via BackgroundTasks (safe in sync endpoints).
+    # Uses in-memory disk cache to skip already-extracted posters without stat() calls.
     _warm_count = 0
     for _s in payload.get("screenshots", []):
-        if _warm_count >= 24:
+        if _warm_count >= 32:
             break
         _s_id = _s.get("id")
         if not _s_id or not _screenshot_is_video(_s):
             continue
-        _poster_p = Path(f"/app/data/posters/{_s_id}.jpg")
-        if _poster_p.exists() and _poster_p.stat().st_size > 0:
+        if _poster_is_cached(_s_id):
             continue
         _s_source = str(_s.get("source_url") or "")
         _s_page = str(_s.get("page_url") or "")
@@ -1220,9 +1283,13 @@ def db_stats(request: Request):
             "with_thumbnail_url": with_thumbnail,
             "with_page_url": with_page_url,
             "without_any_media_url": total - with_source_url - with_local_path + min(with_source_url, with_local_path),
+            "posters_cached_on_disk": len(_POSTER_DISK_CACHE),
+            "poster_semaphore_available": _POSTER_SEMAPHORE._value,
             "config": {
                 "first_page_limit_cap": _FIRST_PAGE_LIMIT_CAP,
                 "max_browse_scan_rows": _MAX_BROWSE_SCAN_ROWS,
+                "poster_semaphore_max": 12,
+                "poster_prewarm_max": 32,
             },
         }
     except Exception as exc:

@@ -87,6 +87,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.service = service
     Path("/app/data/posters").mkdir(parents=True, exist_ok=True)
+    # Eagerly load the in-memory poster disk cache so the first browse
+    # request doesn't pay the cost of scanning the posters directory.
+    from app.api.screenshots import _load_poster_disk_cache
+    _load_poster_disk_cache()
     global _COMMIT_HASH
     _COMMIT_HASH = _resolve_commit_hash()
     if settings.stream_only_media:
