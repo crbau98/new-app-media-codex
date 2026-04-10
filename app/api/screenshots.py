@@ -427,7 +427,7 @@ async def proxy_media(url: str = Query(...), request: Request = None):
 # CPU/memory.  Returns HTTP 503 immediately when full so the frontend falls
 # through to canvas extraction without waiting.
 # ---------------------------------------------------------------------------
-_POSTER_SEMAPHORE = asyncio.Semaphore(5)
+_POSTER_SEMAPHORE = asyncio.Semaphore(8)
 
 _POSTER_EXTRACT_LOCKS: dict[int, asyncio.Lock] = {}
 _POSTER_EXTRACT_LOCKS_LOCK = Lock()
@@ -447,13 +447,40 @@ def _get_poster_extract_lock(shot_id: int) -> asyncio.Lock:
 _POSTERS_DIR = Path("/app/data/posters")
 
 
+_PLACEHOLDER_POSTER_BYTES: bytes | None = None
+
+
 def _placeholder_poster_response() -> Response:
-    buffer = io.BytesIO()
-    Image.new("RGB", (1, 1), color=(32, 32, 32)).save(buffer, format="JPEG", quality=60)
+    """Return a small dark gradient placeholder with a play-button triangle.
+
+    The image is 320×180 (16:9) so the browser has a properly-sized rectangle
+    rather than a 1×1 pixel that appears blank.  Cached for 30 s so the browser
+    retries soon (the real poster may be ready next time).
+    """
+    global _PLACEHOLDER_POSTER_BYTES
+    if _PLACEHOLDER_POSTER_BYTES is None:
+        from PIL import ImageDraw
+        w, h = 320, 180
+        img = Image.new("RGB", (w, h), color=(28, 28, 32))
+        draw = ImageDraw.Draw(img)
+        # Subtle gradient effect
+        for y in range(h):
+            shade = int(28 + 12 * (y / h))
+            draw.line([(0, y), (w, y)], fill=(shade, shade, shade + 4))
+        # Play-button triangle
+        cx, cy = w // 2, h // 2
+        tri_size = 24
+        draw.polygon(
+            [(cx - tri_size // 2, cy - tri_size), (cx - tri_size // 2, cy + tri_size), (cx + tri_size, cy)],
+            fill=(200, 200, 200, 180),
+        )
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=65)
+        _PLACEHOLDER_POSTER_BYTES = buf.getvalue()
     return Response(
-        content=buffer.getvalue(),
+        content=_PLACEHOLDER_POSTER_BYTES,
         media_type="image/jpeg",
-        headers={"Cache-Control": "public, max-age=60", "X-Content-Type-Options": "nosniff"},
+        headers={"Cache-Control": "public, max-age=30", "X-Content-Type-Options": "nosniff"},
     )
 
 
@@ -1115,7 +1142,7 @@ def browse_screenshots(
     # Pre-warm poster cache for video items via BackgroundTasks (safe in sync endpoints).
     _warm_count = 0
     for _s in payload.get("screenshots", []):
-        if _warm_count >= 8:
+        if _warm_count >= 24:
             break
         _s_id = _s.get("id")
         if not _s_id or not _screenshot_is_video(_s):

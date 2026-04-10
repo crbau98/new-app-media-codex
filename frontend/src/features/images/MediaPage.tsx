@@ -516,7 +516,18 @@ const MediaCard = memo(function MediaCard({
               loading={isAboveFold ? "eager" : "lazy"}
               decoding={isAboveFold ? "sync" : "async"}
               fetchPriority={isAboveFold ? "high" : "low"}
-              onLoad={() => setImgLoaded(true)}
+              onLoad={(e) => {
+                const img = e.target as HTMLImageElement
+                // Consider poster "real" if larger than the placeholder (320×180)
+                const isReal = img.naturalWidth > 320 || img.naturalHeight > 180
+                if (isReal) {
+                  setImgLoaded(true)
+                } else {
+                  // Placeholder poster — hide img to show the gradient + play icon underneath
+                  img.style.opacity = '0'
+                  setImgLoaded(true)
+                }
+              }}
               onError={(e) => {
                 const img = e.target as HTMLImageElement
                 const retries = parseInt(img.dataset.posterRetries || '0')
@@ -524,13 +535,13 @@ const MediaCard = memo(function MediaCard({
                   img.dataset.posterRetries = String(retries + 1)
                   setTimeout(() => {
                     img.src = videoPosterSrc + (videoPosterSrc.includes('?') ? '&' : '?') + `_r=${retries + 1}`
-                  }, 1000 * (retries + 1))
+                  }, 2000 * (retries + 1))
                 } else {
-                  img.style.display = 'none'
+                  img.style.opacity = '0'
                   setImgLoaded(true) // stop shimmer, show gradient placeholder
                 }
               }}
-              className="relative z-[2] h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
+              className="relative z-[2] h-full w-full object-cover transition-[filter,opacity] duration-200 group-hover:brightness-110"
               alt=""
             />
             <div className="absolute inset-0 z-[3] flex items-center justify-center pointer-events-none">
@@ -737,7 +748,18 @@ const MosaicCard = memo(function MosaicCard({
       className="group relative mb-1 cursor-pointer overflow-hidden rounded-lg bg-white/5 break-inside-avoid"
       style={{ breakInside: "avoid" }}
     >
-      <div style={{ contentVisibility: "auto", containIntrinsicSize: "220px" }}>
+      <div style={{ contentVisibility: "auto", containIntrinsicSize: "220px" }} className="relative">
+        {/* Gradient fallback for video items (shows play icon when poster isn't ready) */}
+        {vid && (
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)", minHeight: "10rem" }}
+          >
+            <div className="rounded-full bg-white/10 p-2">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="white" opacity="0.5"><polygon points="5,3 19,12 5,21" /></svg>
+            </div>
+          </div>
+        )}
         {!previewSrc ? (
           vid && src ? (
             <video
@@ -746,7 +768,7 @@ const MosaicCard = memo(function MosaicCard({
               playsInline
               preload="metadata"
               onError={markMediaBroken}
-              className="w-full transition-[filter] duration-200 group-hover:brightness-110"
+              className="relative z-[1] w-full transition-[filter] duration-200 group-hover:brightness-110"
               style={{ display: "block" }}
             />
           ) : (
@@ -764,6 +786,13 @@ const MosaicCard = memo(function MosaicCard({
             loading="lazy"
             decoding="async"
             fetchPriority="low"
+            onLoad={(e) => {
+              const img = e.target as HTMLImageElement
+              // Placeholder posters are 320×180; hide them so gradient fallback shows
+              if (vid && img.naturalWidth <= 320 && img.naturalHeight <= 180) {
+                img.style.opacity = '0'
+              }
+            }}
             onError={(e) => {
               const img = e.currentTarget
               const isSrc = img.src || ''
@@ -780,9 +809,10 @@ const MosaicCard = memo(function MosaicCard({
                   return
                 }
               }
+              if (vid) { img.style.opacity = '0'; return }
               markPreviewBroken()
             }}
-            className="w-full transition-[filter] duration-200 group-hover:brightness-110"
+            className="relative z-[1] w-full transition-[filter,opacity] duration-200 group-hover:brightness-110"
             style={{ display: "block" }}
           />
         )}
