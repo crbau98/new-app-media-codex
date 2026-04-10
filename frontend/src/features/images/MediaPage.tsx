@@ -1542,6 +1542,8 @@ export function MediaPage() {
   })
 
   const allShots = useMemo(() => data?.pages.flatMap((p) => p.screenshots) ?? [], [data])
+  // Use the server-reported total (from first page) — much more accurate than counting loaded items
+  const serverTotal = data?.pages[0]?.total ?? 0
   const shotById = useMemo(
     () => new Map(allShots.map((shot) => [shot.id, shot])),
     [allShots],
@@ -1928,18 +1930,20 @@ export function MediaPage() {
       return { total, ddg, redgifs, ytdlp }
     }
 
-    let total = 0
+    // Use server-reported total when available (before advanced panel is opened)
+    let total = serverTotal || 0
     let ddg = 0
     let redgifs = 0
     let ytdlp = 0
     for (const shot of allShots) {
-      total += 1
       if (shot.source === "ddg") ddg += 1
       else if (shot.source === "redgifs") redgifs += 1
       else if (shot.source === "ytdlp") ytdlp += 1
     }
+    // If serverTotal is available, keep it; otherwise fall back to loaded count
+    if (!total) total = allShots.length
     return { total, ddg, redgifs, ytdlp }
-  }, [allShots, sources])
+  }, [allShots, sources, serverTotal])
   const ddgCount = sourceCounts.ddg
   const redgifsCount = sourceCounts.redgifs
   const tubeCount = sourceCounts.ytdlp
@@ -2366,15 +2370,16 @@ export function MediaPage() {
       if (shot.ai_summary) described += 1
       if ((shot.rating ?? 0) > 0) rated += 1
     }
+    const displayTotal = totalCount || visibleShots.length
     return {
-      total: visibleShots.length,
+      total: displayTotal,
       videos,
-      images: Math.max(visibleShots.length - videos, 0),
+      images: Math.max(displayTotal - videos, 0),
       linked,
       described,
-      unrated: Math.max(visibleShots.length - rated, 0),
+      unrated: Math.max(displayTotal - rated, 0),
     }
-  }, [visibleShots, allShotMeta])
+  }, [visibleShots, allShotMeta, totalCount])
   const creatorCounts = useMemo(() => {
     const performers = creatorsData?.performers ?? []
     let favorites = 0
@@ -2804,7 +2809,7 @@ export function MediaPage() {
           </div>
 
           <span className="text-xs text-slate-400 whitespace-nowrap">
-            {(visibleShots.length ?? 0).toLocaleString()} items
+            {(totalCount || visibleShots.length || 0).toLocaleString()} items
           </span>
 
           <div className="ml-auto flex items-center gap-2">
