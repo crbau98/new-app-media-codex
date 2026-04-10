@@ -465,7 +465,10 @@ const MediaCard = memo(function MediaCard({
   const [imgLoaded, setImgLoaded] = useState(false)
   const isAboveFold = index <= 3  // only 4 eager loads; rest are lazy to avoid poster-endpoint flood
   const parsedTags = parseAiTags(shot.ai_tags)
-  const videoPosterSrc = shot.thumbnail_url || `/api/screenshots/video-poster/${shot.id}`
+  // Use the API's preview_url (already proxied) → video-poster endpoint → proxy of thumbnail_url as fallback chain
+  const videoPosterSrc = shot.preview_url
+    || `/api/screenshots/video-poster/${shot.id}`
+    || (shot.thumbnail_url ? `/api/screenshots/proxy-media?url=${encodeURIComponent(shot.thumbnail_url)}` : '')
 
   const prevSrcRef = useRef("")
   useEffect(() => {
@@ -492,7 +495,7 @@ const MediaCard = memo(function MediaCard({
     >
       <div style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
         {/* Shimmer while image loads */}
-        {!imgLoaded && previewSrc && (
+        {!imgLoaded && (previewSrc || vid) && (
           <div className="absolute inset-0 shimmer z-[1]" aria-hidden="true" />
         )}
         {vid && (
@@ -527,10 +530,10 @@ const MediaCard = memo(function MediaCard({
                   setImgLoaded(true) // stop shimmer, show gradient placeholder
                 }
               }}
-              className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
+              className="relative z-[2] h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
               alt=""
             />
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 z-[3] flex items-center justify-center pointer-events-none">
               <div className="rounded-full bg-black/60 p-3 shadow-lg transition-transform duration-200 group-hover:scale-110 group-hover:bg-white/20">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
               </div>
