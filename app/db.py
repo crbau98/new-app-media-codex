@@ -2032,12 +2032,11 @@ class Database:
                 params.append(f"%{kw}%")
             where.append(f"NOT ({' OR '.join(kw_conditions)})")
 
-        # Only return items with a usable media URL
+        # Only return items with a usable media URL (source_url or local_path)
         if require_media_url:
             where.append(
                 "("
                 "(source_url IS NOT NULL AND source_url != '' AND (source_url LIKE 'http://%' OR source_url LIKE 'https://%'))"
-                " OR (local_url IS NOT NULL AND local_url != '' AND (local_url LIKE 'http://%' OR local_url LIKE 'https://%'))"
                 " OR (local_path IS NOT NULL AND local_path != '')"
                 ")"
             )
