@@ -465,7 +465,7 @@ const MediaCard = memo(function MediaCard({
   const [imgLoaded, setImgLoaded] = useState(false)
   const isAboveFold = index <= 3  // only 4 eager loads; rest are lazy to avoid poster-endpoint flood
   const parsedTags = parseAiTags(shot.ai_tags)
-  const videoPosterSrc = shot.thumbnail_url || `/api/screenshots/${shot.id}/video-poster`
+  const videoPosterSrc = shot.thumbnail_url || `/api/screenshots/video-poster/${shot.id}`
 
   const prevSrcRef = useRef("")
   useEffect(() => {
@@ -515,7 +515,17 @@ const MediaCard = memo(function MediaCard({
               fetchPriority={isAboveFold ? "high" : "low"}
               onLoad={() => setImgLoaded(true)}
               onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none'
+                const img = e.target as HTMLImageElement
+                const retries = parseInt(img.dataset.posterRetries || '0')
+                if (retries < 2) {
+                  img.dataset.posterRetries = String(retries + 1)
+                  setTimeout(() => {
+                    img.src = videoPosterSrc + (videoPosterSrc.includes('?') ? '&' : '?') + `_r=${retries + 1}`
+                  }, 1000 * (retries + 1))
+                } else {
+                  img.style.display = 'none'
+                  setImgLoaded(true) // stop shimmer, show gradient placeholder
+                }
               }}
               className="h-full w-full object-cover transition-[filter] duration-200 group-hover:brightness-110"
               alt=""
