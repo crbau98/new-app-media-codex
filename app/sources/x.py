@@ -22,11 +22,52 @@ from app.sources.base import (
 )
 
 X_QUERIES = {
-    "libido": ["penis cock libido x.com", "dick cum libido x.com", "twink twunk cock libido x.com", "precum ejaculate hyperspermia libido x.com"],
-    "pssd": ["penis cock PSSD x.com", "dick ejaculate PSSD x.com", "cum hyperspermia PSSD x.com", "twink twunk ejaculate PSSD x.com"],
-    "ejaculation_latency": ["penis cock premature ejaculate x.com", "dick cum hyperspermia ejaculate x.com", "twink twunk cock ejaculate latency x.com", "precum ejaculate control x.com"],
-    "erections": ["penis cock erection x.com", "dick cum erection x.com", "twink twunk cock erection x.com", "ejaculate hyperspermia erection x.com"],
-    "orgasm": ["penis cock ejaculate orgasm x.com", "dick cum hyperspermia orgasm x.com", "twink twunk cock orgasm x.com", "precum ejaculate orgasm x.com"],
+    "onlyfans_creators": [
+        "gay onlyfans creator nude x.com cock",
+        "gay onlyfans male nude twitter explicit",
+        "onlyfans link gay male nude x.com cock",
+        "gay creator onlyfans x.com nude explicit",
+    ],
+    "fansly_creators": [
+        "gay fansly creator nude x.com cock",
+        "gay fansly male nude twitter explicit",
+        "fansly gay male x.com nude explicit",
+        "gay fansly content creator x.com nude",
+    ],
+    "reddit_gay": [
+        "gay nude male x.com cock explicit",
+        "gay porn x.com twitter nude cock",
+        "gay amateur nude twitter cock cum",
+        "gay bareback nude x.com cock",
+    ],
+    "x_gay_creators": [
+        "gay nude creator x.com cock explicit",
+        "gay male nude twitter explicit cock",
+        "gay explicit x.com creator nude",
+        "gay nude onlyfans twitter.com cock cum",
+    ],
+    "lpsg_threads": [
+        "lpsg gay nude x.com cock hung",
+        "gay hung cock nude twitter lpsg",
+    ],
+    "twinks": [
+        "twink gay nude x.com cock cum",
+        "gay twink nude twitter cock explicit",
+        "twink cum gay x.com nude",
+        "twink naked gay x.com cock explicit",
+    ],
+    "muscle_bears": [
+        "muscle gay nude x.com cock daddy",
+        "bear gay hairy nude twitter cock",
+        "gay daddy nude x.com cock muscle",
+        "hairy bear gay nude x.com cock",
+    ],
+    "fetish_kink": [
+        "gay leather bdsm nude x.com cock",
+        "gay bondage nude twitter cock explicit",
+        "gay bareback x.com cock cum nude",
+        "gay bondage nude x.com cock leather",
+    ],
 }
 
 

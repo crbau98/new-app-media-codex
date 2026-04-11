@@ -81,67 +81,67 @@ class Settings:
     themes: list[Theme] = field(
         default_factory=lambda: [
             Theme(
-                slug="libido",
-                label="Male libido and desire amplification",
+                slug="onlyfans_creators",
+                label="OnlyFans Gay Male Creators",
                 queries=[
-                    "male libido",
-                    "male sexual desire dysfunction",
+                    "gay onlyfans creator nude male",
+                    "gay onlyfans male performer leaked",
                 ],
             ),
             Theme(
-                slug="pssd",
-                label="Persistent SSRI sexual dysfunction",
+                slug="fansly_creators",
+                label="Fansly Gay Male Creators",
                 queries=[
-                    "post-SSRI sexual dysfunction",
-                    "persistent SSRI sexual dysfunction",
+                    "gay fansly creator nude male",
+                    "gay fansly male performer explicit",
                 ],
             ),
             Theme(
-                slug="ejaculation_latency",
-                label="Ejaculation latency",
+                slug="reddit_gay",
+                label="Gay Reddit NSFW",
                 queries=[
-                    "premature ejaculation",
-                    "ejaculation latency male",
+                    "gay reddit nsfw nude male r/GayNSFW",
+                    "gay porn reddit nude male r/gayporn",
                 ],
             ),
             Theme(
-                slug="erections",
-                label="Erections and penile hemodynamics",
+                slug="x_gay_creators",
+                label="Gay X/Twitter Creators",
                 queries=[
-                    "erectile dysfunction mechanism",
-                    "nitric oxide erectile function",
+                    "gay nude creator twitter male explicit",
+                    "gay explicit content x.com male onlyfans",
                 ],
             ),
             Theme(
-                slug="orgasm",
-                label="Orgasm and pleasure intensity",
+                slug="lpsg_threads",
+                label="LPSG Gay Content",
                 queries=[
-                    "male orgasm dysfunction",
-                    "anorgasmia male",
+                    "lpsg gay male nude hung cock",
+                    "lpsg gay porn content bareback",
                 ],
             ),
             Theme(
-                slug="penile_anatomy",
-                label="Penile anatomy and sensation",
+                slug="twinks",
+                label="Gay Twinks",
                 queries=[
-                    "penile anatomy male pleasure sensitivity",
-                    "foreskin intact sensitivity male sexuality",
+                    "gay twink nude male",
+                    "twink gay porn onlyfans male",
                 ],
             ),
             Theme(
-                slug="ejaculation_physiology",
-                label="Ejaculation and seminal fluid physiology",
+                slug="muscle_bears",
+                label="Gay Muscle & Bears",
                 queries=[
-                    "male ejaculation physiology autonomic",
-                    "seminal emission hyperspermia semen volume",
+                    "gay muscle nude male bodybuilder",
+                    "gay bear hairy nude male",
                 ],
             ),
             Theme(
-                slug="sexual_acts_physiology",
-                label="Physiology of male sexual acts",
+                slug="fetish_kink",
+                label="Gay Fetish & Kink",
                 queries=[
-                    "prostate stimulation male orgasm physiology",
-                    "fellatio oral sex male arousal physiology",
+                    "gay fetish nude male bdsm leather",
+                    "gay kink bareback nude male bondage",
                 ],
             ),
         ]
