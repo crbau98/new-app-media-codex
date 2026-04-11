@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import { useBrowseItems, useUpdateItem } from '@/hooks/useItems'
 import { useAppStore } from '@/store'
 import type { Filters } from '@/store'
@@ -188,6 +189,15 @@ export function ItemsPage() {
 
   // Intersection observer sentinel ref for auto load-more
   const sentinelRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  // 2.2: Virtualize the items list when there are many items to reduce DOM nodes
+  const virtualizer = useWindowVirtualizer({
+    count: items.length,
+    estimateSize: () => 160,
+    overscan: 5,
+    scrollMargin: listRef.current?.offsetTop ?? 0,
+  })
 
   useEffect(() => {
     const el = sentinelRef.current
@@ -407,50 +417,63 @@ export function ItemsPage() {
         />
       ) : (
         <>
-          <div className="grid gap-3">
-            {items.map((item, idx) => {
+          <div
+            ref={listRef}
+            className="relative"
+            style={{ height: `${virtualizer.getTotalSize()}px` }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const item = items[virtualRow.index]
+              const idx = virtualRow.index
               const isVisited = visitedIds.has(item.id)
               return (
-                <SwipeableCard
+                <div
                   key={item.id}
-                  onSwipeRight={() => {
-                    update.mutate({ id: item.id, patch: { is_saved: !item.is_saved } })
-                    addToast(item.is_saved ? 'Unsaved' : 'Saved')
-                  }}
-                  onSwipeLeft={() => {
-                    if (item.review_status !== 'reviewing') {
-                      const prev = item.review_status
-                      update.mutate({ id: item.id, patch: { review_status: 'reviewing' } })
-                      addToast('Marked as reviewed', 'success', {
-                        label: 'Undo',
-                        onClick: () => update.mutate({ id: item.id, patch: { review_status: prev } }),
-                      })
-                    }
-                  }}
-                  rightLabel={item.is_saved ? 'Unsave' : 'Save'}
-                  leftLabel="Reviewed"
+                  data-index={idx}
+                  ref={virtualizer.measureElement}
+                  className="absolute top-0 left-0 w-full pb-3"
+                  style={{ transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)` }}
                 >
-                  <div
-                    className={cn(
-                      'transition-all duration-200 card-hover',
-                      idx === focusedIdx && 'ring-1 ring-accent/40 rounded-xl',
-                      isVisited && 'opacity-70',
-                    )}
-                    onClick={() => handleCardClick(item.id, idx)}
+                  <SwipeableCard
+                    onSwipeRight={() => {
+                      update.mutate({ id: item.id, patch: { is_saved: !item.is_saved } })
+                      addToast(item.is_saved ? 'Unsaved' : 'Saved')
+                    }}
+                    onSwipeLeft={() => {
+                      if (item.review_status !== 'reviewing') {
+                        const prev = item.review_status
+                        update.mutate({ id: item.id, patch: { review_status: 'reviewing' } })
+                        addToast('Marked as reviewed', 'success', {
+                          label: 'Undo',
+                          onClick: () => update.mutate({ id: item.id, patch: { review_status: prev } }),
+                        })
+                      }
+                    }}
+                    rightLabel={item.is_saved ? 'Unsave' : 'Save'}
+                    leftLabel="Reviewed"
                   >
-                    <SourceCard
-                      density={density}
-                      item={item}
-                      selected={selected.has(item.id)}
-                      index={idx}
-                      visited={isVisited}
-                      onSelect={(id) => {
-                        // stop propagation to prevent drawer from opening when selecting
-                        toggleSelect(id)
-                      }}
-                    />
-                  </div>
-                </SwipeableCard>
+                    <div
+                      className={cn(
+                        'transition-all duration-200 card-hover',
+                        idx === focusedIdx && 'ring-1 ring-accent/40 rounded-xl',
+                        isVisited && 'opacity-70',
+                      )}
+                      onClick={() => handleCardClick(item.id, idx)}
+                    >
+                      <SourceCard
+                        density={density}
+                        item={item}
+                        selected={selected.has(item.id)}
+                        index={idx}
+                        visited={isVisited}
+                        onSelect={(id) => {
+                          // stop propagation to prevent drawer from opening when selecting
+                          toggleSelect(id)
+                        }}
+                      />
+                    </div>
+                  </SwipeableCard>
+                </div>
               )
             })}
           </div>

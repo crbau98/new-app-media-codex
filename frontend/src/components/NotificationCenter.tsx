@@ -55,11 +55,10 @@ export function NotificationCenter() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   const notifications = useAppStore((s) => s.notifications)
+  const unreadCount = useAppStore((s) => s.unreadCount)
   const markNotificationRead = useAppStore((s) => s.markNotificationRead)
   const markAllRead = useAppStore((s) => s.markAllRead)
   const clearNotifications = useAppStore((s) => s.clearNotifications)
-
-  const unreadCount = notifications.filter((n) => !n.read).length
 
   // Click outside to close
   useEffect(() => {

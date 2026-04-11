@@ -410,6 +410,14 @@ class Database:
         except Exception:
             return False
 
+    def wal_checkpoint(self) -> None:
+        """Run a WAL truncate checkpoint to keep the WAL file small."""
+        try:
+            with self.connect() as conn:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:
+            pass
+
     def init(self) -> None:
         with self.connect() as conn:
             conn.execute("PRAGMA journal_mode = WAL")
@@ -433,6 +441,72 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_source ON screenshots(source)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_item_tags_tag ON item_tags(tag_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_name_lower ON tags(LOWER(name))")
+            # ── 1.2: Compound indexes for common filter combos ─────────────
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_items_theme_status ON items(theme, review_status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_items_theme_source ON items(theme, source_type)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_items_saved_seen ON items(is_saved, last_seen_at DESC)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_items_source_seen ON items(source_type, last_seen_at DESC)")
+            # ── 1.1: FTS5 virtual tables for full-text search ──────────────
+            conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS items_fts
+                USING fts5(title, summary, content, content=items, content_rowid=id)
+            """)
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS items_fts_ai AFTER INSERT ON items BEGIN
+                  INSERT INTO items_fts(rowid, title, summary, content)
+                  VALUES (new.id, new.title, new.summary, new.content);
+                END
+            """)
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS items_fts_au AFTER UPDATE OF title, summary, content ON items BEGIN
+                  INSERT INTO items_fts(items_fts, rowid, title, summary, content)
+                  VALUES('delete', old.id, old.title, old.summary, old.content);
+                  INSERT INTO items_fts(rowid, title, summary, content)
+                  VALUES (new.id, new.title, new.summary, new.content);
+                END
+            """)
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS items_fts_ad AFTER DELETE ON items BEGIN
+                  INSERT INTO items_fts(items_fts, rowid, title, summary, content)
+                  VALUES('delete', old.id, old.title, old.summary, old.content);
+                END
+            """)
+            conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS hypotheses_fts
+                USING fts5(title, rationale, evidence, content=hypotheses, content_rowid=id)
+            """)
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS hypotheses_fts_ai AFTER INSERT ON hypotheses BEGIN
+                  INSERT INTO hypotheses_fts(rowid, title, rationale, evidence)
+                  VALUES (new.id, new.title, new.rationale, new.evidence);
+                END
+            """)
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS hypotheses_fts_au
+                AFTER UPDATE OF title, rationale, evidence ON hypotheses BEGIN
+                  INSERT INTO hypotheses_fts(hypotheses_fts, rowid, title, rationale, evidence)
+                  VALUES('delete', old.id, old.title, old.rationale, old.evidence);
+                  INSERT INTO hypotheses_fts(rowid, title, rationale, evidence)
+                  VALUES (new.id, new.title, new.rationale, new.evidence);
+                END
+            """)
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS hypotheses_fts_ad AFTER DELETE ON hypotheses BEGIN
+                  INSERT INTO hypotheses_fts(hypotheses_fts, rowid, title, rationale, evidence)
+                  VALUES('delete', old.id, old.title, old.rationale, old.evidence);
+                END
+            """)
+            # Rebuild FTS indexes on first run (when they are empty)
+            try:
+                if conn.execute("SELECT COUNT(*) FROM items_fts").fetchone()[0] == 0:
+                    conn.execute("INSERT INTO items_fts(items_fts) VALUES('rebuild')")
+            except Exception:
+                pass
+            try:
+                if conn.execute("SELECT COUNT(*) FROM hypotheses_fts").fetchone()[0] == 0:
+                    conn.execute("INSERT INTO hypotheses_fts(hypotheses_fts) VALUES('rebuild')")
+            except Exception:
+                pass
             conn.commit()
 
     def repair_moved_repo_paths(self, current_base_dir: Path, project_name: str = "App research codex") -> int:

@@ -12,8 +12,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/search", tags=["search"])
 
 # ---------------------------------------------------------------------------
-# Optimization #1: Short-lived search result cache (2s TTL) to handle
-# rapid re-queries from typeahead/command palette without hitting SQLite
+# Short-lived search result cache (2s TTL) to absorb typeahead bursts
 # ---------------------------------------------------------------------------
 _SEARCH_CACHE: dict[str, dict] = {}
 _SEARCH_CACHE_LOCK = Lock()
@@ -31,16 +30,20 @@ def _get_cached_search(key: str):
 
 def _set_cached_search(key: str, data):
     with _SEARCH_CACHE_LOCK:
-        # Optimization #2: evict oldest entries when cache is full
         if len(_SEARCH_CACHE) >= _SEARCH_CACHE_MAX:
             oldest_key = min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k]["exp"])
             del _SEARCH_CACHE[oldest_key]
         _SEARCH_CACHE[key] = {"data": data, "exp": time.monotonic() + _SEARCH_TTL}
 
 
-# Optimization #3: pre-strip query once, reuse everywhere
-def _normalize_query(q: str) -> str:
-    return q.strip().lower()
+def _fts_query(raw: str) -> str:
+    """Convert a raw user query into a safe FTS5 MATCH expression.
+
+    Wraps the trimmed input in double quotes so that special FTS5 operators
+    (AND, OR, NOT, *, ^) in user input don't cause syntax errors.
+    """
+    safe = raw.strip().replace('"', '""')
+    return f'"{safe}"'
 
 
 @router.get("")
@@ -55,46 +58,35 @@ def unified_search(
     if not raw:
         return JSONResponse([])
 
-    # Optimization #4: cache key includes normalized query + limit
     cache_key = f"{raw.lower()}:{limit}"
     cached = _get_cached_search(cache_key)
     if cached is not None:
         return JSONResponse(cached)
 
-    needle = f"%{raw}%"
+    fts_term = _fts_query(raw)
     per_type = max(1, limit // 2)
     results: list[dict] = []
 
     with db.connect() as conn:
-        # Optimization #5: log search errors instead of silently swallowing
+        # ── items FTS5 ────────────────────────────────────────────────────
+        # SQLite's bm25() returns negative values: more negative = better match.
+        # We negate it so that higher `score` = better relevance, then sort DESC.
         try:
             rows = conn.execute(
                 """
                 SELECT
-                    id, title, summary, source_type, theme, first_seen_at AS created_at,
-                    CASE
-                        WHEN INSTR(LOWER(title), LOWER(?)) > 0
-                            THEN INSTR(LOWER(title), LOWER(?))
-                        WHEN INSTR(LOWER(summary), LOWER(?)) > 0
-                            THEN 1000 + INSTR(LOWER(summary), LOWER(?))
-                        ELSE 9999
-                    END AS _score
-                FROM items
-                WHERE
-                    theme != 'community_visuals'
-                    AND source_type NOT LIKE '%_visual%'
-                    AND (
-                        LOWER(title) LIKE LOWER(?)
-                        OR LOWER(summary) LIKE LOWER(?)
-                        OR LOWER(content) LIKE LOWER(?)
-                    )
-                ORDER BY _score ASC
+                    i.id, i.title, i.summary, i.source_type, i.theme, i.first_seen_at AS created_at,
+                    -bm25(items_fts) AS score
+                FROM items_fts
+                JOIN items i ON i.id = items_fts.rowid
+                WHERE items_fts MATCH ?
+                  AND i.theme != 'community_visuals'
+                  AND i.source_type NOT LIKE '%_visual%'
+                ORDER BY score DESC
                 LIMIT ?
                 """,
-                (raw, raw, raw, raw, needle, needle, needle, per_type),
+                (fts_term, per_type),
             ).fetchall()
-
-            # Optimization #6: use list comprehension instead of append loop
             results.extend(
                 {
                     "result_type": "item",
@@ -103,58 +95,105 @@ def unified_search(
                     "body": row["summary"],
                     "source_type": row["source_type"],
                     "theme": row["theme"],
-                    "score": row["_score"],
+                    "score": row["score"],
                     "created_at": row["created_at"],
                 }
                 for row in rows
             )
         except Exception:
-            logger.exception("search items query failed for q=%r", raw)
+            logger.exception("FTS search failed for items q=%r; falling back to LIKE", raw)
+            # Fallback: plain LIKE scan so search never returns nothing due to FTS issues
+            needle = f"%{raw}%"
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT id, title, summary, source_type, theme, first_seen_at AS created_at,
+                           INSTR(LOWER(title), LOWER(?)) AS score
+                    FROM items
+                    WHERE theme != 'community_visuals'
+                      AND source_type NOT LIKE '%_visual%'
+                      AND (LOWER(title) LIKE LOWER(?) OR LOWER(summary) LIKE LOWER(?))
+                    ORDER BY score ASC
+                    LIMIT ?
+                    """,
+                    (raw, needle, needle, per_type),
+                ).fetchall()
+                results.extend(
+                    {
+                        "result_type": "item",
+                        "id": row["id"],
+                        "title": row["title"],
+                        "body": row["summary"],
+                        "source_type": row["source_type"],
+                        "theme": row["theme"],
+                        "score": row["score"],
+                        "created_at": row["created_at"],
+                    }
+                    for row in rows
+                )
+            except Exception:
+                logger.exception("LIKE fallback also failed for items q=%r", raw)
 
+        # ── hypotheses FTS5 ───────────────────────────────────────────────
+        # Same BM25 convention: negate and sort DESC for best-match first.
         try:
             rows = conn.execute(
                 """
                 SELECT
-                    id, title, rationale, body, created_at,
-                    CASE
-                        WHEN INSTR(LOWER(title), LOWER(?)) > 0
-                            THEN INSTR(LOWER(title), LOWER(?))
-                        WHEN INSTR(LOWER(rationale), LOWER(?)) > 0
-                            THEN 1000 + INSTR(LOWER(rationale), LOWER(?))
-                        WHEN INSTR(LOWER(body), LOWER(?)) > 0
-                            THEN 2000 + INSTR(LOWER(body), LOWER(?))
-                        ELSE 9999
-                    END AS _score
-                FROM hypotheses
-                WHERE
-                    LOWER(title) LIKE LOWER(?)
-                    OR LOWER(rationale) LIKE LOWER(?)
-                    OR LOWER(evidence) LIKE LOWER(?)
-                    OR LOWER(body) LIKE LOWER(?)
-                ORDER BY _score ASC
+                    h.id, h.title, h.rationale, h.body, h.created_at,
+                    -bm25(hypotheses_fts) AS score
+                FROM hypotheses_fts
+                JOIN hypotheses h ON h.id = hypotheses_fts.rowid
+                WHERE hypotheses_fts MATCH ?
+                ORDER BY score DESC
                 LIMIT ?
                 """,
-                (raw, raw, raw, raw, raw, raw, needle, needle, needle, needle, per_type),
+                (fts_term, per_type),
             ).fetchall()
-
-            # Optimization #7: generator expression for extend
             results.extend(
                 {
                     "result_type": "hypothesis",
                     "id": row["id"],
                     "title": row["title"],
                     "body": row["body"] or row["rationale"],
-                    "score": row["_score"],
+                    "score": row["score"],
                     "created_at": row["created_at"],
                 }
                 for row in rows
             )
         except Exception:
-            logger.exception("search hypotheses query failed for q=%r", raw)
+            logger.exception("FTS search failed for hypotheses q=%r; falling back to LIKE", raw)
+            needle = f"%{raw}%"
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT id, title, rationale, body, created_at,
+                           INSTR(LOWER(title), LOWER(?)) AS score
+                    FROM hypotheses
+                    WHERE LOWER(title) LIKE LOWER(?) OR LOWER(rationale) LIKE LOWER(?)
+                    ORDER BY score ASC
+                    LIMIT ?
+                    """,
+                    (raw, needle, needle, per_type),
+                ).fetchall()
+                results.extend(
+                    {
+                        "result_type": "hypothesis",
+                        "id": row["id"],
+                        "title": row["title"],
+                        "body": row["body"] or row["rationale"],
+                        "score": row["score"],
+                        "created_at": row["created_at"],
+                    }
+                    for row in rows
+                )
+            except Exception:
+                logger.exception("LIKE fallback also failed for hypotheses q=%r", raw)
 
-    # Optimization #8: use key function with default via operator.itemgetter pattern
-    results.sort(key=lambda r: r.get("score", 9999))
+    # Higher score = better match; sort descending
+    results.sort(key=lambda r: r.get("score", 0), reverse=True)
     final = results[:limit]
 
     _set_cached_search(cache_key, final)
     return JSONResponse(final)
+

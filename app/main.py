@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 import json
+import logging
+import logging.config
 import os
 import shutil
 from pathlib import Path
@@ -24,6 +26,35 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.db import Database, check_disk_space
 from app.service import ResearchService
+
+# ── Structured logging setup (5.4) ───────────────────────────────────────────
+_LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+_IS_PRODUCTION = os.environ.get("ENVIRONMENT", "development").lower() == "production"
+
+if _IS_PRODUCTION:
+    # JSON-format for Render / cloud log aggregators
+    logging.config.dictConfig({
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "json": {
+                "()": "logging.Formatter",
+                "fmt": '{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":%(message)r}',
+                "datefmt": "%Y-%m-%dT%H:%M:%S",
+            },
+        },
+        "handlers": {
+            "console": {"class": "logging.StreamHandler", "formatter": "json"},
+        },
+        "root": {"level": _LOG_LEVEL, "handlers": ["console"]},
+    })
+else:
+    logging.basicConfig(
+        level=_LOG_LEVEL,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -54,16 +85,19 @@ def _load_telegram_client():
     return get_client(settings)
 
 
+_main_logger = logging.getLogger("app.main")
+
+
 async def _start_telegram_client(app: FastAPI) -> None:
     try:
         await asyncio.sleep(0)
         telegram_client = await asyncio.to_thread(_load_telegram_client)
         await asyncio.wait_for(telegram_client.start(), timeout=15)
         app.state.telegram_client = telegram_client
-        print("[telegram] Pyrogram client started")
+        _main_logger.info("telegram: Pyrogram client started")
     except Exception as e:
         app.state.telegram_client = None
-        print(f"[telegram] WARNING: Could not start Pyrogram client: {e}")
+        _main_logger.warning("telegram: could not start Pyrogram client: %s", e)
 
 
 def _purge_directory_contents(directory: Path) -> None:
@@ -87,10 +121,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.service = service
     Path("/app/data/posters").mkdir(parents=True, exist_ok=True)
-    # Eagerly load the in-memory poster disk cache so the first browse
-    # request doesn't pay the cost of scanning the posters directory.
-    from app.api.screenshots import _load_poster_disk_cache
-    _load_poster_disk_cache()
     global _COMMIT_HASH
     _COMMIT_HASH = _resolve_commit_hash()
     if settings.stream_only_media:
@@ -120,6 +150,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 pass
 
     asyncio.create_task(_warmup_cookies())
+
+    # 4.4: Load poster disk cache in background so startup latency is not blocked
+    async def _bg_poster_cache():
+        try:
+            from app.api.screenshots import _load_poster_disk_cache
+            await asyncio.to_thread(_load_poster_disk_cache)
+        except Exception:
+            pass
+
+    asyncio.create_task(_bg_poster_cache())
 
     service_start_task = asyncio.create_task(asyncio.to_thread(service.start))
     telegram_start_task: asyncio.Task[None] | None = None
@@ -151,7 +191,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if telegram_client:
             try:
                 await telegram_client.stop()
-                print("[telegram] Pyrogram client stopped")
+                _main_logger.info("telegram: Pyrogram client stopped")
             except Exception:
                 pass
         http_client = getattr(app.state, "http_client", None)
@@ -161,6 +201,45 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=4)
+
+
+# ── Token-bucket rate limiter (5.2) ──────────────────────────────────────────
+import collections
+import threading as _threading
+
+_RL_LOCK = _threading.Lock()
+_RL_BUCKETS: dict[str, dict] = {}  # ip → {tokens, last_refill}
+_RL_CAPACITY = 60        # max tokens per bucket
+_RL_REFILL_RATE = 30     # tokens refilled per second
+_RL_COST = 1             # default cost per request
+
+_PROXY_PATH = "/api/screenshots/proxy-media"
+_RL_EXPENSIVE_PATHS = {_PROXY_PATH}  # higher cost for proxy-media
+_RL_EXPENSIVE_COST = 3               # token cost for expensive/proxy endpoints
+
+# Paths exempt from rate limiting (health checks, static files)
+_RL_EXEMPT_PREFIXES = ("/static/", "/cached-", "/healthz", "/ws/")
+
+
+def _check_rate_limit(ip: str, cost: int = 1) -> bool:
+    """Return True if the request should be allowed, False if rate limited."""
+    now = time.monotonic()
+    with _RL_LOCK:
+        bucket = _RL_BUCKETS.get(ip)
+        if bucket is None:
+            _RL_BUCKETS[ip] = {"tokens": _RL_CAPACITY - cost, "last_refill": now}
+            # Evict oldest bucket when we exceed 8192 entries
+            if len(_RL_BUCKETS) > 8192:
+                oldest = min(_RL_BUCKETS, key=lambda k: _RL_BUCKETS[k]["last_refill"])
+                del _RL_BUCKETS[oldest]
+            return True
+        elapsed = now - bucket["last_refill"]
+        bucket["tokens"] = min(_RL_CAPACITY, bucket["tokens"] + elapsed * _RL_REFILL_RATE)
+        bucket["last_refill"] = now
+        if bucket["tokens"] >= cost:
+            bucket["tokens"] -= cost
+            return True
+        return False
 
 
 @app.exception_handler(sqlite3.OperationalError)
@@ -190,6 +269,23 @@ async def apply_response_headers(request: Request, call_next):
         else:
             response.headers.setdefault("Cache-Control", "no-store")
     return response
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    path = request.url.path
+    if any(path.startswith(p) for p in _RL_EXEMPT_PREFIXES):
+        return await call_next(request)
+    ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
+    ip = ip.split(",")[0].strip()
+    cost = _RL_EXPENSIVE_COST if path in _RL_EXPENSIVE_PATHS else _RL_COST
+    if not _check_rate_limit(ip, cost):
+        return JSONResponse(
+            status_code=429,
+            content={"error": "rate_limited", "detail": "Too many requests — please slow down."},
+            headers={"Retry-After": "2"},
+        )
+    return await call_next(request)
 
 
 app.mount(

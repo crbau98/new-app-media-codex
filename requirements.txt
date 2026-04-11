@@ -13,3 +13,5 @@ imagehash>=4.3.1
 pyrogram==2.0.106
 tgcrypto==1.2.5
 yt-dlp>=2026.3.0
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
