@@ -20,7 +20,7 @@ export function ImageCard({ img, onClick }: { img: ImageRecord; onClick: () => v
       aria-label={`Open ${img.title || 'image'} in lightbox`}
       className="relative break-inside-avoid mb-2 overflow-hidden rounded-2xl cursor-pointer group border border-white/[0.06] hover:border-white/[0.15] transition-all duration-200"
     >
-      {!loaded && <div className="bg-white/[0.03] h-40 shimmer" aria-hidden="true" />}
+      {src && !loaded && <div className="bg-white/[0.03] h-40 shimmer" aria-hidden="true" />}
 
       {/* Video badge */}
       {isVideo && (
@@ -43,16 +43,26 @@ export function ImageCard({ img, onClick }: { img: ImageRecord; onClick: () => v
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       </a>
 
-      <img
-        src={src}
-        alt={img.title || ''}
-        onLoad={() => setLoaded(true)}
-        onError={() => setLoaded(true)}
-        className={`w-full object-cover transition-all duration-300 group-hover:scale-[1.03] ${loaded ? 'opacity-100' : 'opacity-0'}`}
-        loading="lazy"
-        decoding="async"
-        fetchPriority="low"
-      />
+      {src ? (
+        <img
+          src={src}
+          alt={img.title || ''}
+          onLoad={() => setLoaded(true)}
+          onError={() => setLoaded(true)}
+          className={`w-full object-cover transition-all duration-300 group-hover:scale-[1.03] ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          loading="lazy"
+          decoding="async"
+          fetchPriority="low"
+        />
+      ) : (
+        <div className="bg-white/[0.03] h-40 flex items-center justify-center text-white/20">
+          {isVideo ? (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          ) : (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+          )}
+        </div>
+      )}
 
       {/* Hover overlay */}
       <div
