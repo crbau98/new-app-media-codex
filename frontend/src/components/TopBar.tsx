@@ -1,10 +1,15 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense, startTransition } from "react"
-import { useIsFetching, useQuery } from "@tanstack/react-query"
+import { useIsFetching } from "@tanstack/react-query"
 import { useAppStore } from "../store"
-import { api, type Performer, type ScreenshotTerm, type UserTagCount } from "../lib/api"
+import { type Performer } from "../lib/api"
 import { Spinner } from "./Spinner"
 import { cn } from "@/lib/cn"
 import { getPerformerAvatarSrc, getPerformerMeta } from "@/lib/performer"
+import {
+  usePerformerSearchSuggestionsQuery,
+  useScreenshotAllTagsQuery,
+  useScreenshotTermsQuery,
+} from "@/features/sharedQueries"
 
 const ShortcutModal = lazy(() => import("./ShortcutModal").then((m) => ({ default: m.ShortcutModal })))
 const NotificationCenter = lazy(() => import("./NotificationCenter").then((m) => ({ default: m.NotificationCenter })))
@@ -88,36 +93,28 @@ export function TopBar() {
   const [searchVal, setSearchVal] = useState("")
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [recentSearches, setRecentSearches] = useState<string[]>(loadRecentSearches)
-  const [creatorResults, setCreatorResults] = useState<Performer[]>([])
-  const [searchLoading, setSearchLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
 
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const mobileInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const requestIdRef = useRef(0)
   const trimmedSearch = searchVal.trim()
   const suggestionsEnabled = dropdownOpen && trimmedSearch.length >= 2
 
-  const { data: screenshotTerms = [], isFetching: termsFetching } = useQuery<ScreenshotTerm[]>({
-    queryKey: ["topbar-screenshot-terms"],
-    queryFn: api.screenshotTerms,
+  const performerSuggestionsQuery = usePerformerSearchSuggestionsQuery(trimmedSearch, {
     enabled: suggestionsEnabled,
-    staleTime: 5 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    limit: 6,
   })
-
-  const { data: screenshotTags = [], isFetching: tagsFetching } = useQuery<UserTagCount[]>({
-    queryKey: ["topbar-screenshot-tags"],
-    queryFn: api.screenshotAllTags,
-    enabled: suggestionsEnabled,
-    staleTime: 2 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
+  const { data: screenshotTerms = [], isFetching: termsFetching } = useScreenshotTermsQuery(suggestionsEnabled)
+  const { data: screenshotTags = [], isFetching: tagsFetching } = useScreenshotAllTagsQuery(suggestionsEnabled)
+  const creatorResults: Performer[] =
+    trimmedSearch.length < 2 || performerSuggestionsQuery.isError
+      ? []
+      : (performerSuggestionsQuery.data?.performers ?? [])
+  const searchLoading =
+    (trimmedSearch.length >= 2)
+    && (trimmedSearch !== performerSuggestionsQuery.debouncedQuery || performerSuggestionsQuery.isFetching)
 
   const creatorSuggestions = useMemo<CreatorSuggestionItem[]>(() => {
     return creatorResults.map((performer) => ({
@@ -208,39 +205,6 @@ export function TopBar() {
       clearTimeout(timeoutId)
     }
   }, [])
-
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-
-    if (trimmedSearch.length < 2) {
-      setCreatorResults([])
-      setSearchLoading(false)
-      return
-    }
-
-    setSearchLoading(true)
-    debounceRef.current = setTimeout(async () => {
-      const requestId = ++requestIdRef.current
-      try {
-        const result = await api.searchPerformers(trimmedSearch, 6)
-        if (requestId === requestIdRef.current) {
-          setCreatorResults(result.performers ?? [])
-        }
-      } catch {
-        if (requestId === requestIdRef.current) {
-          setCreatorResults([])
-        }
-      } finally {
-        if (requestId === requestIdRef.current) {
-          setSearchLoading(false)
-        }
-      }
-    }, 220)
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
-  }, [trimmedSearch])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {

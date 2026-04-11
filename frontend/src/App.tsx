@@ -5,7 +5,6 @@ import { useAppStore, type ActiveView } from "./store"
 import { useCommandPalette } from "./hooks"
 import { CrawlNotifier } from "./components/CrawlNotifier"
 import { loadViewModule, prefetchViewModule } from "./lib/view-loader"
-import { cn } from "@/lib/cn"
 
 // ── Constants ────────────────────────────────────────────────────────
 const PREFETCH_IDLE_TIMEOUT = 1500
@@ -122,7 +121,6 @@ function TransitionIndicator({ isTransitioning }: { isTransitioning: boolean }) 
 // ── App ──────────────────────────────────────────────────────────────
 function App() {
   const activeView = useAppStore((s) => s.activeView)
-  const setActiveView = useAppStore((s) => s.setActiveView)
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen)
   const deferredActiveView = useDeferredValue(activeView)
   const isTransitioning = activeView !== deferredActiveView
@@ -205,26 +203,6 @@ function App() {
       <Suspense fallback={null}>
         {showOnboarding && <Onboarding onComplete={closeOnboarding} />}
       </Suspense>
-      {/* Mobile bottom navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t border-white/10 bg-[#0d1118]/95 backdrop-blur-md py-2 sm:hidden">
-        {([
-          { view: 'images' as ActiveView, label: 'Media', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 9 5 3-5 3V9z"/></svg> },
-          { view: 'performers' as ActiveView, label: 'Creators', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg> },
-          { view: 'settings' as ActiveView, label: 'Settings', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg> },
-        ] as const).map(({ view, label, icon }) => (
-          <button
-            key={view}
-            onClick={() => setActiveView(view)}
-            className={cn(
-              "flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors",
-              activeView === view ? "text-accent" : "text-white/40 hover:text-white/70"
-            )}
-          >
-            {icon}
-            <span className="text-[10px] font-medium">{label}</span>
-          </button>
-        ))}
-      </nav>
     </>
   )
 }

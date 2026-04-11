@@ -13,6 +13,12 @@ import { cn } from "@/lib/cn"
 import { getPerformerAvatarSrc } from "@/lib/performer"
 import { getBestAvailablePreviewSrc, getMediaDebugLabel, getScreenshotMediaSrc, isVideoShot, useResolvedScreenshotMedia } from "@/lib/media"
 import { consumeNavigationIntent } from "@/components/TopBar"
+import {
+  sharedQueryKeys,
+  useMediaStatsQuery,
+  useScreenshotAllTagsQuery,
+  useScreenshotTermsQuery,
+} from "@/features/sharedQueries"
 
 const MEDIA_NAVIGATION_EVENT = "codex:media-navigation"
 
@@ -1449,22 +1455,14 @@ export function MediaPage() {
         },
       })
       qc.invalidateQueries({ queryKey: ["screenshots"] })
-      qc.invalidateQueries({ queryKey: ["screenshot-terms"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.screenshotTerms() })
       qc.invalidateQueries({ queryKey: ["screenshot-sources"] })
-      qc.invalidateQueries({ queryKey: ["media-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.mediaStats() })
     }
     prevCap.current = capturing
   }, [capturing, addToast, qc])
 
-  const { data: screenshotTermsData } = useQuery<ScreenshotTerm[]>({
-    queryKey: ["screenshot-terms"],
-    queryFn: api.screenshotTerms,
-    staleTime: 10 * 60_000,
-    gcTime: 30 * 60_000,
-    enabled: shouldLoadTermData,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
+  const { data: screenshotTermsData } = useScreenshotTermsQuery(shouldLoadTermData)
   const termBrowserItems = useMemo(() => {
     const hasCyrillic = (s: string) => /[\u0400-\u04FF]/.test(s)
     const emojiRatio = (s: string) => {
@@ -1491,26 +1489,10 @@ export function MediaPage() {
   })
   const sources = sourceData ?? []
 
-  const { data: allUserTags } = useQuery<UserTagCount[]>({
-    queryKey: ["screenshot-all-tags"],
-    queryFn: api.screenshotAllTags,
-    staleTime: 2 * 60_000,
-    gcTime: 10 * 60_000,
-    enabled: advancedOpen || showSearchSuggestions,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
+  const { data: allUserTags } = useScreenshotAllTagsQuery(advancedOpen || showSearchSuggestions)
   const userTags = allUserTags ?? []
 
-  const { data: mediaStatsData } = useQuery({
-    queryKey: ["media-stats"],
-    queryFn: api.mediaStats,
-    staleTime: 5 * 60_000,
-    gcTime: 15 * 60_000,
-    enabled: mediaStatsEnabled,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
+  const { data: mediaStatsData } = useMediaStatsQuery(mediaStatsEnabled)
 
   const sourceForQuery = tab === "ddg" ? "ddg" : tab === "redgifs" ? "redgifs" : tab === "tube" ? "ytdlp" : (advancedFilters.source || undefined)
 
@@ -1677,7 +1659,7 @@ export function MediaPage() {
       })
       qc.invalidateQueries({ queryKey: ["performers"] })
       qc.invalidateQueries({ queryKey: ["performers-for-media"] })
-      qc.invalidateQueries({ queryKey: ["capture-queue"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
       qc.invalidateQueries({ queryKey: ["similar-performers", mediaCreatorId] })
       const created = result.created
       const existing = result.existing
@@ -1696,7 +1678,7 @@ export function MediaPage() {
     onSuccess: (_d, id) => {
       qc.invalidateQueries({ queryKey: ["screenshots"] })
       qc.invalidateQueries({ queryKey: ["screenshot-sources"] })
-      qc.invalidateQueries({ queryKey: ["media-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.mediaStats() })
       setSelectedIds((p) => { const n = new Set(p); n.delete(id); return n })
       setFavorites((p) => { const n = new Set(p); n.delete(id); return n })
       addToast("Deleted", "success")
@@ -1709,7 +1691,7 @@ export function MediaPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["screenshots"] })
       qc.invalidateQueries({ queryKey: ["top-rated-screenshots"] })
-      qc.invalidateQueries({ queryKey: ["media-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.mediaStats() })
     },
   })
 
@@ -1717,7 +1699,7 @@ export function MediaPage() {
     mutationFn: ({ id, tags }: { id: number; tags: string[] }) => api.updateScreenshotTags(id, tags),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["screenshots"] })
-      qc.invalidateQueries({ queryKey: ["screenshot-all-tags"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.screenshotAllTags() })
     },
   })
 
@@ -1989,7 +1971,7 @@ export function MediaPage() {
       addToast("Describing...", "info")
       await api.summarizeScreenshot(id)
       qc.invalidateQueries({ queryKey: ["screenshots"] })
-      qc.invalidateQueries({ queryKey: ["media-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.mediaStats() })
       addToast("Description complete", "success")
     } catch {
       addToast("Describe failed", "error")
@@ -2013,7 +1995,7 @@ export function MediaPage() {
       const res = await api.bulkDeleteScreenshots(ids)
       qc.invalidateQueries({ queryKey: ["screenshots"] })
       qc.invalidateQueries({ queryKey: ["screenshot-sources"] })
-      qc.invalidateQueries({ queryKey: ["media-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.mediaStats() })
       setSelectedIds(new Set())
       setBatchMode(false)
       addToast(res.deleted ? `Deleted ${res.deleted}` : "Nothing to delete", res.deleted ? "success" : "error")
@@ -2040,7 +2022,7 @@ export function MediaPage() {
       const res = await api.batchDescribeScreenshots(ids)
       setDescribeProgress(null)
       qc.invalidateQueries({ queryKey: ["screenshots"] })
-      qc.invalidateQueries({ queryKey: ["media-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.mediaStats() })
       addToast(`Described ${res.processed} screenshot${res.processed !== 1 ? "s" : ""}${res.failed ? `, ${res.failed} failed` : ""}`, res.processed ? "success" : "error")
       setSelectedIds(new Set())
       setBatchMode(false)
@@ -2056,12 +2038,12 @@ export function MediaPage() {
     if (prevCapForAuto.current && !capturing && autoDescribe) {
       // Describe undescribed screenshots from latest batch
       const undescribed = allShots.filter((s) => !s.ai_summary).map((s) => s.id).slice(0, 10)
-      if (undescribed.length > 0) {
-        api.batchDescribeScreenshots(undescribed).then((res) => {
-          qc.invalidateQueries({ queryKey: ["screenshots"] })
-          qc.invalidateQueries({ queryKey: ["media-stats"] })
-          addToast(`Auto-described ${res.processed} new screenshot${res.processed !== 1 ? "s" : ""}`, "success")
-        }).catch(() => {})
+        if (undescribed.length > 0) {
+          api.batchDescribeScreenshots(undescribed).then((res) => {
+            qc.invalidateQueries({ queryKey: ["screenshots"] })
+            qc.invalidateQueries({ queryKey: sharedQueryKeys.mediaStats() })
+            addToast(`Auto-described ${res.processed} new screenshot${res.processed !== 1 ? "s" : ""}`, "success")
+          }).catch(() => {})
       }
     }
     prevCapForAuto.current = capturing
@@ -2099,7 +2081,7 @@ export function MediaPage() {
     try {
       const res = await api.autoTagScreenshots(100)
       qc.invalidateQueries({ queryKey: ["screenshots"] })
-      qc.invalidateQueries({ queryKey: ["screenshot-all-tags"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.screenshotAllTags() })
       addToast(res.tagged > 0 ? `Tagged ${res.tagged} item${res.tagged !== 1 ? "s" : ""}` : "Nothing to tag", res.tagged > 0 ? "success" : "info")
     } catch {
       addToast("Auto-tag failed", "error")
@@ -2114,6 +2096,7 @@ export function MediaPage() {
       const res = await api.captureAllPerformers()
       addToast(`Queued capture for ${res.queued} creators`, "success")
       qc.invalidateQueries({ queryKey: ["performers-for-media"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
     } catch {
       addToast("Failed to queue captures", "error")
     } finally {
@@ -2127,7 +2110,7 @@ export function MediaPage() {
       addToast(`Linked ${res.linked} unlinked shot${res.linked !== 1 ? "s" : ""} to creators`, res.linked > 0 ? "success" : "info")
       qc.invalidateQueries({ queryKey: ["screenshots"] })
       qc.invalidateQueries({ queryKey: ["performers-for-media"] })
-      qc.invalidateQueries({ queryKey: ["media-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.mediaStats() })
     } catch {
       addToast("Backfill failed", "error")
     }
@@ -2141,7 +2124,7 @@ export function MediaPage() {
       const shot = await api.captureFromUrl(url, urlTerm.trim() || undefined)
       qc.invalidateQueries({ queryKey: ["screenshots"] })
       qc.invalidateQueries({ queryKey: ["screenshot-sources"] })
-      qc.invalidateQueries({ queryKey: ["media-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.mediaStats() })
       addToast("Media captured", "success")
       setUrlInput("")
       setUrlTerm("")

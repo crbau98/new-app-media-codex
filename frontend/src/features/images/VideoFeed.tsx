@@ -5,6 +5,7 @@ import { useAppStore } from "@/store"
 import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
 import { useResolvedScreenshotMedia } from "@/lib/media"
+import { sharedQueryKeys } from "@/features/sharedQueries"
 
 function sourceLabel(s: string) {
   return s === "ddg" ? "DDG" : s === "redgifs" ? "Redgifs" : s === "x" ? "X" : s
@@ -16,6 +17,18 @@ function parseUserTags(raw: string | null | undefined): string[] {
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string") : []
   } catch { return [] }
+}
+
+function isSameShot(a: Screenshot, b: Screenshot): boolean {
+  if (a.id !== b.id) return false
+  return a.local_url === b.local_url
+    && a.source_url === b.source_url
+    && a.page_url === b.page_url
+    && a.preview_url === b.preview_url
+    && a.thumbnail_url === b.thumbnail_url
+    && a.ai_summary === b.ai_summary
+    && a.rating === b.rating
+    && a.user_tags === b.user_tags
 }
 
 // ── Icons ────────────────────────────────────────────────────────────────────
@@ -115,24 +128,24 @@ function HeartBurst() {
 interface VideoSlideProps {
   shot: Screenshot
   isActive: boolean
-  favorites: Set<number>
+  isFavorite: boolean
   onToggleFavorite: (id: number) => void
   onRate: (id: number, rating: number) => void
   onDescribe: (id: number) => void
   onDismiss: (id: number) => void
-  describingIds: Set<number>
+  isDescribing: boolean
   onAddToPlaylist: (id: number) => void
 }
 
 const VideoSlide = memo(function VideoSlide({
   shot,
   isActive,
-  favorites,
+  isFavorite,
   onToggleFavorite,
   onRate,
   onDescribe,
   onDismiss,
-  describingIds,
+  isDescribing,
   onAddToPlaylist,
 }: VideoSlideProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -151,7 +164,6 @@ const VideoSlide = memo(function VideoSlide({
   const addToast = useAppStore((s) => s.addToast)
 
   const { mediaSrc: src, previewSrc, posterSrc, isVideo: currentIsVideo, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
-  const isFav = favorites.has(shot.id)
   const userTags = parseUserTags(shot.user_tags)
   const shouldLoadVideo = isActive
   const videoSrc = shouldLoadVideo ? src : undefined
@@ -232,7 +244,7 @@ const VideoSlide = memo(function VideoSlide({
     // Double-tap detection
     if (timeSince < 300 && side === "right" && lastTapSideRef.current === "right") {
       // Double tap right: favorite
-      if (!isFav) {
+      if (!isFavorite) {
         onToggleFavorite(shot.id)
         setHeartBurst(true)
         setTimeout(() => setHeartBurst(false), 800)
@@ -269,7 +281,7 @@ const VideoSlide = memo(function VideoSlide({
       }
       setTimeout(() => setFlashState(null), 500)
     }
-  }, [isFav, onToggleFavorite, shot.id, flash])
+  }, [isFavorite, onToggleFavorite, shot.id, flash])
 
   // Touch swipe to dismiss
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -371,11 +383,11 @@ const VideoSlide = memo(function VideoSlide({
         >
           <div className={cn(
             "flex h-10 w-10 items-center justify-center rounded-full transition-all",
-            isFav ? "text-red-500 scale-110" : "text-white/80 hover:text-white",
+            isFavorite ? "text-red-500 scale-110" : "text-white/80 hover:text-white",
           )}>
-            <HeartIcon filled={isFav} />
+            <HeartIcon filled={isFavorite} />
           </div>
-          <span className="text-[10px] text-white/70">{isFav ? "Liked" : "Like"}</span>
+          <span className="text-[10px] text-white/70">{isFavorite ? "Liked" : "Like"}</span>
         </button>
 
         {/* Star rating (compact vertical) */}
@@ -392,12 +404,12 @@ const VideoSlide = memo(function VideoSlide({
         {/* AI describe */}
         <button
           onClick={() => onDescribe(shot.id)}
-          disabled={describingIds.has(shot.id)}
+          disabled={isDescribing}
           className="flex flex-col items-center gap-1"
         >
           <div className={cn(
             "flex h-10 w-10 items-center justify-center rounded-full text-white/80 transition-colors hover:text-white",
-            describingIds.has(shot.id) && "animate-pulse text-purple-400",
+            isDescribing && "animate-pulse text-purple-400",
           )}>
             <SparkleIcon />
           </div>
@@ -513,10 +525,10 @@ const VideoSlide = memo(function VideoSlide({
     </div>
   )
 }, (prev, next) => {
-  return prev.shot.id === next.shot.id &&
-    prev.isActive === next.isActive &&
-    prev.favorites === next.favorites &&
-    prev.describingIds === next.describingIds
+  return isSameShot(prev.shot, next.shot)
+    && prev.isActive === next.isActive
+    && prev.isFavorite === next.isFavorite
+    && prev.isDescribing === next.isDescribing
 })
 
 // ── Main Feed Component ──────────────────────────────────────────────────────
@@ -661,7 +673,7 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
       api.rateScreenshot(id, rating),
     onSuccess: (shot) => {
       patchFeedShot(shot.id, () => shot)
-      qc.invalidateQueries({ queryKey: ["media-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.mediaStats() })
     },
   })
 
@@ -677,7 +689,7 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
       if (result.summary) {
         addToast("Description generated", "success")
         patchFeedShot(id, (shot) => ({ ...shot, ai_summary: result.summary }))
-        qc.invalidateQueries({ queryKey: ["media-stats"] })
+        qc.invalidateQueries({ queryKey: sharedQueryKeys.mediaStats() })
       } else if (result.refused) {
         addToast("AI refused to describe this content", "info")
       }
@@ -761,12 +773,12 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
               <VideoSlide
                 shot={shot}
                 isActive={idx === activeIndex || idx === activeIndex + 1}
-                favorites={favorites}
+                isFavorite={favorites.has(shot.id)}
                 onToggleFavorite={handleToggleFavorite}
                 onRate={handleRate}
                 onDescribe={handleDescribe}
                 onDismiss={handleDismiss}
-                describingIds={describingIds}
+                isDescribing={describingIds.has(shot.id)}
                 onAddToPlaylist={handleAddToPlaylist}
               />
             ) : (

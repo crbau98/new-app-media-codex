@@ -7,6 +7,7 @@ import { getPerformerAvatarSrc } from "@/lib/performer"
 import { getScreenshotMediaSrc } from "@/lib/media"
 import { useAppStore } from "@/store"
 import { Skeleton } from "@/components/Skeleton"
+import { sharedQueryKeys, useCaptureQueueQuery } from "@/features/sharedQueries"
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
 
@@ -174,9 +175,7 @@ function CaptureButton({ performerId }: { performerId: number }) {
   const addToast = useAppStore((s) => s.addToast)
   const qc = useQueryClient()
 
-  const { data: queueData } = useQuery({
-    queryKey: ["capture-queue"],
-    queryFn: () => api.getCaptureQueue(),
+  const { data: queueData } = useCaptureQueueQuery({
     refetchInterval: (query) => {
       const queue = query.state.data?.queue ?? []
       const active = queue.some((e) => e.performer_id === performerId && (e.status === "queued" || e.status === "running"))
@@ -205,7 +204,7 @@ function CaptureButton({ performerId }: { performerId: number }) {
     mutationFn: () => api.capturePerformerMedia(performerId),
     onSuccess: () => {
       addToast("Capture queued", "success")
-      qc.invalidateQueries({ queryKey: ["capture-queue"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
     },
     onError: () => addToast("Failed to queue capture", "error"),
   })

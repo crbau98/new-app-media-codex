@@ -446,6 +446,11 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_theme_source ON items(theme, source_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_saved_seen ON items(is_saved, last_seen_at DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_source_seen ON items(source_type, last_seen_at DESC)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_status_id_desc ON runs(status, id DESC)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_capture_queue_status_created ON capture_queue(status, created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_capture_queue_finished_at ON capture_queue(finished_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_status_last_checked ON performers(status, last_checked_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_telegram_media_filter_posted_created ON telegram_media(passes_filter, posted_at DESC, created_at DESC)")
             # ── 1.1: FTS5 virtual tables for full-text search ──────────────
             conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS items_fts
@@ -2497,7 +2502,7 @@ class Database:
             "follower_count": "follower_count DESC",
             "first_seen_at": "first_seen_at DESC",
             "last_checked_at": "last_checked_at DESC",
-            "screenshots_count": "screenshots_count DESC",
+            "screenshots_count": "screenshots_count DESC, created_at DESC, id DESC",
             "subscription_price": "COALESCE(subscription_price, 0) DESC",
             "subscription_renewed_at": "COALESCE(subscription_renewed_at, '1970-01-01') ASC",
         }
@@ -2517,37 +2522,15 @@ class Database:
 
         def build():
             with self.connect() as conn:
-                if sort == "screenshots_count":
-                    rows = conn.execute(
-                        f"SELECT {base_select}, COALESCE(sc.cnt, 0) AS screenshots_count "
-                        f"FROM performers "
-                        f"LEFT JOIN (SELECT performer_id, COUNT(*) AS cnt FROM screenshots GROUP BY performer_id) sc "
-                        f"ON sc.performer_id = performers.id "
-                        f"{clause} ORDER BY {order_by} LIMIT ? OFFSET ?",
-                        params + [limit + 1, offset],
-                    ).fetchall()
-                    performers = [dict(r) for r in rows[:limit]]
-                else:
-                    rows = conn.execute(
-                        f"SELECT {base_select} "
-                        f"FROM performers "
-                        f"{clause} ORDER BY {order_by} LIMIT ? OFFSET ?",
-                        params + [limit + 1, offset],
-                    ).fetchall()
-                    performers = [dict(r) for r in rows[:limit]]
-                    counts_by_id: dict[int, int] = {}
-                    performer_ids = [int(p["id"]) for p in performers]
-                    if performer_ids:
-                        placeholders = ",".join("?" for _ in performer_ids)
-                        count_rows = conn.execute(
-                            f"SELECT performer_id, COUNT(*) AS cnt FROM screenshots "
-                            f"WHERE performer_id IN ({placeholders}) "
-                            f"GROUP BY performer_id",
-                            performer_ids,
-                        ).fetchall()
-                        counts_by_id = {int(r["performer_id"]): int(r["cnt"]) for r in count_rows}
-                    for performer in performers:
-                        performer["screenshots_count"] = counts_by_id.get(int(performer["id"]), 0)
+                rows = conn.execute(
+                    f"SELECT {base_select}, COALESCE(sc.cnt, 0) AS screenshots_count "
+                    f"FROM performers "
+                    f"LEFT JOIN (SELECT performer_id, COUNT(*) AS cnt FROM screenshots GROUP BY performer_id) sc "
+                    f"ON sc.performer_id = performers.id "
+                    f"{clause} ORDER BY {order_by} LIMIT ? OFFSET ?",
+                    params + [limit + 1, offset],
+                ).fetchall()
+                performers = [dict(r) for r in rows[:limit]]
                 if offset == 0:
                     total = conn.execute(f"SELECT COUNT(*) FROM performers {clause}", params).fetchone()[0]
                 else:

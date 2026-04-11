@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useAppStore } from "../store"
+import { sharedQueryKeys } from "@/features/sharedQueries"
 
 /**
  * Side-effect-only component: connects to /ws/crawl WebSocket,
@@ -70,7 +71,7 @@ export function CrawlNotifier(): null {
       ["dashboard"],
       ["app-shell-summary"],
       ["screenshots"],
-      ["media-stats"],
+      sharedQueryKeys.mediaStats(),
     ])
   }
 
@@ -80,19 +81,19 @@ export function CrawlNotifier(): null {
       ["app-shell-summary"],
       ["screenshots"],
       ["screenshot-status"],
-      ["media-stats"],
-      ["capture-queue"],
+      sharedQueryKeys.mediaStats(),
+      sharedQueryKeys.captureQueue(),
     ])
     if (activeViewRef.current === "images") {
       invalidateQueries([
-        ["screenshot-terms"],
+        sharedQueryKeys.screenshotTerms(),
         ["screenshot-sources"],
-        ["screenshot-all-tags"],
+        sharedQueryKeys.screenshotAllTags(),
         ["performers-for-media"],
       ])
     }
     if (activeViewRef.current === "performers" || activeViewRef.current === "images") {
-      invalidateQueries([["performer-stats"]])
+      invalidateQueries([sharedQueryKeys.performerStats()])
     }
   }
 

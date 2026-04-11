@@ -10,6 +10,11 @@ import { useDebounce } from "@/hooks/useDebounce"
 import { Skeleton } from "@/components/Skeleton"
 import { EmptyState } from "@/components/EmptyState"
 import { PerformerProfile } from "./PerformerProfile"
+import {
+  sharedQueryKeys,
+  useCaptureQueueQuery,
+  usePerformerStatsQuery,
+} from "@/features/sharedQueries"
 
 const PerformerAnalyticsPanel = lazy(() => import("./PerformerAnalyticsPanel").then((m) => ({ default: m.PerformerAnalyticsPanel })))
 
@@ -65,16 +70,6 @@ function parseTags(tags: string | null): string[] {
   }
 }
 
-/* ── Stats Bar (clean, minimal) ────────────────────────────────────────── */
-
-function useCreatorStats() {
-  return useQuery({
-    queryKey: ["performer-stats"],
-    queryFn: () => api.performerStats(),
-    staleTime: 30_000,
-  })
-}
-
 /* ── Add Creator Form ──────────────────────────────────────────────────── */
 
 function AddCreatorForm({ onClose }: { onClose: () => void }) {
@@ -100,8 +95,8 @@ function AddCreatorForm({ onClose }: { onClose: () => void }) {
       }),
     onSuccess: (p) => {
       qc.invalidateQueries({ queryKey: ["performers"] })
-      qc.invalidateQueries({ queryKey: ["performer-stats"] })
-      qc.invalidateQueries({ queryKey: ["capture-queue"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.performerStats() })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
       addToast("Creator added — capture queued", "success")
       api.enrichPerformer(p.id).then(() => qc.invalidateQueries({ queryKey: ["performers"] })).catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
       onClose()
@@ -245,8 +240,8 @@ function DiscoveryModal({ onClose }: { onClose: () => void }) {
     onSuccess: (result, c) => {
       setAddedSet((prev) => new Set(prev).add(c.username))
       qc.invalidateQueries({ queryKey: ["performers"] })
-      qc.invalidateQueries({ queryKey: ["performer-stats"] })
-      qc.invalidateQueries({ queryKey: ["capture-queue"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.performerStats() })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
       if (result.created > 0) {
         const createdPerformer = result.performers[0]
         addToast(`Added @${c.username} — capture queued`, "success")
@@ -440,8 +435,8 @@ function ImportUrlPanel({ onClose }: { onClose: () => void }) {
     mutationFn: () => api.importPerformerUrl(url.trim()),
     onSuccess: (p) => {
       qc.invalidateQueries({ queryKey: ["performers"] })
-      qc.invalidateQueries({ queryKey: ["performer-stats"] })
-      qc.invalidateQueries({ queryKey: ["capture-queue"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.performerStats() })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
       addToast(`Imported @${p.username} — capture queued`, "success")
       api.enrichPerformer(p.id).then(() => qc.invalidateQueries({ queryKey: ["performers"] })).catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
       onClose()
@@ -490,8 +485,8 @@ function BulkImportPanel({ onClose }: { onClose: () => void }) {
     },
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ["performers"] })
-      qc.invalidateQueries({ queryKey: ["performer-stats"] })
-      qc.invalidateQueries({ queryKey: ["capture-queue"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.performerStats() })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
       addToast(`Created ${result.created}, skipped ${result.skipped} — capture queued for new creators`, "success")
       result.performers.forEach((p) => {
         api.enrichPerformer(p.id).catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
@@ -543,7 +538,7 @@ function CaptureQueuePanel({ queueData }: { queueData?: { queue: CaptureQueueEnt
 
   const cancelMutation = useMutation({
     mutationFn: (entryId: number) => api.cancelQueueEntry(entryId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["capture-queue"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() }),
     onError: () => addToast("Could not cancel — may have already started", "error"),
   })
 
@@ -551,7 +546,7 @@ function CaptureQueuePanel({ queueData }: { queueData?: { queue: CaptureQueueEnt
     mutationFn: (performerId: number) => api.capturePerformerMedia(performerId),
     onSuccess: () => {
       addToast("Retry queued", "success")
-      qc.invalidateQueries({ queryKey: ["capture-queue"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
     },
     onError: () => addToast("Retry failed", "error"),
   })
@@ -685,7 +680,7 @@ const PerformerCard = memo(function PerformerCard({
     mutationFn: () => api.updatePerformer(performer.id, { is_favorite: performer.is_favorite ? 0 : 1 }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["performers"] })
-      qc.invalidateQueries({ queryKey: ["performer-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.performerStats() })
       qc.invalidateQueries({ queryKey: ["watchlist"] })
     },
   })
@@ -1010,7 +1005,7 @@ function BillingPanel({ onSelect }: { onSelect: (id: number) => void }) {
       api.updatePerformer(id, { subscription_renewed_at: new Date().toISOString() }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["performers-billing"] })
-      qc.invalidateQueries({ queryKey: ["performer-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.performerStats() })
       qc.invalidateQueries({ queryKey: ["performers"] })
       addToast("Renewal date set to today", "success")
     },
@@ -1241,7 +1236,7 @@ function PerformerRow({
     mutationFn: () => api.updatePerformer(performer.id, { is_favorite: performer.is_favorite ? 0 : 1 }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["performers"] })
-      qc.invalidateQueries({ queryKey: ["performer-stats"] })
+      qc.invalidateQueries({ queryKey: sharedQueryKeys.performerStats() })
       qc.invalidateQueries({ queryKey: ["watchlist"] })
     },
   })
@@ -1574,7 +1569,7 @@ export default function PerformersPage() {
     }
   }, [])
 
-  const { data: statsData } = useCreatorStats()
+  const { data: statsData } = usePerformerStatsQuery()
 
   const { data: analyticsData } = useQuery({
     queryKey: ["performer-analytics"],
@@ -1595,9 +1590,7 @@ export default function PerformersPage() {
   })
   const watchlistCount = watchlistData?.total ?? 0
 
-  const { data: queueData } = useQuery({
-    queryKey: ["capture-queue"],
-    queryFn: () => api.getCaptureQueue(),
+  const { data: queueData } = useCaptureQueueQuery({
     enabled: queueReady,
     refetchInterval: (query) => {
       const queue = query.state.data?.queue ?? []
@@ -1605,8 +1598,6 @@ export default function PerformersPage() {
       return hasActive ? 5_000 : 120_000
     },
     staleTime: 15_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
   })
   const activePerformerIds = useMemo(() => new Set(
     (queueData?.queue ?? [])
@@ -1619,6 +1610,7 @@ export default function PerformersPage() {
       const res = await api.captureAllPerformers()
       addToast(`Capturing all ${res.queued} creator${res.queued !== 1 ? "s" : ""} in background…`, "success")
       qcMain.invalidateQueries({ queryKey: ["performers"] })
+      qcMain.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
     } catch {
       addToast("Capture all failed", "error")
     } finally {
@@ -1635,6 +1627,7 @@ export default function PerformersPage() {
       } else {
         addToast(`Capturing ${res.queued} creator${res.queued !== 1 ? "s" : ""} in background…`, "success")
         qcMain.invalidateQueries({ queryKey: ["performers"] })
+        qcMain.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
       }
     } catch {
       addToast("Watchlist capture failed", "error")
@@ -1783,7 +1776,7 @@ export default function PerformersPage() {
         api.updatePerformer(p.id, { is_favorite: p.is_favorite ? 0 : 1 })
           .then(() => {
             qcMain.invalidateQueries({ queryKey: ["performers"] })
-            qcMain.invalidateQueries({ queryKey: ["performer-stats"] })
+            qcMain.invalidateQueries({ queryKey: sharedQueryKeys.performerStats() })
           })
           .catch((err) => addToast(`Avatar enrichment failed: ${err?.message || 'unknown error'}`, "error"))
       } else if (e.key === "c" && focusedIdx >= 0 && performers[focusedIdx]) {
@@ -1792,7 +1785,7 @@ export default function PerformersPage() {
         api.capturePerformerMedia(p.id)
           .then(() => {
             addToast(`Capture queued for @${p.username}`, "success")
-            qcMain.invalidateQueries({ queryKey: ["capture-queue"] })
+            qcMain.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
           })
           .catch(() => addToast("Capture failed", "error"))
       }
@@ -1883,7 +1876,7 @@ export default function PerformersPage() {
                   onCaptureStale={() => {
                     api.captureStale().then((r) => {
                       addToast(`Queued ${r.queued} stale creators for capture`, "success")
-                      qcMain.invalidateQueries({ queryKey: ["capture-queue"] })
+                      qcMain.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
                     }).catch(() => addToast("Failed to queue stale captures", "error"))
                   }}
                   onCaptureAll={handleCaptureAll}
@@ -2074,7 +2067,7 @@ export default function PerformersPage() {
                 onClick={() => {
                   Array.from(selectedIds).forEach((id) => api.capturePerformerMedia(id))
                   addToast(`Queued ${selectedIds.size} creators for capture`, "success")
-                  qcMain.invalidateQueries({ queryKey: ["capture-queue"] })
+                  qcMain.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
                   clearSelect()
                 }}
                 className="rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"

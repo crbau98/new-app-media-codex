@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef, startTransition, type ReactNode } from "react"
-import { useQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/cn"
 import { useAppStore, type ActiveView } from "../store"
 import { useAppShellSummary } from "@/hooks/useAppShellSummary"
 import { api } from "../lib/api"
+import {
+  useCaptureQueueQuery,
+  useMediaStatsQuery,
+  usePerformerStatsQuery,
+} from "@/features/sharedQueries"
 import { prefetchViewModule } from "@/lib/view-loader"
 
 interface NavItem {
@@ -313,40 +317,20 @@ export function Sidebar() {
   const setMobileNavOpen = useAppStore((s) => s.setMobileNavOpen)
   const [sidebarEnhancementsReady, setSidebarEnhancementsReady] = useState(false)
   const { data: sidebarSummary } = useAppShellSummary(sidebarEnhancementsReady)
-  const { data: perfStats } = useQuery({
-    queryKey: ["performer-stats"],
-    queryFn: () => api.performerStats(),
-    enabled: sidebarEnhancementsReady,
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-  })
-  const { data: captureQueueData } = useQuery({
-    queryKey: ["capture-queue"],
-    queryFn: () => api.getCaptureQueue(),
+  const { data: perfStats } = usePerformerStatsQuery(sidebarEnhancementsReady)
+  const { data: captureQueueData } = useCaptureQueueQuery({
     enabled: sidebarEnhancementsReady,
     refetchInterval: (query) => {
       const queue = query.state.data?.queue ?? []
       return queue.some((e) => e.status === "queued" || e.status === "running") ? 5_000 : 60_000
     },
     staleTime: 0,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
   })
   const captureQueueActive = (captureQueueData?.queue ?? []).some(
     (e) => e.status === "queued" || e.status === "running"
   )
   // Use media-stats for accurate screenshot count (app-shell-summary returns 0 for image_count)
-  const { data: mediaStats } = useQuery({
-    queryKey: ["sidebar-media-stats"],
-    queryFn: () => api.mediaStats(),
-    enabled: sidebarEnhancementsReady,
-    staleTime: 60_000,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
+  const { data: mediaStats } = useMediaStatsQuery(sidebarEnhancementsReady)
 
   const counts: Partial<Record<string, number>> = {
     images: mediaStats?.total ?? sidebarSummary?.stats?.totals?.image_count,
