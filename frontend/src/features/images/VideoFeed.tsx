@@ -20,8 +20,8 @@ function parseUserTags(raw: string | null | undefined): string[] {
 }
 
 function isSameShot(a: Screenshot, b: Screenshot): boolean {
-  return a.id === b.id
-    && a.local_url === b.local_url
+  if (a.id !== b.id) return false
+  return a.local_url === b.local_url
     && a.source_url === b.source_url
     && a.page_url === b.page_url
     && a.preview_url === b.preview_url

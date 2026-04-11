@@ -237,7 +237,7 @@ class TestFTS5:
 
 
 class TestBrowsePerformers:
-    def test_browse_performers_returns_screenshot_counts_without_extra_page_count_query(
+    def test_browse_performers_returns_screenshot_counts_in_single_query(
         self,
         db: Database,
         monkeypatch: pytest.MonkeyPatch,
