@@ -49,7 +49,7 @@ export function Recommendations() {
   }
 
   function handleItemClick(id: number) {
-    setActiveView('items')
+    setActiveView('images')
     setTimeout(() => setSelectedItemId(id), 50)
   }
 

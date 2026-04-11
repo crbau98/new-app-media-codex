@@ -56,21 +56,6 @@ const RefreshIcon = () => (
 
 function viewAction(view: ActiveView): FabAction {
   switch (view) {
-    case "overview":
-      return {
-        icon: <PlayIcon />,
-        label: "Run Crawl",
-        action: async (ctx) => {
-          ctx.setCrawlRunning(true)
-          try {
-            await api.triggerCrawl()
-            ctx.addToast("Crawl started", "success")
-          } catch {
-            ctx.addToast("Failed to start crawl", "error")
-            ctx.setCrawlRunning(false)
-          }
-        },
-      }
     case "images":
       return {
         icon: <CameraIcon />,

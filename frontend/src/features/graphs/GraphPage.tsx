@@ -73,7 +73,7 @@ export function GraphPage() {
     if (selected.type === 'compound') setFilter('compound', selected.label)
     else if (selected.type === 'mechanism') setFilter('mechanism', selected.label)
     else if (selected.type === 'theme') setFilter('theme', selected.label)
-    setActiveView('items')
+    setActiveView('images')
   }, [selected])
 
   // Escape key to dismiss panel or exit fullscreen

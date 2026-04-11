@@ -10,11 +10,7 @@ const ShortcutModal = lazy(() => import("./ShortcutModal").then((m) => ({ defaul
 const NotificationCenter = lazy(() => import("./NotificationCenter").then((m) => ({ default: m.NotificationCenter })))
 
 const VIEW_LABELS: Record<string, string> = {
-  overview: "Media Library",
-  items: "Media Library",
   images: "Media Library",
-  hypotheses: "Media Library",
-  graph: "Media Library",
   performers: "Creator Roster",
   settings: "Settings",
 }

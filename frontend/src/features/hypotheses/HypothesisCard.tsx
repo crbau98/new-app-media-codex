@@ -147,7 +147,7 @@ export function HypothesisCard({ h }: { h: Hypothesis }) {
     resetFilters()
     if (h.theme) setFilter('theme', h.theme)
     setFilter('sort', 'score')
-    setActiveView('items')
+    setActiveView('images')
   }
 
   function exportMarkdown() {

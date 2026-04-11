@@ -1,3 +1,4 @@
+import { type ActiveView } from '@/store'
 import { lazy, Suspense, useEffect, useRef, useState } from "react"
 import { useQuery } from '@tanstack/react-query'
 import { useQueryClient } from '@tanstack/react-query'
@@ -102,7 +103,7 @@ function ThemePills() {
   function goTheme(slug: string) {
     resetFilters()
     setFilter('theme', slug)
-    setActiveView('items')
+    setActiveView('images')
   }
 
   return (
@@ -139,7 +140,7 @@ function OverviewHero() {
   const mediaCount = dashboard?.stats?.totals?.image_count ?? 0
   const topicCount = dashboard?.themes?.length ?? 0
 
-  function go(view: "items" | "images" | "performers" | "hypotheses") {
+  function go(view: ActiveView) {
     resetFilters()
     setActiveView(view)
   }
@@ -163,7 +164,7 @@ function OverviewHero() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => go("items")} className="ui-chip ui-chip-active">
+            <button onClick={() => go("images")} className="ui-chip ui-chip-active">
               Open items
             </button>
             <button onClick={() => go("images")} className="ui-chip">
@@ -172,7 +173,7 @@ function OverviewHero() {
             <button onClick={() => go("performers")} className="ui-chip">
               Manage creators
             </button>
-            <button onClick={() => go("hypotheses")} className="ui-chip">
+            <button onClick={() => go("images")} className="ui-chip">
               Explore ideas
             </button>
           </div>
@@ -216,7 +217,7 @@ function TopTagsPanel() {
   function goTag(type: 'compound' | 'mechanism', value: string) {
     resetFilters()
     setFilter(type, value)
-    setActiveView('items')
+    setActiveView('images')
   }
 
   return (
@@ -273,7 +274,7 @@ function OverviewSectionIntro() {
     ? `Last run ${timeAgo(latestRun.started_at)}`
     : "No previous runs"
 
-  function openView(view: "items" | "images" | "performers") {
+  function openView(view: ActiveView) {
     resetFilters()
     setActiveView(view)
   }
@@ -293,7 +294,7 @@ function OverviewSectionIntro() {
       <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 card-hover glass">
         <p className="text-[11px] uppercase tracking-[0.22em] text-text-muted font-mono">Fast actions</p>
         <div className="mt-2 flex flex-wrap gap-2">
-          <button className="ui-chip ui-chip-active" onClick={() => openView("items")}>
+          <button className="ui-chip ui-chip-active" onClick={() => openView("images")}>
             Open items
           </button>
           <button className="ui-chip" onClick={() => openView("images")}>
@@ -379,11 +380,11 @@ function ActivityFeed() {
 
   function handleClick(e: ActivityEvent) {
     if (e.event_type === 'hypothesis') {
-      setActiveView('hypotheses')
+      setActiveView('images')
     } else if (e.event_type === 'screenshot') {
       setActiveView('images')
     } else {
-      setActiveView('items')
+      setActiveView('images')
     }
   }
 
@@ -475,7 +476,7 @@ function RecentActivityStrip() {
       <SectionHeading
         action={
           <button
-            onClick={() => setActiveView('items')}
+            onClick={() => setActiveView('images')}
             className="text-[11px] text-text-muted hover:text-accent transition-colors"
           >
             View all →
@@ -491,7 +492,7 @@ function RecentActivityStrip() {
             <button
               key={item.id}
               onClick={() => {
-                setActiveView('items')
+                setActiveView('images')
                 setTimeout(() => setSelectedItemId(item.id), 50)
               }}
               className="flex-shrink-0 w-52 bg-bg-surface border border-border rounded-xl p-3 text-left hover:border-accent/40 hover:bg-bg-elevated transition-all group card-hover glass"
@@ -552,10 +553,10 @@ function RecentTimeline() {
 
   function handleClick(e: ActivityEvent) {
     if (e.event_type === 'item') {
-      setActiveView('items')
+      setActiveView('images')
       if (e.id) setTimeout(() => setSelectedItemId(e.id), 50)
     } else if (e.event_type === 'hypothesis') {
-      setActiveView('hypotheses')
+      setActiveView('images')
     } else {
       setActiveView('images')
     }
@@ -623,7 +624,7 @@ function TopCompoundsMini() {
   function goCompound(name: string) {
     resetFilters()
     setFilter('compound', name)
-    setActiveView('items')
+    setActiveView('images')
   }
 
   return (
@@ -847,7 +848,7 @@ export function OverviewPage() {
   function goSource(sourceType: string) {
     resetFilters()
     setFilter('sourceType', sourceType)
-    setActiveView('items')
+    setActiveView('images')
   }
 
   function handleChartClick(value: string, chartView: 'theme' | 'source' | 'daily') {
@@ -858,7 +859,7 @@ export function OverviewPage() {
     } else {
       setFilter('sourceType', value)
     }
-    setActiveView('items')
+    setActiveView('images')
   }
 
   if (isLoading) {
@@ -895,7 +896,7 @@ export function OverviewPage() {
               {isFetching ? "Retrying…" : "Retry"}
             </button>
             <button
-              onClick={() => { resetFilters(); setActiveView("items") }}
+              onClick={() => { resetFilters(); setActiveView("images") }}
               className="rounded-lg border border-border bg-bg-surface px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text-primary"
             >
               Open Items →
