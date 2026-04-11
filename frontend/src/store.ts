@@ -10,9 +10,9 @@ const VIEW_HASHES: Record<string, ActiveView> = {
   '#/media': 'images',
   '#/performers': 'performers',
   '#/settings': 'settings',
-  '#/items': 'images',
-  '#/hypotheses': 'images',
-  '#/graph': 'images',
+  '#/items': 'items',
+  '#/hypotheses': 'hypotheses',
+  '#/graph': 'graph',
 }
 
 const HASH_VIEWS: Record<ActiveView, string> = {
@@ -141,11 +141,11 @@ interface AppState {
 
   // Notifications
   notifications: Notification[]
+  unreadCount: number
   addNotification: (msg: string, type: Notification['type']) => void
   markNotificationRead: (id: string) => void
   markAllRead: () => void
   clearNotifications: () => void
-  unreadCount: () => number
 
   // Connectivity
   isOnline: boolean
@@ -239,6 +239,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Notifications
   notifications: [],
+  unreadCount: 0,
   addNotification: (message, type) =>
     set((s) => {
       const n: Notification = {
@@ -249,25 +250,22 @@ export const useAppStore = create<AppState>((set) => ({
         read: false,
       }
       const next = [n, ...s.notifications].slice(0, MAX_NOTIFICATIONS)
-      return { notifications: next }
+      return { notifications: next, unreadCount: next.filter((x) => !x.read).length }
     }),
   markNotificationRead: (id) =>
     set((s) => {
       const next = s.notifications.map((n) =>
         n.id === id ? { ...n, read: true } : n
       )
-      return { notifications: next }
+      return { notifications: next, unreadCount: next.filter((x) => !x.read).length }
     }),
   markAllRead: () =>
     set((s) => {
       const next = s.notifications.map((n) => ({ ...n, read: true }))
-      return { notifications: next }
+      return { notifications: next, unreadCount: 0 }
     }),
   clearNotifications: () => {
-    set({ notifications: [] })
-  },
-  unreadCount: (): number => {
-    return useAppStore.getState().notifications.filter((n) => !n.read).length
+    set({ notifications: [], unreadCount: 0 })
   },
 
   // Connectivity – listeners registered below

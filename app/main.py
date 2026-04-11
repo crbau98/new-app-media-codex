@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 import json
+import logging
+import logging.config
 import os
 import shutil
 from pathlib import Path
@@ -24,6 +26,35 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.db import Database, check_disk_space
 from app.service import ResearchService
+
+# ── Structured logging setup (5.4) ───────────────────────────────────────────
+_LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+_IS_PRODUCTION = os.environ.get("ENVIRONMENT", "development").lower() == "production"
+
+if _IS_PRODUCTION:
+    # JSON-format for Render / cloud log aggregators
+    logging.config.dictConfig({
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "json": {
+                "()": "logging.Formatter",
+                "fmt": '{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":%(message)r}',
+                "datefmt": "%Y-%m-%dT%H:%M:%S",
+            },
+        },
+        "handlers": {
+            "console": {"class": "logging.StreamHandler", "formatter": "json"},
+        },
+        "root": {"level": _LOG_LEVEL, "handlers": ["console"]},
+    })
+else:
+    logging.basicConfig(
+        level=_LOG_LEVEL,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
 
 
 BASE_DIR = Path(__file__).resolve().parent

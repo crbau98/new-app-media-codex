@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,7 @@ from typing import Any, Callable
 from app.config import Settings
 from app.db import Database
 
+logger = logging.getLogger(__name__)
 
 def item_snapshot(item: Any) -> dict[str, Any]:
     return {
@@ -71,7 +73,7 @@ def _run_queue_worker(app_state: Any, stop_event: threading.Event) -> None:
             )
             db.backfill_screenshot_performers()
         except Exception as exc:
-            print(f"[queue-worker] error for performer {performer_id}: {exc}")
+            logger.warning("queue-worker: error for performer %s: %s", performer_id, exc)
             db.update_queue_entry(
                 entry_id,
                 status="failed",
@@ -213,9 +215,9 @@ class ResearchService:
                     self.db.enqueue_capture(performer["id"])
                     seeded += 1
             except Exception as exc:
-                print(f"[seed] error adding {p['username']}: {exc}")
+                logger.warning("seed: error adding %s: %s", p['username'], exc)
         if seeded:
-            print(f"[seed] added {seeded} default performers, queued for capture")
+            logger.info("seed: added %d default performers, queued for capture", seeded)
 
     def start(self) -> None:
         # Clean up stale WAL/SHM files that cause disk I/O errors on network storage
@@ -225,19 +227,19 @@ class ResearchService:
             if wal_file.exists():
                 try:
                     wal_file.unlink()
-                    print(f"[startup] removed stale {wal_file.name}")
+                    logger.info("startup: removed stale %s", wal_file.name)
                 except Exception as exc:
-                    print(f"[startup] could not remove {wal_file.name}: {exc}")
+                    logger.warning("startup: could not remove %s: %s", wal_file.name, exc)
         self.db.init()
         try:
             repaired = self.db.repair_moved_repo_paths(self.settings.base_dir)
             if repaired:
-                print(f"[startup] repaired {repaired} moved local media paths")
+                logger.info("startup: repaired %d moved local media paths", repaired)
         except Exception as exc:
-            print(f"[startup] path repair skipped: {exc}")
+            logger.warning("startup: path repair skipped: %s", exc)
         requeued = self.db.requeue_stale_running_entries()
         if requeued:
-            print(f"[queue-worker] re-queued {requeued} stale running capture entries")
+            logger.info("queue-worker: re-queued %d stale running capture entries", requeued)
         if self.running:
             return
         try:
@@ -281,11 +283,22 @@ class ResearchService:
                     max_instances=1,
                     coalesce=True,
                 )
+            # WAL checkpoint — keeps the WAL file from growing unbounded (1.4)
+            if not self.scheduler.get_job("wal-checkpoint"):
+                self.scheduler.add_job(
+                    self.db.wal_checkpoint,
+                    "interval",
+                    hours=6,
+                    id="wal-checkpoint",
+                    replace_existing=True,
+                    max_instances=1,
+                    coalesce=True,
+                )
             if not self.scheduler.running:
                 self.scheduler.start()
         except Exception as exc:
             self.running = False
-            print(f"[service] WARNING: scheduler startup failed: {exc}")
+            logger.warning("service: scheduler startup failed: %s", exc)
             return
 
         # Start capture queue worker
@@ -312,7 +325,7 @@ class ResearchService:
                 if self.scheduler.running:
                     self.scheduler.shutdown(wait=False)
             except Exception as exc:
-                print(f"[service] WARNING: scheduler shutdown failed: {exc}")
+                logger.warning("service: scheduler shutdown failed: %s", exc)
             finally:
                 self.running = False
 
@@ -470,18 +483,32 @@ class ResearchService:
                         notes["collected"]["images"] += 1
                         theme_notes["images"] += 1
 
-                for source_key, collector in (
+                # ── Parallel fetch: pubmed / biorxiv / arxiv / firecrawl (4.1) ──
+                import concurrent.futures as _cf
+
+                _parallel_sources: list[tuple[str, Any]] = [
                     ("pubmed", collect_pubmed),
                     ("biorxiv", collect_biorxiv),
                     ("arxiv", collect_arxiv),
                     ("firecrawl", collect_firecrawl),
-                ):
-                    self._emit({"type": "source_start", "source": source_key, "theme": theme.slug})
+                ]
+                _parallel_results: dict[str, list] = {}
+
+                def _fetch_source(args):
+                    key, fn = args
+                    self._emit({"type": "source_start", "source": key, "theme": theme.slug})
                     try:
-                        source_items = collector(session, self.settings, theme)
+                        return key, fn(session, self.settings, theme), None
                     except Exception as exc:
-                        notes["errors"].append(f"{theme.slug}:{collector.__name__}:{exc}")
-                        source_items = []
+                        return key, [], exc
+
+                with _cf.ThreadPoolExecutor(max_workers=4, thread_name_prefix="crawl-parallel") as pool:
+                    for src_key, src_items, exc in pool.map(_fetch_source, _parallel_sources):
+                        if exc is not None:
+                            notes["errors"].append(f"{theme.slug}:{src_key}:{exc}")
+                        _parallel_results[src_key] = src_items
+
+                for source_key, source_items in _parallel_results.items():
                     for item in source_items:
                         record = item.to_record()
                         item_id, created = self.db.upsert_item(record, run_id)
@@ -631,13 +658,16 @@ class ResearchService:
                 )
                 captured += n
             except Exception as exc:
-                print(f"[service] performer capture error for {p['username']}: {exc}")
+                logger.warning("service: performer capture error for %s: %s", p['username'], exc)
 
         from app.sources.screenshot import ingest_screenshots_as_items
         ingested = ingest_screenshots_as_items(self.db)
         linked = self.db.backfill_screenshot_performers()
         self.invalidate_dashboard_cache()
-        print(f"[service] screenshot capture done: {captured} new ({len(stale)} performers refreshed), {ingested} items ingested, {linked} auto-linked")
+        logger.info(
+            "service: screenshot capture done: %d new (%d performers refreshed), %d items ingested, %d auto-linked",
+            captured, len(stale), ingested, linked,
+        )
 
     def dashboard_payload(self) -> dict[str, Any]:
         now = time.monotonic()
