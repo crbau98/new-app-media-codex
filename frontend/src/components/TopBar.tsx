@@ -96,6 +96,8 @@ export function TopBar() {
   const [searchLoading, setSearchLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
 
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const mobileInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -380,7 +382,7 @@ export function TopBar() {
         <div className="glass mx-auto flex max-w-[1600px] items-center gap-4 rounded-2xl px-4 py-3 sm:gap-5 sm:px-5">
           <button
             onClick={() => setMobileNavOpen(!mobileNavOpen)}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text-primary md:hidden"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text-primary md:hidden"
             aria-label="Open navigation"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
@@ -606,6 +608,18 @@ export function TopBar() {
             )}
           </div>
 
+          {/* Mobile search button */}
+          <button
+            onClick={() => {
+              setMobileSearchOpen(true)
+              setTimeout(() => mobileInputRef.current?.focus(), 50)
+            }}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text-primary md:hidden"
+            aria-label="Search"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          </button>
+
           <div className="flex-1" />
 
           <div className="flex items-center gap-2 sm:gap-2.5">
@@ -633,6 +647,54 @@ export function TopBar() {
         <Suspense fallback={null}>
           <ShortcutModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
         </Suspense>
+      )}
+
+      {/* Mobile search overlay */}
+      {mobileSearchOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-bg-base/95 backdrop-blur-md md:hidden">
+          <div className="flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,12px)] pb-3">
+            <form onSubmit={(e) => { e.preventDefault(); runMediaSearch(searchVal.trim()); setMobileSearchOpen(false) }} className="relative flex-1">
+              <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <input
+                ref={mobileInputRef}
+                type="search"
+                placeholder="Search media, tags, creators..."
+                value={searchVal}
+                onChange={(e) => setSearchVal(e.target.value)}
+                className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] py-3 pl-10 pr-4 text-base text-text-primary placeholder:text-text-muted focus:border-accent/40 focus:outline-none"
+                autoFocus
+              />
+            </form>
+            <button
+              onClick={() => { setMobileSearchOpen(false); setSearchVal("") }}
+              className="shrink-0 px-2 py-2 text-sm font-medium text-text-secondary"
+            >
+              Cancel
+            </button>
+          </div>
+          {recentSearches.length > 0 && !searchVal.trim() && (
+            <div className="px-4">
+              <div className="flex items-center justify-between pb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Recent</span>
+                <button type="button" onClick={handleClearRecent} className="text-[11px] text-text-muted">Clear</button>
+              </div>
+              <ul className="space-y-1">
+                {recentSearches.map((query) => (
+                  <li key={query}>
+                    <button
+                      type="button"
+                      onClick={() => { runMediaSearch(query); setMobileSearchOpen(false) }}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-text-secondary hover:bg-white/[0.04]"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-text-muted"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
+                      {query}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       )}
     </>
   )

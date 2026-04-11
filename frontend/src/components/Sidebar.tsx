@@ -414,7 +414,7 @@ export function Sidebar() {
           "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-bg-base/95 backdrop-blur-md transition-transform",
           mobileNavOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           mobileNavOpen ? "pointer-events-auto" : "pointer-events-none md:pointer-events-auto",
-          collapsed ? "w-[240px] md:w-[72px]" : "w-[240px]"
+          mobileNavOpen ? "w-[min(85vw,320px)] md:w-[72px]" : collapsed ? "w-[240px] md:w-[72px]" : "w-[240px]"
         )}
         aria-label="Main navigation"
       >

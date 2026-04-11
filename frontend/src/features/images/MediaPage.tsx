@@ -154,15 +154,36 @@ function getTimelineGroup(dateStr: string | undefined): string {
 }
 
 const GRID_CLASSES: Record<GridDensity, string> = {
-  compact: "grid-cols-4 sm:grid-cols-5 lg:grid-cols-7 gap-0.5",
-  normal: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-4 gap-1",
-  spacious: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2",
+  compact: "grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-0.5",
+  normal: "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-1",
+  spacious: "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2",
 }
 
 const GRID_COLS: Record<GridDensity, number> = {
-  compact: 7,
-  normal: 4,
-  spacious: 4,
+  compact: 2,
+  normal: 2,
+  spacious: 1,
+}
+
+function useResponsiveColCount(density: GridDensity): number {
+  const [colCount, setColCount] = useState(() => {
+    if (typeof window === "undefined") return GRID_COLS[density]
+    const w = window.innerWidth
+    if (density === "compact") return w >= 1024 ? 7 : w >= 768 ? 5 : w >= 640 ? 4 : 2
+    if (density === "normal") return w >= 768 ? 4 : w >= 640 ? 3 : 2
+    return w >= 768 ? 4 : w >= 640 ? 2 : 1
+  })
+  useEffect(() => {
+    function update() {
+      const w = window.innerWidth
+      if (density === "compact") setColCount(w >= 1024 ? 7 : w >= 768 ? 5 : w >= 640 ? 4 : 2)
+      else if (density === "normal") setColCount(w >= 768 ? 4 : w >= 640 ? 3 : 2)
+      else setColCount(w >= 768 ? 4 : w >= 640 ? 2 : 1)
+    }
+    window.addEventListener("resize", update)
+    return () => window.removeEventListener("resize", update)
+  }, [density])
+  return colCount
 }
 
 const GRID_ROW_SIZE_ESTIMATE: Record<GridDensity, number> = {
@@ -582,12 +603,12 @@ const MediaCard = memo(function MediaCard({
         <div className="absolute top-1.5 left-1.5 flex flex-col gap-1">
           <div className="flex gap-1">
             {gif && (
-              <span className="rounded bg-emerald-500/80 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
+              <span className="rounded bg-emerald-500/80 px-1.5 py-1 text-[10px] font-bold leading-none text-white shadow sm:px-1 sm:py-0.5 sm:text-[9px]">
                 GIF
               </span>
             )}
             {vid && (
-              <span className="rounded bg-amber-500/85 px-1 py-0.5 text-[9px] font-bold leading-none text-white shadow">
+              <span className="rounded bg-amber-500/85 px-1.5 py-1 text-[10px] font-bold leading-none text-white shadow sm:px-1 sm:py-0.5 sm:text-[9px]">
                 VIDEO
               </span>
             )}
@@ -595,7 +616,7 @@ const MediaCard = memo(function MediaCard({
           {shot.performer_username && shot.performer_id && onNavigateToPerformer && (
             <button
               type="button"
-              className="max-w-[110px] truncate rounded bg-sky-500/85 px-1.5 py-0.5 text-[9px] font-medium leading-none text-white shadow transition-colors hover:bg-sky-400/90"
+              className="min-h-[36px] min-w-[36px] max-w-[120px] truncate rounded bg-sky-500/85 px-2 py-1.5 text-[10px] font-medium leading-none text-white shadow transition-colors hover:bg-sky-400/90 sm:min-h-0 sm:min-w-0 sm:px-1.5 sm:py-0.5 sm:text-[9px]"
               onClick={(e) => { e.stopPropagation(); onNavigateToPerformer(shot.performer_id!, shot.performer_username!) }}
               title={`View @${shot.performer_username}'s profile`}
             >
@@ -603,7 +624,7 @@ const MediaCard = memo(function MediaCard({
             </button>
           )}
           {shot.performer_username && (!shot.performer_id || !onNavigateToPerformer) && (
-            <span className="max-w-[110px] truncate rounded bg-sky-500/85 px-1.5 py-0.5 text-[9px] font-medium leading-none text-white shadow">
+            <span className="max-w-[120px] truncate rounded bg-sky-500/85 px-2 py-1.5 text-[10px] font-medium leading-none text-white shadow sm:px-1.5 sm:py-0.5 sm:text-[9px]">
               @{shot.performer_username}
             </span>
           )}
@@ -1882,8 +1903,8 @@ export function MediaPage() {
     [grouped]
   )
 
-  // Group shots into rows for the virtual flat grid
-  const colCount = GRID_COLS[gridDensity]
+  // Group shots into rows for the virtual flat grid (responsive)
+  const colCount = useResponsiveColCount(gridDensity)
   const flatGridRows = useMemo(() => {
     if (viewMode !== "grid" || showGrouped) return []
     const rows: Screenshot[][] = []
@@ -2618,24 +2639,24 @@ export function MediaPage() {
         </Suspense>
       )}
 
-      <div className="px-4 pb-2 pt-3">
+      <div className="px-3 pb-2 pt-3 sm:px-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-text-primary">Media</h1>
-            <p className="mt-1 text-sm text-text-secondary">
-              {(visibleSummary.total ?? 0).toLocaleString()} total
-              <span className="text-white/20"> · </span>
-              {(visibleSummary.videos ?? 0).toLocaleString()} videos
-              <span className="text-white/20"> · </span>
-              {(visibleSummary.unrated ?? 0).toLocaleString()} needs rating
+            <h1 className="text-base font-semibold text-text-primary sm:text-lg">Media</h1>
+            <p className="mt-0.5 flex flex-wrap gap-x-1 text-xs text-text-secondary sm:mt-1 sm:text-sm">
+              <span>{(visibleSummary.total ?? 0).toLocaleString()} total</span>
+              <span className="text-white/20">·</span>
+              <span>{(visibleSummary.videos ?? 0).toLocaleString()} videos</span>
+              <span className="text-white/20">·</span>
+              <span>{(visibleSummary.unrated ?? 0).toLocaleString()} needs rating</span>
             </p>
           </div>
         </div>
       </div>
 
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
-      <div className="sticky top-14 z-20 px-4 py-2 backdrop-blur-lg">
-        <div className="section-shell flex flex-wrap items-center gap-2 rounded-[20px] px-3 py-2 shadow-[0_10px_26px_rgba(0,0,0,0.2)] backdrop-blur-lg">
+      <div className="sticky top-14 z-20 px-2 py-1.5 backdrop-blur-lg sm:px-4 sm:py-2">
+        <div className="section-shell flex flex-wrap items-center gap-1.5 rounded-[16px] px-2 py-1.5 shadow-[0_10px_26px_rgba(0,0,0,0.2)] backdrop-blur-lg sm:gap-2 sm:rounded-[20px] sm:px-3 sm:py-2">
           {/* Search input */}
           <div className="relative min-w-[220px] max-w-md flex-1">
             <input
@@ -2709,34 +2730,34 @@ export function MediaPage() {
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="hide-scrollbar flex flex-nowrap items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible">
             <button
               onClick={() => setOnlyUnlinked((v) => !v)}
-              className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnlinked ? "bg-sky-500/20 text-sky-200 ring-1 ring-sky-400/50 border border-sky-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+              className={cn("shrink-0 rounded-full px-2.5 py-1.5 text-[11px] transition-colors", onlyUnlinked ? "bg-sky-500/20 text-sky-200 ring-1 ring-sky-400/50 border border-sky-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
             >
               Unlinked
             </button>
             <button
               onClick={() => setOnlyUnrated((v) => !v)}
-              className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyUnrated ? "bg-amber-500/20 text-amber-200 ring-1 ring-amber-400/50 border border-amber-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+              className={cn("shrink-0 rounded-full px-2.5 py-1.5 text-[11px] transition-colors", onlyUnrated ? "bg-amber-500/20 text-amber-200 ring-1 ring-amber-400/50 border border-amber-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
             >
               Needs rating
             </button>
             <button
               onClick={() => setOnlyRecent((v) => !v)}
-              className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", onlyRecent ? "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/50 border border-emerald-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+              className={cn("shrink-0 rounded-full px-2.5 py-1.5 text-[11px] transition-colors", onlyRecent ? "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/50 border border-emerald-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
             >
               7 days
             </button>
             <button
               onClick={() => setFilterDescribed((v) => !v)}
-              className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200 ring-1 ring-purple-400/50 border border-purple-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+              className={cn("shrink-0 rounded-full px-2.5 py-1.5 text-[11px] transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200 ring-1 ring-purple-400/50 border border-purple-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
             >
               Described
             </button>
             <button
               onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
-              className={cn("rounded-full px-2.5 py-1 text-[10px] transition-colors", advancedFilters.hasPerformer === true ? "bg-indigo-500/20 text-indigo-200 ring-1 ring-indigo-400/50 border border-indigo-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+              className={cn("shrink-0 rounded-full px-2.5 py-1.5 text-[11px] transition-colors", advancedFilters.hasPerformer === true ? "bg-indigo-500/20 text-indigo-200 ring-1 ring-indigo-400/50 border border-indigo-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
             >
               Creator-linked
             </button>
@@ -2812,21 +2833,25 @@ export function MediaPage() {
             {(totalCount || visibleShots.length || 0).toLocaleString()} items
           </span>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={handleCapture}
               disabled={capturing}
-              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-white/[0.07] hover:text-text-primary disabled:opacity-50"
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-white/[0.07] hover:text-text-primary disabled:opacity-50 sm:px-3"
+              title={capturing ? "Capture running" : "Capture new media"}
             >
-              {capturing ? "Capture running" : "Capture new media"}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              <span className="hidden sm:inline">{capturing ? "Capture running" : "Capture new media"}</span>
             </button>
             <button
               onClick={() => handleViewModeChange("feed")}
               onMouseEnter={() => { void preloadVideoFeed() }}
               onFocus={() => { void preloadVideoFeed() }}
-              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-white/[0.07] hover:text-text-primary"
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-white/[0.07] hover:text-text-primary sm:px-3"
+              title="Open video feed"
             >
-              Open video feed
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+              <span className="hidden sm:inline">Open video feed</span>
             </button>
 
             {/* Overflow menu */}
