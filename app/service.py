@@ -15,6 +15,8 @@ from app.db import Database
 
 logger = logging.getLogger(__name__)
 
+# Max concurrent source fetches per crawl theme (cap to avoid rate-limit bans)
+_CRAWL_PARALLEL_WORKERS = 4
 def item_snapshot(item: Any) -> dict[str, Any]:
     return {
         "source_type": item.source_type,
@@ -502,7 +504,7 @@ class ResearchService:
                     except Exception as exc:
                         return key, [], exc
 
-                with _cf.ThreadPoolExecutor(max_workers=4, thread_name_prefix="crawl-parallel") as pool:
+                with _cf.ThreadPoolExecutor(max_workers=_CRAWL_PARALLEL_WORKERS, thread_name_prefix="crawl-parallel") as pool:
                     for src_key, src_items, exc in pool.map(_fetch_source, _parallel_sources):
                         if exc is not None:
                             notes["errors"].append(f"{theme.slug}:{src_key}:{exc}")

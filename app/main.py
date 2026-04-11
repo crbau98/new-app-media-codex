@@ -215,6 +215,7 @@ _RL_COST = 1             # default cost per request
 
 _PROXY_PATH = "/api/screenshots/proxy-media"
 _RL_EXPENSIVE_PATHS = {_PROXY_PATH}  # higher cost for proxy-media
+_RL_EXPENSIVE_COST = 3               # token cost for expensive/proxy endpoints
 
 # Paths exempt from rate limiting (health checks, static files)
 _RL_EXEMPT_PREFIXES = ("/static/", "/cached-", "/healthz", "/ws/")
@@ -227,7 +228,7 @@ def _check_rate_limit(ip: str, cost: int = 1) -> bool:
         bucket = _RL_BUCKETS.get(ip)
         if bucket is None:
             _RL_BUCKETS[ip] = {"tokens": _RL_CAPACITY - cost, "last_refill": now}
-            # Evict oldest bucket when we exceed 8 192 entries
+            # Evict oldest bucket when we exceed 8192 entries
             if len(_RL_BUCKETS) > 8192:
                 oldest = min(_RL_BUCKETS, key=lambda k: _RL_BUCKETS[k]["last_refill"])
                 del _RL_BUCKETS[oldest]
@@ -277,7 +278,7 @@ async def rate_limit_middleware(request: Request, call_next):
         return await call_next(request)
     ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
     ip = ip.split(",")[0].strip()
-    cost = 3 if path in _RL_EXPENSIVE_PATHS else _RL_COST
+    cost = _RL_EXPENSIVE_COST if path in _RL_EXPENSIVE_PATHS else _RL_COST
     if not _check_rate_limit(ip, cost):
         return JSONResponse(
             status_code=429,

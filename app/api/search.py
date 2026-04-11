@@ -69,6 +69,8 @@ def unified_search(
 
     with db.connect() as conn:
         # ── items FTS5 ────────────────────────────────────────────────────
+        # SQLite's bm25() returns negative values: more negative = better match.
+        # We negate it so that higher `score` = better relevance, then sort DESC.
         try:
             rows = conn.execute(
                 """
@@ -80,7 +82,7 @@ def unified_search(
                 WHERE items_fts MATCH ?
                   AND i.theme != 'community_visuals'
                   AND i.source_type NOT LIKE '%_visual%'
-                ORDER BY score ASC
+                ORDER BY score DESC
                 LIMIT ?
                 """,
                 (fts_term, per_type),
@@ -133,6 +135,7 @@ def unified_search(
                 logger.exception("LIKE fallback also failed for items q=%r", raw)
 
         # ── hypotheses FTS5 ───────────────────────────────────────────────
+        # Same BM25 convention: negate and sort DESC for best-match first.
         try:
             rows = conn.execute(
                 """
@@ -142,7 +145,7 @@ def unified_search(
                 FROM hypotheses_fts
                 JOIN hypotheses h ON h.id = hypotheses_fts.rowid
                 WHERE hypotheses_fts MATCH ?
-                ORDER BY score ASC
+                ORDER BY score DESC
                 LIMIT ?
                 """,
                 (fts_term, per_type),
@@ -187,7 +190,8 @@ def unified_search(
             except Exception:
                 logger.exception("LIKE fallback also failed for hypotheses q=%r", raw)
 
-    results.sort(key=lambda r: r.get("score", 9999))
+    # Higher score = better match; sort descending
+    results.sort(key=lambda r: r.get("score", 0), reverse=True)
     final = results[:limit]
 
     _set_cached_search(cache_key, final)
