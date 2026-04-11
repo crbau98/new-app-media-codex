@@ -155,7 +155,7 @@ class ResearchService:
          "tags": ["fitness", "reality_tv", "muscle", "onlyfans"], "bio": "Survivor contestant turned OnlyFans creator"},
         {"username": "sebastiancox",       "platform": "OnlyFans",  "display_name": "Sebastian Cox",
          "tags": ["muscle", "gay", "onlyfans"], "bio": "Gay muscle content creator"},
-        # Popular gay male OnlyFans creators
+        # Popular gay male creators
         {"username": "ryanbones",          "platform": "OnlyFans",  "display_name": "Ryan Bones",
          "tags": ["muscle", "gay", "onlyfans"]},
         {"username": "drewvalentino",      "platform": "OnlyFans",  "display_name": "Drew Valentino",
@@ -430,8 +430,8 @@ class ResearchService:
                         self.db.insert_image(cache_image_record(session, self.settings, image.__dict__))
                         notes["collected"]["images"] += 1
                         theme_notes["images"] += 1
-                    # Still insert items so the DB tracks what was seen, but
-                    # they are no longer surfaced in any UI view.
+                    # Still insert items for deduplication tracking (page_url uniqueness),
+                    # but they are no longer surfaced in any UI view.
                     for item in source_items:
                         record = item.to_record()
                         _, created = self.db.upsert_item(record, run_id)
