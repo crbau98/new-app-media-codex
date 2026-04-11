@@ -101,7 +101,7 @@ export const SourceCard = memo(function SourceCard({
   function goTag(type: 'compound' | 'mechanism', value: string) {
     resetFilters()
     setFilter(type, value)
-    setActiveView('items')
+    setActiveView('images')
   }
 
   const densityClass = density === 'compact' ? 'py-2' : density === 'spacious' ? 'py-4' : 'py-3'

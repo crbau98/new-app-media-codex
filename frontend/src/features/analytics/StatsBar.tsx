@@ -251,7 +251,7 @@ export function StatsBar() {
     resetFilters()
     if (extra?.savedOnly) setFilter('savedOnly', true)
     if (extra?.queuedOnly) setFilter('queuedOnly', true)
-    setActiveView('items')
+    setActiveView('images')
   }
 
   const prev = prevRef.current
@@ -276,7 +276,7 @@ export function StatsBar() {
       label: 'Hypotheses',
       value: t?.hypothesis_count ?? 0,
       trendDir: t ? trend(t.hypothesis_count, prev?.hypothesis_count) : 'neutral',
-      onClick: () => setActiveView('hypotheses'),
+      onClick: () => setActiveView('images'),
     },
     {
       label: 'Images',

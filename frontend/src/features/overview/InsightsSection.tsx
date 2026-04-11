@@ -251,19 +251,19 @@ export function InsightsSection() {
   function goSource(source: string) {
     resetFilters()
     setFilter('sourceType', source)
-    setActiveView('items')
+    setActiveView('images')
   }
 
   function goStatus(status: string) {
     resetFilters()
     setFilter('reviewStatus', status)
-    setActiveView('items')
+    setActiveView('images')
   }
 
   function goTheme(theme: string) {
     resetFilters()
     setFilter('theme', theme)
-    setActiveView('items')
+    setActiveView('images')
   }
 
   if (isLoading) {

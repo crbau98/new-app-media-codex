@@ -19,11 +19,14 @@ from app.sources.base import (
 )
 
 LPSG_QUERIES = {
-    "libido": ["libido", "sex drive"],
-    "pssd": ["pssd", "ssri-sexual-dysfunction"],
-    "ejaculation_latency": ["premature-ejaculation", "ejaculation-latency"],
-    "erections": ["erectile-dysfunction", "erection-quality"],
-    "orgasm": ["anorgasmia", "orgasm"],
+    "onlyfans_creators": ["onlyfans", "gay-onlyfans", "gay-creator"],
+    "fansly_creators": ["fansly", "gay-fansly", "gay-creator"],
+    "reddit_gay": ["gay", "amateur-gay"],
+    "x_gay_creators": ["twitter", "x-com", "gay-creator"],
+    "lpsg_threads": ["cock", "dick", "cum", "bareback", "anal", "nude", "hung"],
+    "twinks": ["twink", "young-gay", "gay-twink"],
+    "muscle_bears": ["muscle", "bear", "hairy", "daddy", "gay-muscle"],
+    "fetish_kink": ["fetish", "leather", "bdsm", "bondage", "gay-kink", "bareback"],
 }
 
 

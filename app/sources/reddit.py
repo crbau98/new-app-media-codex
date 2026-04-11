@@ -22,11 +22,54 @@ from app.sources.base import (
 )
 
 REDDIT_QUERIES = {
-    "libido": ["penis libido reddit", "cock dick libido men reddit", "twink twunk cum libido reddit", "precum ejaculate hyperspermia libido reddit"],
-    "pssd": ["penis cock PSSD reddit", "dick ejaculate PSSD dysfunction reddit", "cum hyperspermia PSSD reddit", "twink twunk cock ejaculate PSSD reddit"],
-    "ejaculation_latency": ["penis cock premature ejaculation reddit", "dick ejaculate hyperspermia latency reddit", "cum precum ejaculate control reddit", "twink twunk cock ejaculate timing reddit"],
-    "erections": ["penis cock erection reddit", "dick cum erection dysfunction reddit", "twink twunk cock erection reddit", "ejaculate hyperspermia erection reddit"],
-    "orgasm": ["penis cock orgasm reddit", "ejaculate cum hyperspermia orgasm reddit", "twink twunk cock ejaculate orgasm reddit", "dick precum ejaculate orgasm reddit"],
+    "onlyfans_creators": [
+        "gay onlyfans creator nude reddit site:reddit.com",
+        "gay onlyfans male leaked nude reddit r/GayNSFW",
+        "gay onlyfans performer reddit nude cock",
+        "gay male onlyfans content reddit nude amateur",
+    ],
+    "fansly_creators": [
+        "gay fansly creator nude reddit site:reddit.com",
+        "gay fansly male reddit nude cock",
+        "gay fansly performer reddit nude amateur",
+        "gay fansly content reddit nude explicit",
+    ],
+    "reddit_gay": [
+        "gay porn nude reddit r/gayporn cock",
+        "gay nude male reddit r/GayNSFW cock",
+        "gay twink nude reddit r/gaytwink cock",
+        "gay muscle nude reddit r/gaymuscle cock",
+        "gay bear nude reddit r/gaybear cock",
+        "gay amateur nude reddit cock bareback",
+    ],
+    "x_gay_creators": [
+        "gay creator onlyfans twitter.com nude cock",
+        "gay nude x.com creator explicit",
+        "gay male nude twitter creator",
+        "gay content creator x.com nude",
+    ],
+    "lpsg_threads": [
+        "lpsg gay nude male cock reddit",
+        "gay nude cock hung reddit lpsg site:reddit.com",
+    ],
+    "twinks": [
+        "gay twink nude reddit cock cum",
+        "twink gay onlyfans reddit nude",
+        "gay young twink reddit nude cock amateur",
+        "twink cum gay reddit site:reddit.com",
+    ],
+    "muscle_bears": [
+        "gay muscle nude reddit cock daddy",
+        "gay bear hairy nude reddit cock",
+        "gay daddy muscle reddit nude cock amateur",
+        "bear gay hairy nude reddit bareback",
+    ],
+    "fetish_kink": [
+        "gay fetish bdsm nude reddit cock leather",
+        "gay bareback nude reddit cock cum",
+        "gay bondage nude reddit leather cock",
+        "gay kink nude reddit cock anal bareback",
+    ],
 }
 
 

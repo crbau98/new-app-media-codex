@@ -69,17 +69,9 @@ export function CrawlNotifier(): null {
     invalidateQueries([
       ["dashboard"],
       ["app-shell-summary"],
-      ["browse-items"],
-      ["items"],
-      ["activity"],
-      ["stats"],
+      ["screenshots"],
+      ["media-stats"],
     ])
-    if (activeViewRef.current === "overview") {
-      invalidateQueries([["insights"], ["trends"], ["recommendations"], ["duplicates"]])
-    }
-    if (activeViewRef.current === "items" || activeViewRef.current === "overview") {
-      invalidateQueries([["source-health"]])
-    }
   }
 
   function invalidateAfterCapture() {
@@ -133,7 +125,7 @@ export function CrawlNotifier(): null {
 
             case "crawl_done": {
               setCrawlRunningRef.current(false)
-              const doneMsg = `Crawl complete: ${msg.items_added ?? 0} new items`
+              const doneMsg = `Crawl complete: ${msg.items_added ?? 0} new images`
               addToastRef.current(doneMsg, "success")
               addNotificationRef.current(doneMsg, "crawl")
               invalidateAfterCrawl()

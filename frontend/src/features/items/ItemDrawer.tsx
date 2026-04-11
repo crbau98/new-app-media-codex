@@ -608,7 +608,7 @@ export function ItemDrawer({ itemIds = [], currentIndex = -1 }: ItemDrawerProps 
     setSelectedItemId(null)
     resetFilters()
     setFilter(type, value)
-    setActiveView("items")
+    setActiveView("images")
   }
 
   const { data: item, isLoading } = useQuery({

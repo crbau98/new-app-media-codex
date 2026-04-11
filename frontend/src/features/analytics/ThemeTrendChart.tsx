@@ -206,7 +206,7 @@ export function ThemeTrendChart({ onBarClick }: ThemeTrendChartProps = {}) {
                 resetFilters()
                 setFilter('dateFrom', from.toISOString().slice(0, 10))
                 setFilter('dateTo', to.toISOString().slice(0, 10))
-                setActiveView('items')
+                setActiveView('images')
               }}
               style={{ cursor: 'pointer' }}
             >

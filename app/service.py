@@ -155,7 +155,7 @@ class ResearchService:
          "tags": ["fitness", "reality_tv", "muscle", "onlyfans"], "bio": "Survivor contestant turned OnlyFans creator"},
         {"username": "sebastiancox",       "platform": "OnlyFans",  "display_name": "Sebastian Cox",
          "tags": ["muscle", "gay", "onlyfans"], "bio": "Gay muscle content creator"},
-        # Popular gay male creators as inspiration base
+        # Popular gay male creators
         {"username": "ryanbones",          "platform": "OnlyFans",  "display_name": "Ryan Bones",
          "tags": ["muscle", "gay", "onlyfans"]},
         {"username": "drewvalentino",      "platform": "OnlyFans",  "display_name": "Drew Valentino",
@@ -180,7 +180,6 @@ class ResearchService:
          "tags": ["athletic", "gay", "onlyfans"]},
         {"username": "nickfitt",           "platform": "OnlyFans",  "display_name": "Nick Fitt",
          "tags": ["muscle", "gay", "onlyfans"]},
-        # Additional creators
         {"username": "troyedean",          "platform": "OnlyFans",  "display_name": "Troye Dean",
          "tags": ["twink", "gay", "onlyfans"]},
         {"username": "devinfrancoxx",      "platform": "OnlyFans",  "display_name": "Devin Franco",
@@ -197,6 +196,55 @@ class ResearchService:
          "tags": ["hung", "muscle", "gay", "onlyfans"]},
         {"username": "adamramzi",          "platform": "OnlyFans",  "display_name": "Adam Ramzi",
          "tags": ["muscle", "hairy", "gay", "onlyfans"]},
+        # Fansly creators
+        {"username": "jakipz",             "platform": "Fansly",    "display_name": "Jakipz Fansly",
+         "tags": ["twink", "latino", "fansly"]},
+        {"username": "austinwolf",         "platform": "Fansly",    "display_name": "Austin Wolf Fansly",
+         "tags": ["muscle", "daddy", "fansly"]},
+        {"username": "scottdemarco",       "platform": "Fansly",    "display_name": "Scott DeMarco",
+         "tags": ["muscle", "bear", "hairy", "fansly", "gay"]},
+        {"username": "maxcarter",          "platform": "Fansly",    "display_name": "Max Carter",
+         "tags": ["muscle", "gay", "fansly"]},
+        {"username": "vincenzoortiz",      "platform": "Fansly",    "display_name": "Vincenzo Ortiz",
+         "tags": ["twink", "latino", "fansly", "gay"]},
+        {"username": "tannermyers",        "platform": "Fansly",    "display_name": "Tanner Myers",
+         "tags": ["twink", "athletic", "fansly", "gay"]},
+        # Twitter/X creators
+        {"username": "colbykeller",        "platform": "Twitter/X", "display_name": "Colby Keller X",
+         "tags": ["muscle", "artist", "twitter", "gay"]},
+        {"username": "austinwolfnyc",      "platform": "Twitter/X", "display_name": "Austin Wolf X",
+         "tags": ["muscle", "daddy", "twitter", "gay"]},
+        {"username": "jjknight_official",  "platform": "Twitter/X", "display_name": "JJ Knight X",
+         "tags": ["hung", "muscle", "twitter", "gay"]},
+        {"username": "devinfrancoxx",      "platform": "Twitter/X", "display_name": "Devin Franco X",
+         "tags": ["muscle", "twitter", "gay"]},
+        {"username": "manuelskye",         "platform": "Twitter/X", "display_name": "Manuel Skye X",
+         "tags": ["muscle", "hung", "twitter", "gay"]},
+        {"username": "boonerbanks",        "platform": "Twitter/X", "display_name": "Boomer Banks X",
+         "tags": ["hung", "latino", "twitter", "gay"]},
+        # Additional well-known performers
+        {"username": "johnnyrapid",        "platform": "OnlyFans",  "display_name": "Johnny Rapid",
+         "tags": ["twink", "versatile", "gay", "onlyfans"]},
+        {"username": "marcusorelias",      "platform": "OnlyFans",  "display_name": "Marcus Orelias",
+         "tags": ["muscle", "latino", "gay", "onlyfans"]},
+        {"username": "bareback_bastian",   "platform": "OnlyFans",  "display_name": "Bareback Bastian",
+         "tags": ["twink", "bareback", "gay", "onlyfans"]},
+        {"username": "phenixsaint",        "platform": "OnlyFans",  "display_name": "Phenix Saint",
+         "tags": ["muscle", "hairy", "gay", "onlyfans"]},
+        {"username": "landonmycles",       "platform": "OnlyFans",  "display_name": "Landon Mycles",
+         "tags": ["hung", "muscle", "gay", "onlyfans"]},
+        {"username": "vincentocock",       "platform": "OnlyFans",  "display_name": "Vincent O'Cock",
+         "tags": ["hung", "gay", "onlyfans"]},
+        {"username": "theorbrady",         "platform": "OnlyFans",  "display_name": "Theo Brady",
+         "tags": ["twink", "gay", "onlyfans"]},
+        {"username": "rickyroman",         "platform": "OnlyFans",  "display_name": "Ricky Roman",
+         "tags": ["latino", "muscle", "gay", "onlyfans"]},
+        {"username": "graysondlange",      "platform": "OnlyFans",  "display_name": "Grayson Lange",
+         "tags": ["muscle", "gay", "onlyfans"]},
+        {"username": "jacobblackxxx",      "platform": "OnlyFans",  "display_name": "Jacob Black",
+         "tags": ["muscle", "bear", "gay", "onlyfans"]},
+        {"username": "tannerofmiami",      "platform": "OnlyFans",  "display_name": "Tanner of Miami",
+         "tags": ["muscle", "daddy", "gay", "onlyfans"]},
     ]
 
     def _seed_default_performers(self) -> None:
@@ -334,15 +382,9 @@ class ResearchService:
     def run_crawl(self) -> dict[str, Any]:
         from app.sources import (
             build_session,
-            collect_anecdotes,
-            collect_arxiv,
-            collect_biorxiv,
-            collect_firecrawl,
             collect_firecrawl_images,
             collect_images,
-            collect_literature,
             collect_lpsg,
-            collect_pubmed,
             collect_reddit,
             collect_x,
         )
@@ -361,90 +403,18 @@ class ResearchService:
             self.invalidate_dashboard_cache()
             self._emit({"type": "crawl_start"})
             session = build_session(self.settings)
-            recent_items: list[dict[str, Any]] = []
             for theme in self.settings.themes:
                 theme_notes = notes["sources"].setdefault(
                     theme.slug,
                     {
-                        "literature": 0,
-                        "anecdotes": 0,
                         "reddit": 0,
                         "x": 0,
                         "lpsg": 0,
-                        "pubmed": 0,
-                        "biorxiv": 0,
-                        "arxiv": 0,
-                        "firecrawl": 0,
                         "images": 0,
                     },
                 )
-                for query in theme.queries:
-                    for collector in (collect_literature,):
-                        self._emit({"type": "source_start", "source": collector.__name__, "theme": theme.slug})
-                        try:
-                            items = collector(session, self.settings, theme, query)
-                        except Exception as exc:
-                            notes["errors"].append(f"{theme.slug}:{collector.__name__}:{exc}")
-                            continue
-                        for item in items:
-                            record = item.to_record()
-                            item_id, created = self.db.upsert_item(record, run_id)
-                            notes["collected"]["items"] += 1
-                            notes["collected"]["new_items" if created else "updated_items"] += 1
-                            theme_notes["literature"] += 1
-                            recent_items.append(item_snapshot(item))
-                            if item.image_url:
-                                self.db.insert_image(
-                                    cache_image_record(
-                                        session,
-                                        self.settings,
-                                        {
-                                            "source_type": "item_image",
-                                            "theme": theme.slug,
-                                            "title": item.title,
-                                            "image_url": item.image_url,
-                                            "page_url": item.url,
-                                            "thumb_url": item.image_url,
-                                            "local_path": "",
-                                        },
-                                    ),
-                                    item_id=item_id,
-                                )
 
-                try:
-                    anecdote_items, anecdote_images = collect_anecdotes(session, self.settings, theme, theme.label)
-                except Exception as exc:
-                    notes["errors"].append(f"{theme.slug}:collect_anecdotes:{exc}")
-                    anecdote_items, anecdote_images = [], []
-                for item in anecdote_items:
-                    record = item.to_record()
-                    item_id, created = self.db.upsert_item(record, run_id)
-                    notes["collected"]["items"] += 1
-                    notes["collected"]["new_items" if created else "updated_items"] += 1
-                    theme_notes["anecdotes"] += 1
-                    recent_items.append(item_snapshot(item))
-                    if item.image_url:
-                        self.db.insert_image(
-                            cache_image_record(
-                                session,
-                                self.settings,
-                                {
-                                    "source_type": "page_image",
-                                    "theme": item.theme,
-                                    "title": item.title,
-                                    "image_url": item.image_url,
-                                    "page_url": item.url,
-                                    "thumb_url": item.image_url,
-                                    "local_path": "",
-                                },
-                            ),
-                            item_id=item_id,
-                        )
-                for image in anecdote_images:
-                    self.db.insert_image(cache_image_record(session, self.settings, image.__dict__))
-                    notes["collected"]["images"] += 1
-                    theme_notes["images"] += 1
-
+                # ── Reddit / X / LPSG — images from social sources ───────────
                 for source_key, collector in (
                     ("reddit", collect_reddit),
                     ("x", collect_x),
@@ -456,68 +426,17 @@ class ResearchService:
                     except Exception as exc:
                         notes["errors"].append(f"{theme.slug}:{collector.__name__}:{exc}")
                         source_items, source_images = [], []
-                    for item in source_items:
-                        record = item.to_record()
-                        item_id, created = self.db.upsert_item(record, run_id)
-                        notes["collected"]["items"] += 1
-                        notes["collected"]["new_items" if created else "updated_items"] += 1
-                        theme_notes[source_key] += 1
-                        recent_items.append(item_snapshot(item))
-                        if item.image_url:
-                            self.db.insert_image(
-                                cache_image_record(
-                                    session,
-                                    self.settings,
-                                    {
-                                        "source_type": f"{source_key}_image",
-                                        "theme": item.theme,
-                                        "title": item.title,
-                                        "image_url": item.image_url,
-                                        "page_url": item.url,
-                                        "thumb_url": item.image_url,
-                                        "local_path": "",
-                                    },
-                                ),
-                                item_id=item_id,
-                            )
                     for image in source_images:
                         self.db.insert_image(cache_image_record(session, self.settings, image.__dict__))
                         notes["collected"]["images"] += 1
                         theme_notes["images"] += 1
-
-                # ── Parallel fetch: pubmed / biorxiv / arxiv / firecrawl (4.1) ──
-                import concurrent.futures as _cf
-
-                _parallel_sources: list[tuple[str, Any]] = [
-                    ("pubmed", collect_pubmed),
-                    ("biorxiv", collect_biorxiv),
-                    ("arxiv", collect_arxiv),
-                    ("firecrawl", collect_firecrawl),
-                ]
-                _parallel_results: dict[str, list] = {}
-
-                def _fetch_source(args):
-                    key, fn = args
-                    self._emit({"type": "source_start", "source": key, "theme": theme.slug})
-                    try:
-                        return key, fn(session, self.settings, theme), None
-                    except Exception as exc:
-                        return key, [], exc
-
-                with _cf.ThreadPoolExecutor(max_workers=_CRAWL_PARALLEL_WORKERS, thread_name_prefix="crawl-parallel") as pool:
-                    for src_key, src_items, exc in pool.map(_fetch_source, _parallel_sources):
-                        if exc is not None:
-                            notes["errors"].append(f"{theme.slug}:{src_key}:{exc}")
-                        _parallel_results[src_key] = src_items
-
-                for source_key, source_items in _parallel_results.items():
+                    # Still insert items for deduplication tracking (page_url uniqueness),
+                    # but they are no longer surfaced in any UI view.
                     for item in source_items:
                         record = item.to_record()
-                        item_id, created = self.db.upsert_item(record, run_id)
-                        notes["collected"]["items"] += 1
+                        _, created = self.db.upsert_item(record, run_id)
                         notes["collected"]["new_items" if created else "updated_items"] += 1
                         theme_notes[source_key] += 1
-                        recent_items.append(item_snapshot(item))
                         if item.image_url:
                             self.db.insert_image(
                                 cache_image_record(
@@ -533,9 +452,9 @@ class ResearchService:
                                         "local_path": "",
                                     },
                                 ),
-                                item_id=item_id,
                             )
 
+                # ── DDG image search ─────────────────────────────────────────
                 try:
                     query_images = collect_images(session, self.settings, theme, theme.label)
                 except Exception as exc:
@@ -546,6 +465,7 @@ class ResearchService:
                     notes["collected"]["images"] += 1
                     theme_notes["images"] += 1
 
+                # ── Firecrawl image scraping ─────────────────────────────────
                 try:
                     fc_images = collect_firecrawl_images(session, self.settings, theme)
                 except Exception as exc:
@@ -556,17 +476,9 @@ class ResearchService:
                     notes["collected"]["images"] += 1
                     theme_notes["images"] += 1
 
-            if not recent_items:
-                recent_items = self.db.get_recent_items(limit=30)
-            from app.ai import generate_hypotheses
-
-            hypotheses, hypothesis_meta = generate_hypotheses(self.settings, recent_items)
-            self.db.replace_hypotheses(run_id, hypotheses)
-            notes["collected"]["hypotheses"] = len(hypotheses)
-            notes["hypotheses"] = hypothesis_meta
             self.db.finish_run(run_id, "completed", notes)
             self.invalidate_dashboard_cache()
-            self._emit({"type": "crawl_done", "items_added": notes["collected"]["new_items"]})
+            self._emit({"type": "crawl_done", "items_added": notes["collected"]["images"]})
             return {"status": "completed", "run_id": run_id, "notes": notes}
         except Exception as exc:
             notes["errors"].append(str(exc))

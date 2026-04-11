@@ -1,26 +1,18 @@
 import { create } from "zustand"
 
 // ── Constants ────────────────────────────────────────────────────────
-export type ActiveView = "overview" | "items" | "images" | "hypotheses" | "graph" | "performers" | "settings"
+export type ActiveView = "images" | "performers" | "settings"
 
 const MAX_NOTIFICATIONS = 50
 
 const VIEW_HASHES: Record<string, ActiveView> = {
-  '#/overview': 'overview',
   '#/media': 'images',
   '#/performers': 'performers',
   '#/settings': 'settings',
-  '#/items': 'items',
-  '#/hypotheses': 'hypotheses',
-  '#/graph': 'graph',
 }
 
 const HASH_VIEWS: Record<ActiveView, string> = {
-  overview: '#/overview',
-  items: '#/media',
   images: '#/media',
-  hypotheses: '#/media',
-  graph: '#/media',
   performers: '#/performers',
   settings: '#/settings',
 }
@@ -79,7 +71,7 @@ const DEFAULT_FILTERS: Filters = {
 export interface Notification {
   id: string
   message: string
-  type: 'crawl' | 'capture' | 'hypothesis' | 'system'
+  type: 'crawl' | 'capture' | 'system'
   timestamp: number
   read: boolean
 }

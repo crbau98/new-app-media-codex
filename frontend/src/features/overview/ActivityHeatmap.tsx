@@ -175,7 +175,7 @@ export function ActivityHeatmap() {
     } else {
       setFilter('dateFrom', cell.dateStr)
       setFilter('dateTo', cell.dateStr)
-      setActiveView('items')
+      setActiveView('images')
     }
   }
 

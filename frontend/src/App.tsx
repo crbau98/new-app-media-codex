@@ -45,13 +45,9 @@ const Onboarding = lazy(() =>
 
 // ── Related-view map (static – hoisted out of component) ─────────────
 const RELATED_VIEWS: Record<ActiveView, ActiveView[]> = {
-  overview: ["images", "performers"],
-  items: ["images", "performers"],
-  images: ["performers", "overview"],
-  hypotheses: ["images", "performers"],
-  graph: ["images", "performers"],
-  performers: ["images", "overview"],
-  settings: ["overview"],
+  images: ["performers"],
+  performers: ["images"],
+  settings: ["images"],
 }
 
 // ── Loading skeleton ─────────────────────────────────────────────────
@@ -138,7 +134,6 @@ function App() {
       images: 'Media — Codex',
       performers: 'Creators — Codex',
       settings: 'Settings — Codex',
-      overview: 'Overview — Codex',
     }
     document.title = titles[deferredActiveView] ?? 'Codex'
   }, [deferredActiveView])
