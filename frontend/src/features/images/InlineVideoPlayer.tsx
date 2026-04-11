@@ -518,7 +518,7 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
               loop={loop}
               muted={muted}
               onWheel={handleWheel}
-              onError={markMediaBroken}
+              onError={() => { setBuffering(false); markMediaBroken() }}
               onWaiting={() => setBuffering(true)}
               onCanPlay={() => setBuffering(false)}
               onPlaying={() => setBuffering(false)}

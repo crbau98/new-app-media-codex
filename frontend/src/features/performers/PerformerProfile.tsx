@@ -8,6 +8,23 @@ import { getScreenshotMediaSrc } from "@/lib/media"
 import { useAppStore } from "@/store"
 import { Skeleton } from "@/components/Skeleton"
 
+/* ── Helpers ──────────────────────────────────────────────────────────── */
+
+function getPerformerMediaSrc(m: PerformerMedia): string {
+  // local_url is a web-accessible URL computed by backend (e.g. /cached-screenshots/file.jpg)
+  if (m.local_url) return m.local_url
+  // source_url is a remote URL - use proxy to avoid CORS issues
+  if (m.source_url) {
+    const url = m.source_url
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      return `/api/screenshots/proxy-media?url=${encodeURIComponent(url)}`
+    }
+    return url
+  }
+  // thumbnail_path and local_path are filesystem paths - not directly accessible
+  return ""
+}
+
 /* ── Constants ────────────────────────────────────────────────────────── */
 
 const PLATFORMS = ["OnlyFans", "Twitter/X", "Instagram", "Reddit", "Fansly"] as const
@@ -606,7 +623,7 @@ function MediaGallery({
       ) : (
         <div className="grid grid-cols-3 gap-1.5">
           {allMedia.map((m, i) => {
-            const src = m.local_url ?? m.thumbnail_path ?? m.source_url
+            const src = getPerformerMediaSrc(m)
             const isVid = m.media_type === "video" || (src ? isVideo(src) : false)
             return (
               <button
@@ -617,7 +634,13 @@ function MediaGallery({
                 {src ? (
                   <img src={src} alt={m.caption ?? ""} className="h-full w-full object-cover" loading="lazy" />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-[10px] text-text-muted">{m.media_type}</div>
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-muted">
+                    {isVid ? (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                    ) : (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                    )}
+                  </div>
                 )}
                 {isVid && (
                   <div className="absolute inset-0 flex items-center justify-center">
@@ -665,7 +688,7 @@ function PerformerMediaLightbox({
   onNavigate: (idx: number) => void
 }) {
   const item = media[idx]
-  const src = item.local_url ?? item.source_url
+  const src = getPerformerMediaSrc(item)
   const currentIsVideo = item.media_type === "video" || (src ? isVideo(src) : false)
 
   const onCloseRef = useRef(onClose)
