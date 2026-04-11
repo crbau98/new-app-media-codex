@@ -93,14 +93,14 @@ export function usePerformerSearchSuggestionsQuery(
   {
     enabled = true,
     limit = 6,
-    debounceMs = 220,
+    debounceMilliseconds = 220,
   }: {
     enabled?: boolean
     limit?: number
-    debounceMs?: number
+    debounceMilliseconds?: number
   } = {},
 ) {
-  const debouncedQuery = useDebounce(query.trim(), debounceMs)
+  const debouncedQuery = useDebounce(query.trim(), debounceMilliseconds)
   const queryEnabled = enabled && debouncedQuery.length >= 2
   const result = useQuery({
     queryKey: sharedQueryKeys.performerSearchSuggestions(debouncedQuery, limit),

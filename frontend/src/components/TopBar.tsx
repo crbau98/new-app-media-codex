@@ -113,7 +113,7 @@ export function TopBar() {
       ? []
       : (performerSuggestionsQuery.data?.performers ?? [])
   const searchLoading =
-    trimmedSearch.length >= 2
+    (trimmedSearch.length >= 2)
     && (trimmedSearch !== performerSuggestionsQuery.debouncedQuery || performerSuggestionsQuery.isFetching)
 
   const creatorSuggestions = useMemo<CreatorSuggestionItem[]>(() => {

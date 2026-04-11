@@ -19,6 +19,18 @@ function parseUserTags(raw: string | null | undefined): string[] {
   } catch { return [] }
 }
 
+function isSameShot(a: Screenshot, b: Screenshot): boolean {
+  return a.id === b.id
+    && a.local_url === b.local_url
+    && a.source_url === b.source_url
+    && a.page_url === b.page_url
+    && a.preview_url === b.preview_url
+    && a.thumbnail_url === b.thumbnail_url
+    && a.ai_summary === b.ai_summary
+    && a.rating === b.rating
+    && a.user_tags === b.user_tags
+}
+
 // ── Icons ────────────────────────────────────────────────────────────────────
 
 function HeartIcon({ filled }: { filled: boolean }) {
@@ -513,10 +525,10 @@ const VideoSlide = memo(function VideoSlide({
     </div>
   )
 }, (prev, next) => {
-  return prev.shot === next.shot &&
-    prev.isActive === next.isActive &&
-    prev.isFavorite === next.isFavorite &&
-    prev.isDescribing === next.isDescribing
+  return isSameShot(prev.shot, next.shot)
+    && prev.isActive === next.isActive
+    && prev.isFavorite === next.isFavorite
+    && prev.isDescribing === next.isDescribing
 })
 
 // ── Main Feed Component ──────────────────────────────────────────────────────
