@@ -137,7 +137,7 @@ def export_media_csv(request: Request) -> Response:
         # Screenshots linked to performers
         for row in conn.execute("""
             SELECT s.id, 'screenshot' AS type, p.username AS performer_username,
-                   s.caption, NULL AS media_type, NULL AS width, NULL AS height,
+                   NULL AS caption, NULL AS media_type, NULL AS width, NULL AS height,
                    NULL AS duration, NULL AS file_size, s.local_path, s.source_url,
                    s.rating, s.ai_summary, s.ai_tags, s.captured_at
             FROM screenshots s
