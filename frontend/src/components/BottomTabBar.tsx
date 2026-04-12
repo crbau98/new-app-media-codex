@@ -51,7 +51,7 @@ export function BottomTabBar() {
 
   return (
     <nav
-      className="fixed inset-x-3 bottom-3 z-40 rounded-[26px] border border-white/[0.08] bg-bg-base/92 shadow-[0_18px_40px_rgba(0,0,0,0.3)] backdrop-blur-xl md:hidden"
+      className="fixed inset-x-3 bottom-3 z-40 rounded-[22px] border border-border/80 bg-bg-surface/85 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl md:hidden"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       aria-label="Mobile navigation"
     >
@@ -78,11 +78,10 @@ export function BottomTabBar() {
               {isActive && (
                 <span
                   aria-hidden="true"
-                  className="absolute inset-x-4 top-1 h-1 rounded-full bg-accent"
-                  style={{ boxShadow: "0 0 14px var(--color-accent-glow)" }}
+                  className="absolute inset-x-5 top-1.5 h-0.5 rounded-full bg-accent"
                 />
               )}
-              <span className={cn("transition-transform duration-150", isActive && "scale-110")}>
+              <span className={cn("transition-transform duration-200 ease-out", isActive && "scale-[1.03]")}>
                 {tab.icon}
               </span>
               <span className={cn("font-medium", isActive && "text-text-primary")}>{tab.label}</span>

@@ -12,7 +12,7 @@ interface EmptyStateProps {
 export function EmptyState({ icon, title, description, eyebrow = "Nothing here yet", action }: EmptyStateProps) {
   return (
     <div className="empty-state-panel animate-fade-in flex flex-col items-center justify-center px-8 py-16 text-center sm:px-10 sm:py-20">
-      <div className="mb-5 flex h-16 w-16 select-none items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-4xl text-white/80 shadow-[0_8px_22px_rgba(0,0,0,0.14)]">
+      <div className="mb-5 flex h-16 w-16 select-none items-center justify-center rounded-2xl border border-border bg-bg-elevated text-4xl text-text-secondary shadow-sm">
         {icon}
       </div>
       <p className="eyebrow mb-2">{eyebrow}</p>
@@ -21,7 +21,7 @@ export function EmptyState({ icon, title, description, eyebrow = "Nothing here y
       {action && (
         <button
           onClick={action.onClick}
-          className="mt-7 rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-white transition-[background-color,box-shadow,transform] hover:bg-accent-hover hover:shadow-[0_0_0_1px_var(--color-accent-glow)]"
+          className="mt-7 rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-white transition-[filter,transform] hover:brightness-110 active:scale-[0.98]"
         >
           {action.label}
         </button>

@@ -1039,20 +1039,17 @@ function OnboardingSection() {
 
 export function SettingsPage() {
   return (
-    <div className="min-h-screen px-6 py-8 max-w-5xl mx-auto">
+    <div className="mx-auto min-h-screen max-w-5xl px-6 py-8">
       {/* Page header */}
-      <div className="mb-8">
-        <h1 className="text-xl font-bold text-text-primary tracking-tight flex items-center gap-2.5 hero-gradient">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="text-accent">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
-          </svg>
+      <header className="mb-10">
+        <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.12em] text-text-muted">System</p>
+        <h1 className="hero-title text-[28px] font-semibold leading-[1.08] tracking-[-0.045em] text-text-primary sm:text-[34px]">
           Settings
         </h1>
-        <p className="mt-1 text-sm text-text-muted">
-          Configure data sources, theme visibility, display preferences, and data export.
+        <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-text-secondary">
+          Sources, appearance, notifications, and data.
         </p>
-      </div>
+      </header>
 
       <AboutSection />
       <AppearanceSection />

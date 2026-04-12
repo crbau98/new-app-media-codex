@@ -15,8 +15,8 @@ const ShortcutModal = lazy(() => import("./ShortcutModal").then((m) => ({ defaul
 const NotificationCenter = lazy(() => import("./NotificationCenter").then((m) => ({ default: m.NotificationCenter })))
 
 const VIEW_LABELS: Record<string, string> = {
-  images: "Media Library",
-  performers: "Creator Roster",
+  images: "Media",
+  performers: "Creators",
   settings: "Settings",
 }
 
@@ -339,7 +339,7 @@ export function TopBar() {
           leftOffset,
         )}
       >
-        <div className="topbar-shell mx-auto flex max-w-[1600px] items-center gap-4 rounded-2xl px-4 py-3 sm:gap-5 sm:px-5">
+        <div className="topbar-shell mx-auto flex max-w-[1680px] items-center gap-4 rounded-[20px] px-4 py-2.5 sm:gap-5 sm:px-5">
           <button
             onClick={() => setMobileNavOpen(!mobileNavOpen)}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text-primary md:hidden"
@@ -348,7 +348,7 @@ export function TopBar() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
           </button>
 
-          <h2 className="hero-title min-w-0 shrink-0 text-base font-semibold tracking-tight text-text-primary sm:text-lg">
+          <h2 className="hero-title min-w-0 shrink-0 text-[17px] font-semibold tracking-[-0.03em] text-text-primary sm:text-[19px]">
             {VIEW_LABELS[activeView] ?? activeView}
           </h2>
 

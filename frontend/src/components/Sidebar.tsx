@@ -412,11 +412,11 @@ export function Sidebar() {
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <span className="hero-title block truncate text-[15px] font-semibold tracking-tight text-text-primary">
+                <span className="hero-title block truncate text-[15px] font-semibold tracking-[-0.03em] text-text-primary">
                   Media Codex
                 </span>
-                <span className="block truncate text-[10px] font-medium uppercase tracking-[0.18em] text-text-muted">
-                  Research workspace
+                <span className="block truncate text-[10px] font-medium uppercase tracking-[0.14em] text-text-muted">
+                  Library
                 </span>
               </div>
             )}

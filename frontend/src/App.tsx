@@ -111,7 +111,7 @@ function TransitionIndicator({ isTransitioning }: { isTransitioning: boolean }) 
     <div
       style={{
         position: 'fixed', top: 0, left: 0, right: 0, height: '2px', zIndex: 9999,
-        background: 'var(--color-accent, #7cc6ff)',
+        background: 'var(--color-accent)',
         animation: 'pulse 1s ease-in-out infinite',
       }}
     />

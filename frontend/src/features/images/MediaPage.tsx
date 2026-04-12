@@ -520,7 +520,7 @@ const MediaCard = memo(function MediaCard({
       onContextMenu={onContextMenu}
       className={cn(
         "group content-card content-card-interactive relative aspect-square cursor-pointer overflow-hidden rounded-[24px] border border-white/10 bg-black/25 shadow-[0_12px_32px_rgba(0,0,0,0.18)] hover:scale-[1.02] transition-transform duration-200",
-        selected && "ring-2 ring-blue-500"
+        selected && "ring-2 ring-accent"
       )}
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
     >
@@ -532,7 +532,7 @@ const MediaCard = memo(function MediaCard({
         {vid && (
           <div
             className="absolute inset-0 z-[1] flex items-center justify-center"
-            style={{ background: "linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)" }}
+            style={{ background: "linear-gradient(180deg, #2c2c2e 0%, #000000 100%)" }}
             aria-hidden="true"
           >
             <div className="rounded-full bg-white/10 p-3">
@@ -2633,24 +2633,34 @@ export function MediaPage() {
         </Suspense>
       )}
 
-      <div className="px-3 pb-2 pt-3 sm:px-4">
+      <section className="px-3 pb-6 pt-1 sm:px-4" aria-labelledby="media-page-title">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-base font-semibold text-text-primary sm:text-lg">Media</h1>
-            <p className="mt-0.5 flex flex-wrap gap-x-1 text-xs text-text-secondary sm:mt-1 sm:text-sm">
-              <span>{(visibleSummary.total ?? 0).toLocaleString()} total</span>
-              <span className="text-white/20">·</span>
+            <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.12em] text-text-muted">Library</p>
+            <h1
+              id="media-page-title"
+              className="hero-title text-[28px] font-semibold leading-[1.08] tracking-[-0.045em] text-text-primary sm:text-[34px]"
+            >
+              Media
+            </h1>
+            <p className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-[15px] leading-relaxed text-text-secondary">
+              <span>{(visibleSummary.total ?? 0).toLocaleString()} items</span>
+              <span className="text-text-muted/80" aria-hidden="true">
+                ·
+              </span>
               <span>{(visibleSummary.videos ?? 0).toLocaleString()} videos</span>
-              <span className="text-white/20">·</span>
-              <span>{(visibleSummary.unrated ?? 0).toLocaleString()} needs rating</span>
+              <span className="text-text-muted/80" aria-hidden="true">
+                ·
+              </span>
+              <span>{(visibleSummary.unrated ?? 0).toLocaleString()} unrated</span>
             </p>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
-      <div className="sticky top-14 z-20 px-2 py-1.5 backdrop-blur-lg sm:px-4 sm:py-2">
-        <div className="section-shell flex flex-wrap items-center gap-1.5 rounded-[16px] px-2 py-1.5 shadow-[0_10px_26px_rgba(0,0,0,0.2)] backdrop-blur-lg sm:gap-2 sm:rounded-[20px] sm:px-3 sm:py-2">
+      <div className="sticky top-14 z-20 px-2 py-2 backdrop-blur-md sm:px-4">
+        <div className="section-shell flex flex-wrap items-center gap-1.5 rounded-2xl px-2 py-2 sm:gap-2 sm:rounded-[22px] sm:px-3 sm:py-2.5">
           {/* Search input */}
           <div className="relative min-w-[220px] max-w-md flex-1">
             <input

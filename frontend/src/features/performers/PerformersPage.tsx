@@ -1804,14 +1804,16 @@ export default function PerformersPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-6 pb-24">
       {/* Header */}
-      <div className="hero-surface rounded-[30px] p-5">
+      <div className="hero-surface rounded-[28px] p-6 sm:p-8">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-3">
             <div>
-              <p className="eyebrow mb-2">Creator Roster</p>
-              <h1 className="hero-title text-[clamp(1.8rem,3vw,2.7rem)] leading-none text-text-primary">Creators</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-text-secondary sm:text-[15px]">
-                Keep the roster fast, trustworthy, and publication-ready with better identity matching, lighter cards, and faster jumps into captured media.
+              <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.12em] text-text-muted">Roster</p>
+              <h1 className="hero-title text-[clamp(1.85rem,3.2vw,2.65rem)] font-semibold leading-[1.08] tracking-[-0.045em] text-text-primary">
+                Creators
+              </h1>
+              <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-text-secondary">
+                Search, organize, and open captured media for every profile you track.
               </p>
             </div>
             {statsData && (
