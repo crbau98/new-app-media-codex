@@ -1,6 +1,7 @@
 import { StrictMode, Component, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import './index.css'
 import App from './App'
 import { useAppStore, getViewFromHash } from './store'
@@ -128,6 +129,7 @@ createRoot(rootEl).render(
     <AppErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <App />
+        <SpeedInsights />
       </QueryClientProvider>
     </AppErrorBoundary>
   </StrictMode>
