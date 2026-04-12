@@ -646,7 +646,7 @@ export const api = {
     ),
   browseTelegramMedia: (params?: Record<string, string | number>) =>
     apiFetch<BrowseTelegramMediaPayload>(`/api/telegram/media${buildQuery(params)}`),
-  telegramStreamUrl: (mediaId: number) => `/api/telegram/media/${mediaId}/stream`,
+  telegramStreamUrl: (mediaId: number) => `${BASE}/api/telegram/media/${mediaId}/stream`,
   queueCount: () => apiFetch<{ count: number }>("/api/items/queue/count"),
   suggest: (q: string, field: "compound" | "mechanism") =>
     apiFetch<{ suggestions: string[] }>(`/api/items/suggest${buildQuery({ q, field })}`),
