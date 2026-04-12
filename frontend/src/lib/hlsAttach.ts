@@ -1,22 +1,58 @@
 import Hls from "hls.js"
 
+const PROXY_PATH = "/api/screenshots/proxy-media"
+const PROXY_QUERY = "url="
+
 /** True when the URL points at an HLS playlist (including proxied URLs that encode `.m3u8`). */
 export function isHlsUrl(url: string | null | undefined): boolean {
   if (!url) return false
   return /m3u8/i.test(url)
 }
 
+/**
+ * Route cross-origin media through our proxy so XHR (hls.js) avoids CDN CORS blocks.
+ * Leaves same-origin proxy URLs and relative /api paths unchanged.
+ */
+export function rewriteMediaUrlForProxy(url: string): string {
+  if (!url) return url
+  if (url.startsWith(`${PROXY_PATH}?${PROXY_QUERY}`)) {
+    return url
+  }
+  if (url.startsWith(PROXY_PATH + "?")) {
+    return url
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const u = new URL(url, window.location.origin)
+      if (u.origin === window.location.origin && u.pathname.startsWith(PROXY_PATH)) {
+        return u.pathname + u.search
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return `${PROXY_PATH}?${PROXY_QUERY}${encodeURIComponent(url)}`
+  }
+  return url
+}
+
 export type AttachMediaOptions = {
   /** Call `video.play()` once the stream is ready (HLS manifest parsed or metadata loaded). */
   tryAutoplay?: boolean
+  /** HLS fatal network / media errors (after xhr rewrite, etc.). */
+  onFatalError?: () => void
 }
 
 /**
  * Attach progressive or HLS media to a &lt;video&gt; element. For `.m3u8` in Chrome/Firefox/Edge,
- * uses hls.js; Safari uses native HLS. Returns a cleanup to run before unmount or when `src` changes.
+ * uses hls.js with **all** playlist/segment/key requests rewritten through `/api/screenshots/proxy-media`
+ * so segment fetches are same-origin (CDN URLs in the m3u8 would otherwise fail CORS in XHR).
+ * Safari/iOS: uses the same path when MSE is available; falls back to native HLS when not.
  */
 export function attachMediaSource(video: HTMLVideoElement, src: string, options?: AttachMediaOptions): () => void {
   const tryAutoplay = options?.tryAutoplay ?? false
+  const onFatalError = options?.onFatalError
   video.removeAttribute("src")
 
   const tryPlay = () => {
@@ -38,6 +74,34 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     }
   }
 
+  const hlsConfig = {
+    enableWorker: true,
+    lowLatencyMode: false,
+    xhrSetup(xhr: XMLHttpRequest, url: string) {
+      const proxied = rewriteMediaUrlForProxy(url)
+      xhr.open("GET", proxied, true)
+    },
+  }
+
+  if (Hls.isSupported()) {
+    const hls = new Hls(hlsConfig)
+    hls.loadSource(src)
+    hls.attachMedia(video)
+    hls.on(Hls.Events.MANIFEST_PARSED, tryPlay)
+    const onError = (_: string, data: { fatal?: boolean }) => {
+      if (data.fatal) {
+        onFatalError?.()
+      }
+    }
+    hls.on(Hls.Events.ERROR, onError)
+    return () => {
+      hls.off(Hls.Events.ERROR, onError)
+      hls.destroy()
+      video.removeAttribute("src")
+      video.load()
+    }
+  }
+
   if (video.canPlayType("application/vnd.apple.mpegurl")) {
     video.src = src
     const onMeta = () => {
@@ -47,18 +111,6 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     video.addEventListener("loadedmetadata", onMeta)
     return () => {
       video.removeEventListener("loadedmetadata", onMeta)
-      video.removeAttribute("src")
-      video.load()
-    }
-  }
-
-  if (Hls.isSupported()) {
-    const hls = new Hls({ enableWorker: true, lowLatencyMode: false })
-    hls.loadSource(src)
-    hls.attachMedia(video)
-    hls.on(Hls.Events.MANIFEST_PARSED, tryPlay)
-    return () => {
-      hls.destroy()
       video.removeAttribute("src")
       video.load()
     }

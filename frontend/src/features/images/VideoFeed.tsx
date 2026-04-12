@@ -172,7 +172,7 @@ const VideoSlide = memo(function VideoSlide({
   useEffect(() => {
     const v = videoRef.current
     if (!v || !currentIsVideo || !videoSrc) return
-    return attachMediaSource(v, videoSrc, { tryAutoplay: false })
+    return attachMediaSource(v, videoSrc, { tryAutoplay: false, onFatalError: markMediaBroken })
   }, [currentIsVideo, videoSrc])
 
   // Autoplay via IntersectionObserver — re-connect when videoSrc changes so play

@@ -148,7 +148,7 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
   useEffect(() => {
     const v = videoRef.current
     if (!v || !currentIsVideo || !src) return
-    return attachMediaSource(v, src, { tryAutoplay: true })
+    return attachMediaSource(v, src, { tryAutoplay: true, onFatalError: markMediaBroken })
   }, [currentIsVideo, src])
 
   const syncTime = useCallback(() => {

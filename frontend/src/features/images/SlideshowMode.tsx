@@ -62,7 +62,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
   useEffect(() => {
     const v = videoRef.current
     if (!v || !currentIsVideo || !src || videoLoadFailed) return
-    return attachMediaSource(v, src, { tryAutoplay: true })
+    return attachMediaSource(v, src, { tryAutoplay: true, onFatalError: markMediaBroken })
   }, [currentIsVideo, src, videoLoadFailed])
 
   // Preload next image

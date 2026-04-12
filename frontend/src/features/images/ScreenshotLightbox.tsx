@@ -132,7 +132,7 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
   useEffect(() => {
     const v = videoRef.current
     if (!v || !currentIsVideo || !src) return
-    return attachMediaSource(v, src, { tryAutoplay: true })
+    return attachMediaSource(v, src, { tryAutoplay: true, onFatalError: markMediaBroken })
   }, [currentIsVideo, src, shot.id])
 
   // Auto-scroll filmstrip to keep current thumbnail visible
