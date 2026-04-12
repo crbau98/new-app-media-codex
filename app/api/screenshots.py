@@ -191,8 +191,28 @@ def _is_refreshable_upstream_status(status_code: int) -> bool:
     return status_code in {401, 403, 404, 410, 472}
 
 
+def _has_ip_bound_token(url: str) -> bool:
+    """Return True if the URL contains IP-bound CDN tokens (validfrom/validto).
+
+    PornHub CDN serves two token formats:
+    - Path-based: ``/hash=,expiry/`` — NOT IP-bound, works from any IP.
+    - Query-param: ``?validfrom=&validto=&ipa=1&hash=`` — IP-bound, fails when
+      the proxy fetches segments from a different IP than the one that resolved
+      the manifest.
+    We prefer URLs without ``validfrom`` because they work reliably through our
+    server-side proxy.
+    """
+    return "validfrom=" in url and "validto=" in url
+
+
 def _resolve_ytdlp_stream_url(page_url: str) -> tuple[str | None, str | None]:
-    """Resolve a fresh direct stream URL from a page URL via yt-dlp."""
+    """Resolve a fresh direct stream URL from a page URL via yt-dlp.
+
+    When multiple formats are available we prefer:
+    1. HLS .m3u8 URLs with path-based auth (no IP-bound query tokens)
+    2. Direct .mp4 URLs (single file, no segment issues)
+    3. Any HLS URL as fallback
+    """
     if not page_url.startswith(("http://", "https://")):
         return None, None
     try:
@@ -213,21 +233,52 @@ def _resolve_ytdlp_stream_url(page_url: str) -> tuple[str | None, str | None]:
     if not info:
         return None, None
 
-    stream_url = info.get("url")
+    # Collect all candidate URLs from formats for smarter selection
+    formats = info.get("formats") or []
+    candidates_hls_good: list[str] = []   # HLS without IP-bound tokens
+    candidates_mp4: list[str] = []        # Direct MP4
+    candidates_hls_any: list[str] = []    # HLS with any token type
+
+    for fmt in formats:
+        fmt_url = fmt.get("url")
+        if not fmt_url or not isinstance(fmt_url, str):
+            continue
+        height = fmt.get("height") or 0
+        if height > 720 and height != 0:
+            continue
+        if ".m3u8" in fmt_url:
+            if not _has_ip_bound_token(fmt_url):
+                candidates_hls_good.append(fmt_url)
+            else:
+                candidates_hls_any.append(fmt_url)
+        elif fmt.get("ext") == "mp4" and fmt_url.startswith(("http://", "https://")):
+            candidates_mp4.append(fmt_url)
+
+    # Also check the top-level URL
+    top_url = info.get("url")
+    if isinstance(top_url, str) and top_url.startswith(("http://", "https://")):
+        if ".m3u8" in top_url and not _has_ip_bound_token(top_url):
+            candidates_hls_good.insert(0, top_url)
+        elif ".m3u8" in top_url:
+            candidates_hls_any.insert(0, top_url)
+        elif top_url not in candidates_mp4:
+            candidates_mp4.insert(0, top_url)
+
+    # Pick best candidate: prefer HLS without IP tokens > MP4 > any HLS
+    stream_url = (
+        (candidates_hls_good[-1] if candidates_hls_good else None)
+        or (candidates_mp4[-1] if candidates_mp4 else None)
+        or (candidates_hls_any[-1] if candidates_hls_any else None)
+    )
+
+    # Final fallback: walk formats in reverse for any usable URL
     if not stream_url:
-        formats = info.get("formats") or []
-        for fmt in formats:
-            ext = fmt.get("ext", "")
-            height = fmt.get("height") or 0
+        for fmt in reversed(formats):
             fmt_url = fmt.get("url")
-            if ext == "mp4" and fmt_url and 0 < height <= 720:
+            if isinstance(fmt_url, str) and fmt_url.startswith(("http://", "https://")):
                 stream_url = fmt_url
-        if not stream_url:
-            for fmt in reversed(formats):
-                fmt_url = fmt.get("url")
-                if fmt_url:
-                    stream_url = fmt_url
-                    break
+                break
+
     if not isinstance(stream_url, str) or not stream_url.startswith(("http://", "https://")):
         return None, None
 
