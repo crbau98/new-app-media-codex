@@ -220,10 +220,15 @@ export function useResolvedScreenshotMedia(s: Screenshot) {
   }, [displaySrc, previewSrc, retryCount])
 
   const markMediaBroken = useCallback(() => {
-    if (rememberBrokenMediaUrl(rawMediaSrc)) {
-      setVersion((version) => version + 1)
-    }
-  }, [rawMediaSrc])
+    // Mark both the primary URL and the currently-active fallback as broken so
+    // pickUsableMediaUrl advances to the next candidate on the following render.
+    // Without this, a failed fallback keeps video.src pointing at the same broken
+    // URL forever (markMediaBroken only re-marks the already-broken primary src,
+    // which is a no-op, so setVersion is never called and the UI is stuck).
+    let changed = rememberBrokenMediaUrl(rawMediaSrc)
+    if (mediaSrc !== rawMediaSrc && rememberBrokenMediaUrl(mediaSrc)) changed = true
+    if (changed) setVersion((version) => version + 1)
+  }, [rawMediaSrc, mediaSrc])
 
   return {
     mediaSrc,
@@ -248,7 +253,7 @@ export function getMediaDebugLabel(s: Screenshot): string {
 }
 
 const _VIDEO_RE = /\.(mp4|webm|mov|avi|mkv|m3u8)/i
-const _VIDEO_SOURCES = new Set(["redgifs", "ytdlp"])
+const _VIDEO_SOURCES = new Set(["redgifs", "ytdlp", "coomer"])
 
 /** Detect if a screenshot is a video based on URL patterns and source field. */
 export function isVideoShot(s: Screenshot): boolean {

@@ -411,7 +411,12 @@ async def proxy_media(url: str = Query(...), request: Request = None):
     # Propagate content-length and range headers for video seeking
     if content_length_str:
         resp_headers["Content-Length"] = content_length_str
-    if resp.headers.get("accept-ranges"):
+    # Always advertise byte-range support for video so browsers can seek and
+    # use partial fetches. Propagate from upstream when available; otherwise
+    # default to "bytes" for video — we DO forward Range requests to the CDN.
+    if is_video:
+        resp_headers["Accept-Ranges"] = resp.headers.get("accept-ranges", "bytes")
+    elif resp.headers.get("accept-ranges"):
         resp_headers["Accept-Ranges"] = resp.headers["accept-ranges"]
     if resp.headers.get("content-range"):
         resp_headers["Content-Range"] = resp.headers["content-range"]
@@ -1188,7 +1193,7 @@ def browse_screenshots(
                         continue
                     src = s.get("source", "")
                     ext = Path(media_url.split("?", 1)[0]).suffix.lower()
-                    if ext in {".mp4", ".webm", ".mov", ".avi", ".mkv"} or src in ("redgifs", "ytdlp"):
+                    if ext in {".mp4", ".webm", ".mov", ".avi", ".mkv"} or src in ("redgifs", "ytdlp", "coomer"):
                         media_kind = "video"
                     elif ext in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
                         media_kind = "image"
