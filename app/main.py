@@ -214,10 +214,6 @@ _RL_CAPACITY = 60        # max tokens per bucket
 _RL_REFILL_RATE = 30     # tokens refilled per second
 _RL_COST = 1             # default cost per request
 
-_PROXY_PATH = "/api/screenshots/proxy-media"
-_RL_EXPENSIVE_PATHS = set()
-_RL_EXPENSIVE_COST = 3               # token cost for expensive/proxy endpoints
-
 # Paths exempt from rate limiting (health checks, static files)
 _RL_EXEMPT_PREFIXES = ("/static/", "/cached-", "/healthz", "/ws/")
 
@@ -279,8 +275,7 @@ async def rate_limit_middleware(request: Request, call_next):
         return await call_next(request)
     ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
     ip = ip.split(",")[0].strip()
-    cost = _RL_EXPENSIVE_COST if path in _RL_EXPENSIVE_PATHS else _RL_COST
-    if not _check_rate_limit(ip, cost):
+    if not _check_rate_limit(ip, _RL_COST):
         return JSONResponse(
             status_code=429,
             content={"error": "rate_limited", "detail": "Too many requests — please slow down."},
