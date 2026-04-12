@@ -535,9 +535,22 @@ async def resolve_stream(shot_id: int, request: Request):
         })
 
     loop = asyncio.get_running_loop()
-    fresh_stream_url, fresh_thumbnail_url = await loop.run_in_executor(
-        None, _resolve_ytdlp_stream_url, page_url
-    )
+
+    # Try up to 2 times; if the first resolve returns an IP-bound HLS URL
+    # (segments will 404 through the proxy), retry hoping for a path-auth URL.
+    fresh_stream_url: str | None = None
+    fresh_thumbnail_url: str | None = None
+    for _attempt in range(2):
+        _url, _thumb = await loop.run_in_executor(
+            None, _resolve_ytdlp_stream_url, page_url
+        )
+        if not _url:
+            break
+        fresh_stream_url = _url
+        fresh_thumbnail_url = _thumb
+        if not _has_ip_bound_token(_url):
+            break  # Got a good URL, no need to retry
+        _logger.debug("resolve-stream attempt %d returned ip-bound URL, retrying", _attempt + 1)
 
     if not fresh_stream_url or fresh_stream_url == current_source_url:
         return JSONResponse({
@@ -555,7 +568,12 @@ async def resolve_stream(shot_id: int, request: Request):
         thumbnail_url=fresh_thumbnail_url,
     )
 
-    _logger.info("Resolved fresh stream for shot %d", shot_id)
+    _token_kind = "ip-bound" if _has_ip_bound_token(fresh_stream_url) else "path-auth"
+    _is_hls = ".m3u8" in fresh_stream_url
+    _logger.info(
+        "Resolved fresh stream for shot %d: %s %s",
+        shot_id, "HLS" if _is_hls else "MP4", _token_kind,
+    )
     return JSONResponse({
         "shot_id": shot_id,
         "source_url": fresh_stream_url,
