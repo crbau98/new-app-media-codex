@@ -58,7 +58,7 @@ function parseTags(tags: string | null): string[] {
 }
 
 function isVideo(src: string): boolean {
-  return /\.(mp4|webm|mov)$/i.test(src)
+  return /\.(mp4|webm|mov|m4v|avi|mkv)(\?|$)/i.test(src)
 }
 
 /* ── Platform Icon ────────────────────────────────────────────────────── */
