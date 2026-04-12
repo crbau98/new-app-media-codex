@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { apiUrl } from "../lib/backendOrigin"
 
 interface AppShellSummary {
   app_name: string
@@ -11,7 +12,7 @@ export function useAppShellSummary(enabled = true) {
   return useQuery<AppShellSummary>({
     queryKey: ["app-shell-summary"],
     queryFn: async () => {
-      const res = await fetch("/api/app-shell-summary")
+      const res = await fetch(apiUrl("/api/app-shell-summary"))
       if (!res.ok) throw new Error("Failed to fetch app shell summary")
       return res.json()
     },

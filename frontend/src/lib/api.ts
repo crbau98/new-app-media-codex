@@ -1,5 +1,7 @@
-// Base URL — in dev Vite proxies /api to backend; in prod same origin
-const BASE = ""
+import { getBackendOrigin } from "./backendOrigin"
+
+// Empty = same-origin. Set VITE_BACKEND_ORIGIN when the UI is hosted separately (e.g. Vercel).
+const BASE = getBackendOrigin()
 const API_TIMEOUT_MS = 20_000
 
 export type ApiError = Error & {

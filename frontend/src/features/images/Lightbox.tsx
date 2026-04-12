@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { ImageRecord } from '@/lib/api'
+import { resolvePublicUrl } from '@/lib/backendOrigin'
 
 export function Lightbox({
   img,
@@ -34,7 +35,7 @@ export function Lightbox({
     dialogRef.current?.focus()
   }, [])
 
-  const src = img.local_url || img.image_url
+  const src = resolvePublicUrl(img.local_url || img.image_url)
 
   return (
     <div
@@ -48,7 +49,7 @@ export function Lightbox({
     >
       <div className="absolute top-4 right-4 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
         <a
-          href={img.local_url || img.image_url}
+          href={resolvePublicUrl(img.local_url || img.image_url)}
           download
           className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
           aria-label="Download image"

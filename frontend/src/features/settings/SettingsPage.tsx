@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react"
 import { cn } from "@/lib/cn"
 import { useDashboard } from "@/hooks"
 import { api, updateSettings } from "@/lib/api"
+import { apiUrl } from "@/lib/backendOrigin"
 import { useAppStore } from "@/store"
 import { resetOnboarding } from "@/components/Onboarding"
 
@@ -80,7 +81,7 @@ function VisionAISection() {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    fetch('/api/settings').then(r => r.json()).then(data => {
+    fetch(apiUrl('/api/settings')).then(r => r.json()).then(data => {
       setBaseUrl(data.vision_base_url || 'https://api.openai.com/v1')
       setModel(data.vision_model || 'gpt-4o-mini')
       setApiKey(data.vision_api_key || '')
@@ -95,7 +96,7 @@ function VisionAISection() {
   ]
 
   async function handleSave() {
-    await fetch('/api/settings', {
+    await fetch(apiUrl('/api/settings'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ vision_base_url: baseUrl, vision_model: model, vision_api_key: apiKey }),
@@ -347,7 +348,7 @@ function DataExportSection() {
     if (exporting) return
     setExporting(true)
     try {
-      const res = await fetch("/api/items?limit=1000")
+      const res = await fetch(apiUrl("/api/items?limit=1000"))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
@@ -560,7 +561,7 @@ function AboutSection() {
   const [health, setHealth] = useState<"ok" | "degraded" | "error" | "loading">("loading")
 
   useEffect(() => {
-    fetch("/healthz")
+    fetch(apiUrl("/healthz"))
       .then((r) => r.json())
       .then((d: { status: string }) =>
         setHealth(d.status === "ok" ? "ok" : "degraded")
@@ -723,7 +724,7 @@ function DataManagementSection() {
     if (clearing) return
     setClearing(true)
     try {
-      const res = await fetch("/api/settings/cache", { method: "DELETE" })
+      const res = await fetch(apiUrl("/api/settings/cache"), { method: "DELETE" })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = (await res.json()) as { deleted: number }
       setCleared(data.deleted)
@@ -739,7 +740,7 @@ function DataManagementSection() {
   async function handleResetSettings() {
     setResetting(true)
     try {
-      const res = await fetch("/api/settings/reset", { method: "PUT" })
+      const res = await fetch(apiUrl("/api/settings/reset"), { method: "PUT" })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       addToast("All settings have been reset", "success")
       setConfirmReset(false)
@@ -888,7 +889,7 @@ function StorageSection() {
 
   const fetchUsage = useCallback(async () => {
     try {
-      const res = await fetch("/api/screenshots/disk-usage")
+      const res = await fetch(apiUrl("/api/screenshots/disk-usage"))
       if (res.ok) setUsage(await res.json())
     } catch {
       // ignore
@@ -903,7 +904,7 @@ function StorageSection() {
     if (cleaning) return
     setCleaning(true)
     try {
-      const res = await fetch(`/api/screenshots/cleanup?max_age_days=${maxAgeDays}`, { method: "POST" })
+      const res = await fetch(apiUrl(`/api/screenshots/cleanup?max_age_days=${maxAgeDays}`), { method: "POST" })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setCleanResult(data)

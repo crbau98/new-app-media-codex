@@ -19,6 +19,7 @@ os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "__all__")
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -287,6 +288,24 @@ async def rate_limit_middleware(request: Request, call_next):
         )
     return await call_next(request)
 
+
+def _parse_cors_allow_origins() -> list[str]:
+    raw = (os.environ.get("CORS_ALLOW_ORIGINS") or "").strip()
+    if not raw:
+        return []
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
+_cors_origins = _parse_cors_allow_origins()
+if _cors_origins:
+    # Added after other middleware so this runs outermost (handles OPTIONS / CORS headers first).
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.mount(
     "/static",

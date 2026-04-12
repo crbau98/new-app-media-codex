@@ -26,3 +26,7 @@ services:
         value: false
       - key: SKIP_MEDIA_DOWNLOADS
         value: "true"
+      # Comma-separated origins for the Vercel UI (required for browser API/WebSocket/SSE from another host).
+      # Example: https://your-app.vercel.app,https://your-app-git-main-xxx.vercel.app
+      - key: CORS_ALLOW_ORIGINS
+        sync: false

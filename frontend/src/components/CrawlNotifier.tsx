@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { crawlWebSocketUrl } from "@/lib/backendOrigin"
 import { useAppStore } from "../store"
 import { sharedQueryKeys } from "@/features/sharedQueries"
 
@@ -105,8 +106,7 @@ export function CrawlNotifier(): null {
     function connect() {
       if (unmounted) return
 
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-      ws = new WebSocket(`${protocol}//${window.location.host}/ws/crawl`)
+      ws = new WebSocket(crawlWebSocketUrl())
 
       ws.onopen = () => {
         // Reset backoff on successful connection

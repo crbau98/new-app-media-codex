@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react"
 import type { Screenshot } from "./api"
+import { resolvePublicUrl } from "./backendOrigin"
 
 const BROKEN_MEDIA_LIMIT = 300
 const brokenMediaUrls = new Set<string>()
@@ -19,9 +20,8 @@ function isRenderableRemoteUrl(url: string): boolean {
 }
 
 function buildProxyMediaUrl(url: string): string {
-  return isRenderableRemoteUrl(url) && !url.startsWith("/api/screenshots/proxy-media?url=")
-    ? `/api/screenshots/proxy-media?url=${encodeURIComponent(url)}`
-    : ""
+  if (!isRenderableRemoteUrl(url) || url.startsWith("/api/screenshots/proxy-media?url=")) return ""
+  return resolvePublicUrl(`/api/screenshots/proxy-media?url=${encodeURIComponent(url)}`)
 }
 
 function uniqueMediaCandidates(candidates: Array<string | null | undefined>): string[] {
@@ -88,13 +88,13 @@ export function isKnownBrokenMediaUrl(url: string | null | undefined): boolean {
 
 export function getScreenshotMediaSrc(s: Screenshot): string {
   const localUrl = normalizeMediaUrl(s.local_url)
-  if (isRenderableRemoteUrl(localUrl)) return localUrl
+  if (isRenderableRemoteUrl(localUrl)) return resolvePublicUrl(localUrl)
 
   const sourceUrl = normalizeMediaUrl(s.source_url)
-  if (isRenderableRemoteUrl(sourceUrl)) return sourceUrl
+  if (isRenderableRemoteUrl(sourceUrl)) return resolvePublicUrl(sourceUrl)
 
   const pageUrl = normalizeMediaUrl(s.page_url)
-  if (isRenderableRemoteUrl(pageUrl)) return pageUrl
+  if (isRenderableRemoteUrl(pageUrl)) return resolvePublicUrl(pageUrl)
 
   return ""
 }
@@ -109,7 +109,7 @@ export function getScreenshotPreviewSrc(s: Screenshot): string {
   // Only use preview_url if it's a renderable URL that isn't a raw video or a proxy
   // wrapping a video (e.g. preview_url accidentally set to the .mp4 source URL).
   if (preview && isRenderableRemoteUrl(preview) && !isVideoProxyUrl(preview)) {
-    return preview
+    return resolvePublicUrl(preview)
   }
   // For non-video items, fall back to the media src
   const mediaSrc = getScreenshotMediaSrc(s)
@@ -123,7 +123,7 @@ export function getScreenshotPreviewSrc(s: Screenshot): string {
 export function getScreenshotPosterSrc(s: Screenshot): string {
   const preview = normalizeMediaUrl(s.preview_url)
   if (preview && isRenderableRemoteUrl(preview) && !isVideoProxyUrl(preview)) {
-    return preview
+    return resolvePublicUrl(preview)
   }
   const mediaSrc = getScreenshotMediaSrc(s)
   return isVideoShot(s) ? "" : mediaSrc
@@ -186,7 +186,7 @@ export function useResolvedScreenshotMedia(s: Screenshot) {
       // First error: attempt a cache-busted retry by marking the current URL broken
       // and incrementing retry counter — the next render will pick the proxy variant
       setRetryCount(1)
-      if (target && target.startsWith("/api/screenshots/proxy-media?url=") && !target.includes("&bust=")) {
+      if (target && target.includes("/api/screenshots/proxy-media?url=") && !target.includes("&bust=")) {
         // Already a proxy URL — add cache bust param to force fresh fetch
         const bustedUrl = target + "&bust=1"
         // Temporarily register the original as broken so the hook returns the busted URL

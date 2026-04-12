@@ -25,7 +25,8 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../app/static/dist',
+    // Always `frontend/dist` — build script copies to `app/static/dist` when not on Vercel (Docker/local).
+    outDir: 'dist',
     emptyOutDir: true,
     target: 'es2020',
     modulePreload: {

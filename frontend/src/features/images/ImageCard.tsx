@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Badge } from '@/components/Badge'
 import type { ImageRecord } from '@/lib/api'
+import { resolvePublicUrl } from '@/lib/backendOrigin'
 
 function isVideoSrc(src: string) {
   return /\.(mp4|webm|mov)$/i.test(src)
@@ -8,7 +9,7 @@ function isVideoSrc(src: string) {
 
 export function ImageCard({ img, onClick }: { img: ImageRecord; onClick: () => void }) {
   const [loaded, setLoaded] = useState(false)
-  const src = img.local_url || img.thumb_url || img.image_url
+  const src = resolvePublicUrl(img.local_url || img.thumb_url || img.image_url)
   const isVideo = src ? isVideoSrc(src) : false
 
   return (
@@ -32,7 +33,7 @@ export function ImageCard({ img, onClick }: { img: ImageRecord; onClick: () => v
 
       {/* Download button */}
       <a
-        href={img.local_url || img.image_url}
+        href={resolvePublicUrl(img.local_url || img.image_url)}
         download
         onClick={(e) => e.stopPropagation()}
         className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 p-1.5 rounded-lg bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm"

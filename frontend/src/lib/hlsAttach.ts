@@ -1,4 +1,5 @@
 import Hls, { XhrLoader } from "hls.js"
+import { getPublicOrigin } from "./backendOrigin"
 
 const PROXY_PATH = "/api/screenshots/proxy-media"
 const PROXY_QUERY = "url="
@@ -37,8 +38,8 @@ export function isHlsUrl(url: string | null | undefined): boolean {
 function fixMisresolvedProxyRelativeUrl(url: string): string {
   if (!url || typeof window === "undefined") return url
   try {
-    const u = new URL(url, window.location.origin)
-    if (u.origin !== window.location.origin) return url
+    const u = new URL(url, getPublicOrigin())
+    if (u.origin !== getPublicOrigin()) return url
     if (!u.pathname.startsWith(SCREENSHOTS_API_PREFIX)) return url
     const afterPrefix = u.pathname.slice(SCREENSHOTS_API_PREFIX.length)
     if (!afterPrefix || afterPrefix === "proxy-media" || afterPrefix.startsWith("proxy-media/")) {
@@ -75,8 +76,8 @@ export function rewriteMediaUrlForProxy(url: string): string {
   }
   if (typeof window !== "undefined") {
     try {
-      const u = new URL(url, window.location.origin)
-      if (u.origin === window.location.origin && u.pathname.startsWith(PROXY_PATH)) {
+      const u = new URL(url, getPublicOrigin())
+      if (u.origin === getPublicOrigin() && u.pathname.startsWith(PROXY_PATH)) {
         return u.pathname + u.search
       }
     } catch {

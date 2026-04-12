@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import { dirname, resolve, join } from 'path';
 import { fileURLToPath } from 'url';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, cpSync, mkdirSync, rmSync, existsSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -37,6 +37,23 @@ try {
 } catch (e) {
   writeFileSync(indexPath, originalHtml, 'utf-8');
   process.exit(1);
+}
+
+// Vercel only needs `frontend/dist`. Docker & local uvicorn load from `app/static/dist`.
+const onVercel =
+  process.env.VERCEL === '1' ||
+  process.env.VERCEL_ENV === 'production' ||
+  process.env.VERCEL_ENV === 'preview' ||
+  process.env.VERCEL_ENV === 'development';
+const distDir = join(root, 'dist');
+const appStaticDist = join(root, '..', 'app', 'static', 'dist');
+if (!onVercel && existsSync(distDir)) {
+  mkdirSync(join(root, '..', 'app', 'static'), { recursive: true });
+  if (existsSync(appStaticDist)) {
+    rmSync(appStaticDist, { recursive: true });
+  }
+  cpSync(distDir, appStaticDist, { recursive: true });
+  console.log('[build] Synced dist -> app/static/dist');
 }
 
 writeFileSync(indexPath, originalHtml, 'utf-8');

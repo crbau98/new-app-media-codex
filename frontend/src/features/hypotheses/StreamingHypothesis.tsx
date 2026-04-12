@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Card } from '@/components/Card'
+import { apiUrl } from '@/lib/backendOrigin'
 
 export function StreamingHypothesis({ theme }: { theme?: string }) {
   const [text, setText] = useState('')
@@ -42,7 +43,7 @@ export function StreamingHypothesis({ theme }: { theme?: string }) {
       }
     }, 500)
 
-    const url = '/api/hypotheses/stream' + (theme ? `?theme=${encodeURIComponent(theme)}` : '')
+    const url = apiUrl('/api/hypotheses/stream' + (theme ? `?theme=${encodeURIComponent(theme)}` : ''))
     const es = new EventSource(url)
     esRef.current = es
     es.onmessage = (e) => {

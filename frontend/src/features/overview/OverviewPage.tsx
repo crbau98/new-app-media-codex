@@ -10,6 +10,7 @@ import { TagChip } from '@/components/TagChip'
 import { Skeleton, SkeletonStatBar, SkeletonChart } from '@/components/Skeleton'
 import { Recommendations } from '@/features/overview/Recommendations'
 import { api, type ActivityEvent } from '@/lib/api'
+import { resolvePublicUrl } from '@/lib/backendOrigin'
 
 const StatsBar = lazy(() => import('@/features/analytics/StatsBar').then((m) => ({ default: m.StatsBar })))
 const ThemeTrendChart = lazy(() => import('@/features/analytics/ThemeTrendChart').then((m) => ({ default: m.ThemeTrendChart })))
@@ -702,7 +703,7 @@ function TopRatedMediaStrip() {
       </SectionHeading>
       <div className="flex gap-2 overflow-x-auto pb-1.5 hide-scrollbar">
         {shots.map((shot) => {
-          const src = shot.local_url ?? shot.page_url ?? ''
+          const src = resolvePublicUrl(shot.local_url ?? shot.page_url ?? '')
           const vid = isVideo(src)
           return (
             <button
@@ -883,7 +884,7 @@ export function OverviewPage() {
         <div className="mx-auto max-w-3xl rounded-2xl border border-amber/30 bg-amber/10 p-6">
           <p className="text-xs font-semibold uppercase tracking-widest text-amber">Dashboard Unavailable</p>
           <h2 className="mt-2 text-xl font-semibold text-text-primary">The API is unreachable or returning an error.</h2>
-          <p className="mt-2 text-sm text-text-secondary">Check that the backend is running and `VITE_BACKEND_URL` points to the right target.</p>
+          <p className="mt-2 text-sm text-text-secondary">Check that the API is reachable (dev: `VITE_BACKEND_URL`; split UI: `VITE_BACKEND_ORIGIN`).</p>
           <p className="mt-3 rounded-lg bg-black/20 px-3 py-2 font-mono text-xs text-amber/90">{message}</p>
           <div className="mt-4 flex flex-wrap gap-3">
             <button

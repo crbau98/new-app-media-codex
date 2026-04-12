@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { apiUrl } from "../lib/backendOrigin"
 import { useAppStore } from "../store"
 
 const PING_INTERVAL = 60_000 // 60s
@@ -34,7 +35,7 @@ export function useConnectivity() {
       const controller = new AbortController()
       const timeoutId = window.setTimeout(() => controller.abort(), PING_TIMEOUT_MS)
       try {
-        const res = await fetch("/healthz", {
+        const res = await fetch(apiUrl("/healthz"), {
           method: "HEAD",
           cache: "no-store",
           signal: controller.signal,

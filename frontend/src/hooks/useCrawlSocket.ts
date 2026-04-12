@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { crawlWebSocketUrl } from "../lib/backendOrigin"
 import { useAppStore } from "../store"
 
 export type CrawlEvent = { type: "crawl_start" | "crawl_done" | "source_start" | "ping"; source?: string; theme?: string; items_added?: number }
@@ -12,8 +13,7 @@ export function useCrawlSocket(onEvent?: (e: CrawlEvent) => void) {
 
   useEffect(() => {
     let cleanedUp = false
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/crawl`)
+    const ws = new WebSocket(crawlWebSocketUrl())
     ws.onmessage = (ev) => {
       try {
         const event: CrawlEvent = JSON.parse(ev.data)
