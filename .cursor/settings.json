@@ -1,0 +1,10 @@
+{
+  "plugins": {
+    "vercel": {
+      "enabled": true
+    },
+    "appwrite-plugin": {
+      "enabled": true
+    }
+  }
+}

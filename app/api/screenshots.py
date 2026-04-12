@@ -15,7 +15,7 @@ from queue import Empty, Full, Queue
 from pathlib import Path
 from threading import Event, Lock, Thread
 from threading import Lock as _ThreadLock
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 import requests as http_requests
@@ -45,6 +45,11 @@ _PROXY_ONLY_HOSTS: tuple[str, ...] = ()
 # with COEP or CDNs that default to restrictive CORP can block cross-origin <video>
 # / <img> unless the media response explicitly opts in.
 _CROSS_ORIGIN_MEDIA_HEADERS = {"Cross-Origin-Resource-Policy": "cross-origin"}
+_HLS_MANIFEST_CONTENT_TYPES = (
+    "application/vnd.apple.mpegurl",
+    "application/x-mpegurl",
+)
+_HLS_URI_ATTR_RE = re.compile(r'URI=(["\'])(.+?)\1')
 
 # Sources / netloc suffixes where server-side proxying HURTS rather than helps.
 # NOTE: coomer.st and kemono.su were previously excluded because we suspected
@@ -127,6 +132,58 @@ def proxy_media_url(url: str, shot_id: int | None = None) -> str:
     if shot_id:
         proxied += f"&shot_id={int(shot_id)}"
     return proxied
+
+
+def _is_hls_manifest_response(content_type: str, target_url: str) -> bool:
+    base_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if base_type in _HLS_MANIFEST_CONTENT_TYPES:
+        return True
+    # Some CDNs send generic text/plain for m3u8 payloads.
+    path = urlparse(target_url).path.lower()
+    return path.endswith(".m3u8")
+
+
+def _absolutize_hls_uri(raw_uri: str, base_url: str) -> str:
+    uri = raw_uri.strip()
+    if not uri:
+        return raw_uri
+    # Preserve already absolute/non-HTTP schemes.
+    if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", uri):
+        return raw_uri
+    if uri.startswith("//"):
+        parsed = urlparse(base_url)
+        return f"{parsed.scheme}:{uri}" if parsed.scheme else f"https:{uri}"
+    return urljoin(base_url, uri)
+
+
+def _absolutize_hls_manifest(manifest_text: str, base_url: str) -> tuple[str, int]:
+    rewrites = 0
+
+    def _replace_uri_attr(match):
+        nonlocal rewrites
+        quote_char = match.group(1)
+        uri_value = match.group(2)
+        absolute_uri = _absolutize_hls_uri(uri_value, base_url)
+        if absolute_uri != uri_value:
+            rewrites += 1
+        return f"URI={quote_char}{absolute_uri}{quote_char}"
+
+    rewritten_lines: list[str] = []
+    for line in manifest_text.splitlines(keepends=True):
+        newline = "\n" if line.endswith("\n") else ""
+        body = line[:-1] if newline else line
+        stripped = body.strip()
+        if not stripped:
+            rewritten_lines.append(line)
+            continue
+        if stripped.startswith("#"):
+            rewritten_lines.append(_HLS_URI_ATTR_RE.sub(_replace_uri_attr, body) + newline)
+            continue
+        absolute_uri = _absolutize_hls_uri(stripped, base_url)
+        if absolute_uri != stripped:
+            rewrites += 1
+        rewritten_lines.append(absolute_uri + newline)
+    return "".join(rewritten_lines), rewrites
 
 
 def _is_refreshable_upstream_status(status_code: int) -> bool:
@@ -485,6 +542,31 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
         await resp.aclose()
         raise HTTPException(502, "Upstream returned HTML; expected media")
     is_video = content_type.startswith(_VIDEO_CONTENT_PREFIXES)
+    is_hls_manifest = _is_hls_manifest_response(content_type, target_url)
+
+    if is_hls_manifest and not range_header:
+        raw_manifest = await resp.aread()
+        await resp.aclose()
+        decoded_manifest = raw_manifest.decode("utf-8", errors="replace")
+        rewritten_text, rewritten_uri_count = _absolutize_hls_manifest(decoded_manifest, target_url)
+        rewritten_manifest = rewritten_text.encode("utf-8")
+        _logger.debug(
+            "Rewrote proxied HLS manifest URIs",
+            extra={
+                "target_url": target_url,
+                "rewritten_uri_count": rewritten_uri_count,
+            },
+        )
+        return Response(
+            content=rewritten_manifest,
+            media_type=(content_type or "application/vnd.apple.mpegurl"),
+            headers={
+                **_CROSS_ORIGIN_MEDIA_HEADERS,
+                "Cache-Control": "public, max-age=86400",
+                "Content-Length": str(len(rewritten_manifest)),
+                "Content-Encoding": "identity",
+            },
+        )
 
     # For small images without Range header, read fully and cache
     content_length_str = resp.headers.get("content-length")
