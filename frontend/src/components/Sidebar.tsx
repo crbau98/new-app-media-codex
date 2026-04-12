@@ -395,22 +395,30 @@ export function Sidebar() {
       <aside
         style={{ transitionProperty: "width, transform", transitionDuration: "200ms", transitionTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)" }}
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-bg-base/95 backdrop-blur-md transition-transform",
+          "sidebar-shell fixed left-0 top-0 z-40 flex h-screen flex-col border-r backdrop-blur-md transition-transform",
           mobileNavOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           mobileNavOpen ? "pointer-events-auto" : "pointer-events-none md:pointer-events-auto",
           mobileNavOpen ? "w-[min(85vw,320px)] md:w-[72px]" : collapsed ? "w-[240px] md:w-[72px]" : "w-[240px]"
         )}
         aria-label="Main navigation"
       >
-        <div className={cn("flex h-12 items-center border-b border-border", collapsed ? "px-2.5 md:px-2" : "px-4") }>
+        <div className={cn("flex min-h-12 items-center border-b border-border py-2", collapsed ? "px-2.5 md:px-2" : "px-4") }>
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-white/[0.03] text-[11px] font-semibold tracking-[0.14em] text-text-primary">
+            <div
+              className="brand-mark flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold tracking-[0.12em] text-accent"
+              aria-hidden="true"
+            >
               C
             </div>
             {!collapsed && (
-              <span className="truncate text-[15px] font-semibold tracking-tight text-text-primary">
-                Media Codex
-              </span>
+              <div className="min-w-0">
+                <span className="hero-title block truncate text-[15px] font-semibold tracking-tight text-text-primary">
+                  Media Codex
+                </span>
+                <span className="block truncate text-[10px] font-medium uppercase tracking-[0.18em] text-text-muted">
+                  Research workspace
+                </span>
+              </div>
             )}
           </div>
           <div className="flex items-center gap-1">

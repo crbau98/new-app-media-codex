@@ -73,7 +73,7 @@ export function AppShell({ children }: AppShellProps) {
         <main
           id="main-content"
           ref={mainRef}
-          className="min-h-screen overflow-x-hidden px-3 pb-20 pt-14 sm:px-5 md:pb-6 lg:px-6"
+          className="min-h-screen overflow-x-hidden px-4 pb-20 pt-[3.75rem] sm:px-6 md:pb-6 lg:px-8"
           style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
         >
           <div className="min-h-full">

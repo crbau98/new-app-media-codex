@@ -70,8 +70,8 @@ function DeferredSection({
 // ─── Section header ────────────────────────────────────────────────────────────
 function SectionHeading({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between mb-3">
-      <h2 className="text-xs font-semibold uppercase tracking-widest text-text-muted font-mono">{children}</h2>
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <h2 className="eyebrow font-display font-semibold tracking-[0.2em] text-text-muted">{children}</h2>
       {action}
     </div>
   )

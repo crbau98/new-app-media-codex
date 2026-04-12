@@ -339,7 +339,7 @@ export function TopBar() {
           leftOffset,
         )}
       >
-        <div className="glass mx-auto flex max-w-[1600px] items-center gap-4 rounded-2xl px-4 py-3 sm:gap-5 sm:px-5">
+        <div className="topbar-shell mx-auto flex max-w-[1600px] items-center gap-4 rounded-2xl px-4 py-3 sm:gap-5 sm:px-5">
           <button
             onClick={() => setMobileNavOpen(!mobileNavOpen)}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text-primary md:hidden"
@@ -348,7 +348,7 @@ export function TopBar() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
           </button>
 
-          <h2 className="min-w-0 shrink-0 text-base font-semibold tracking-tight text-text-primary sm:text-lg">
+          <h2 className="hero-title min-w-0 shrink-0 text-base font-semibold tracking-tight text-text-primary sm:text-lg">
             {VIEW_LABELS[activeView] ?? activeView}
           </h2>
 
@@ -366,7 +366,7 @@ export function TopBar() {
                 }}
                 onFocus={() => setDropdownOpen(true)}
                 onKeyDown={handleKeyDown}
-                className="w-full rounded-full border border-white/[0.08] bg-white/[0.04] py-2 pl-8 pr-14 text-sm text-text-primary placeholder:text-text-muted transition-[background-color,border-color,box-shadow] focus:border-accent/40 focus:bg-white/[0.06] focus:outline-none"
+                className="w-full rounded-full border border-white/[0.1] bg-white/[0.05] py-2.5 pl-8 pr-14 text-sm text-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] placeholder:text-text-muted transition-[background-color,border-color,box-shadow] focus:border-accent/45 focus:bg-white/[0.07] focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_3px_var(--color-accent-soft)] focus:outline-none"
                 role="combobox"
                 aria-expanded={showDropdown}
                 aria-haspopup="listbox"
