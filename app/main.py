@@ -215,7 +215,7 @@ _RL_REFILL_RATE = 30     # tokens refilled per second
 _RL_COST = 1             # default cost per request
 
 _PROXY_PATH = "/api/screenshots/proxy-media"
-_RL_EXPENSIVE_PATHS = {_PROXY_PATH}  # higher cost for proxy-media
+_RL_EXPENSIVE_PATHS = set()
 _RL_EXPENSIVE_COST = 3               # token cost for expensive/proxy endpoints
 
 # Paths exempt from rate limiting (health checks, static files)
