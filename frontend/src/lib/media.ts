@@ -37,7 +37,7 @@ function uniqueMediaCandidates(candidates: Array<string | null | undefined>): st
 }
 
 export function isVideoUrl(url: string): boolean {
-  return /\.(mp4|webm|mov|avi|mkv)($|\?)/i.test(url)
+  return /\.(mp4|webm|mov|avi|mkv)($|\?)/i.test(url) || /m3u8/i.test(url)
 }
 
 function isGifUrl(url: string): boolean {
@@ -236,7 +236,7 @@ export function getMediaDebugLabel(s: Screenshot): string {
   return parts.join(" · ") || "media"
 }
 
-const _VIDEO_RE = /\.(mp4|webm|mov|avi|mkv)/i
+const _VIDEO_RE = /\.(mp4|webm|mov|avi|mkv|m3u8)/i
 const _VIDEO_SOURCES = new Set(["redgifs", "ytdlp"])
 
 /** Detect if a screenshot is a video based on URL patterns and source field. */

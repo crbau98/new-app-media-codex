@@ -4,6 +4,7 @@ import { api, type Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { StarRating } from "@/components/StarRating"
 import { getBestAvailableMediaSrc, getBestAvailablePosterSrc, getBestAvailablePreviewSrc, useResolvedScreenshotMedia } from "@/lib/media"
+import { attachMediaSource } from "@/lib/hlsAttach"
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -143,6 +144,12 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
   /* ---------------------------------------------------------------- */
   /*  Video event handlers                                            */
   /* ---------------------------------------------------------------- */
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || !currentIsVideo || !src) return
+    return attachMediaSource(v, src, { tryAutoplay: true })
+  }, [currentIsVideo, src])
 
   const syncTime = useCallback(() => {
     const v = videoRef.current
@@ -510,11 +517,9 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
             {/* Video element - no native controls */}
             <video
               ref={videoRef}
-              src={src ?? undefined}
               poster={posterSrc || undefined}
               preload="metadata"
               playsInline
-              autoPlay
               loop={loop}
               muted={muted}
               onWheel={handleWheel}

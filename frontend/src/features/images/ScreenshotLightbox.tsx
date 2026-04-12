@@ -5,6 +5,7 @@ import type { Screenshot } from "@/lib/api"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getScreenshotMediaSrc, useResolvedScreenshotMedia } from "@/lib/media"
+import { attachMediaSource } from "@/lib/hlsAttach"
 
 interface ScreenshotLightboxProps {
   shots: Screenshot[]
@@ -31,7 +32,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 function isVideo(src: string): boolean {
-  return /\.(mp4|webm|mov)/i.test(src)
+  return /\.(mp4|webm|mov|m3u8)/i.test(src) || /m3u8/i.test(src)
 }
 
 function sourceLabel(source: string) {
@@ -127,6 +128,12 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
     zoomScaleRef.current = 1
     panOffsetRef.current = { x: 0, y: 0 }
   }, [idx, shot.ai_summary, shot.ai_tags])
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || !currentIsVideo || !src) return
+    return attachMediaSource(v, src, { tryAutoplay: true })
+  }, [currentIsVideo, src, shot.id])
 
   // Auto-scroll filmstrip to keep current thumbnail visible
   useEffect(() => {
@@ -555,10 +562,7 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
             <div className="relative inline-block">
               <video
                 ref={videoRef}
-                key={src}
-                src={src}
                 poster={posterSrc || undefined}
-                autoPlay
                 loop
                 playsInline
                 controls

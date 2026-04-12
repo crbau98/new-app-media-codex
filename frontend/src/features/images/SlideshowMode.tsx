@@ -3,6 +3,12 @@ import { createPortal } from "react-dom"
 import type { Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
+import { attachMediaSource } from "@/lib/hlsAttach"
+
+function isVideoPath(url: string): boolean {
+  if (!url) return false
+  return /\.(mp4|webm|mov|avi|mkv|m3u8)/i.test(url) || /m3u8/i.test(url)
+}
 
 type SlideshowSpeed = 3 | 5 | 8 | 15
 
@@ -53,6 +59,12 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
     setPreviewLoadFailed(false)
   }, [src])
 
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || !currentIsVideo || !src || videoLoadFailed) return
+    return attachMediaSource(v, src, { tryAutoplay: true })
+  }, [currentIsVideo, src, videoLoadFailed])
+
   // Preload next image
   const nextIdx = shuffle
     ? Math.floor(Math.random() * shots.length)
@@ -61,7 +73,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
   const nextSrc = nextShot ? getBestAvailablePreviewSrc(nextShot) : ""
 
   useEffect(() => {
-    if (!nextSrc || isVideo(nextSrc)) return
+    if (!nextSrc || isVideoPath(nextSrc)) return
     const img = new Image()
     img.src = nextSrc
   }, [nextSrc])
@@ -116,7 +128,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
     if (!playing) return
 
     const shotSrc = shots[idx] ? getBestAvailableMediaSrc(shots[idx]) : ""
-    if (isVideo(shotSrc)) {
+    if (isVideoPath(shotSrc)) {
       // For videos, wait for them to end
       return
     }
@@ -194,9 +206,6 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
         {currentIsVideo && src && !videoLoadFailed ? (
           <video
             ref={videoRef}
-            key={src}
-            src={src}
-            autoPlay
             playsInline
             onEnded={handleVideoEnded}
             onError={() => { markMediaBroken(); setVideoLoadFailed(true) }}

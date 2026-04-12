@@ -19,6 +19,7 @@ import {
   useScreenshotAllTagsQuery,
   useScreenshotTermsQuery,
 } from "@/features/sharedQueries"
+import { isHlsUrl } from "@/lib/hlsAttach"
 
 const MEDIA_NAVIGATION_EVENT = "codex:media-navigation"
 
@@ -789,15 +790,22 @@ const MosaicCard = memo(function MosaicCard({
         )}
         {!previewSrc ? (
           vid && src ? (
-            <video
-              src={src}
-              muted
-              playsInline
-              preload="metadata"
-              onError={markMediaBroken}
-              className="relative z-[1] w-full transition-[filter] duration-200 group-hover:brightness-110"
-              style={{ display: "block" }}
-            />
+            isHlsUrl(src) ? (
+              <div className="relative z-[1] flex min-h-[10rem] w-full flex-col items-center justify-center gap-1 bg-black/45 px-2 text-center">
+                <span className="rounded bg-amber-500/85 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow">HLS</span>
+                <span className="text-[10px] leading-tight text-white/60">Open for playback</span>
+              </div>
+            ) : (
+              <video
+                src={src}
+                muted
+                playsInline
+                preload="metadata"
+                onError={markMediaBroken}
+                className="relative z-[1] w-full transition-[filter] duration-200 group-hover:brightness-110"
+                style={{ display: "block" }}
+              />
+            )
           ) : (
             <MediaUnavailableTile
               title={shot.term}
@@ -3206,13 +3214,17 @@ export function MediaPage() {
                       {src ? (
                         <img src={src} alt={shot.term} className="h-full w-full object-cover" loading="lazy" decoding="async" fetchPriority="low" />
                       ) : vid && mediaSrc ? (
-                        <video
-                          src={mediaSrc}
-                          muted
-                          playsInline
-                          preload="metadata"
-                          className="h-full w-full object-cover"
-                        />
+                        isHlsUrl(mediaSrc) ? (
+                          <div className="flex h-full w-full items-center justify-center bg-black/40 text-[8px] text-white/50">HLS</div>
+                        ) : (
+                          <video
+                            src={mediaSrc}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className="h-full w-full object-cover"
+                          />
+                        )
                       ) : (
                         <div className="flex h-full w-full items-center justify-center bg-white/5 text-[8px] uppercase tracking-[0.18em] text-white/40">
                           Media

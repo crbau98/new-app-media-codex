@@ -6,6 +6,7 @@ import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
 import { useResolvedScreenshotMedia } from "@/lib/media"
 import { sharedQueryKeys } from "@/features/sharedQueries"
+import { attachMediaSource } from "@/lib/hlsAttach"
 
 function sourceLabel(s: string) {
   return s === "ddg" ? "DDG" : s === "redgifs" ? "Redgifs" : s === "x" ? "X" : s
@@ -167,6 +168,12 @@ const VideoSlide = memo(function VideoSlide({
   const userTags = parseUserTags(shot.user_tags)
   const shouldLoadVideo = isActive
   const videoSrc = shouldLoadVideo ? src : undefined
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || !currentIsVideo || !videoSrc) return
+    return attachMediaSource(v, videoSrc, { tryAutoplay: false })
+  }, [currentIsVideo, videoSrc])
 
   // Autoplay via IntersectionObserver — re-connect when videoSrc changes so play
   // fires after the src is actually assigned to the <video> element.
@@ -332,7 +339,6 @@ const VideoSlide = memo(function VideoSlide({
       {currentIsVideo && src ? (
         <video
           ref={videoRef}
-          src={videoSrc}
           poster={posterSrc || undefined}
           loop
           muted={muted}
