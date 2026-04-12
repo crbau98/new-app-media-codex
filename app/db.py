@@ -2074,7 +2074,7 @@ class Database:
                 "LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) LIKE '%.mp4' "
                 "OR LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) LIKE '%.webm' "
                 "OR LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) LIKE '%.mov' "
-                "OR LOWER(COALESCE(source, '')) IN ('redgifs', 'ytdlp')"
+                "OR LOWER(COALESCE(source, '')) IN ('redgifs', 'ytdlp', 'coomer')"
                 ")"
             )
         elif media_type == "image":
@@ -2083,7 +2083,7 @@ class Database:
                 "LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) NOT LIKE '%.mp4' "
                 "AND LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) NOT LIKE '%.webm' "
                 "AND LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) NOT LIKE '%.mov' "
-                "AND LOWER(COALESCE(source, '')) NOT IN ('redgifs', 'ytdlp')"
+                "AND LOWER(COALESCE(source, '')) NOT IN ('redgifs', 'ytdlp', 'coomer')"
                 ")"
             )
         if date_from:
