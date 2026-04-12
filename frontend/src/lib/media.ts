@@ -4,6 +4,7 @@ import { resolvePublicUrl } from "./backendOrigin"
 
 const BROKEN_MEDIA_LIMIT = 300
 const brokenMediaUrls = new Set<string>()
+const PROXY_MEDIA_PATH = "/api/screenshots/proxy-media"
 
 function normalizeMediaUrl(url: string | null | undefined): string {
   return (url ?? "").trim()
@@ -19,8 +20,18 @@ function isRenderableRemoteUrl(url: string): boolean {
   )
 }
 
+function isProxyMediaUrl(url: string): boolean {
+  if (url === "") return false
+  if (url.startsWith(`${PROXY_MEDIA_PATH}?`)) return true
+  try {
+    return new URL(url).pathname === PROXY_MEDIA_PATH
+  } catch {
+    return false
+  }
+}
+
 function buildProxyMediaUrl(url: string): string {
-  if (!isRenderableRemoteUrl(url) || url.startsWith("/api/screenshots/proxy-media?url=")) return ""
+  if (!isRenderableRemoteUrl(url) || isProxyMediaUrl(url)) return ""
   return resolvePublicUrl(`/api/screenshots/proxy-media?url=${encodeURIComponent(url)}`)
 }
 
