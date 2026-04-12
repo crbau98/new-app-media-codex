@@ -172,8 +172,8 @@ const VideoSlide = memo(function VideoSlide({
   useEffect(() => {
     const v = videoRef.current
     if (!v || !currentIsVideo || !videoSrc) return
-    return attachMediaSource(v, videoSrc, { tryAutoplay: false, onFatalError: markMediaBroken, shotId: shot.id })
-  }, [currentIsVideo, videoSrc, shot.id])
+    return attachMediaSource(v, videoSrc, { tryAutoplay: false, onFatalError: markMediaBroken, shotId: shot.id, shotSource: shot.source })
+  }, [currentIsVideo, videoSrc, shot.id, shot.source])
 
   // Autoplay via IntersectionObserver — re-connect when videoSrc changes so play
   // fires after the src is actually assigned to the <video> element.

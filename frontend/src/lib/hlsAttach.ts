@@ -131,6 +131,8 @@ export type AttachMediaOptions = {
   onFatalError?: () => void
   /** Screenshot ID — if provided, enables pre-flight stream resolution & retry on expired tokens. */
   shotId?: number
+  /** Screenshot source field (e.g. "ytdlp", "coomer"). Pre-flight resolve only runs for "ytdlp". */
+  shotSource?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +172,9 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
   const tryAutoplay = options?.tryAutoplay ?? false
   const onFatalError = options?.onFatalError
   const shotId = options?.shotId
+  const shotSource = (options?.shotSource ?? "").toLowerCase()
+  // Only ytdlp sources have expiring CDN tokens that need pre-flight resolution
+  const needsResolve = shotId != null && shotSource === "ytdlp"
   video.removeAttribute("src")
 
   const tryPlay = () => {
@@ -241,11 +246,11 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
         if (!data.fatal) return
 
         // On fatal network error, try resolving a fresh URL (once)
-        if (data.type === "networkError" && shotId && retryCount < MAX_RETRIES) {
+        if (data.type === "networkError" && needsResolve && retryCount < MAX_RETRIES) {
           retryCount++
           // Destroy the current hls instance and re-resolve
           if (hls) { hls.destroy(); hls = null }
-          resolveStreamUrl(shotId).then((freshUrl) => {
+          resolveStreamUrl(shotId!).then((freshUrl) => {
             if (destroyed) return
             if (freshUrl) {
               startHls(freshUrl)
@@ -292,9 +297,9 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     video.addEventListener("loadedmetadata", onMeta)
   }
 
-  // ── Pre-flight: resolve fresh URL if shotId is available ────────────────
-  if (shotId) {
-    resolveStreamUrl(shotId).then((freshUrl) => {
+  // ── Pre-flight: resolve fresh URL for ytdlp sources ────────────────────
+  if (needsResolve) {
+    resolveStreamUrl(shotId!).then((freshUrl) => {
       if (destroyed) return
       startHls(freshUrl || src)
     })

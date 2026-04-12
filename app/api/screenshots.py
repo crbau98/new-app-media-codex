@@ -450,11 +450,16 @@ async def resolve_stream(shot_id: int, request: Request):
     Called by the frontend before playback so the player always starts with a
     valid (non-expired) CDN token.  Returns the updated local_url proxy path
     that the frontend can feed directly into hls.js / <video src>.
+
+    NOTE: local_url is a *virtual* field computed by _decorate_screenshot_media
+    at read time — it is NOT a real database column.  We build it from source_url.
     """
+    from urllib.parse import quote as _url_quote
+
     db: Database = request.app.state.db
     with db.connect() as conn:
         row = conn.execute(
-            "SELECT id, source, page_url, source_url, local_url FROM screenshots WHERE id = ?",
+            "SELECT id, source, page_url, source_url FROM screenshots WHERE id = ?",
             (shot_id,),
         ).fetchone()
     if row is None:
@@ -463,12 +468,18 @@ async def resolve_stream(shot_id: int, request: Request):
     page_url = str(row["page_url"] or "")
     current_source_url = str(row["source_url"] or "")
 
+    def _build_local_url(raw_source: str) -> str:
+        """Build the proxy local_url the same way _decorate_screenshot_media does."""
+        if not raw_source:
+            return ""
+        return f"/api/screenshots/proxy-media?url={_url_quote(raw_source, safe='')}&shot_id={shot_id}"
+
     if source != "ytdlp" or not page_url:
         # Nothing to refresh — return whatever we have
         return JSONResponse({
             "shot_id": shot_id,
             "source_url": current_source_url,
-            "local_url": str(row["local_url"] or ""),
+            "local_url": _build_local_url(current_source_url),
             "refreshed": False,
         })
 
@@ -481,26 +492,17 @@ async def resolve_stream(shot_id: int, request: Request):
         return JSONResponse({
             "shot_id": shot_id,
             "source_url": current_source_url,
-            "local_url": str(row["local_url"] or ""),
+            "local_url": _build_local_url(current_source_url),
             "refreshed": False,
         })
 
-    # Build the new local_url proxy path
-    from urllib.parse import quote
-    new_local_url = f"/api/screenshots/proxy-media?url={quote(fresh_stream_url, safe='')}&shot_id={shot_id}"
+    new_local_url = _build_local_url(fresh_stream_url)
 
     db.update_screenshot_media_urls(
         screenshot_id=shot_id,
         source_url=fresh_stream_url,
         thumbnail_url=fresh_thumbnail_url,
     )
-    # Also update local_url in the DB so future grid loads get the fresh proxy path
-    with db.connect() as conn:
-        conn.execute(
-            "UPDATE screenshots SET local_url = ? WHERE id = ?",
-            (new_local_url, shot_id),
-        )
-        conn.commit()
 
     _logger.info("Resolved fresh stream for shot %d", shot_id)
     return JSONResponse({
