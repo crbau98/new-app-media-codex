@@ -58,7 +58,7 @@ function parseTags(tags: string | null): string[] {
 }
 
 function isVideo(src: string): boolean {
-  return /\.(mp4|webm|mov)$/i.test(src)
+  return /\.(mp4|webm|mov|m4v|avi|mkv)(\?|$)/i.test(src)
 }
 
 /* ── Platform Icon ────────────────────────────────────────────────────── */
@@ -631,7 +631,17 @@ function MediaGallery({
                 className="group relative aspect-square overflow-hidden rounded-lg bg-white/5 transition-all hover:ring-2 hover:ring-accent/50"
               >
                 {src ? (
-                  <img src={src} alt={m.caption ?? ""} className="h-full w-full object-cover" loading="lazy" />
+                  isVid ? (
+                    <video
+                      src={src}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <img src={src} alt={m.caption ?? ""} className="h-full w-full object-cover" loading="lazy" />
+                  )
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-muted">
                     {isVid ? (
