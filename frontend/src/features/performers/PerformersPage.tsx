@@ -1813,7 +1813,7 @@ export default function PerformersPage() {
                 Creators
               </h1>
               <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-text-secondary">
-                Search, organize, and open captured media for every profile you track.
+                A clean roster for the creators you follow—jump into their media in one tap.
               </p>
             </div>
             {statsData && (

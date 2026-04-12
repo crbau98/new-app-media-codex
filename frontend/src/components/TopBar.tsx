@@ -358,7 +358,7 @@ export function TopBar() {
               <input
                 ref={inputRef}
                 type="search"
-                placeholder="Search media, tags, or jump to a creator..."
+                placeholder="Search your library, tags, creators…"
                 value={searchVal}
                 onChange={(e) => {
                   setSearchVal(e.target.value)
@@ -618,7 +618,7 @@ export function TopBar() {
               <input
                 ref={mobileInputRef}
                 type="search"
-                placeholder="Search media, tags, creators..."
+                placeholder="Search library, tags, creators…"
                 value={searchVal}
                 onChange={(e) => setSearchVal(e.target.value)}
                 className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] py-3 pl-10 pr-4 text-base text-text-primary placeholder:text-text-muted focus:border-accent/40 focus:outline-none"

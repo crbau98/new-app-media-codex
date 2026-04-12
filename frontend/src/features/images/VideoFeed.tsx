@@ -326,7 +326,7 @@ const VideoSlide = memo(function VideoSlide({
   return (
     <div
       ref={slideRef}
-      className="relative flex h-[calc(100vh-3.5rem)] w-full snap-start snap-always items-center justify-center bg-black"
+      className="relative flex h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] w-full snap-start snap-always items-center justify-center overflow-hidden bg-black"
       style={{
         transform: swipeX ? `translateX(${swipeX}px)` : undefined,
         opacity: swipeX ? 1 - Math.abs(swipeX) / 300 : 1,
@@ -344,7 +344,7 @@ const VideoSlide = memo(function VideoSlide({
           muted={muted}
           playsInline
           preload={isActive ? "auto" : "none"}
-          className="h-full w-full cursor-pointer object-contain"
+          className="h-full w-full cursor-pointer object-cover"
           onClick={handleTap}
           onError={markMediaBroken}
           onCanPlay={(e) => { if (isActive) { (e.target as HTMLVideoElement).play().catch(() => {}) } }}
@@ -355,7 +355,7 @@ const VideoSlide = memo(function VideoSlide({
           alt={shot.term}
           loading={isActive ? "eager" : "lazy"}
           decoding="async"
-          className="h-full w-full object-contain select-none"
+          className="h-full w-full object-cover select-none"
           onClick={handleTap}
           onError={markPreviewBroken}
         />
@@ -539,13 +539,19 @@ const VideoSlide = memo(function VideoSlide({
 
 // ── Main Feed Component ──────────────────────────────────────────────────────
 
+export type FeedMediaType = "video" | "image" | "all"
+
 interface VideoFeedProps {
   onExit: () => void
   term?: string | null
   source?: string | null
+  /** Server filter: videos only, images only, or mixed full library (Reels / TikTok-style). */
+  feedMediaType?: FeedMediaType
 }
 
-export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
+const FEED_QUERY_KEY = "media-reels-feed" as const
+
+export function VideoFeed({ onExit, term, source, feedMediaType = "all" }: VideoFeedProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
   const [describingIds, setDescribingIds] = useState<Set<number>>(new Set())
@@ -561,21 +567,24 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
     isFetchingNextPage,
     isLoading,
   } = useInfiniteQuery({
-    queryKey: ["video-feed", term, source],
-    queryFn: ({ pageParam = 0, signal }) =>
-      api.browseScreenshots({
+    queryKey: [FEED_QUERY_KEY, term, source, feedMediaType],
+    queryFn: ({ pageParam = 0, signal }) => {
+      const params: Record<string, string | number> = {
         offset: pageParam as number,
-        limit: 12,
-        media_type: "video",
+        limit: 15,
         ...(term ? { term } : {}),
         ...(source ? { source } : {}),
-      }, { signal }),
+      }
+      if (feedMediaType === "video") params.media_type = "video"
+      else if (feedMediaType === "image") params.media_type = "image"
+      return api.browseScreenshots(params, { signal })
+    },
     getNextPageParam: (last: BrowseScreenshotsPayload) =>
       last.has_more ? (last.next_offset ?? (last.offset + last.screenshots.length)) : undefined,
     initialPageParam: 0,
     staleTime: 60_000,
     gcTime: 10 * 60_000,
-    maxPages: 3,
+    maxPages: 12,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -669,9 +678,9 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
       }
     }
 
-    qc.setQueryData(["video-feed", term, source], patchInfiniteData)
+    qc.setQueryData([FEED_QUERY_KEY, term, source, feedMediaType], patchInfiniteData)
     qc.setQueriesData({ queryKey: ["screenshots"] }, patchInfiniteData)
-  }, [qc, source, term])
+  }, [qc, source, term, feedMediaType])
 
   // Rate
   const rateMutation = useMutation({
@@ -719,12 +728,17 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
     addToast(`Screenshot #${id} ready to add to playlist`, "info")
   }, [addToast])
 
+  const emptyLabel =
+    feedMediaType === "video" ? "No videos match these filters." :
+    feedMediaType === "image" ? "No photos match these filters." :
+    "No media match these filters."
+
   if (isLoading) {
     return (
-      <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center bg-black">
+      <div className="flex h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] items-center justify-center bg-black">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white/80" />
-          <p className="text-sm text-white/50">Loading videos...</p>
+          <p className="text-sm text-white/50">Loading reels…</p>
         </div>
       </div>
     )
@@ -732,13 +746,13 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
 
   if (videos.length === 0) {
     return (
-      <div className="flex h-[calc(100vh-3.5rem)] flex-col items-center justify-center bg-black gap-4">
+      <div className="flex h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] flex-col items-center justify-center bg-black gap-4">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={1.5} className="opacity-30">
           <rect x="2" y="3" width="20" height="14" rx="2" />
           <polyline points="8 21 16 21" />
           <line x1="12" y1="17" x2="12" y2="21" />
         </svg>
-        <p className="text-sm text-white/40">No videos found</p>
+        <p className="text-sm text-white/40 text-center max-w-xs px-4">{emptyLabel}</p>
         <button
           onClick={onExit}
           className="rounded-lg bg-white/10 px-4 py-2 text-sm text-white/70 transition-colors hover:bg-white/15"
@@ -749,8 +763,13 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
     )
   }
 
+  const feedBadge =
+    feedMediaType === "video" ? "Videos" :
+    feedMediaType === "image" ? "Photos" :
+    "Mixed"
+
   return (
-    <div className="relative h-[calc(100vh-3.5rem)] bg-black">
+    <div className="relative h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] bg-black">
       {/* Exit button */}
       <button
         onClick={onExit}
@@ -762,9 +781,14 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
         Back
       </button>
 
-      {/* Video count indicator */}
-      <div className="absolute right-3 top-3 z-40 rounded-full bg-black/50 px-3 py-1 text-xs text-white/70 backdrop-blur-sm">
-        {activeIndex + 1} / {videos.length}
+      {/* Position + mode */}
+      <div className="absolute right-3 top-3 z-40 flex items-center gap-2">
+        <span className="rounded-full bg-black/50 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-white/50 backdrop-blur-sm">
+          {feedBadge}
+        </span>
+        <span className="rounded-full bg-black/50 px-3 py-1 text-xs text-white/70 backdrop-blur-sm tabular-nums">
+          {activeIndex + 1} / {videos.length}
+        </span>
       </div>
 
       {/* Scrollable feed */}
@@ -774,7 +798,7 @@ export function VideoFeed({ onExit, term, source }: VideoFeedProps) {
         style={{ scrollBehavior: "smooth" }}
       >
         {videos.map((shot, idx) => (
-          <div key={shot.id} data-video-slide={idx} className="h-[calc(100vh-3.5rem)] transition-all duration-300">
+          <div key={shot.id} data-video-slide={idx} className="h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] transition-all duration-300">
             {Math.abs(idx - activeIndex) <= 2 ? (
               <VideoSlide
                 shot={shot}

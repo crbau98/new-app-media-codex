@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
+import { cn } from "@/lib/cn"
 import { useAppStore, type ActiveView } from "../store"
 import { api, type Performer } from "../lib/api"
 import { getPerformerAvatarSrc } from "@/lib/performer"
@@ -115,21 +116,19 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function TypeBadge({ type }: { type?: CommandType }) {
   const label = type === "run" ? "▶" : type === "shortcut" ? "?" : "→"
   return (
-    <span
-      className="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono"
-      style={{ background: "rgba(59,130,246,0.12)", color: "#3b82f6" }}
-    >
+    <span className="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono text-accent bg-accent/15 ring-1 ring-accent/25">
       {label}
     </span>
   )
 }
 
 const SHORTCUTS = [
-  { keys: ["⌘K"], desc: "Open command palette" },
-  { keys: ["↑", "↓", "j", "k"], desc: "Navigate items" },
-  { keys: ["↵"], desc: "Open / execute item" },
-  { keys: ["Esc"], desc: "Close / back" },
-  { keys: ["?"], desc: "Show this overlay" },
+  { keys: ["⌘", "K"], desc: "Command palette — go anywhere, run crawl/capture" },
+  { keys: ["/"], desc: "Focus search (on Media)" },
+  { keys: ["?"], desc: "Media shortcuts (on Media) · global help from palette" },
+  { keys: ["↑", "↓"], desc: "Move selection in lists & palette" },
+  { keys: ["↵"], desc: "Choose item" },
+  { keys: ["Esc"], desc: "Close dialogs" },
 ]
 
 export function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
@@ -145,10 +144,12 @@ export function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.7)" }} onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
-        className="mx-4 w-full max-w-md rounded-2xl p-6 shadow-2xl"
-        style={{ background: "var(--color-bg-elevated, #161e2e)", border: "1px solid var(--color-border, #2a3347)" }}
+        className="mx-4 w-full max-w-md rounded-2xl border border-border bg-bg-elevated p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -156,7 +157,7 @@ export function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-widest text-text-primary">Keyboard Shortcuts</h2>
-          <button onClick={onClose} className="rounded px-2 py-1 text-xs text-text-muted transition-colors" aria-label="Close shortcuts overlay">
+          <button onClick={onClose} className="rounded px-2 py-1 text-xs text-text-muted transition-colors hover:text-accent" aria-label="Close shortcuts overlay">
             esc
           </button>
         </div>
@@ -168,8 +169,7 @@ export function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
                 {s.keys.map((k) => (
                   <kbd
                     key={k}
-                    className="rounded px-1.5 py-0.5 font-mono text-xs"
-                    style={{ background: "var(--color-bg-subtle, #1a2235)", border: "1px solid var(--color-border, #2a3347)", color: "var(--color-text-primary, #e2e8f0)" }}
+                    className="inline-flex min-h-[26px] min-w-[26px] items-center justify-center rounded border border-border bg-bg-subtle px-1.5 font-mono text-[11px] text-text-primary"
                   >
                     {k}
                   </kbd>
@@ -190,6 +190,8 @@ export function CommandPalette() {
   const setPendingPerformer = useAppStore((s) => s.setPendingPerformer)
   const setFilter = useAppStore((s) => s.setFilter)
   const resetFilters = useAppStore((s) => s.resetFilters)
+  const toggleTheme = useAppStore((s) => s.toggleTheme)
+  const theme = useAppStore((s) => s.theme)
   const crawlRunning = useAppStore((s) => s.crawlRunning)
   const setCrawlRunning = useAppStore((s) => s.setCrawlRunning)
   const addToast = useAppStore((s) => s.addToast)
@@ -362,7 +364,18 @@ export function CommandPalette() {
         setShowShortcuts(true)
       },
     },
-  ], [crawlRunning, query, resetFilters, setActiveView, setCrawlRunning, setFilter, setOpen])
+    {
+      id: "toggle-theme",
+      label: theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
+      description: "Toggle appearance",
+      keywords: ["theme", "dark", "light", "appearance", "mode"],
+      type: "shortcut",
+      action: () => {
+        toggleTheme()
+        setOpen(false)
+      },
+    },
+  ], [crawlRunning, query, resetFilters, setActiveView, setCrawlRunning, setFilter, setOpen, theme, toggleTheme])
 
   const scoredCommands = useMemo(() => {
     if (!query.trim()) return []
@@ -480,10 +493,9 @@ export function CommandPalette() {
     <>
       {showShortcuts && <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />}
       {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[20vh] backdrop-blur-sm" onClick={() => setOpen(false)}>
           <div
-            className="w-full max-w-lg overflow-hidden rounded-xl shadow-2xl"
-            style={{ background: "var(--color-bg-elevated, #161e2e)", border: "1px solid var(--color-border, #2a3347)" }}
+            className="w-full max-w-lg overflow-hidden rounded-xl border border-border bg-bg-elevated shadow-2xl"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -505,23 +517,77 @@ export function CommandPalette() {
             />
 
             {query === "" ? (
-              <div className="max-h-72 overflow-y-auto">
-                <div className="border-b border-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-text-muted">
-                  Actions
+              <div className="max-h-[min(70vh,22rem)] overflow-y-auto">
+                <div className="border-b border-border px-4 py-2 text-[11px] text-text-muted">
+                  Jump anywhere — type to filter creators and commands
                 </div>
+                <SectionLabel>Go to</SectionLabel>
+                <ul>
+                  {commands
+                    .filter((c) => c.type === "nav" && c.id !== "search-media")
+                    .map((cmd) => (
+                      <li key={cmd.id}>
+                        <button
+                          type="button"
+                          disabled={cmd.disabled}
+                          onClick={() => trackAndRun(cmd)}
+                          className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm text-text-secondary transition-colors hover:bg-bg-subtle hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <span>
+                            <span className="font-medium text-text-primary">{cmd.label}</span>
+                            {cmd.description && <span className="block text-[11px] text-text-muted">{cmd.description}</span>}
+                          </span>
+                          <TypeBadge type={cmd.type} />
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+                <SectionLabel>Automation</SectionLabel>
                 <ul>
                   <li>
-                    <button onClick={handleTriggerCrawl} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-text-secondary transition-colors hover:bg-bg-subtle hover:text-text-primary">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                      Run Crawl
+                    <button
+                      type="button"
+                      onClick={handleTriggerCrawl}
+                      disabled={crawlRunning}
+                      className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-text-secondary transition-colors hover:bg-bg-subtle hover:text-text-primary disabled:opacity-50"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                        <polyline points="23 4 23 10 17 10" />
+                        <polyline points="1 20 1 14 7 14" />
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                      </svg>
+                      {crawlRunning ? "Crawl running…" : "Run crawl"}
                     </button>
                   </li>
                   <li>
-                    <button onClick={handleCapture} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-text-secondary transition-colors hover:bg-bg-subtle hover:text-text-primary">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                      Run Capture
+                    <button type="button" onClick={handleCapture} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-text-secondary transition-colors hover:bg-bg-subtle hover:text-text-primary">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                        <circle cx="12" cy="13" r="4" />
+                      </svg>
+                      Run capture
                     </button>
                   </li>
+                </ul>
+                <SectionLabel>Appearance and help</SectionLabel>
+                <ul>
+                  {commands
+                    .filter((c) => c.id === "toggle-theme" || c.id === "view-shortcuts")
+                    .map((cmd) => (
+                      <li key={cmd.id}>
+                        <button
+                          type="button"
+                          onClick={() => trackAndRun(cmd)}
+                          className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm text-text-secondary transition-colors hover:bg-bg-subtle hover:text-text-primary"
+                        >
+                          <span>
+                            <span className="font-medium text-text-primary">{cmd.label}</span>
+                            {cmd.description && <span className="block text-[11px] text-text-muted">{cmd.description}</span>}
+                          </span>
+                          <TypeBadge type={cmd.type} />
+                        </button>
+                      </li>
+                    ))}
                 </ul>
               </div>
             ) : (
@@ -546,7 +612,7 @@ export function CommandPalette() {
                           role="option"
                           aria-selected={isSelected}
                           className="mx-2 transition-colors"
-                          style={isSelected ? { borderRadius: "0.5rem", background: "linear-gradient(to right, rgba(20,184,166,0.08), transparent)", outline: "1px solid rgba(20,184,166,0.25)" } : {}}
+                          style={isSelected ? { borderRadius: "0.5rem", background: "linear-gradient(to right, rgba(168,85,247,0.12), transparent)", outline: "1px solid rgba(168,85,247,0.28)" } : {}}
                           onMouseEnter={() => setSelectedIndex(idx)}
                           onClick={() => trackAndRun(cmd)}
                         >
@@ -554,7 +620,7 @@ export function CommandPalette() {
                             {getPerformerAvatarSrc(performer) ? (
                               <img src={getPerformerAvatarSrc(performer)} alt="" className="h-7 w-7 shrink-0 rounded-full bg-white/5 object-cover" />
                             ) : (
-                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold" style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>
+                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/20 text-xs font-bold text-accent">
                                 {(performer.display_name || performer.username).charAt(0).toUpperCase()}
                               </div>
                             )}
@@ -567,7 +633,11 @@ export function CommandPalette() {
                         </li>
                       )
                     })}
-                    {scoredCommands.length > 0 && <li role="presentation" aria-hidden="true"><div className="mx-4 my-1 h-px" style={{ background: "linear-gradient(to right, transparent, rgba(59,130,246,0.2), transparent)" }} /></li>}
+                    {scoredCommands.length > 0 && (
+                      <li role="presentation" aria-hidden="true">
+                        <div className="mx-4 my-1 h-px bg-gradient-to-r from-transparent via-accent/25 to-transparent" />
+                      </li>
+                    )}
                   </>
                 )}
 
@@ -586,8 +656,10 @@ export function CommandPalette() {
                           role="option"
                           aria-selected={isSelected}
                           aria-disabled={cmd.disabled}
-                          className="flex cursor-pointer items-center justify-between px-4 py-2.5 text-sm transition-colors"
-                          style={isSelected ? { borderLeft: "2px solid #3b82f6", background: "linear-gradient(to right, rgba(59,130,246,0.08), transparent)" } : { borderLeft: "2px solid transparent" }}
+                          className={cn(
+                            "flex cursor-pointer items-center justify-between px-4 py-2.5 text-sm transition-colors",
+                            isSelected ? "border-l-2 border-accent bg-accent/10" : "border-l-2 border-transparent"
+                          )}
                           onMouseEnter={() => setSelectedIndex(idx)}
                           onClick={() => {
                             if (!cmd.disabled) trackAndRun(cmd)

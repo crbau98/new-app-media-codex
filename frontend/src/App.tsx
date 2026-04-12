@@ -129,9 +129,9 @@ function App() {
 
   useEffect(() => {
     const titles: Record<string, string> = {
-      images: 'Media — Codex',
-      performers: 'Creators — Codex',
-      settings: 'Settings — Codex',
+      images: 'Media · Codex',
+      performers: 'Creators · Codex',
+      settings: 'Settings · Codex',
     }
     document.title = titles[deferredActiveView] ?? 'Codex'
   }, [deferredActiveView])

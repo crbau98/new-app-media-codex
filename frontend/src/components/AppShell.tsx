@@ -10,6 +10,9 @@ import { useConnectivity } from "../hooks/useConnectivity"
 const InstallPrompt = lazy(() => import("./InstallPrompt").then((m) => ({ default: m.InstallPrompt })))
 const ScrollToTop = lazy(() => import("./ScrollToTop").then((m) => ({ default: m.ScrollToTop })))
 const OfflineBanner = lazy(() => import("./OfflineBanner").then((m) => ({ default: m.OfflineBanner })))
+const FloatingActionButton = lazy(() =>
+  import("./FloatingActionButton").then((m) => ({ default: m.FloatingActionButton }))
+)
 
 function ConnectivityGate() {
   useConnectivity()
@@ -85,6 +88,7 @@ export function AppShell({ children }: AppShellProps) {
       {shellEnhancementsReady && (
         <Suspense fallback={null}>
           <ScrollToTop />
+          <FloatingActionButton />
         </Suspense>
       )}
       <ToastContainer />

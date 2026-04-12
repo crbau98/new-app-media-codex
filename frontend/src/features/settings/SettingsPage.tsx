@@ -1042,12 +1042,12 @@ export function SettingsPage() {
     <div className="mx-auto min-h-screen max-w-5xl px-6 py-8">
       {/* Page header */}
       <header className="mb-10">
-        <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.12em] text-text-muted">System</p>
+        <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.12em] text-text-muted">Preferences</p>
         <h1 className="hero-title text-[28px] font-semibold leading-[1.08] tracking-[-0.045em] text-text-primary sm:text-[34px]">
           Settings
         </h1>
         <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-text-secondary">
-          Sources, appearance, notifications, and data.
+          Sources, appearance, notifications, and your data—everything stays on your terms.
         </p>
       </header>
 

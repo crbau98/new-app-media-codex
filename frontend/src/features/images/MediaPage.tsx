@@ -162,31 +162,33 @@ function getTimelineGroup(dateStr: string | undefined): string {
 }
 
 const GRID_CLASSES: Record<GridDensity, string> = {
-  compact: "grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-0.5",
-  normal: "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-1",
-  spacious: "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2",
+  /** Tighter columns — browse density */
+  compact: "grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-px",
+  /** Instagram-style profile grid: 3 columns, hairline gaps */
+  normal: "grid-cols-3 gap-px sm:gap-0.5",
+  spacious: "grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-2",
 }
 
 const GRID_COLS: Record<GridDensity, number> = {
-  compact: 2,
-  normal: 2,
-  spacious: 1,
+  compact: 3,
+  normal: 3,
+  spacious: 2,
 }
 
 function useResponsiveColCount(density: GridDensity): number {
   const [colCount, setColCount] = useState(() => {
     if (typeof window === "undefined") return GRID_COLS[density]
     const w = window.innerWidth
-    if (density === "compact") return w >= 1024 ? 7 : w >= 768 ? 5 : w >= 640 ? 4 : 2
-    if (density === "normal") return w >= 768 ? 4 : w >= 640 ? 3 : 2
-    return w >= 768 ? 4 : w >= 640 ? 2 : 1
+    if (density === "compact") return w >= 1024 ? 6 : w >= 768 ? 5 : w >= 640 ? 4 : 3
+    if (density === "normal") return 3
+    return w >= 768 ? 3 : w >= 640 ? 2 : 2
   })
   useEffect(() => {
     function update() {
       const w = window.innerWidth
-      if (density === "compact") setColCount(w >= 1024 ? 7 : w >= 768 ? 5 : w >= 640 ? 4 : 2)
-      else if (density === "normal") setColCount(w >= 768 ? 4 : w >= 640 ? 3 : 2)
-      else setColCount(w >= 768 ? 4 : w >= 640 ? 2 : 1)
+      if (density === "compact") setColCount(w >= 1024 ? 6 : w >= 768 ? 5 : w >= 640 ? 4 : 3)
+      else if (density === "normal") setColCount(3)
+      else setColCount(w >= 768 ? 3 : w >= 640 ? 2 : 2)
     }
     window.addEventListener("resize", update)
     return () => window.removeEventListener("resize", update)
@@ -195,9 +197,9 @@ function useResponsiveColCount(density: GridDensity): number {
 }
 
 const GRID_ROW_SIZE_ESTIMATE: Record<GridDensity, number> = {
-  compact: 128,
-  normal: 168,
-  spacious: 208,
+  compact: 120,
+  normal: 128,
+  spacious: 200,
 }
 const MOSAIC_BATCH_SIZE = 24
 
@@ -474,6 +476,7 @@ const MediaCard = memo(function MediaCard({
   onRate,
   onContextMenu,
   onNavigateToPerformer,
+  profileTile,
 }: {
   shot: Screenshot
   index?: number
@@ -488,6 +491,8 @@ const MediaCard = memo(function MediaCard({
   onRate: (rating: number) => void
   onContextMenu?: (e: React.MouseEvent) => void
   onNavigateToPerformer?: (performerId: number, username: string) => void
+  /** Instagram-style square grid: flush tiles, minimal chrome */
+  profileTile?: boolean
 }) {
   const { mediaSrc: src, previewSrc, isVideo: vid, isGif: gif, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const mediaLabel = getMediaDebugLabel(shot)
@@ -519,7 +524,11 @@ const MediaCard = memo(function MediaCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); batchMode ? onSelect() : onClick() } }}
       onContextMenu={onContextMenu}
       className={cn(
-        "group content-card content-card-interactive relative aspect-square cursor-pointer overflow-hidden rounded-[24px] border border-white/10 bg-black/25 shadow-[0_12px_32px_rgba(0,0,0,0.18)] hover:scale-[1.02] transition-transform duration-200",
+        "group relative aspect-square cursor-pointer overflow-hidden bg-black/25 transition-transform duration-200",
+        !profileTile && "content-card content-card-interactive",
+        profileTile
+          ? "rounded-none border-0 shadow-none hover:brightness-[1.06] active:brightness-95"
+          : "rounded-[24px] border border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.18)] hover:scale-[1.02]",
         selected && "ring-2 ring-accent"
       )}
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
@@ -532,7 +541,7 @@ const MediaCard = memo(function MediaCard({
         {vid && (
           <div
             className="absolute inset-0 z-[1] flex items-center justify-center"
-            style={{ background: "linear-gradient(180deg, #2c2c2e 0%, #000000 100%)" }}
+            style={{ background: "linear-gradient(165deg, #1e1530 0%, #0c0614 55%, #000000 100%)" }}
             aria-hidden="true"
           >
             <div className="rounded-full bg-white/10 p-3">
@@ -990,7 +999,7 @@ function GridDensityControl({ density, onChange }: { density: GridDensity; onCha
     },
     {
       key: "normal",
-      label: "Normal",
+      label: "Profile grid",
       icon: (
         <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
           <rect x="0" y="0" width="4" height="4" rx="0.5" />
@@ -1022,7 +1031,7 @@ function GridDensityControl({ density, onChange }: { density: GridDensity; onCha
         <button
           key={opt.key}
           onClick={() => onChange(opt.key)}
-          title={opt.label}
+          title={opt.key === "normal" ? "Profile grid — 3 columns, Instagram-style tiles" : opt.label}
           className={cn(
             "flex items-center justify-center px-2 py-2 transition-colors",
             density === opt.key
@@ -1342,7 +1351,12 @@ export function MediaPage() {
   const setMediaCreator = useAppStore((s) => s.setMediaCreator)
   const setPendingPerformer = useAppStore((s) => s.setPendingPerformer)
   const screenshotRunning = useAppStore((s) => s.screenshotRunning)
+  const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
   const [statusPollingEnabled, setStatusPollingEnabled] = useState(true)
+  const [paletteModIsApple, setPaletteModIsApple] = useState(true)
+  useEffect(() => {
+    setPaletteModIsApple(typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform))
+  }, [])
   const qc = useQueryClient()
 
   const applyMediaNavigationIntent = useCallback((intent: { query?: string; term?: string; tag?: string }) => {
@@ -2179,6 +2193,10 @@ export function MediaPage() {
     setActiveTagFilter(null)
     setActivePlaylistId(null)
     setMediaCreator(null)
+    setDiscoveryOpen(false)
+    setAdvancedOpen(false)
+    setFiltersVisible(false)
+    setAnalyticsOpen(false)
   }
 
   function applySearchSuggestion(suggestion: SearchSuggestion) {
@@ -2549,6 +2567,7 @@ export function MediaPage() {
         key={shot.id}
         shot={shot}
         index={index}
+        profileTile={gridDensity === "normal"}
         onClick={() => openMedia(shot)}
         onHover={prefetchViewer}
         batchMode={batchMode}
@@ -2636,7 +2655,7 @@ export function MediaPage() {
       <section className="px-3 pb-6 pt-1 sm:px-4" aria-labelledby="media-page-title">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.12em] text-text-muted">Library</p>
+            <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.12em] text-text-muted">Your collection</p>
             <h1
               id="media-page-title"
               className="hero-title text-[28px] font-semibold leading-[1.08] tracking-[-0.045em] text-text-primary sm:text-[34px]"
@@ -2670,7 +2689,8 @@ export function MediaPage() {
               onChange={(e) => setSearch(e.target.value)}
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-              placeholder="Search media"
+              placeholder="Search titles, tags, sources…"
+              title="Focus with / anywhere on this page"
               className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
             />
             {search && (
@@ -2736,43 +2756,111 @@ export function MediaPage() {
 
           <div className="hide-scrollbar flex flex-nowrap items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible">
             <button
+              type="button"
               onClick={() => setOnlyUnlinked((v) => !v)}
-              className={cn("shrink-0 rounded-full px-2.5 py-1.5 text-[11px] transition-colors", onlyUnlinked ? "bg-sky-500/20 text-sky-200 ring-1 ring-sky-400/50 border border-sky-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+              title="Show items not linked to a creator profile"
+              className={cn(
+                "shrink-0 rounded-full border px-2.5 py-1.5 text-[11px] transition-colors",
+                onlyUnlinked
+                  ? "border-accent/40 bg-accent/15 text-accent"
+                  : "border-border/60 bg-bg-elevated/80 text-text-muted hover:border-border hover:text-text-secondary"
+              )}
             >
               Unlinked
             </button>
             <button
+              type="button"
               onClick={() => setOnlyUnrated((v) => !v)}
-              className={cn("shrink-0 rounded-full px-2.5 py-1.5 text-[11px] transition-colors", onlyUnrated ? "bg-amber-500/20 text-amber-200 ring-1 ring-amber-400/50 border border-amber-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+              title="Show items you have not rated yet"
+              className={cn(
+                "shrink-0 rounded-full border px-2.5 py-1.5 text-[11px] transition-colors",
+                onlyUnrated
+                  ? "border-accent/40 bg-accent/15 text-accent"
+                  : "border-border/60 bg-bg-elevated/80 text-text-muted hover:border-border hover:text-text-secondary"
+              )}
             >
               Needs rating
             </button>
             <button
+              type="button"
               onClick={() => setOnlyRecent((v) => !v)}
-              className={cn("shrink-0 rounded-full px-2.5 py-1.5 text-[11px] transition-colors", onlyRecent ? "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/50 border border-emerald-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+              title="Only media from the last 7 days"
+              className={cn(
+                "shrink-0 rounded-full border px-2.5 py-1.5 text-[11px] transition-colors",
+                onlyRecent
+                  ? "border-accent/40 bg-accent/15 text-accent"
+                  : "border-border/60 bg-bg-elevated/80 text-text-muted hover:border-border hover:text-text-secondary"
+              )}
             >
               7 days
             </button>
             <button
+              type="button"
               onClick={() => setFilterDescribed((v) => !v)}
-              className={cn("shrink-0 rounded-full px-2.5 py-1.5 text-[11px] transition-colors", filterDescribed ? "bg-purple-500/20 text-purple-200 ring-1 ring-purple-400/50 border border-purple-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+              title="Only items with AI description"
+              className={cn(
+                "shrink-0 rounded-full border px-2.5 py-1.5 text-[11px] transition-colors",
+                filterDescribed
+                  ? "border-accent/40 bg-accent/15 text-accent"
+                  : "border-border/60 bg-bg-elevated/80 text-text-muted hover:border-border hover:text-text-secondary"
+              )}
             >
               Described
             </button>
             <button
+              type="button"
               onClick={() => setAdvancedFilters((f) => ({ ...f, hasPerformer: f.hasPerformer === true ? null : true }))}
-              className={cn("shrink-0 rounded-full px-2.5 py-1.5 text-[11px] transition-colors", advancedFilters.hasPerformer === true ? "bg-indigo-500/20 text-indigo-200 ring-1 ring-indigo-400/50 border border-indigo-400/30" : "bg-white/5 text-slate-400 hover:bg-white/10")}
+              title="Only media linked to a creator"
+              className={cn(
+                "shrink-0 rounded-full border px-2.5 py-1.5 text-[11px] transition-colors",
+                advancedFilters.hasPerformer === true
+                  ? "border-accent/40 bg-accent/15 text-accent"
+                  : "border-border/60 bg-bg-elevated/80 text-text-muted hover:border-border hover:text-text-secondary"
+              )}
             >
               Creator-linked
             </button>
           </div>
 
+          {activeFilterPills.length > 0 && (
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className="hidden tabular-nums text-[11px] text-text-muted sm:inline" title="Filters applied to this view">
+                {activeFilterPills.length} active
+              </span>
+              <button
+                type="button"
+                onClick={clearMediaFilters}
+                className="rounded-full border border-border bg-bg-subtle px-3 py-1.5 text-[11px] font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-accent"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+
           <button
+            type="button"
+            onClick={() => setCommandPaletteOpen(true)}
+            className="hidden shrink-0 items-center gap-1.5 rounded-xl border border-border/60 bg-bg-subtle px-2.5 py-2 text-xs text-text-muted transition-colors hover:border-accent/40 hover:text-text-primary md:inline-flex"
+            title="Search, jump to pages, run crawl or capture (⌘K or Ctrl+K)"
+          >
+            <span>Command</span>
+            {paletteModIsApple ? (
+              <span className="flex items-center gap-0.5 font-mono text-[10px] text-text-secondary">
+                <kbd className="rounded border border-border bg-bg-elevated px-1 py-0.5">⌘</kbd>
+                <kbd className="rounded border border-border bg-bg-elevated px-1 py-0.5">K</kbd>
+              </span>
+            ) : (
+              <kbd className="rounded border border-border bg-bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-text-secondary">Ctrl+K</kbd>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setFiltersVisible((v) => !v)}
             className={cn(
               "rounded-xl px-2.5 py-2 text-xs transition-colors whitespace-nowrap",
               filtersVisible || advancedOpen
-                ? "bg-blue-500/20 text-blue-400"
+                ? "bg-accent/15 text-accent"
                 : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
             )}
           >
@@ -2820,7 +2908,7 @@ export function MediaPage() {
               onClick={() => handleViewModeChange("feed")}
               onMouseEnter={() => { void preloadVideoFeed() }}
               onFocus={() => { void preloadVideoFeed() }}
-              title="Video feed"
+              title="Reels — full-screen vertical feed (videos & photos; follows Videos / Images / All tab)"
               className={cn(
                 "flex items-center justify-center px-2 py-1.5 transition-colors",
                 viewMode === "feed" ? "bg-white/10 text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
@@ -2852,10 +2940,10 @@ export function MediaPage() {
               onMouseEnter={() => { void preloadVideoFeed() }}
               onFocus={() => { void preloadVideoFeed() }}
               className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-white/[0.07] hover:text-text-primary sm:px-3"
-              title="Open video feed"
+              title="Open Reels — vertical full-screen feed"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-              <span className="hidden sm:inline">Open video feed</span>
+              <span className="hidden sm:inline">Open Reels</span>
             </button>
 
             {/* Overflow menu */}
@@ -2967,7 +3055,8 @@ export function MediaPage() {
                         onClick={() => { setShortcutsOpen(true); setOverflowMenuOpen(false) }}
                         className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
                       >
-                        Keyboard shortcuts
+                        <span>Keyboard shortcuts</span>
+                        <kbd className="ml-auto rounded border border-border/60 bg-bg-subtle px-1.5 py-0.5 font-mono text-[10px] text-text-muted">?</kbd>
                       </button>
                     </div>
                   </div>
@@ -3827,7 +3916,8 @@ export function MediaPage() {
             <VideoFeed
               onExit={() => handleViewModeChange("grid")}
               term={term}
-              source={tab === "ddg" ? "ddg" : tab === "redgifs" ? "redgifs" : undefined}
+              source={tab === "ddg" ? "ddg" : tab === "redgifs" ? "redgifs" : tab === "tube" ? "ytdlp" : undefined}
+              feedMediaType={tab === "videos" ? "video" : tab === "images" ? "image" : "all"}
             />
           </Suspense>
         </div>
@@ -3865,55 +3955,86 @@ export function MediaPage() {
       {/* ── Keyboard Shortcuts Help Overlay ──────────────────────────────── */}
       {shortcutsOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
           onClick={() => setShortcutsOpen(false)}
         >
           <div
-            className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1526]/95 backdrop-blur-lg shadow-2xl p-6"
+            className="relative max-h-[min(90vh,560px)] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-bg-surface p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-sm font-semibold uppercase tracking-widest text-white/60 font-mono">Keyboard Shortcuts</h2>
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="font-mono text-sm font-semibold uppercase tracking-widest text-text-muted">Keyboard shortcuts</h2>
               <button
+                type="button"
                 onClick={() => setShortcutsOpen(false)}
-                className="rounded-full p-1.5 text-white/40 hover:text-white/80 transition-colors"
+                className="rounded-full p-1.5 text-text-muted transition-colors hover:text-text-primary"
+                aria-label="Close"
               >
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <line x1="4" y1="4" x2="16" y2="16" /><line x1="16" y1="4" x2="4" y2="16" />
                 </svg>
               </button>
             </div>
-            <div className="space-y-4 text-sm">
+            <div className="space-y-5 text-sm">
               {[
-                { group: "Navigation", items: [
-                  { keys: ["M"], desc: "Toggle multi-select mode" },
-                  { keys: ["R"], desc: "Surprise me — random top-rated pick" },
-                  { keys: ["P"], desc: "Toggle Creators Only filter" },
-                  { keys: ["?"], desc: "Show this help" },
-                ]},
-                { group: "Lightbox", items: [
-                  { keys: ["←", "→"], desc: "Previous / next image" },
-                  { keys: ["Esc"], desc: "Close lightbox" },
-                  { keys: ["Space"], desc: "Play / pause video" },
-                  { keys: ["F"], desc: "Toggle favorite" },
-                  { keys: ["I"], desc: "Toggle info panel" },
-                  { keys: ["C"], desc: "Copy URL to clipboard" },
-                  { keys: ["D"], desc: "Download current media" },
-                  { keys: ["[", "]"], desc: "Slow down / speed up video" },
-                  { keys: ["1–5"], desc: "Rate current image" },
-                ]},
+                {
+                  group: "Search & command palette",
+                  items: [
+                    { keys: ["/"], desc: "Focus search (not when typing in a field)" },
+                    { keys: ["⌘", "K"], desc: "Open command palette — jump to pages, run crawl/capture" },
+                  ],
+                },
+                {
+                  group: "Media & filters",
+                  items: [
+                    { keys: ["M"], desc: "Toggle multi-select" },
+                    { keys: ["R"], desc: "Surprise me — random top-rated pick" },
+                    { keys: ["P"], desc: "Toggle creator-linked filter" },
+                    { keys: ["1"], desc: "Tab: All media" },
+                    { keys: ["2"], desc: "Tab: Videos" },
+                    { keys: ["3"], desc: "Tab: Images" },
+                  ],
+                },
+                {
+                  group: "Layout",
+                  items: [
+                    { keys: ["G"], desc: "Grid view" },
+                    { keys: ["L"], desc: "List view" },
+                    { keys: ["T"], desc: "Timeline view" },
+                    { keys: ["V"], desc: "Reels (vertical; respects Videos / Images / All tab)" },
+                    { keys: ["O"], desc: "Mosaic view" },
+                  ],
+                },
+                {
+                  group: "Help",
+                  items: [{ keys: ["?"], desc: "Toggle this panel" }],
+                },
+                {
+                  group: "Lightbox (when open)",
+                  items: [
+                    { keys: ["←", "→"], desc: "Previous / next" },
+                    { keys: ["Esc"], desc: "Close" },
+                    { keys: ["Space"], desc: "Play / pause video" },
+                    { keys: ["F"], desc: "Favorite" },
+                    { keys: ["I"], desc: "Info panel" },
+                    { keys: ["C"], desc: "Copy URL" },
+                    { keys: ["D"], desc: "Download" },
+                    { keys: ["[", "]"], desc: "Slower / faster video" },
+                    { keys: ["1–5"], desc: "Rate image" },
+                  ],
+                },
               ].map(({ group, items }) => (
                 <div key={group}>
-                  <p className="text-[10px] uppercase tracking-widest text-white/30 font-mono mb-2">{group}</p>
+                  <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-text-muted/80">{group}</p>
                   <div className="space-y-1.5">
                     {items.map(({ keys, desc }) => (
                       <div key={desc} className="flex items-center justify-between gap-4">
-                        <span className="text-white/50 text-xs">{desc}</span>
-                        <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-xs text-text-secondary">{desc}</span>
+                        <div className="flex shrink-0 items-center gap-1">
                           {keys.map((k) => (
                             <kbd
                               key={k}
-                              className="inline-flex items-center justify-center min-w-[28px] h-6 px-1.5 rounded border border-white/15 bg-white/[0.06] text-[11px] font-mono text-white/70"
+                              className="inline-flex h-6 min-w-[26px] items-center justify-center rounded border border-border bg-bg-subtle px-1.5 font-mono text-[11px] text-text-primary"
                             >
                               {k}
                             </kbd>
@@ -3925,7 +4046,7 @@ export function MediaPage() {
                 </div>
               ))}
             </div>
-            <p className="mt-5 text-[10px] text-white/25 font-mono text-center">Press ? to toggle · Esc to close</p>
+            <p className="mt-6 text-center font-mono text-[10px] text-text-muted">Press ? to toggle · Esc to close</p>
           </div>
         </div>
       )}

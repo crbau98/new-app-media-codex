@@ -1,6 +1,6 @@
 ---
 name: premium-media-web-design
-description: Designs and implements premium media websites and web apps with Apple.com–level polish—editorial typography, restrained motion, product-led imagery, and high-end marketing craft. Use when building or refining landing pages, marketing sites, media players, content libraries, or brand-forward UIs where the user wants luxury/minimal clarity, “Apple-like” feel, or references to top-tier consumer sites.
+description: Designs premium media web apps with Apple-level polish and optional queer/LGBTQ+ product identity—violet–fuchsia accents on deep bases, Outfit-style display type, inclusive copy, and restrained gradients. Use for luxury media libraries, queer media apps, creators rosters, or when the user asks for professional gay/LGBTQ+ media UI without tacky rainbow chrome.
 ---
 
 # Premium media web design (Apple-inspired)
@@ -12,8 +12,15 @@ Use this skill when the user asks for:
 - Apple.com–style or “high-end” marketing / product storytelling
 - Media apps: browse, discover, play, continue watching, editorial rails
 - A site or app that should feel **crafted**, not template-driven
+- **Queer / gay / LGBTQ+ media products** — signal community through refined palette and copy, not full-spectrum rainbow gradients everywhere
 
 If the task is generic UI with no premium/media direction, prefer the project stack and normal patterns; still borrow **restraint and hierarchy** from below.
+
+### Queer media product notes (Codex)
+
+- **Palette:** Near-black or deep plum-tinted base; **violet (#a855f7 range) + soft fuchsia** accents; optional subtle radial atmosphere (violet + rose at low opacity, under ~12%). Avoid neon rainbow UI chrome.
+- **Type:** **Outfit** or similar for display headlines; **Plus Jakarta Sans** (or equivalent) for UI body.
+- **Tone:** Confident, adult, professional—copy can say “library,” “collection,” “roster”; optional explicit “queer media” in shell or meta where it fits the product.
 
 ## Core philosophy
 

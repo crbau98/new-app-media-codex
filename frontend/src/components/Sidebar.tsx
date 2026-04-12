@@ -268,11 +268,11 @@ function CrawlFooter({ collapsed, ready }: { collapsed: boolean; ready: boolean 
         <div className="mb-3 rounded-xl border border-border bg-white/[0.03] px-3 py-2.5">
           <div className="mb-1.5 flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-text-muted">
             <span>Capture</span>
-            <span className="font-mono text-teal">{captureProgress.terms_done ?? 0}/{captureProgress.terms_total ?? '?'}</span>
+            <span className="font-mono text-accent">{captureProgress.terms_done ?? 0}/{captureProgress.terms_total ?? '?'}</span>
           </div>
-          <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
+            <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
             <div
-              className="h-full rounded-full bg-teal transition-[width] duration-500"
+              className="h-full rounded-full bg-accent transition-[width] duration-500"
               style={{
                 width: captureProgress.terms_total
                   ? `${Math.round(((captureProgress.terms_done ?? 0) / captureProgress.terms_total) * 100)}%`
@@ -416,7 +416,7 @@ export function Sidebar() {
                   Media Codex
                 </span>
                 <span className="block truncate text-[10px] font-medium uppercase tracking-[0.14em] text-text-muted">
-                  Library
+                  Queer media library
                 </span>
               </div>
             )}
