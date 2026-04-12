@@ -2226,6 +2226,36 @@ def _guess_ext_from_content_type(ct: str) -> str:
     return mapping.get(ct, "")
 
 
+_ALLOWED_CAPTURE_HOSTS = {
+    "redgifs.com",
+    "www.redgifs.com",
+    "api.redgifs.com",
+    "media.redgifs.com",
+    "thumbs2.redgifs.com",
+    "pbs.twimg.com",
+    "video.twimg.com",
+}
+
+
+def _is_allowed_capture_url(raw_url: str) -> bool:
+    try:
+        parsed = urlparse(raw_url)
+    except Exception:
+        return False
+
+    if parsed.scheme.lower() != "https":
+        return False
+
+    if parsed.username or parsed.password:
+        return False
+
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+
+    return host in _ALLOWED_CAPTURE_HOSTS
+
+
 def _resolve_redgifs_url(url: str) -> str | None:
     """Extract direct video URL from a Redgifs page."""
     try:
@@ -2254,6 +2284,8 @@ def capture_from_url(request: Request, body: dict = Body(...)):
     url = body.get("url", "").strip()
     if not url:
         raise HTTPException(status_code=422, detail="url is required")
+    if not _is_allowed_capture_url(url):
+        raise HTTPException(status_code=422, detail="Unsupported or unsafe URL")
 
     term = body.get("term", "")
     performer_id = body.get("performer_id")
@@ -2276,6 +2308,8 @@ def capture_from_url(request: Request, body: dict = Body(...)):
         resolved = _resolve_redgifs_url(url)
         if not resolved:
             raise HTTPException(status_code=422, detail="Could not extract video URL from Redgifs")
+        if not _is_allowed_capture_url(resolved):
+            raise HTTPException(status_code=422, detail="Resolved media URL is unsupported or unsafe")
         download_url = resolved
         source = "redgifs"
         if download_url.endswith(".mp4"):
