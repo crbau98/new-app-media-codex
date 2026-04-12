@@ -587,7 +587,7 @@ export const api = {
   updateScreenshotTags: (id: number, tags: string[]) =>
     apiFetch<Screenshot>(`/api/screenshots/${id}/tags`, { method: "PATCH", body: JSON.stringify({ tags }) }),
   resolveStream: (shotId: number) =>
-    apiFetch<{ shot_id: number; source_url: string; local_url: string; refreshed: boolean }>(
+    apiFetch<{ shot_id: number; source_url: string; local_url: string; direct_url: string | null; ip_bound: boolean; refreshed: boolean }>(
       `/api/screenshots/${shotId}/resolve-stream`,
       { method: "POST" },
     ),

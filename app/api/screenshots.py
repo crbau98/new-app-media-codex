@@ -205,39 +205,46 @@ def _has_ip_bound_token(url: str) -> bool:
     return "validfrom=" in url and "validto=" in url
 
 
-def _resolve_ytdlp_stream_url(page_url: str) -> tuple[str | None, str | None]:
+def _resolve_ytdlp_stream_url(page_url: str) -> tuple[str | None, str | None, bool]:
     """Resolve a fresh direct stream URL from a page URL via yt-dlp.
+
+    Returns (stream_url, thumbnail_url, is_ip_bound).
 
     When multiple formats are available we prefer:
     1. HLS .m3u8 URLs with path-based auth (no IP-bound query tokens)
-    2. Direct .mp4 URLs (single file, no segment issues)
-    3. Any HLS URL as fallback
+    2. Direct .mp4 without IP-bound tokens
+    3. Direct .mp4 WITH IP-bound tokens (frontend can play these directly)
+    4. Any HLS URL as fallback (worst — IP-bound segments fail through proxy)
     """
     if not page_url.startswith(("http://", "https://")):
-        return None, None
+        return None, None, False
     try:
         import yt_dlp
     except Exception:
-        return None, None
+        return None, None, False
 
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
-        "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
+        # Prefer HLS (hls-*) over HTTP (http-*) to get path-auth CDN URLs
+        # that aren't IP-bound.  Fall back to http when HLS isn't offered.
+        "format": "bestvideo[height<=720][protocol^=m3u8]+bestaudio/best[height<=720][protocol^=m3u8]/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
+        "hls_prefer_native": False,
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(page_url, download=False)
     except Exception:
-        return None, None
+        return None, None, False
     if not info:
-        return None, None
+        return None, None, False
 
     # Collect all candidate URLs from formats for smarter selection
     formats = info.get("formats") or []
-    candidates_hls_good: list[str] = []   # HLS without IP-bound tokens
-    candidates_mp4: list[str] = []        # Direct MP4
-    candidates_hls_any: list[str] = []    # HLS with any token type
+    candidates_hls_good: list[str] = []      # HLS without IP-bound tokens
+    candidates_mp4_good: list[str] = []      # Direct MP4 without IP-bound tokens
+    candidates_mp4_ipbound: list[str] = []   # Direct MP4 WITH IP-bound tokens (direct playback OK)
+    candidates_hls_any: list[str] = []       # HLS with IP-bound tokens (worst)
 
     for fmt in formats:
         fmt_url = fmt.get("url")
@@ -252,7 +259,10 @@ def _resolve_ytdlp_stream_url(page_url: str) -> tuple[str | None, str | None]:
             else:
                 candidates_hls_any.append(fmt_url)
         elif fmt.get("ext") == "mp4" and fmt_url.startswith(("http://", "https://")):
-            candidates_mp4.append(fmt_url)
+            if _has_ip_bound_token(fmt_url):
+                candidates_mp4_ipbound.append(fmt_url)
+            else:
+                candidates_mp4_good.append(fmt_url)
 
     # Also check the top-level URL
     top_url = info.get("url")
@@ -261,13 +271,22 @@ def _resolve_ytdlp_stream_url(page_url: str) -> tuple[str | None, str | None]:
             candidates_hls_good.insert(0, top_url)
         elif ".m3u8" in top_url:
             candidates_hls_any.insert(0, top_url)
-        elif top_url not in candidates_mp4:
-            candidates_mp4.insert(0, top_url)
+        elif _has_ip_bound_token(top_url):
+            if top_url not in candidates_mp4_ipbound:
+                candidates_mp4_ipbound.insert(0, top_url)
+        else:
+            if top_url not in candidates_mp4_good:
+                candidates_mp4_good.insert(0, top_url)
 
-    # Pick best candidate: prefer HLS without IP tokens > MP4 > any HLS
+    # Pick best candidate:
+    # 1. HLS without IP tokens (proxy works perfectly)
+    # 2. MP4 without IP tokens (proxy works)
+    # 3. MP4 WITH IP tokens (frontend can play directly via <video src>)
+    # 4. HLS with IP tokens (worst — segments fail through proxy)
     stream_url = (
         (candidates_hls_good[-1] if candidates_hls_good else None)
-        or (candidates_mp4[-1] if candidates_mp4 else None)
+        or (candidates_mp4_good[-1] if candidates_mp4_good else None)
+        or (candidates_mp4_ipbound[-1] if candidates_mp4_ipbound else None)
         or (candidates_hls_any[-1] if candidates_hls_any else None)
     )
 
@@ -280,11 +299,12 @@ def _resolve_ytdlp_stream_url(page_url: str) -> tuple[str | None, str | None]:
                 break
 
     if not isinstance(stream_url, str) or not stream_url.startswith(("http://", "https://")):
-        return None, None
+        return None, None, False
 
+    is_ip_bound = _has_ip_bound_token(stream_url) if stream_url else False
     thumb = info.get("thumbnail")
     thumbnail_url = thumb if isinstance(thumb, str) and thumb.startswith(("http://", "https://")) else None
-    return stream_url, thumbnail_url
+    return stream_url, thumbnail_url, is_ip_bound
 
 
 def _should_proxy_remote_media(url: str | None) -> bool:
@@ -478,7 +498,7 @@ async def _refresh_shot_media_url(request: Request, shot_id: int, failed_url: st
 
     # Run blocking yt-dlp network call in a thread to avoid blocking the event loop
     loop = asyncio.get_running_loop()
-    fresh_stream_url, fresh_thumbnail_url = await loop.run_in_executor(
+    fresh_stream_url, fresh_thumbnail_url, _ip_bound = await loop.run_in_executor(
         None, _resolve_ytdlp_stream_url, page_url
     )
     if not fresh_stream_url:
@@ -531,6 +551,8 @@ async def resolve_stream(shot_id: int, request: Request):
             "shot_id": shot_id,
             "source_url": current_source_url,
             "local_url": _build_local_url(current_source_url),
+            "direct_url": None,
+            "ip_bound": False,
             "refreshed": False,
         })
 
@@ -541,7 +563,7 @@ async def resolve_stream(shot_id: int, request: Request):
     fresh_stream_url: str | None = None
     fresh_thumbnail_url: str | None = None
     for _attempt in range(2):
-        _url, _thumb = await loop.run_in_executor(
+        _url, _thumb, _ip = await loop.run_in_executor(
             None, _resolve_ytdlp_stream_url, page_url
         )
         if not _url:
@@ -553,10 +575,13 @@ async def resolve_stream(shot_id: int, request: Request):
         _logger.debug("resolve-stream attempt %d returned ip-bound URL, retrying", _attempt + 1)
 
     if not fresh_stream_url or fresh_stream_url == current_source_url:
+        _curr_ip_bound = _has_ip_bound_token(current_source_url) if current_source_url else False
         return JSONResponse({
             "shot_id": shot_id,
             "source_url": current_source_url,
             "local_url": _build_local_url(current_source_url),
+            "direct_url": current_source_url if _curr_ip_bound else None,
+            "ip_bound": _curr_ip_bound,
             "refreshed": False,
         })
 
@@ -568,7 +593,8 @@ async def resolve_stream(shot_id: int, request: Request):
         thumbnail_url=fresh_thumbnail_url,
     )
 
-    _token_kind = "ip-bound" if _has_ip_bound_token(fresh_stream_url) else "path-auth"
+    is_ip_bound = _has_ip_bound_token(fresh_stream_url)
+    _token_kind = "ip-bound" if is_ip_bound else "path-auth"
     _is_hls = ".m3u8" in fresh_stream_url
     _logger.info(
         "Resolved fresh stream for shot %d: %s %s",
@@ -578,6 +604,8 @@ async def resolve_stream(shot_id: int, request: Request):
         "shot_id": shot_id,
         "source_url": fresh_stream_url,
         "local_url": new_local_url,
+        "direct_url": fresh_stream_url if is_ip_bound else None,
+        "ip_bound": is_ip_bound,
         "refreshed": True,
     })
 

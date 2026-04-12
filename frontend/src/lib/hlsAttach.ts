@@ -139,18 +139,28 @@ export type AttachMediaOptions = {
 // In-flight resolve-stream dedup: if two components request a resolve for the
 // same shot concurrently, share the same promise.
 // ---------------------------------------------------------------------------
-const _inflightResolves = new Map<number, Promise<string | null>>()
+type ResolveResult = {
+  local_url: string | null
+  direct_url: string | null
+  ip_bound: boolean
+}
+
+const _inflightResolves = new Map<number, Promise<ResolveResult | null>>()
 
 /**
  * Ask the backend to resolve a fresh stream URL for a ytdlp screenshot.
- * Returns the new local_url proxy path, or null if refresh wasn't possible.
+ * Returns the resolve result with local_url, direct_url, and ip_bound flag.
  */
-async function resolveStreamUrl(shotId: number): Promise<string | null> {
+async function resolveStreamUrl(shotId: number): Promise<ResolveResult | null> {
   const existing = _inflightResolves.get(shotId)
   if (existing) return existing
 
   const p = api.resolveStream(shotId)
-    .then((res) => res.local_url || null)
+    .then((res) => ({
+      local_url: res.local_url || null,
+      direct_url: res.direct_url || null,
+      ip_bound: res.ip_bound ?? false,
+    }))
     .catch(() => null)
     .finally(() => { _inflightResolves.delete(shotId) })
 
@@ -250,10 +260,18 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
           retryCount++
           // Destroy the current hls instance and re-resolve
           if (hls) { hls.destroy(); hls = null }
-          resolveStreamUrl(shotId!).then((freshUrl) => {
+          resolveStreamUrl(shotId!).then((result) => {
             if (destroyed) return
-            if (freshUrl) {
-              startHls(freshUrl)
+            if (result?.ip_bound && result?.direct_url) {
+              // IP-bound URL — switch to direct playback
+              video.src = result.direct_url
+              const onMeta = () => {
+                video.removeEventListener("loadedmetadata", onMeta)
+                tryPlay()
+              }
+              video.addEventListener("loadedmetadata", onMeta)
+            } else if (result?.local_url) {
+              startHls(result.local_url)
             } else {
               // Couldn't resolve — try restarting with original src
               startHls(hlsSrc)
@@ -299,9 +317,20 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
 
   // ── Pre-flight: resolve fresh URL for ytdlp sources ────────────────────
   if (needsResolve) {
-    resolveStreamUrl(shotId!).then((freshUrl) => {
+    resolveStreamUrl(shotId!).then((result) => {
       if (destroyed) return
-      startHls(freshUrl || src)
+      if (result?.ip_bound && result?.direct_url) {
+        // IP-bound URL — bypass proxy, play directly via <video src>
+        // The <video> element can load cross-origin media without CORS
+        video.src = result.direct_url
+        const onMeta = () => {
+          video.removeEventListener("loadedmetadata", onMeta)
+          tryPlay()
+        }
+        video.addEventListener("loadedmetadata", onMeta)
+      } else {
+        startHls(result?.local_url || src)
+      }
     })
   } else {
     startHls(src)
