@@ -3,6 +3,23 @@ import Hls from "hls.js"
 const PROXY_PATH = "/api/screenshots/proxy-media"
 const PROXY_QUERY = "url="
 
+/** Browsers block unmuted autoplay without a user gesture — always set before programmatic play(). */
+function prepareAutoplay(video: HTMLVideoElement) {
+  video.muted = true
+  video.playsInline = true
+  try {
+    video.setAttribute("playsinline", "")
+    video.setAttribute("webkit-playsinline", "")
+  } catch {
+    /* ignore */
+  }
+}
+
+function attemptPlay(video: HTMLVideoElement) {
+  prepareAutoplay(video)
+  return video.play()
+}
+
 /** True when the URL points at an HLS playlist (including proxied URLs that encode `.m3u8`). */
 export function isHlsUrl(url: string | null | undefined): boolean {
   if (!url) return false
@@ -57,7 +74,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
 
   const tryPlay = () => {
     if (!tryAutoplay) return
-    void video.play().catch(() => {})
+    void attemptPlay(video).catch(() => {})
   }
 
   if (!isHlsUrl(src)) {
@@ -74,8 +91,9 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     }
   }
 
-  const hlsConfig = {
-    enableWorker: true,
+  const hlsConfig: ConstructorParameters<typeof Hls>[0] = {
+    // Worker transmux can race MSE attachment on some browsers; main thread is more predictable.
+    enableWorker: false,
     lowLatencyMode: false,
     xhrSetup(xhr: XMLHttpRequest, url: string) {
       const proxied = rewriteMediaUrlForProxy(url)
@@ -88,10 +106,25 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     hls.loadSource(src)
     hls.attachMedia(video)
     hls.on(Hls.Events.MANIFEST_PARSED, tryPlay)
-    const onError = (_: string, data: { fatal?: boolean }) => {
-      if (data.fatal) {
-        onFatalError?.()
+    const onError = (_: string, data: { fatal?: boolean; type?: string }) => {
+      if (!data.fatal) return
+      if (data.type === "networkError") {
+        try {
+          hls.startLoad()
+        } catch {
+          onFatalError?.()
+        }
+        return
       }
+      if (data.type === "mediaError") {
+        try {
+          hls.recoverMediaError()
+        } catch {
+          onFatalError?.()
+        }
+        return
+      }
+      onFatalError?.()
     }
     hls.on(Hls.Events.ERROR, onError)
     return () => {

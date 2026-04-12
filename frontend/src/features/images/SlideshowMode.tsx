@@ -207,6 +207,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
           <video
             ref={videoRef}
             playsInline
+            muted
             onEnded={handleVideoEnded}
             onError={() => { markMediaBroken(); setVideoLoadFailed(true) }}
             className="max-h-[90vh] max-w-[95vw] object-contain"

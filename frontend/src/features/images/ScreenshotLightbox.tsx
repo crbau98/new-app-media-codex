@@ -565,6 +565,7 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
                 poster={posterSrc || undefined}
                 loop
                 playsInline
+                muted
                 controls
                 className="max-h-[80vh] max-w-[95vw] object-contain mx-auto rounded-lg"
                 onCanPlay={(e) => { (e.target as HTMLVideoElement).playbackRate = playbackRate }}

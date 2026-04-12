@@ -114,7 +114,7 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
   const [duration, setDuration] = useState(0)
   const [buffered, setBuffered] = useState(0)
   const [volume, setVolume] = useState(1)
-  const [muted, setMuted] = useState(false)
+  const [muted, setMuted] = useState(true)
   const [loop, setLoop] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -150,6 +150,11 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
     if (!v || !currentIsVideo || !src) return
     return attachMediaSource(v, src, { tryAutoplay: true, onFatalError: markMediaBroken })
   }, [currentIsVideo, src])
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (v) v.muted = muted
+  }, [muted])
 
   const syncTime = useCallback(() => {
     const v = videoRef.current
