@@ -1,5 +1,6 @@
 import Hls, { XhrLoader } from "hls.js"
 import { apiUrl, getPublicOrigin } from "./backendOrigin"
+import { api } from "./api"
 
 const PROXY_PATH = "/api/screenshots/proxy-media"
 const PROXY_QUERY = "url="
@@ -128,17 +129,47 @@ export type AttachMediaOptions = {
   tryAutoplay?: boolean
   /** HLS fatal network / media errors (after xhr rewrite, etc.). */
   onFatalError?: () => void
+  /** Screenshot ID — if provided, enables pre-flight stream resolution & retry on expired tokens. */
+  shotId?: number
+}
+
+// ---------------------------------------------------------------------------
+// In-flight resolve-stream dedup: if two components request a resolve for the
+// same shot concurrently, share the same promise.
+// ---------------------------------------------------------------------------
+const _inflightResolves = new Map<number, Promise<string | null>>()
+
+/**
+ * Ask the backend to resolve a fresh stream URL for a ytdlp screenshot.
+ * Returns the new local_url proxy path, or null if refresh wasn't possible.
+ */
+async function resolveStreamUrl(shotId: number): Promise<string | null> {
+  const existing = _inflightResolves.get(shotId)
+  if (existing) return existing
+
+  const p = api.resolveStream(shotId)
+    .then((res) => res.local_url || null)
+    .catch(() => null)
+    .finally(() => { _inflightResolves.delete(shotId) })
+
+  _inflightResolves.set(shotId, p)
+  return p
 }
 
 /**
- * Attach progressive or HLS media to a &lt;video&gt; element. For `.m3u8` in Chrome/Firefox/Edge,
+ * Attach progressive or HLS media to a <video> element. For `.m3u8` in Chrome/Firefox/Edge,
  * uses hls.js with **all** playlist/segment/key requests rewritten through `/api/screenshots/proxy-media`
  * so segment fetches are same-origin (CDN URLs in the m3u8 would otherwise fail CORS in XHR).
  * Safari/iOS: uses the same path when MSE is available; falls back to native HLS when not.
+ *
+ * When `shotId` is provided and the source is an HLS stream, a pre-flight resolve-stream
+ * call ensures the CDN token is fresh before playback begins. On fatal HLS errors the
+ * resolve is retried once and the player reloads.
  */
 export function attachMediaSource(video: HTMLVideoElement, src: string, options?: AttachMediaOptions): () => void {
   const tryAutoplay = options?.tryAutoplay ?? false
   const onFatalError = options?.onFatalError
+  const shotId = options?.shotId
   video.removeAttribute("src")
 
   const tryPlay = () => {
@@ -160,12 +191,25 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     }
   }
 
+  // ── HLS path ──────────────────────────────────────────────────────────────
+
+  // We track cleanup across async pre-flight + HLS instantiation.
+  let destroyed = false
+  let hls: Hls | null = null
+
+  const cleanup = () => {
+    destroyed = true
+    if (hls) {
+      hls.destroy()
+      hls = null
+    }
+    video.removeAttribute("src")
+    video.load()
+  }
+
   const hlsConfig: ConstructorParameters<typeof Hls>[0] = {
-    // Worker transmux can race MSE attachment on some browsers; main thread is more predictable.
     enableWorker: false,
     lowLatencyMode: false,
-    // Stay on XhrLoader + non-progressive mode so xhrSetup runs for every fragment/key request.
-    // If progressive streaming is enabled, FetchLoader is used unless fetchSetup is set below.
     progressive: false,
     loader: XhrLoader,
     xhrSetup(xhr: XMLHttpRequest, url: string) {
@@ -178,63 +222,85 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     },
   }
 
-  if (Hls.isSupported()) {
-    const hls = new Hls(hlsConfig)
-    hls.loadSource(absoluteMediaRequestUrl(src))
-    hls.attachMedia(video)
-    hls.on(Hls.Events.MANIFEST_PARSED, tryPlay)
-    const onError = (_: string, data: { fatal?: boolean; type?: string }) => {
-      if (!data.fatal) return
-      if (data.type === "networkError") {
-        try {
-          hls.startLoad()
-        } catch {
-          onFatalError?.()
-        }
-        return
-      }
-      if (data.type === "mediaError") {
-        try {
-          hls.recoverMediaError()
-        } catch {
-          onFatalError?.()
-        }
-        return
-      }
-      onFatalError?.()
-    }
-    hls.on(Hls.Events.ERROR, onError)
-    return () => {
-      hls.off(Hls.Events.ERROR, onError)
-      hls.destroy()
-      video.removeAttribute("src")
-      video.load()
-    }
-  }
+  let retryCount = 0
+  const MAX_RETRIES = 1
 
-  if (video.canPlayType("application/vnd.apple.mpegurl")) {
-    video.src = absoluteMediaRequestUrl(src)
+  /**
+   * Create and start an hls.js instance for `hlsSrc`.
+   */
+  function startHls(hlsSrc: string) {
+    if (destroyed) return
+
+    if (Hls.isSupported()) {
+      hls = new Hls(hlsConfig)
+      hls.loadSource(absoluteMediaRequestUrl(hlsSrc))
+      hls.attachMedia(video)
+      hls.on(Hls.Events.MANIFEST_PARSED, tryPlay)
+
+      const onError = (_: string, data: { fatal?: boolean; type?: string }) => {
+        if (!data.fatal) return
+
+        // On fatal network error, try resolving a fresh URL (once)
+        if (data.type === "networkError" && shotId && retryCount < MAX_RETRIES) {
+          retryCount++
+          // Destroy the current hls instance and re-resolve
+          if (hls) { hls.destroy(); hls = null }
+          resolveStreamUrl(shotId).then((freshUrl) => {
+            if (destroyed) return
+            if (freshUrl) {
+              startHls(freshUrl)
+            } else {
+              // Couldn't resolve — try restarting with original src
+              startHls(hlsSrc)
+            }
+          })
+          return
+        }
+
+        // Standard recovery attempts
+        if (data.type === "networkError") {
+          try { hls?.startLoad() } catch { onFatalError?.() }
+          return
+        }
+        if (data.type === "mediaError") {
+          try { hls?.recoverMediaError() } catch { onFatalError?.() }
+          return
+        }
+        onFatalError?.()
+      }
+      hls!.on(Hls.Events.ERROR, onError)
+      return
+    }
+
+    // Safari native HLS fallback
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = absoluteMediaRequestUrl(hlsSrc)
+      const onMeta = () => {
+        video.removeEventListener("loadedmetadata", onMeta)
+        tryPlay()
+      }
+      video.addEventListener("loadedmetadata", onMeta)
+      return
+    }
+
+    // Last resort
+    video.src = absoluteMediaRequestUrl(hlsSrc)
     const onMeta = () => {
       video.removeEventListener("loadedmetadata", onMeta)
       tryPlay()
     }
     video.addEventListener("loadedmetadata", onMeta)
-    return () => {
-      video.removeEventListener("loadedmetadata", onMeta)
-      video.removeAttribute("src")
-      video.load()
-    }
   }
 
-  video.src = absoluteMediaRequestUrl(src)
-  const onMeta = () => {
-    video.removeEventListener("loadedmetadata", onMeta)
-    tryPlay()
+  // ── Pre-flight: resolve fresh URL if shotId is available ────────────────
+  if (shotId) {
+    resolveStreamUrl(shotId).then((freshUrl) => {
+      if (destroyed) return
+      startHls(freshUrl || src)
+    })
+  } else {
+    startHls(src)
   }
-  video.addEventListener("loadedmetadata", onMeta)
-  return () => {
-    video.removeEventListener("loadedmetadata", onMeta)
-    video.removeAttribute("src")
-    video.load()
-  }
+
+  return cleanup
 }

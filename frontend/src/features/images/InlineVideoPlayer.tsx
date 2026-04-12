@@ -148,8 +148,8 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
   useEffect(() => {
     const v = videoRef.current
     if (!v || !currentIsVideo || !src) return
-    return attachMediaSource(v, src, { tryAutoplay: true, onFatalError: markMediaBroken })
-  }, [currentIsVideo, src])
+    return attachMediaSource(v, src, { tryAutoplay: true, onFatalError: markMediaBroken, shotId: shot.id })
+  }, [currentIsVideo, src, shot.id])
 
   useEffect(() => {
     const v = videoRef.current

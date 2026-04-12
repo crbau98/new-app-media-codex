@@ -443,6 +443,74 @@ async def _refresh_shot_media_url(request: Request, shot_id: int, failed_url: st
     return fresh_stream_url
 
 
+@router.post("/{shot_id}/resolve-stream")
+async def resolve_stream(shot_id: int, request: Request):
+    """Pre-resolve a fresh HLS/video stream URL for a screenshot via yt-dlp.
+
+    Called by the frontend before playback so the player always starts with a
+    valid (non-expired) CDN token.  Returns the updated local_url proxy path
+    that the frontend can feed directly into hls.js / <video src>.
+    """
+    db: Database = request.app.state.db
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT id, source, page_url, source_url, local_url FROM screenshots WHERE id = ?",
+            (shot_id,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Screenshot not found")
+    source = str(row["source"] or "").lower()
+    page_url = str(row["page_url"] or "")
+    current_source_url = str(row["source_url"] or "")
+
+    if source != "ytdlp" or not page_url:
+        # Nothing to refresh — return whatever we have
+        return JSONResponse({
+            "shot_id": shot_id,
+            "source_url": current_source_url,
+            "local_url": str(row["local_url"] or ""),
+            "refreshed": False,
+        })
+
+    loop = asyncio.get_running_loop()
+    fresh_stream_url, fresh_thumbnail_url = await loop.run_in_executor(
+        None, _resolve_ytdlp_stream_url, page_url
+    )
+
+    if not fresh_stream_url or fresh_stream_url == current_source_url:
+        return JSONResponse({
+            "shot_id": shot_id,
+            "source_url": current_source_url,
+            "local_url": str(row["local_url"] or ""),
+            "refreshed": False,
+        })
+
+    # Build the new local_url proxy path
+    from urllib.parse import quote
+    new_local_url = f"/api/screenshots/proxy-media?url={quote(fresh_stream_url, safe='')}&shot_id={shot_id}"
+
+    db.update_screenshot_media_urls(
+        screenshot_id=shot_id,
+        source_url=fresh_stream_url,
+        thumbnail_url=fresh_thumbnail_url,
+    )
+    # Also update local_url in the DB so future grid loads get the fresh proxy path
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE screenshots SET local_url = ? WHERE id = ?",
+            (new_local_url, shot_id),
+        )
+        conn.commit()
+
+    _logger.info("Resolved fresh stream for shot %d", shot_id)
+    return JSONResponse({
+        "shot_id": shot_id,
+        "source_url": fresh_stream_url,
+        "local_url": new_local_url,
+        "refreshed": True,
+    })
+
+
 @router.get("/proxy-media")
 async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default=None, ge=1), request: Request = None):
     """Proxy a remote image/video URL via streaming to avoid CORS and hotlink issues."""

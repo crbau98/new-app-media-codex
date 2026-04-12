@@ -586,6 +586,11 @@ export const api = {
     apiFetch<{ tags: UserTagCount[] }>("/api/screenshots/all-tags").then((r) => r.tags),
   updateScreenshotTags: (id: number, tags: string[]) =>
     apiFetch<Screenshot>(`/api/screenshots/${id}/tags`, { method: "PATCH", body: JSON.stringify({ tags }) }),
+  resolveStream: (shotId: number) =>
+    apiFetch<{ shot_id: number; source_url: string; local_url: string; refreshed: boolean }>(
+      `/api/screenshots/${shotId}/resolve-stream`,
+      { method: "POST" },
+    ),
   activity: () => apiFetch<ActivityEvent[]>('/api/activity'),
   search: (q: string, limit = 20, signal?: AbortSignal) =>
     apiFetch<SearchResult[]>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`, { signal }),
