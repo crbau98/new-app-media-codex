@@ -41,6 +41,11 @@ _VIDEO_CONTENT_PREFIXES = ("video/",)
 _REMOTE_MEDIA_PROBE_TTL = 900
 _PROXY_ONLY_HOSTS: tuple[str, ...] = ()
 
+# UI may be on another origin (e.g. Vercel) while this API is on Render. Documents
+# with COEP or CDNs that default to restrictive CORP can block cross-origin <video>
+# / <img> unless the media response explicitly opts in.
+_CROSS_ORIGIN_MEDIA_HEADERS = {"Cross-Origin-Resource-Policy": "cross-origin"}
+
 # Sources / netloc suffixes where server-side proxying HURTS rather than helps.
 # NOTE: coomer.st and kemono.su were previously excluded because we suspected
 # datacenter IPs were blocked. Tests confirm the Render IP CAN reach both hosts.
@@ -320,7 +325,7 @@ async def proxy_media(url: str = Query(...), request: Request = None):
             return Response(
                 content=body,
                 media_type=ct,
-                headers={"Cache-Control": "public, max-age=86400"},
+                headers={**_CROSS_ORIGIN_MEDIA_HEADERS, "Cache-Control": "public, max-age=86400"},
             )
 
     client: httpx.AsyncClient = request.app.state.http_client
@@ -378,7 +383,7 @@ async def proxy_media(url: str = Query(...), request: Request = None):
             return Response(
                 content=body,
                 media_type=content_type,
-                headers={"Cache-Control": "public, max-age=86400"},
+                headers={**_CROSS_ORIGIN_MEDIA_HEADERS, "Cache-Control": "public, max-age=86400"},
             )
 
     # Use larger chunks for video to reduce syscall overhead
@@ -396,6 +401,7 @@ async def proxy_media(url: str = Query(...), request: Request = None):
     # GZipMiddleware otherwise compresses streaming bodies when Accept-Encoding: gzip.
     # Browsers do not gunzip <video> streams — they must receive raw MP4/WebM bytes.
     resp_headers = {
+        **_CROSS_ORIGIN_MEDIA_HEADERS,
         "Cache-Control": "public, max-age=86400",
         "X-Accel-Buffering": "no",
         "Content-Encoding": "identity",
@@ -529,7 +535,11 @@ def _placeholder_poster_response() -> Response:
     return Response(
         content=_PLACEHOLDER_POSTER_BYTES,
         media_type="image/jpeg",
-        headers={"Cache-Control": "public, max-age=30", "X-Content-Type-Options": "nosniff"},
+        headers={
+            **_CROSS_ORIGIN_MEDIA_HEADERS,
+            "Cache-Control": "public, max-age=30",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -688,14 +698,22 @@ async def video_poster(shot_id: int, request: Request):
     if _poster_is_cached(shot_id):
         return FileResponse(
             str(poster_path), media_type="image/jpeg",
-            headers={"Cache-Control": "public, max-age=604800", "X-Content-Type-Options": "nosniff"},
+            headers={
+                **_CROSS_ORIGIN_MEDIA_HEADERS,
+                "Cache-Control": "public, max-age=604800",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
     # Fallback: stat check in case the in-memory cache missed (e.g. generated before cache init)
     if poster_path.exists() and poster_path.stat().st_size > 0:
         _mark_poster_cached(shot_id)
         return FileResponse(
             str(poster_path), media_type="image/jpeg",
-            headers={"Cache-Control": "public, max-age=604800", "X-Content-Type-Options": "nosniff"},
+            headers={
+                **_CROSS_ORIGIN_MEDIA_HEADERS,
+                "Cache-Control": "public, max-age=604800",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     if not _POSTER_SEMAPHORE._value:  # No slots immediately available
@@ -715,7 +733,7 @@ async def video_poster(shot_id: int, request: Request):
                 _mark_poster_cached(shot_id)
                 return FileResponse(
                     str(poster_path), media_type="image/jpeg",
-                    headers={"Cache-Control": "public, max-age=604800"},
+                    headers={**_CROSS_ORIGIN_MEDIA_HEADERS, "Cache-Control": "public, max-age=604800"},
                 )
 
             db = request.app.state.db
@@ -754,7 +772,11 @@ async def video_poster(shot_id: int, request: Request):
                     _mark_poster_cached(shot_id)
                     return FileResponse(
                         str(poster_path), media_type="image/jpeg",
-                        headers={"Cache-Control": "public, max-age=604800", "X-Content-Type-Options": "nosniff"},
+                        headers={
+                            **_CROSS_ORIGIN_MEDIA_HEADERS,
+                            "Cache-Control": "public, max-age=604800",
+                            "X-Content-Type-Options": "nosniff",
+                        },
                     )
 
             # 4. ffmpeg streaming fallback
@@ -762,7 +784,11 @@ async def video_poster(shot_id: int, request: Request):
                 _mark_poster_cached(shot_id)
                 return FileResponse(
                     str(poster_path), media_type="image/jpeg",
-                    headers={"Cache-Control": "public, max-age=604800", "X-Content-Type-Options": "nosniff"},
+                    headers={
+                        **_CROSS_ORIGIN_MEDIA_HEADERS,
+                        "Cache-Control": "public, max-age=604800",
+                        "X-Content-Type-Options": "nosniff",
+                    },
                 )
 
             return _placeholder_poster_response()
