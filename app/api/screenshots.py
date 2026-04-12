@@ -352,7 +352,7 @@ def _allow_local_media(app_state) -> bool:
 router = APIRouter(prefix="/api/screenshots", tags=["screenshots"])
 
 
-def _refresh_shot_media_url(request: Request, shot_id: int, failed_url: str) -> str | None:
+async def _refresh_shot_media_url(request: Request, shot_id: int, failed_url: str) -> str | None:
     """Attempt to refresh an expired ytdlp stream URL for a screenshot row."""
     db: Database = request.app.state.db
     with db.connect() as conn:
@@ -368,7 +368,11 @@ def _refresh_shot_media_url(request: Request, shot_id: int, failed_url: str) -> 
     if source != "ytdlp" or not page_url:
         return None
 
-    fresh_stream_url, fresh_thumbnail_url = _resolve_ytdlp_stream_url(page_url)
+    # Run blocking yt-dlp network call in a thread to avoid blocking the event loop
+    loop = asyncio.get_running_loop()
+    fresh_stream_url, fresh_thumbnail_url = await loop.run_in_executor(
+        None, _resolve_ytdlp_stream_url, page_url
+    )
     if not fresh_stream_url:
         return None
     if fresh_stream_url == current_source_url or fresh_stream_url == failed_url:
@@ -438,7 +442,7 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
             content={"error": "proxy_media_failed", "detail": f"Could not fetch media: {exc}"},
         )
     if resp.status_code >= 400 and shot_id and _is_refreshable_upstream_status(resp.status_code):
-        refreshed_url = _refresh_shot_media_url(request, int(shot_id), failed_url=target_url)
+        refreshed_url = await _refresh_shot_media_url(request, int(shot_id), failed_url=target_url)
         if refreshed_url:
             await resp.aclose()
             target_url = refreshed_url
