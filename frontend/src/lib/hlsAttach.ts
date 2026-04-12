@@ -34,10 +34,31 @@ function attemptPlay(video: HTMLVideoElement) {
   return video.play()
 }
 
-/** True when the URL points at an HLS playlist (including proxied URLs that encode `.m3u8`). */
+/**
+ * True when the URL points at an HLS playlist (including proxied URLs that encode `.m3u8`).
+ * We only match a path ending in `.m3u8`. A bare `/m3u8/i` substring anywhere in the URL
+ * false-positived on long CDN/query strings and sent progressive MP4 through hls.js (blob:
+ * src + infinite buffering).
+ */
 export function isHlsUrl(url: string | null | undefined): boolean {
   if (!url) return false
-  return /m3u8/i.test(url)
+  let probe = url.trim()
+  const marker = "/api/screenshots/proxy-media?url="
+  const markerIdx = probe.indexOf(marker)
+  if (markerIdx !== -1) {
+    try {
+      const encoded = probe.slice(markerIdx + marker.length).split("&")[0]
+      probe = decodeURIComponent(encoded)
+    } catch {
+      return false
+    }
+  }
+  try {
+    const u = new URL(probe, "https://placeholder.invalid/")
+    return /\.m3u8$/i.test(u.pathname)
+  } catch {
+    return /\.m3u8($|[?#])/i.test(probe)
+  }
 }
 
 /**
