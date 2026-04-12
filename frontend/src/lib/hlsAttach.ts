@@ -1,7 +1,8 @@
-import Hls from "hls.js"
+import Hls, { XhrLoader } from "hls.js"
 
 const PROXY_PATH = "/api/screenshots/proxy-media"
 const PROXY_QUERY = "url="
+const SCREENSHOTS_API_PREFIX = "/api/screenshots/"
 
 /** Browsers block unmuted autoplay without a user gesture — always set before programmatic play(). */
 function prepareAutoplay(video: HTMLVideoElement) {
@@ -27,10 +28,44 @@ export function isHlsUrl(url: string | null | undefined): boolean {
 }
 
 /**
+ * hls.js resolves relative segment URIs against the playlist response URL. When the playlist
+ * was fetched via `/api/screenshots/proxy-media?url=<encoded m3u8>`, that produces same-origin
+ * paths like `/api/screenshots/segment001.ts?url=...` instead of CDN URLs. The erroneous path
+ * still carries the real playlist URL in the inherited `url` query — use it to rebuild the
+ * correct absolute segment URL, then normal proxying applies.
+ */
+function fixMisresolvedProxyRelativeUrl(url: string): string {
+  if (!url || typeof window === "undefined") return url
+  try {
+    const u = new URL(url, window.location.origin)
+    if (u.origin !== window.location.origin) return url
+    if (!u.pathname.startsWith(SCREENSHOTS_API_PREFIX)) return url
+    const afterPrefix = u.pathname.slice(SCREENSHOTS_API_PREFIX.length)
+    if (!afterPrefix || afterPrefix === "proxy-media" || afterPrefix.startsWith("proxy-media/")) {
+      return url
+    }
+    const inner = u.searchParams.get("url")
+    if (!inner) return url
+    let playlistUrl: string
+    try {
+      playlistUrl = decodeURIComponent(inner)
+    } catch {
+      return url
+    }
+    if (!/^https?:\/\//i.test(playlistUrl)) return url
+    const baseDir = new URL("./", playlistUrl).href
+    return new URL(afterPrefix, baseDir).href
+  } catch {
+    return url
+  }
+}
+
+/**
  * Route cross-origin media through our proxy so XHR (hls.js) avoids CDN CORS blocks.
  * Leaves same-origin proxy URLs and relative /api paths unchanged.
  */
 export function rewriteMediaUrlForProxy(url: string): string {
+  url = fixMisresolvedProxyRelativeUrl(url)
   if (!url) return url
   if (url.startsWith(`${PROXY_PATH}?${PROXY_QUERY}`)) {
     return url
@@ -95,9 +130,17 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     // Worker transmux can race MSE attachment on some browsers; main thread is more predictable.
     enableWorker: false,
     lowLatencyMode: false,
+    // Stay on XhrLoader + non-progressive mode so xhrSetup runs for every fragment/key request.
+    // If progressive streaming is enabled, FetchLoader is used unless fetchSetup is set below.
+    progressive: false,
+    loader: XhrLoader,
     xhrSetup(xhr: XMLHttpRequest, url: string) {
       const proxied = rewriteMediaUrlForProxy(url)
       xhr.open("GET", proxied, true)
+    },
+    fetchSetup(context, initParams) {
+      const u = rewriteMediaUrlForProxy(context.url)
+      return new Request(u, initParams)
     },
   }
 
