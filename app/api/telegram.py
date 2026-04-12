@@ -231,6 +231,8 @@ async def stream_video(media_id: int, request: Request):
             status_code=206,
             media_type=mime_type,
             headers={
+                # See proxy-media: GZipMiddleware must not compress video streams.
+                "Content-Encoding": "identity",
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Accept-Ranges": "bytes",
                 "Content-Length": str(length),
@@ -241,7 +243,10 @@ async def stream_video(media_id: int, request: Request):
             async for chunk in client.stream_media(message):
                 yield chunk
 
-        headers = {"Accept-Ranges": "bytes"}
+        headers: dict[str, str] = {
+            "Accept-Ranges": "bytes",
+            "Content-Encoding": "identity",
+        }
         if file_size:
             headers["Content-Length"] = str(file_size)
 

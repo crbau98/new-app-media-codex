@@ -393,7 +393,13 @@ async def proxy_media(url: str = Query(...), request: Request = None):
         finally:
             await resp.aclose()
 
-    resp_headers = {"Cache-Control": "public, max-age=86400", "X-Accel-Buffering": "no"}
+    # GZipMiddleware otherwise compresses streaming bodies when Accept-Encoding: gzip.
+    # Browsers do not gunzip <video> streams — they must receive raw MP4/WebM bytes.
+    resp_headers = {
+        "Cache-Control": "public, max-age=86400",
+        "X-Accel-Buffering": "no",
+        "Content-Encoding": "identity",
+    }
     resp_headers["Content-Disposition"] = "inline"
     resp_headers["X-Content-Type-Options"] = "nosniff"
     # Propagate content-length and range headers for video seeking
