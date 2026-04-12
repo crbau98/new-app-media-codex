@@ -1849,6 +1849,30 @@ class Database:
             conn.commit()
         self._invalidate_after_write()
 
+    def update_screenshot_media_urls(
+        self,
+        screenshot_id: int,
+        source_url: str,
+        thumbnail_url: str | None = None,
+    ) -> bool:
+        """Update media URLs for an existing screenshot row."""
+        updates = ["source_url = ?"]
+        params: list[Any] = [source_url]
+        if thumbnail_url:
+            updates.append("thumbnail_url = ?")
+            params.append(thumbnail_url)
+        params.append(screenshot_id)
+        with self.connect() as conn:
+            cur = conn.execute(
+                f"UPDATE screenshots SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            conn.commit()
+        if cur.rowcount > 0:
+            self._invalidate_after_write()
+            return True
+        return False
+
     def search_screenshots(self, query: str, limit: int = 50) -> list[dict]:
         cache_key = f"search_screenshots:{query.strip().lower()}:{limit}"
 

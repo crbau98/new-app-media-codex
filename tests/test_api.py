@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -188,3 +189,162 @@ class TestThemesAPI:
     def test_delete_nonexistent_theme_returns_404(self, app_client) -> None:
         resp = app_client.delete("/api/settings/themes/does_not_exist_xyz")
         assert resp.status_code == 404
+
+
+class _FakeUpstreamResponse:
+    def __init__(self, status_code: int, *, content_type: str, body: bytes = b"", extra_headers: dict[str, str] | None = None):
+        self.status_code = status_code
+        self.headers = {"content-type": content_type, **(extra_headers or {})}
+        self._body = body
+        self.closed = False
+
+    async def aiter_bytes(self, chunk_size: int = 65536):
+        for i in range(0, len(self._body), max(1, chunk_size)):
+            yield self._body[i:i + chunk_size]
+
+    async def aread(self) -> bytes:
+        return self._body
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class _FakeHttpClient:
+    def __init__(self, responses: list[_FakeUpstreamResponse]):
+        self._responses = responses
+        self.requested_urls: list[str] = []
+
+    def build_request(self, method: str, url: str, headers: dict[str, str] | None = None):
+        return {"method": method, "url": url, "headers": headers or {}}
+
+    async def send(self, request_obj, stream: bool = True):
+        self.requested_urls.append(request_obj["url"])
+        if not self._responses:
+            raise RuntimeError("No fake responses configured")
+        return self._responses.pop(0)
+
+
+@pytest.fixture
+def screenshots_client(test_db):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.api.screenshots import router as screenshots_router
+
+    app = FastAPI()
+    app.state.db = test_db
+    app.state.settings = SimpleNamespace(stream_only_media=True)
+    app.state.http_client = _FakeHttpClient([])
+    app.include_router(screenshots_router)
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        yield client
+
+
+class TestScreenshotsProxyRefresh:
+    def test_proxy_refreshes_ytdlp_stream_on_expired_url(self, screenshots_client, test_db, monkeypatch) -> None:
+        from app.api import screenshots as screenshots_api
+
+        test_db.insert_screenshot(
+            term="test",
+            source="ytdlp",
+            page_url="https://example.test/watch/123",
+            source_url="https://old-cdn.example.test/video.mp4",
+            thumbnail_url="https://old-cdn.example.test/thumb.jpg",
+        )
+        with test_db.connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM screenshots WHERE page_url = ?",
+                ("https://example.test/watch/123",),
+            ).fetchone()
+            shot_id = int(row["id"])
+
+        fake_client = _FakeHttpClient([
+            _FakeUpstreamResponse(404, content_type="application/json", body=b'{"detail":"old"}'),
+            _FakeUpstreamResponse(
+                206,
+                content_type="video/mp4",
+                body=b"video-bytes",
+                extra_headers={"content-length": "11", "accept-ranges": "bytes", "content-range": "bytes 0-10/11"},
+            ),
+        ])
+        screenshots_client.app.state.http_client = fake_client
+        monkeypatch.setattr(
+            screenshots_api,
+            "_resolve_ytdlp_stream_url",
+            lambda _page_url: ("https://fresh-cdn.example.test/video.mp4", "https://fresh-cdn.example.test/thumb.jpg"),
+        )
+
+        resp = screenshots_client.get(
+            f"/api/screenshots/proxy-media?url=https://old-cdn.example.test/video.mp4&shot_id={shot_id}"
+        )
+        assert resp.status_code == 206
+        assert resp.content == b"video-bytes"
+        assert fake_client.requested_urls == [
+            "https://old-cdn.example.test/video.mp4",
+            "https://fresh-cdn.example.test/video.mp4",
+        ]
+        with test_db.connect() as conn:
+            updated = conn.execute("SELECT source_url FROM screenshots WHERE id = ?", (shot_id,)).fetchone()
+        assert updated["source_url"] == "https://fresh-cdn.example.test/video.mp4"
+
+    def test_proxy_returns_error_when_refresh_cannot_resolve(self, screenshots_client, test_db, monkeypatch) -> None:
+        from app.api import screenshots as screenshots_api
+
+        test_db.insert_screenshot(
+            term="test2",
+            source="ytdlp",
+            page_url="https://example.test/watch/999",
+            source_url="https://gone-cdn.example.test/video.mp4",
+        )
+        with test_db.connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM screenshots WHERE page_url = ?",
+                ("https://example.test/watch/999",),
+            ).fetchone()
+            shot_id = int(row["id"])
+
+        fake_client = _FakeHttpClient([
+            _FakeUpstreamResponse(410, content_type="application/json", body=b'{"detail":"gone"}'),
+        ])
+        screenshots_client.app.state.http_client = fake_client
+        monkeypatch.setattr(screenshots_api, "_resolve_ytdlp_stream_url", lambda _page_url: (None, None))
+
+        resp = screenshots_client.get(
+            f"/api/screenshots/proxy-media?url=https://gone-cdn.example.test/video.mp4&shot_id={shot_id}"
+        )
+        assert resp.status_code == 502
+        assert "Upstream media returned 410" in resp.text
+        assert fake_client.requested_urls == ["https://gone-cdn.example.test/video.mp4"]
+
+    def test_proxy_does_not_refresh_non_ytdlp_rows(self, screenshots_client, test_db, monkeypatch) -> None:
+        from app.api import screenshots as screenshots_api
+
+        test_db.insert_screenshot(
+            term="test3",
+            source="redgifs",
+            page_url="https://redgifs.com/watch/abc",
+            source_url="https://cdn.redgifs.example/clip.mp4",
+        )
+        with test_db.connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM screenshots WHERE page_url = ?",
+                ("https://redgifs.com/watch/abc",),
+            ).fetchone()
+            shot_id = int(row["id"])
+
+        fake_client = _FakeHttpClient([
+            _FakeUpstreamResponse(404, content_type="application/json", body=b'{"detail":"missing"}'),
+        ])
+        screenshots_client.app.state.http_client = fake_client
+        monkeypatch.setattr(
+            screenshots_api,
+            "_resolve_ytdlp_stream_url",
+            lambda _page_url: pytest.fail("refresh resolver should not run for non-ytdlp sources"),
+        )
+
+        resp = screenshots_client.get(
+            f"/api/screenshots/proxy-media?url=https://cdn.redgifs.example/clip.mp4&shot_id={shot_id}"
+        )
+        assert resp.status_code == 404
+        assert "Upstream media returned 404" in resp.text
+        assert fake_client.requested_urls == ["https://cdn.redgifs.example/clip.mp4"]

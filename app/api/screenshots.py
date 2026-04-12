@@ -120,10 +120,63 @@ def _is_remote_media_url(url: str | None) -> bool:
     return bool(url) and url.startswith(("http://", "https://"))
 
 
-def proxy_media_url(url: str) -> str:
+def proxy_media_url(url: str, shot_id: int | None = None) -> str:
     from urllib.parse import quote
 
-    return f"/api/screenshots/proxy-media?url={quote(url, safe='')}"
+    proxied = f"/api/screenshots/proxy-media?url={quote(url, safe='')}"
+    if shot_id:
+        proxied += f"&shot_id={int(shot_id)}"
+    return proxied
+
+
+def _is_refreshable_upstream_status(status_code: int) -> bool:
+    """Return True for upstream statuses where a stream URL refresh may help."""
+    return status_code in {401, 403, 404, 410, 472}
+
+
+def _resolve_ytdlp_stream_url(page_url: str) -> tuple[str | None, str | None]:
+    """Resolve a fresh direct stream URL from a page URL via yt-dlp."""
+    if not page_url.startswith(("http://", "https://")):
+        return None, None
+    try:
+        import yt_dlp
+    except Exception:
+        return None, None
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(page_url, download=False)
+    except Exception:
+        return None, None
+    if not info:
+        return None, None
+
+    stream_url = info.get("url")
+    if not stream_url:
+        formats = info.get("formats") or []
+        for fmt in formats:
+            ext = fmt.get("ext", "")
+            height = fmt.get("height") or 0
+            fmt_url = fmt.get("url")
+            if ext == "mp4" and fmt_url and 0 < height <= 720:
+                stream_url = fmt_url
+        if not stream_url:
+            for fmt in reversed(formats):
+                fmt_url = fmt.get("url")
+                if fmt_url:
+                    stream_url = fmt_url
+                    break
+    if not isinstance(stream_url, str) or not stream_url.startswith(("http://", "https://")):
+        return None, None
+
+    thumb = info.get("thumbnail")
+    thumbnail_url = thumb if isinstance(thumb, str) and thumb.startswith(("http://", "https://")) else None
+    return stream_url, thumbnail_url
 
 
 def _should_proxy_remote_media(url: str | None) -> bool:
@@ -253,7 +306,8 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
         raw_local = existing_local if _is_remote_media_url(existing_local) else source_url
         source_field = str(shot.get("source") or "").lower()
         use_proxy = _should_proxy_media(source_field, raw_local)
-        shot["local_url"] = proxy_media_url(raw_local) if use_proxy else raw_local
+        proxy_shot_id = int(shot["id"]) if source_field == "ytdlp" and shot.get("id") else None
+        shot["local_url"] = proxy_media_url(raw_local, shot_id=proxy_shot_id) if use_proxy else raw_local
         shot["source_url"] = source_url
         # For videos with no stored thumbnail: use our server-side video-poster endpoint
         # (extracts first frame via ffmpeg).  We intentionally do NOT derive coomer.st
@@ -298,24 +352,57 @@ def _allow_local_media(app_state) -> bool:
 router = APIRouter(prefix="/api/screenshots", tags=["screenshots"])
 
 
+def _refresh_shot_media_url(request: Request, shot_id: int, failed_url: str) -> str | None:
+    """Attempt to refresh an expired ytdlp stream URL for a screenshot row."""
+    db: Database = request.app.state.db
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT id, source, page_url, source_url, thumbnail_url FROM screenshots WHERE id = ?",
+            (shot_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    source = str(row["source"] or "").lower()
+    page_url = str(row["page_url"] or "")
+    current_source_url = str(row["source_url"] or "")
+    if source != "ytdlp" or not page_url:
+        return None
+
+    fresh_stream_url, fresh_thumbnail_url = _resolve_ytdlp_stream_url(page_url)
+    if not fresh_stream_url:
+        return None
+    if fresh_stream_url == current_source_url or fresh_stream_url == failed_url:
+        return None
+
+    db.update_screenshot_media_urls(
+        screenshot_id=int(row["id"]),
+        source_url=fresh_stream_url,
+        thumbnail_url=fresh_thumbnail_url,
+    )
+    return fresh_stream_url
+
+
 @router.get("/proxy-media")
-async def proxy_media(url: str = Query(...), request: Request = None):
+async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default=None, ge=1), request: Request = None):
     """Proxy a remote image/video URL via streaming to avoid CORS and hotlink issues."""
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "Invalid URL")
     from starlette.responses import StreamingResponse
 
-    target_origin = urlparse(url)
-    referer = f"{target_origin.scheme}://{target_origin.netloc}/" if target_origin.scheme and target_origin.netloc else url
-    req_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Referer": referer,
-        "Origin": referer.rstrip("/"),
-        "Accept": "image/webp,image/avif,image/apng,image/*,video/*,*/*;q=0.8",
-    }
     range_header = request.headers.get("range") if request else None
-    if range_header:
-        req_headers["Range"] = range_header
+
+    def _build_request_headers(target_url: str) -> dict[str, str]:
+        target_origin = urlparse(target_url)
+        referer = f"{target_origin.scheme}://{target_origin.netloc}/" if target_origin.scheme and target_origin.netloc else target_url
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Referer": referer,
+            "Origin": referer.rstrip("/"),
+            "Accept": "image/webp,image/avif,image/apng,image/*,video/*,*/*;q=0.8",
+        }
+        if range_header:
+            headers["Range"] = range_header
+        return headers
 
     # Check in-memory cache for non-range image requests
     if not range_header:
@@ -329,9 +416,10 @@ async def proxy_media(url: str = Query(...), request: Request = None):
             )
 
     client: httpx.AsyncClient = request.app.state.http_client
+    target_url = url
     try:
         resp = await client.send(
-            client.build_request("GET", url, headers=req_headers),
+            client.build_request("GET", target_url, headers=_build_request_headers(target_url)),
             stream=True,
         )
     except httpx.TimeoutException:
@@ -349,6 +437,31 @@ async def proxy_media(url: str = Query(...), request: Request = None):
             status_code=502,
             content={"error": "proxy_media_failed", "detail": f"Could not fetch media: {exc}"},
         )
+    if resp.status_code >= 400 and shot_id and _is_refreshable_upstream_status(resp.status_code):
+        refreshed_url = _refresh_shot_media_url(request, int(shot_id), failed_url=target_url)
+        if refreshed_url:
+            await resp.aclose()
+            target_url = refreshed_url
+            try:
+                resp = await client.send(
+                    client.build_request("GET", target_url, headers=_build_request_headers(target_url)),
+                    stream=True,
+                )
+            except httpx.TimeoutException:
+                return JSONResponse(
+                    status_code=502,
+                    content={"error": "upstream_timeout", "detail": "Upstream media request timed out"},
+                )
+            except httpx.RequestError as exc:
+                return JSONResponse(
+                    status_code=502,
+                    content={"error": "upstream_connection_error", "detail": f"Could not fetch media: {exc}"},
+                )
+            except Exception as exc:
+                return JSONResponse(
+                    status_code=502,
+                    content={"error": "proxy_media_failed", "detail": f"Could not fetch media: {exc}"},
+                )
     if resp.status_code >= 400:
         status_code = resp.status_code if resp.status_code in {401, 403, 404, 416} else 502
         detail = f"Upstream media returned {resp.status_code}"
@@ -1206,7 +1319,8 @@ def browse_screenshots(
                     thumb = str(s.get("thumbnail_url") or "").strip()
                     if not thumb and src == "redgifs" and media_url.endswith(".mp4"):
                         thumb = media_url.replace(".mp4", "-poster.jpg")
-                    s["local_url"] = proxy_media_url(media_url)
+                    ytdlp_shot_id = int(s["id"]) if src == "ytdlp" and s.get("id") else None
+                    s["local_url"] = proxy_media_url(media_url, shot_id=ytdlp_shot_id)
                     if _is_remote_media_url(thumb):
                         s["preview_url"] = proxy_media_url(thumb)
                     elif is_vid:
