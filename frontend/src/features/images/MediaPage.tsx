@@ -20,6 +20,7 @@ import {
   useScreenshotTermsQuery,
 } from "@/features/sharedQueries"
 import { isHlsUrl } from "@/lib/hlsAttach"
+import { resolvePublicUrl } from "@/lib/backendOrigin"
 
 const MEDIA_NAVIGATION_EVENT = "codex:media-navigation"
 
@@ -494,9 +495,11 @@ const MediaCard = memo(function MediaCard({
   const isAboveFold = index <= 3  // only 4 eager loads; rest are lazy to avoid poster-endpoint flood
   const parsedTags = parseAiTags(shot.ai_tags)
   // Use the API's preview_url (already proxied) → video-poster endpoint → proxy of thumbnail_url as fallback chain
-  const videoPosterSrc = shot.preview_url
+  const rawVideoPoster =
+    (shot.preview_url?.trim())
     || `/api/screenshots/video-poster/${shot.id}`
-    || (shot.thumbnail_url ? `/api/screenshots/proxy-media?url=${encodeURIComponent(shot.thumbnail_url)}` : '')
+    || (shot.thumbnail_url ? `/api/screenshots/proxy-media?url=${encodeURIComponent(shot.thumbnail_url)}` : "")
+  const videoPosterSrc = resolvePublicUrl(rawVideoPoster)
 
   const prevSrcRef = useRef("")
   useEffect(() => {

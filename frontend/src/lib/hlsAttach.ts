@@ -1,9 +1,21 @@
 import Hls, { XhrLoader } from "hls.js"
-import { getPublicOrigin } from "./backendOrigin"
+import { apiUrl, getPublicOrigin } from "./backendOrigin"
 
 const PROXY_PATH = "/api/screenshots/proxy-media"
 const PROXY_QUERY = "url="
 const SCREENSHOTS_API_PREFIX = "/api/screenshots/"
+
+/**
+ * hls.js uses XHR against whatever string we pass. Relative `/api/...` paths hit the **page** origin
+ * (e.g. Vercel), not the FastAPI host — break split deploys. Always use absolute backend URLs when
+ * `VITE_BACKEND_ORIGIN` is set.
+ */
+function absoluteMediaRequestUrl(pathOrUrl: string): string {
+  if (!pathOrUrl) return pathOrUrl
+  if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) return pathOrUrl
+  if (pathOrUrl.startsWith("/")) return apiUrl(pathOrUrl)
+  return pathOrUrl
+}
 
 /** Browsers block unmuted autoplay without a user gesture — always set before programmatic play(). */
 function prepareAutoplay(video: HTMLVideoElement) {
@@ -69,23 +81,23 @@ export function rewriteMediaUrlForProxy(url: string): string {
   url = fixMisresolvedProxyRelativeUrl(url)
   if (!url) return url
   if (url.startsWith(`${PROXY_PATH}?${PROXY_QUERY}`)) {
-    return url
+    return absoluteMediaRequestUrl(url)
   }
   if (url.startsWith(PROXY_PATH + "?")) {
-    return url
+    return absoluteMediaRequestUrl(url)
   }
   if (typeof window !== "undefined") {
     try {
       const u = new URL(url, getPublicOrigin())
       if (u.origin === getPublicOrigin() && u.pathname.startsWith(PROXY_PATH)) {
-        return u.pathname + u.search
+        return absoluteMediaRequestUrl(u.pathname + u.search)
       }
     } catch {
       /* ignore */
     }
   }
   if (url.startsWith("http://") || url.startsWith("https://")) {
-    return `${PROXY_PATH}?${PROXY_QUERY}${encodeURIComponent(url)}`
+    return absoluteMediaRequestUrl(`${PROXY_PATH}?${PROXY_QUERY}${encodeURIComponent(url)}`)
   }
   return url
 }
@@ -114,7 +126,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
   }
 
   if (!isHlsUrl(src)) {
-    video.src = src
+    video.src = absoluteMediaRequestUrl(src)
     const onMeta = () => {
       video.removeEventListener("loadedmetadata", onMeta)
       tryPlay()
@@ -147,7 +159,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
 
   if (Hls.isSupported()) {
     const hls = new Hls(hlsConfig)
-    hls.loadSource(src)
+    hls.loadSource(absoluteMediaRequestUrl(src))
     hls.attachMedia(video)
     hls.on(Hls.Events.MANIFEST_PARSED, tryPlay)
     const onError = (_: string, data: { fatal?: boolean; type?: string }) => {
@@ -180,7 +192,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
   }
 
   if (video.canPlayType("application/vnd.apple.mpegurl")) {
-    video.src = src
+    video.src = absoluteMediaRequestUrl(src)
     const onMeta = () => {
       video.removeEventListener("loadedmetadata", onMeta)
       tryPlay()
@@ -193,7 +205,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     }
   }
 
-  video.src = src
+  video.src = absoluteMediaRequestUrl(src)
   const onMeta = () => {
     video.removeEventListener("loadedmetadata", onMeta)
     tryPlay()
