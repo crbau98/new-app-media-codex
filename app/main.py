@@ -20,7 +20,7 @@ os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "__all__")
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
+from app.middleware.safe_gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
