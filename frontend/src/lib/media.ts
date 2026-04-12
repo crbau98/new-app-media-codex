@@ -21,7 +21,7 @@ function isRenderableRemoteUrl(url: string): boolean {
 }
 
 function isProxyMediaUrl(url: string): boolean {
-  if (!url) return false
+  if (url === "") return false
   if (url.startsWith(`${PROXY_MEDIA_PATH}?url=`) || url.startsWith(`${PROXY_MEDIA_PATH}?`)) return true
   try {
     return new URL(url).pathname === PROXY_MEDIA_PATH
