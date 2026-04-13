@@ -142,6 +142,7 @@ export type AttachMediaOptions = {
 type ResolveResult = {
   local_url: string | null
   direct_url: string | null
+  cached_url: string | null
   ip_bound: boolean
 }
 
@@ -159,6 +160,7 @@ async function resolveStreamUrl(shotId: number): Promise<ResolveResult | null> {
     .then((res) => ({
       local_url: res.local_url || null,
       direct_url: res.direct_url || null,
+      cached_url: res.cached_url || null,
       ip_bound: res.ip_bound ?? false,
     }))
     .catch(() => null)
@@ -262,7 +264,9 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
           if (hls) { hls.destroy(); hls = null }
           resolveStreamUrl(shotId!).then((result) => {
             if (destroyed) return
-            if (result?.ip_bound && result?.direct_url) {
+            if (result?.cached_url) {
+              playCachedVideo(result.cached_url)
+            } else if (result?.ip_bound && result?.direct_url) {
               // IP-bound URL — switch to direct playback
               video.src = result.direct_url
               const onMeta = () => {
@@ -316,18 +320,54 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
   }
 
   // ── Pre-flight: resolve fresh URL for ytdlp sources ────────────────────
+
+  /** Play a cached MP4 directly (no HLS needed). */
+  function playCachedVideo(cachedUrl: string) {
+    if (destroyed) return
+    video.src = absoluteMediaRequestUrl(cachedUrl)
+    const onMeta = () => {
+      video.removeEventListener("loadedmetadata", onMeta)
+      tryPlay()
+    }
+    video.addEventListener("loadedmetadata", onMeta)
+  }
+
   if (needsResolve) {
     resolveStreamUrl(shotId!).then((result) => {
       if (destroyed) return
-      if (result?.ip_bound && result?.direct_url) {
-        // IP-bound URL — bypass proxy, play directly via <video src>
-        // The <video> element can load cross-origin media without CORS
-        video.src = result.direct_url
-        const onMeta = () => {
-          video.removeEventListener("loadedmetadata", onMeta)
-          tryPlay()
-        }
-        video.addEventListener("loadedmetadata", onMeta)
+      if (result?.cached_url) {
+        // Locally cached video — serve directly, no HLS needed
+        playCachedVideo(result.cached_url)
+      } else if (result?.ip_bound) {
+        // IP-bound but not yet cached — download in progress on server
+        // Poll every 3 seconds for up to 60 seconds for the cache to complete
+        let pollCount = 0
+        const maxPolls = 20
+        const pollInterval = setInterval(async () => {
+          if (destroyed) { clearInterval(pollInterval); return }
+          pollCount++
+          if (pollCount >= maxPolls) {
+            clearInterval(pollInterval)
+            // Fall back to direct URL as last resort
+            if (result?.direct_url) {
+              video.src = result.direct_url
+              const onMeta = () => {
+                video.removeEventListener("loadedmetadata", onMeta)
+                tryPlay()
+              }
+              video.addEventListener("loadedmetadata", onMeta)
+            } else {
+              onFatalError?.()
+            }
+            return
+          }
+          const check = await resolveStreamUrl(shotId!)
+          if (destroyed) { clearInterval(pollInterval); return }
+          if (check?.cached_url) {
+            clearInterval(pollInterval)
+            playCachedVideo(check.cached_url)
+          }
+        }, 3000)
       } else {
         startHls(result?.local_url || src)
       }

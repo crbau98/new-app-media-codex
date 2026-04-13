@@ -59,6 +59,99 @@ _HLS_URI_ATTR_RE = re.compile(r'URI=(["\'])(.+?)\1')
 _NO_PROXY_SOURCES: frozenset[str] = frozenset()  # all sources are proxied
 _NO_PROXY_NETLOC_SUFFIXES: tuple[str, ...] = ()  # all hosts are proxied
 
+# ---------------------------------------------------------------------------
+# Video download cache on persistent disk
+# ---------------------------------------------------------------------------
+_VIDEO_CACHE_DIR = Path("/app/data/video_cache")
+_VIDEO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_VIDEO_CACHE_MAX_MB = 5000  # 5 GB max cache size
+_VIDEO_CACHE_LOCK = _ThreadLock()
+
+
+def _video_cache_path(shot_id: int) -> Path:
+    """Return the local file path for a cached video."""
+    return _VIDEO_CACHE_DIR / f"{shot_id}.mp4"
+
+
+def _is_video_cached(shot_id: int) -> bool:
+    """Check if a video is already cached on disk."""
+    p = _video_cache_path(shot_id)
+    return p.exists() and p.stat().st_size > 0
+
+
+def _evict_video_cache_if_needed():
+    """Evict oldest cached videos if total cache exceeds max size."""
+    try:
+        files = sorted(_VIDEO_CACHE_DIR.glob("*.mp4"), key=lambda f: f.stat().st_mtime)
+        total = sum(f.stat().st_size for f in files)
+        max_bytes = _VIDEO_CACHE_MAX_MB * 1024 * 1024
+        while total > max_bytes and files:
+            oldest = files.pop(0)
+            total -= oldest.stat().st_size
+            oldest.unlink(missing_ok=True)
+            _logger.info("Evicted cached video: %s", oldest.name)
+    except Exception as e:
+        _logger.warning("Cache eviction error: %s", e)
+
+
+def _download_video_with_ytdlp(page_url: str, shot_id: int) -> str | None:
+    """Download a video via yt-dlp to the cache directory.
+
+    Returns the local file path on success, None on failure.
+    yt-dlp handles CDN authentication internally, so IP-bound tokens work.
+    """
+    try:
+        import yt_dlp
+    except Exception:
+        return None
+
+    output_path = _video_cache_path(shot_id)
+    temp_path = output_path.with_suffix(".tmp.mp4")
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
+        "outtmpl": str(temp_path.with_suffix("")),  # yt-dlp adds extension
+        "merge_output_format": "mp4",
+        "postprocessors": [],
+        "socket_timeout": 30,
+    }
+
+    try:
+        _evict_video_cache_if_needed()
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([page_url])
+
+        # yt-dlp may create file with different extension, find it
+        for ext in [".mp4", ".mkv", ".webm", ".tmp.mp4", ".tmp"]:
+            candidate = temp_path.with_suffix(ext)
+            if candidate.exists():
+                candidate.rename(output_path)
+                _logger.info("Downloaded video for shot %d: %.1f MB", shot_id, output_path.stat().st_size / 1024 / 1024)
+                return str(output_path)
+
+        # Also check the exact outtmpl name
+        for f in _VIDEO_CACHE_DIR.glob(f"{shot_id}.tmp*"):
+            f.rename(output_path)
+            _logger.info("Downloaded video for shot %d: %.1f MB", shot_id, output_path.stat().st_size / 1024 / 1024)
+            return str(output_path)
+
+        _logger.warning("yt-dlp download produced no file for shot %d", shot_id)
+        return None
+    except Exception as e:
+        _logger.warning("yt-dlp download failed for shot %d: %s", shot_id, e)
+        # Cleanup partial downloads
+        for f in _VIDEO_CACHE_DIR.glob(f"{shot_id}.*"):
+            f.unlink(missing_ok=True)
+        return None
+
+
+async def _bg_download_video(page_url: str, shot_id: int):
+    """Background task to download a video via yt-dlp."""
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _download_video_with_ytdlp, page_url, shot_id)
+
 
 def _should_proxy_media(source: str, url: str) -> bool:
     """Return True only if the URL should be routed through the server proxy."""
@@ -514,8 +607,63 @@ async def _refresh_shot_media_url(request: Request, shot_id: int, failed_url: st
     return fresh_stream_url
 
 
+@router.get("/cached-video/{shot_id}")
+async def serve_cached_video(shot_id: int, request: Request):
+    """Serve a locally cached video file with Range request support."""
+    path = _video_cache_path(shot_id)
+    if not path.exists():
+        raise HTTPException(404, "Video not cached")
+
+    from starlette.responses import FileResponse, StreamingResponse
+
+    file_size = path.stat().st_size
+    range_header = request.headers.get("range")
+
+    if range_header:
+        m = re.match(r"bytes=(\d+)-(\d*)", range_header)
+        if m:
+            start = int(m.group(1))
+            end = int(m.group(2)) if m.group(2) else file_size - 1
+            end = min(end, file_size - 1)
+            length = end - start + 1
+
+            def _range_reader():
+                with open(path, "rb") as f:
+                    f.seek(start)
+                    remaining = length
+                    while remaining > 0:
+                        chunk = f.read(min(8192, remaining))
+                        if not chunk:
+                            break
+                        remaining -= len(chunk)
+                        yield chunk
+
+            return StreamingResponse(
+                _range_reader(),
+                status_code=206,
+                media_type="video/mp4",
+                headers={
+                    "Content-Range": f"bytes {start}-{end}/{file_size}",
+                    "Content-Length": str(length),
+                    "Accept-Ranges": "bytes",
+                    **_CROSS_ORIGIN_MEDIA_HEADERS,
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
+
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        headers={
+            "Accept-Ranges": "bytes",
+            **_CROSS_ORIGIN_MEDIA_HEADERS,
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
+
+
 @router.post("/{shot_id}/resolve-stream")
-async def resolve_stream(shot_id: int, request: Request):
+async def resolve_stream(shot_id: int, request: Request, background_tasks: BackgroundTasks):
     """Pre-resolve a fresh HLS/video stream URL for a screenshot via yt-dlp.
 
     Called by the frontend before playback so the player always starts with a
@@ -552,6 +700,7 @@ async def resolve_stream(shot_id: int, request: Request):
             "source_url": current_source_url,
             "local_url": _build_local_url(current_source_url),
             "direct_url": None,
+            "cached_url": None,
             "ip_bound": False,
             "refreshed": False,
         })
@@ -576,11 +725,16 @@ async def resolve_stream(shot_id: int, request: Request):
 
     if not fresh_stream_url or fresh_stream_url == current_source_url:
         _curr_ip_bound = _has_ip_bound_token(current_source_url) if current_source_url else False
+        _cached = _is_video_cached(shot_id)
+        _cached_url = f"/api/screenshots/cached-video/{shot_id}" if _cached else None
+        if _curr_ip_bound and not _cached and page_url:
+            background_tasks.add_task(_bg_download_video, page_url, shot_id)
         return JSONResponse({
             "shot_id": shot_id,
             "source_url": current_source_url,
             "local_url": _build_local_url(current_source_url),
             "direct_url": current_source_url if _curr_ip_bound else None,
+            "cached_url": _cached_url,
             "ip_bound": _curr_ip_bound,
             "refreshed": False,
         })
@@ -600,11 +754,18 @@ async def resolve_stream(shot_id: int, request: Request):
         "Resolved fresh stream for shot %d: %s %s",
         shot_id, "HLS" if _is_hls else "MP4", _token_kind,
     )
+
+    cached = _is_video_cached(shot_id)
+    cached_url = f"/api/screenshots/cached-video/{shot_id}" if cached else None
+    if is_ip_bound and not cached and page_url:
+        background_tasks.add_task(_bg_download_video, page_url, shot_id)
+
     return JSONResponse({
         "shot_id": shot_id,
         "source_url": fresh_stream_url,
         "local_url": new_local_url,
         "direct_url": fresh_stream_url if is_ip_bound else None,
+        "cached_url": cached_url,
         "ip_bound": is_ip_bound,
         "refreshed": True,
     })
