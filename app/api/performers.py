@@ -604,8 +604,13 @@ def _coerce_discovery_suggestions(parsed: dict | list | None) -> list[dict]:
     return normalized
 
 
+_last_discovery_debug: dict = {}
+
 def _request_discovery_suggestions(settings, prompt: str) -> list[dict]:
+    global _last_discovery_debug
+    _last_discovery_debug = {"has_key": bool(settings.openai_api_key), "attempts": []}
     if not settings.openai_api_key:
+        _last_discovery_debug["error"] = "no_api_key"
         return []
 
     base_payload = {
@@ -619,6 +624,7 @@ def _request_discovery_suggestions(settings, prompt: str) -> list[dict]:
     ]
 
     for label, extra_payload in attempts:
+        attempt_info: dict = {"label": label}
         try:
             resp = req.post(
                 f"{settings.openai_base_url}/chat/completions",
@@ -629,14 +635,21 @@ def _request_discovery_suggestions(settings, prompt: str) -> list[dict]:
                 json={**base_payload, **extra_payload},
                 timeout=25,
             )
+            attempt_info["status_code"] = resp.status_code
             resp.raise_for_status()
             raw = str(resp.json()["choices"][0]["message"].get("content") or "").strip()
+            attempt_info["raw_length"] = len(raw)
+            attempt_info["raw_preview"] = raw[:200]
             suggestions = _coerce_discovery_suggestions(_parse_discovery_payload(raw))
+            attempt_info["parsed_count"] = len(suggestions)
             if suggestions:
+                _last_discovery_debug["attempts"].append(attempt_info)
                 return suggestions
             print(f"[performers] discover {label} attempt produced no usable suggestions")
         except Exception as exc:
+            attempt_info["error"] = str(exc)[:200]
             print(f"[performers] discover {label} attempt failed: {exc}")
+        _last_discovery_debug["attempts"].append(attempt_info)
     return []
 
 
@@ -908,6 +921,7 @@ def discover_performers(body: DiscoverBody, request: Request):
             "new_count": len(results_new),
             "existing_count": len(results_existing),
             "has_api_key": bool(settings.openai_api_key),
+            "ai_detail": _last_discovery_debug,
         },
     }
 
