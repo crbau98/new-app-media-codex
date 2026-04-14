@@ -153,15 +153,20 @@ export function getBestAvailablePreviewSrc(s: Screenshot): string {
   const previewSrc = getScreenshotPreviewSrc(s)
   const rawThumb = normalizeMediaUrl(s.thumbnail_url)
   const rawSource = normalizeMediaUrl(s.source_url)
+  // For video items, video-poster endpoint is the last-resort fallback.
+  // It extracts the first frame via ffmpeg and caches it on disk.
+  const videoPosterFallback = isVideoShot(s) && s.id
+    ? resolvePublicUrl(`/api/screenshots/video-poster/${s.id}`)
+    : ""
   if (previewSrc) {
-    // Thumbnail direct → proxy of preview as fallbacks
+    // Thumbnail direct → proxy of preview → video-poster as fallbacks
     const directFallback =
       (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? rawThumb :
       (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? rawSource : ""
-    return pickUsableMediaUrl([previewSrc, directFallback, buildProxyMediaUrl(previewSrc)])
+    return pickUsableMediaUrl([previewSrc, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback])
   }
   const mediaSrc = getScreenshotMediaSrc(s)
-  if (isVideoUrl(mediaSrc)) return ""
+  if (isVideoUrl(mediaSrc)) return videoPosterFallback ? pickUsableMediaUrl([videoPosterFallback]) : ""
   const directFallback = rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource) ? rawSource : ""
   return pickUsableMediaUrl([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)])
 }
@@ -170,14 +175,17 @@ export function getBestAvailablePosterSrc(s: Screenshot): string {
   const previewSrc = getScreenshotPosterSrc(s)
   const rawThumb = normalizeMediaUrl(s.thumbnail_url)
   const rawSource = normalizeMediaUrl(s.source_url)
+  const videoPosterFallback = isVideoShot(s) && s.id
+    ? resolvePublicUrl(`/api/screenshots/video-poster/${s.id}`)
+    : ""
   if (previewSrc) {
     const directFallback =
       (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? rawThumb :
       (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? rawSource : ""
-    return pickUsableMediaUrl([previewSrc, directFallback, buildProxyMediaUrl(previewSrc)])
+    return pickUsableMediaUrl([previewSrc, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback])
   }
   const mediaSrc = getScreenshotMediaSrc(s)
-  if (isVideoUrl(mediaSrc)) return ""
+  if (isVideoUrl(mediaSrc)) return videoPosterFallback ? pickUsableMediaUrl([videoPosterFallback]) : ""
   const directFallback = rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource) ? rawSource : ""
   return pickUsableMediaUrl([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)])
 }

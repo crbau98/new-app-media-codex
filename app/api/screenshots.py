@@ -530,17 +530,9 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
         proxy_shot_id = int(shot["id"]) if source_field == "ytdlp" and shot.get("id") else None
         shot["local_url"] = proxy_media_url(raw_local, shot_id=proxy_shot_id) if use_proxy else raw_local
         shot["source_url"] = source_url
-        # For ytdlp (PornHub) videos: ALWAYS use the video-poster endpoint as
-        # preview.  PornHub thumbnail CDN URLs expire and reliably 404 after a
-        # while, causing thumbnails to render as invisible/black cards.  The
-        # video-poster endpoint extracts the first frame via ffmpeg and caches
-        # it on disk — it's slow the first time but reliable thereafter.
-        if source_field == "ytdlp" and _screenshot_is_video(shot):
-            shot_id_val = shot.get("id")
-            if shot_id_val:
-                shot["preview_url"] = f"/api/screenshots/video-poster/{shot_id_val}"
-                return shot
-        # For other videos with no stored thumbnail: also use video-poster
+        # For videos with no stored thumbnail: use our server-side video-poster endpoint
+        # (extracts first frame via ffmpeg).  We intentionally do NOT derive coomer.st
+        # /thumbnail/ URLs here — they reliably return 404.
         if not thumbnail_url and _screenshot_is_video(shot):
             shot_id_val = shot.get("id")
             if shot_id_val:
@@ -552,6 +544,8 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
             else:
                 shot["preview_url"] = existing_preview
         elif _is_remote_media_url(thumbnail_url):
+            # Use the stored thumbnail, but also expose video-poster as a
+            # fallback the frontend can try when the CDN thumbnail 404s.
             shot["preview_url"] = proxy_media_url(thumbnail_url) if _should_proxy_media(source_field, thumbnail_url) else thumbnail_url
         else:
             shot["preview_url"] = None if _screenshot_is_video(shot) else shot["local_url"]
@@ -1801,11 +1795,7 @@ def browse_screenshots(
                         thumb = media_url.replace(".mp4", "-poster.jpg")
                     ytdlp_shot_id = int(s["id"]) if src == "ytdlp" and s.get("id") else None
                     s["local_url"] = proxy_media_url(media_url, shot_id=ytdlp_shot_id)
-                    # For ytdlp videos: always use video-poster endpoint
-                    # because PornHub thumbnail CDN URLs expire
-                    if src == "ytdlp" and is_vid and s.get("id"):
-                        s["preview_url"] = f"/api/screenshots/video-poster/{s['id']}"
-                    elif _is_remote_media_url(thumb):
+                    if _is_remote_media_url(thumb):
                         s["preview_url"] = proxy_media_url(thumb)
                     elif is_vid:
                         s["preview_url"] = f"/api/screenshots/video-poster/{s.get('id')}"
