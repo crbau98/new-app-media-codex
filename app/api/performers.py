@@ -801,8 +801,18 @@ def _heuristic_discover_performers(
 @router.post("/discover")
 def discover_performers(body: DiscoverBody, request: Request):
     """Use OpenAI to suggest male content creators based on a query or tracked creator seed."""
+    from copy import copy as _copy
     settings = request.app.state.settings
     db = request.app.state.db
+    # Apply user-configured vision API key (same override as capture uses)
+    user_settings = db.get_all_settings()
+    if user_settings.get("vision_api_key"):
+        settings = _copy(settings)
+        settings.openai_api_key = user_settings["vision_api_key"]
+        if user_settings.get("vision_base_url"):
+            settings.openai_base_url = user_settings["vision_base_url"]
+        if user_settings.get("vision_model"):
+            settings.openai_model = user_settings["vision_model"]
     limit = max(1, min(body.limit, 20))
     seed_context = _build_discovery_seed_context(db, body.seed_performer_id, body.seed_term)
     query = (body.query or "").strip()
@@ -826,8 +836,11 @@ def discover_performers(body: DiscoverBody, request: Request):
     )
 
     ai_suggestions = _request_discovery_suggestions(settings, prompt)
+    has_api_key = bool(settings.openai_api_key)
     print(f"[performers] discover: AI returned {len(ai_suggestions)} suggestions, "
-          f"existing_usernames={len(existing_usernames)}")
+          f"existing_usernames={len(existing_usernames)}, "
+          f"has_api_key={has_api_key}, model={settings.openai_model}, "
+          f"base_url={settings.openai_base_url}")
     heuristic_suggestions = _heuristic_discover_performers(
         db,
         query=query,
@@ -887,7 +900,16 @@ def discover_performers(body: DiscoverBody, request: Request):
     remaining = limit - len(results)
     if remaining > 0:
         results.extend(results_existing[:remaining])
-    return {"suggestions": results}
+    return {
+        "suggestions": results,
+        "_debug": {
+            "ai_count": len(ai_suggestions),
+            "heuristic_count": len(heuristic_suggestions),
+            "new_count": len(results_new),
+            "existing_count": len(results_existing),
+            "has_api_key": bool(settings.openai_api_key),
+        },
+    }
 
 
 @router.post("/discover/import")
