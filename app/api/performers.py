@@ -826,6 +826,8 @@ def discover_performers(body: DiscoverBody, request: Request):
     )
 
     ai_suggestions = _request_discovery_suggestions(settings, prompt)
+    print(f"[performers] discover: AI returned {len(ai_suggestions)} suggestions, "
+          f"existing_usernames={len(existing_usernames)}")
     heuristic_suggestions = _heuristic_discover_performers(
         db,
         query=query,
@@ -839,6 +841,7 @@ def discover_performers(body: DiscoverBody, request: Request):
     results_new: list[dict] = []
     results_existing: list[dict] = []
     seen_aliases: set[str] = set()
+    # Process AI suggestions first (these should be novel), then heuristic
     for suggestion in [*ai_suggestions, *heuristic_suggestions]:
         username = str(suggestion.get("username") or "").strip().lstrip("@")
         display_name = str(suggestion.get("display_name") or "").strip()
@@ -878,9 +881,12 @@ def discover_performers(body: DiscoverBody, request: Request):
         else:
             results_existing.append(entry)
 
-    # Always show new/undiscovered creators first, then fill remaining
-    # slots with already-tracked ones.
-    results = (results_new + results_existing)[:limit]
+    # Always show new/undiscovered creators first. Only backfill with
+    # existing creators if we don't have enough new ones.
+    results = results_new[:limit]
+    remaining = limit - len(results)
+    if remaining > 0:
+        results.extend(results_existing[:remaining])
     return {"suggestions": results}
 
 
