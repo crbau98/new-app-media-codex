@@ -1462,7 +1462,7 @@ def _generate_coomer_username_variants(username: str, display_name: str | None) 
     # 5. Add common suffixes (the inverse of stripping)
     base_names = list(variants)  # snapshot current list
     for base in base_names:
-        for suffix in ("_of", "_xxx", "_official"):
+        for suffix in ("_of", "_xxx", "xxx", "_official", "_xo", "xo", "xx", "ff"):
             _add(base + suffix)
 
     # 6. Display name variations
@@ -1510,33 +1510,67 @@ def _coomer_try_username(session, service: str, name: str) -> bool:
         return False
 
 
-def _coomer_search_username(session, service: str, query: str) -> str | None:
-    """Search coomer.st for a creator by name. Returns the first matching username or None."""
+# In-memory cache of the coomer.st creators list (loaded once per process).
+_COOMER_CREATORS_CACHE: list[dict] | None = None
+_COOMER_CREATORS_CACHE_LOCK = __import__("threading").Lock()
+
+
+def _load_coomer_creators_cache(session) -> list[dict]:
+    """Fetch the full coomer.st creators list (cached in memory)."""
+    global _COOMER_CREATORS_CACHE
+    with _COOMER_CREATORS_CACHE_LOCK:
+        if _COOMER_CREATORS_CACHE is not None:
+            return _COOMER_CREATORS_CACHE
     try:
         resp = session.get(
-            f"https://coomer.st/api/v1/{service}/lookup",
-            params={"q": query},
+            "https://coomer.st/api/v1/creators",
             headers={"User-Agent": "Mozilla/5.0", "Accept": "text/css"},
-            timeout=10,
+            timeout=30,
         )
-        if resp.status_code == 429:
-            time.sleep(2)
-            resp = session.get(
-                f"https://coomer.st/api/v1/{service}/lookup",
-                params={"q": query},
-                headers={"User-Agent": "Mozilla/5.0", "Accept": "text/css"},
-                timeout=10,
-            )
-        if not resp.ok:
-            return None
-        results = resp.json()
-        if isinstance(results, list) and results:
-            # Return the first match's username/id
-            first = results[0]
-            return str(first.get("name") or first.get("id") or "").strip() or None
+        if resp.ok:
+            data = resp.json()
+            if isinstance(data, list):
+                with _COOMER_CREATORS_CACHE_LOCK:
+                    _COOMER_CREATORS_CACHE = data
+                print(f"[performer-capture] loaded coomer.st creators cache: {len(data)} entries")
+                return data
+    except Exception as e:
+        print(f"[performer-capture] failed to load coomer.st creators list: {e}")
+    return []
+
+
+def _coomer_search_username(session, service: str, query: str) -> str | None:
+    """Search the coomer.st creators list for a matching username.
+
+    Uses the /api/v1/creators endpoint (full list) and does in-memory
+    substring matching to find creators whose id contains the query.
+    """
+    creators = _load_coomer_creators_cache(session)
+    if not creators:
         return None
-    except Exception:
-        return None
+    query_lower = query.lower().replace(" ", "").replace("_", "")
+    if len(query_lower) < 4:
+        return None  # too short for reliable matching
+    best = None
+    best_len_diff = 999
+    for c in creators:
+        if c.get("service") != service:
+            continue
+        cid = str(c.get("id", "")).lower()
+        cid_clean = cid.replace("_", "")
+        # Exact match (normalized)
+        if cid_clean == query_lower:
+            return cid
+        # Substring match — prefer shortest id that contains the query
+        if query_lower in cid_clean or cid_clean in query_lower:
+            diff = abs(len(cid_clean) - len(query_lower))
+            if diff < best_len_diff:
+                best = cid
+                best_len_diff = diff
+    # Only accept close matches (within 6 chars difference)
+    if best and best_len_diff <= 6:
+        return best
+    return None
 
 
 # ── Capture content for a performer ───────────────────────────────────
@@ -1716,24 +1750,35 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
 
     # ── Coomer.st — scrape OnlyFans/Fansly archive with smart username resolution ──
     if platform_lower in ("onlyfans", "fansly"):
-        coomer_service = "onlyfans" if platform_lower == "onlyfans" else "fansly"
-        # Generate username variants and find the first one that works
+        # Try both services — many OnlyFans creators also appear under fansly and vice versa
+        services_to_try = ["onlyfans", "fansly"] if platform_lower == "onlyfans" else ["fansly", "onlyfans"]
         coomer_variants = _generate_coomer_username_variants(username, display_name)
         coomer_resolved_name: str | None = None
-        for variant in coomer_variants:
-            if _coomer_try_username(session, coomer_service, variant):
-                coomer_resolved_name = variant
-                break
-        # Fallback: use coomer.st search/lookup API if variant guessing failed
-        if not coomer_resolved_name:
+        coomer_service = services_to_try[0]
+        # Strategy: search the full creators list FIRST (one cached API call)
+        # then fall back to per-variant API probes (expensive, many requests)
+        for svc in services_to_try:
             for search_term in [username, display_name] if display_name else [username]:
-                found = _coomer_search_username(session, coomer_service, search_term)
-                if found and _coomer_try_username(session, coomer_service, found):
+                found = _coomer_search_username(session, svc, search_term)
+                if found and _coomer_try_username(session, svc, found):
                     coomer_resolved_name = found
-                    print(f"[performer-capture] coomer.st lookup resolved '{search_term}' → '{found}'")
+                    coomer_service = svc
+                    print(f"[performer-capture] coomer.st creators-list resolved '{search_term}' → '{found}' (service={svc})")
+                    break
+            if coomer_resolved_name:
+                break
+        # Fallback: try each variant with direct API probe
+        if not coomer_resolved_name:
+            for svc in services_to_try:
+                for variant in coomer_variants:
+                    if _coomer_try_username(session, svc, variant):
+                        coomer_resolved_name = variant
+                        coomer_service = svc
+                        break
+                if coomer_resolved_name:
                     break
         if not coomer_resolved_name:
-            print(f"[performer-capture] coomer.st: no username found for {username} (tried {len(coomer_variants)} variants + lookup)")
+            print(f"[performer-capture] coomer.st: no username found for {username} (tried creators-list + {len(coomer_variants)} variants × {len(services_to_try)} services)")
         if coomer_resolved_name:
             try:
                 coomer_offset = 0
