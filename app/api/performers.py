@@ -1459,7 +1459,13 @@ def _generate_coomer_username_variants(username: str, display_name: str | None) 
     if no_underscores != uname_lower:
         _add(no_underscores)
 
-    # 5. Display name variations
+    # 5. Add common suffixes (the inverse of stripping)
+    base_names = list(variants)  # snapshot current list
+    for base in base_names:
+        for suffix in ("_of", "_xxx", "_official"):
+            _add(base + suffix)
+
+    # 6. Display name variations
     if display_name:
         dn = display_name.strip()
         # Lowercased, spaces removed
@@ -1485,12 +1491,52 @@ def _coomer_try_username(session, service: str, name: str) -> bool:
             headers={"User-Agent": "Mozilla/5.0", "Accept": "text/css"},
             timeout=10,
         )
+        if resp.status_code == 429:
+            print(f"[performer-capture] coomer.st rate-limited checking username '{name}'")
+            # Wait and retry once on rate limit
+            time.sleep(2)
+            resp = session.get(
+                f"https://coomer.st/api/v1/{service}/user/{name}/posts",
+                params={"o": 0},
+                headers={"User-Agent": "Mozilla/5.0", "Accept": "text/css"},
+                timeout=10,
+            )
         if not resp.ok:
             return False
         posts = resp.json()
         return bool(posts)
-    except Exception:
+    except Exception as e:
+        print(f"[performer-capture] coomer.st error checking username '{name}': {e}")
         return False
+
+
+def _coomer_search_username(session, service: str, query: str) -> str | None:
+    """Search coomer.st for a creator by name. Returns the first matching username or None."""
+    try:
+        resp = session.get(
+            f"https://coomer.st/api/v1/{service}/lookup",
+            params={"q": query},
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "text/css"},
+            timeout=10,
+        )
+        if resp.status_code == 429:
+            time.sleep(2)
+            resp = session.get(
+                f"https://coomer.st/api/v1/{service}/lookup",
+                params={"q": query},
+                headers={"User-Agent": "Mozilla/5.0", "Accept": "text/css"},
+                timeout=10,
+            )
+        if not resp.ok:
+            return None
+        results = resp.json()
+        if isinstance(results, list) and results:
+            # Return the first match's username/id
+            first = results[0]
+            return str(first.get("name") or first.get("id") or "").strip() or None
+        return None
+    except Exception:
+        return None
 
 
 # ── Capture content for a performer ───────────────────────────────────
@@ -1650,7 +1696,9 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
         for cand in ddg_candidates:
             image_url = cand["url"]
             ok = True
-            if _settings is not None:
+            # Use strict filter only when vision API key is available;
+            # otherwise fall through (identity check already passed above)
+            if _settings is not None and _settings.openai_api_key:
                 from app.vision_filter import passes_strict_content_filter_url
                 if not passes_strict_content_filter_url(_settings, image_url):
                     ok = False
@@ -1676,6 +1724,16 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
             if _coomer_try_username(session, coomer_service, variant):
                 coomer_resolved_name = variant
                 break
+        # Fallback: use coomer.st search/lookup API if variant guessing failed
+        if not coomer_resolved_name:
+            for search_term in [username, display_name] if display_name else [username]:
+                found = _coomer_search_username(session, coomer_service, search_term)
+                if found and _coomer_try_username(session, coomer_service, found):
+                    coomer_resolved_name = found
+                    print(f"[performer-capture] coomer.st lookup resolved '{search_term}' → '{found}'")
+                    break
+        if not coomer_resolved_name:
+            print(f"[performer-capture] coomer.st: no username found for {username} (tried {len(coomer_variants)} variants + lookup)")
         if coomer_resolved_name:
             try:
                 coomer_offset = 0
@@ -1691,6 +1749,9 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                         },
                         timeout=20,
                     )
+                    if resp.status_code == 429:
+                        time.sleep(3)
+                        continue  # retry same offset
                     if not resp.ok:
                         break
                     posts = resp.json()
@@ -1715,9 +1776,11 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                                 continue
                             is_video = ext in {".mp4", ".webm", ".mov"}
                             ok = True
-                            if not is_video and _settings is not None:
-                                from app.vision_filter import passes_strict_content_filter_url
-                                if not passes_strict_content_filter_url(_settings, media_url):
+                            # Coomer.st content is already from the verified creator page,
+                            # so use fail-open vision filter (don't reject when API is unavailable)
+                            if not is_video and _settings is not None and _settings.openai_api_key:
+                                from app.vision_filter import passes_vision_filter_url
+                                if not passes_vision_filter_url(_settings, media_url, fail_open=True):
                                     ok = False
                             if ok:
                                 db.insert_screenshot(

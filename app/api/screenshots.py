@@ -985,11 +985,10 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
 # ---------------------------------------------------------------------------
 # Global semaphore — cap concurrent poster extractions.  Render starter has
 # 0.5 CPU / 512 MB.  Firecrawl extractions are lightweight (HTTP only);
-# ffmpeg extractions are heavy (~50–100 MB each).  12 slots is a reasonable
-# balance: most slots will be occupied by Firecrawl (fast), with a few
-# ffmpeg fallbacks running concurrently.
+# ffmpeg extractions are heavy (~50–100 MB each).  4 slots keeps CPU
+# usage manageable on the 0.5-CPU Render starter plan.
 # ---------------------------------------------------------------------------
-_POSTER_SEMAPHORE = asyncio.Semaphore(12)
+_POSTER_SEMAPHORE = asyncio.Semaphore(4)
 
 _POSTER_EXTRACT_LOCKS: dict[int, asyncio.Lock] = {}
 _POSTER_EXTRACT_LOCKS_LOCK = Lock()
@@ -1176,7 +1175,7 @@ async def _poster_via_ffmpeg(source_url: str, poster_path: Path, port: str) -> b
             stderr=asyncio.subprocess.DEVNULL,
         )
         try:
-            await asyncio.wait_for(proc.communicate(), timeout=25)
+            await asyncio.wait_for(proc.communicate(), timeout=12)
         except asyncio.TimeoutError:
             proc.kill()
             return False
@@ -1254,17 +1253,11 @@ async def _bg_extract_poster(app_state, shot_id: int, source_url: str, page_url:
 async def video_poster(shot_id: int, request: Request):
     """Return a JPEG poster image for a video shot.
 
-    Strategy (fastest first):
-    1. Disk cache — instant if already extracted.
-    2. Firecrawl page scrape — finds the thumbnail already on the post page,
-       requires FIRECRAWL_API_KEY env var.  No video download needed (~1–3 s).
-    3. ffmpeg HTTP streaming — streams through our proxy, -probesize 3MB so
-       only reads what is needed for the first frame (~2–5 s for fast-start MP4).
-
-    Returns HTTP 503 immediately (Retry-After: 3) when the semaphore is full
-    so the browser falls through to canvas extraction rather than stalling.
+    Non-blocking: if poster is cached on disk, serve it immediately.
+    Otherwise return a placeholder (30s cache) and schedule background
+    extraction via _bg_extract_poster(). The browser retries and gets
+    the real poster once the background task completes.
     """
-    import os
     from fastapi.responses import FileResponse
 
     _POSTERS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1292,98 +1285,36 @@ async def video_poster(shot_id: int, request: Request):
             },
         )
 
-    if not _POSTER_SEMAPHORE._value:  # No slots immediately available
-        return _placeholder_poster_response()
+    # 2. Cache miss — return placeholder immediately, schedule background generation
+    db = request.app.state.db
     try:
-        acquired = await asyncio.wait_for(_POSTER_SEMAPHORE.acquire(), timeout=0.5)
-    except asyncio.TimeoutError:
-        acquired = False
-    if not acquired:
-        return _placeholder_poster_response()
+        with db.connect() as _conn:
+            _row = _conn.execute(
+                "SELECT source_url, local_path, page_url FROM screenshots WHERE id = ?",
+                (shot_id,),
+            ).fetchone()
+    except Exception as _db_err:
+        _logger.warning("video-poster DB error for shot %s: %s", shot_id, _db_err)
+        _row = None
+    if not _row:
+        raise HTTPException(404, "Shot not found")
 
-    try:
-        lock = _get_poster_extract_lock(shot_id)
-        async with lock:
-            # Re-check inside lock (another request may have completed first)
-            if poster_path.exists() and poster_path.stat().st_size > 0:
-                _mark_poster_cached(shot_id)
-                return FileResponse(
-                    str(poster_path), media_type="image/jpeg",
-                    headers={**_CROSS_ORIGIN_MEDIA_HEADERS, "Cache-Control": "public, max-age=604800"},
-                )
+    source_url = str(_row["source_url"] or "")
+    if not source_url.startswith(("http://", "https://")):
+        try:
+            _local = str(_row["local_path"] or "")
+            if _local.startswith(("http://", "https://")):
+                source_url = _local
+        except Exception:
+            pass
 
-            db = request.app.state.db
-            try:
-                with db.connect() as _conn:
-                    _row = _conn.execute(
-                        "SELECT source_url, local_path, page_url FROM screenshots WHERE id = ?",
-                        (shot_id,),
-                    ).fetchone()
-            except Exception as _db_err:
-                _logger.warning("video-poster DB error for shot %s: %s", shot_id, _db_err)
-                _row = None
-            if not _row:
-                raise HTTPException(404, "Shot not found")
+    page_url_val = str(_row["page_url"] or "")
 
-            source_url = str(_row["source_url"] or "")
-            if not source_url.startswith(("http://", "https://")):
-                try:
-                    _local = str(_row["local_path"] or "")
-                    if _local.startswith(("http://", "https://")):
-                        source_url = _local
-                except Exception:
-                    pass
-            if not source_url.startswith(("http://", "https://")):
-                return _placeholder_poster_response()
+    # Schedule background extraction (non-blocking) if we have a valid URL
+    if source_url.startswith(("http://", "https://")):
+        asyncio.create_task(_bg_extract_poster(request.app.state, shot_id, source_url, page_url_val))
 
-            page_url_val = str(_row["page_url"] or "")
-            client: httpx.AsyncClient = request.app.state.http_client
-            settings = request.app.state.settings
-            fc_key: str = getattr(settings, "firecrawl_api_key", "") or ""
-            port = os.environ.get("PORT", "10000")
-
-            # 2b. Local cached video — extract poster from disk file (fastest)
-            if _is_video_cached(shot_id):
-                cached_path = _video_cache_path(shot_id)
-                if await _poster_via_ffmpeg_local(str(cached_path), poster_path):
-                    _mark_poster_cached(shot_id)
-                    return FileResponse(
-                        str(poster_path), media_type="image/jpeg",
-                        headers={
-                            **_CROSS_ORIGIN_MEDIA_HEADERS,
-                            "Cache-Control": "public, max-age=604800",
-                            "X-Content-Type-Options": "nosniff",
-                        },
-                    )
-
-            # 3. Firecrawl (fast — no video download)
-            if fc_key and page_url_val.startswith(("http://", "https://")):
-                if await _poster_via_firecrawl(client, fc_key, page_url_val, poster_path):
-                    _mark_poster_cached(shot_id)
-                    return FileResponse(
-                        str(poster_path), media_type="image/jpeg",
-                        headers={
-                            **_CROSS_ORIGIN_MEDIA_HEADERS,
-                            "Cache-Control": "public, max-age=604800",
-                            "X-Content-Type-Options": "nosniff",
-                        },
-                    )
-
-            # 4. ffmpeg streaming fallback
-            if await _poster_via_ffmpeg(source_url, poster_path, port):
-                _mark_poster_cached(shot_id)
-                return FileResponse(
-                    str(poster_path), media_type="image/jpeg",
-                    headers={
-                        **_CROSS_ORIGIN_MEDIA_HEADERS,
-                        "Cache-Control": "public, max-age=604800",
-                        "X-Content-Type-Options": "nosniff",
-                    },
-                )
-
-            return _placeholder_poster_response()
-    finally:
-        _POSTER_SEMAPHORE.release()
+    return _placeholder_poster_response()
 
 
 _FEMALE_METADATA_KEYWORDS = {
