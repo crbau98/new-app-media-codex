@@ -530,13 +530,21 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
         proxy_shot_id = int(shot["id"]) if source_field == "ytdlp" and shot.get("id") else None
         shot["local_url"] = proxy_media_url(raw_local, shot_id=proxy_shot_id) if use_proxy else raw_local
         shot["source_url"] = source_url
-        # For videos with no stored thumbnail: use our server-side video-poster endpoint
-        # (extracts first frame via ffmpeg).  We intentionally do NOT derive coomer.st
-        # /thumbnail/ URLs here — they reliably return 404.
+        # For ytdlp (PornHub) videos: ALWAYS use the video-poster endpoint as
+        # preview.  PornHub thumbnail CDN URLs expire and reliably 404 after a
+        # while, causing thumbnails to render as invisible/black cards.  The
+        # video-poster endpoint extracts the first frame via ffmpeg and caches
+        # it on disk — it's slow the first time but reliable thereafter.
+        if source_field == "ytdlp" and _screenshot_is_video(shot):
+            shot_id_val = shot.get("id")
+            if shot_id_val:
+                shot["preview_url"] = f"/api/screenshots/video-poster/{shot_id_val}"
+                return shot
+        # For other videos with no stored thumbnail: also use video-poster
         if not thumbnail_url and _screenshot_is_video(shot):
-            shot_id = shot.get("id")
-            if shot_id:
-                shot["preview_url"] = f"/api/screenshots/video-poster/{shot_id}"
+            shot_id_val = shot.get("id")
+            if shot_id_val:
+                shot["preview_url"] = f"/api/screenshots/video-poster/{shot_id_val}"
                 return shot
         if existing_preview:
             if _is_remote_media_url(existing_preview):
@@ -701,6 +709,20 @@ async def resolve_stream(shot_id: int, request: Request, background_tasks: Backg
             "local_url": _build_local_url(current_source_url),
             "direct_url": None,
             "cached_url": None,
+            "ip_bound": False,
+            "refreshed": False,
+        })
+
+    # ── FAST PATH: if the video is already cached on disk, return immediately ──
+    # This avoids a 4-5 second yt-dlp call for every playback of a cached video.
+    if _is_video_cached(shot_id):
+        _logger.debug("resolve-stream fast-path: shot %d already cached on disk", shot_id)
+        return JSONResponse({
+            "shot_id": shot_id,
+            "source_url": current_source_url,
+            "local_url": _build_local_url(current_source_url),
+            "direct_url": None,
+            "cached_url": f"/api/screenshots/cached-video/{shot_id}",
             "ip_bound": False,
             "refreshed": False,
         })
@@ -1172,6 +1194,30 @@ async def _poster_via_ffmpeg(source_url: str, poster_path: Path, port: str) -> b
         return False
 
 
+async def _poster_via_ffmpeg_local(local_path: str, poster_path: Path) -> bool:
+    """Extract first frame via ffmpeg from a local cached video file — instant."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y",
+            "-i", local_path,
+            "-frames:v", "1",
+            "-vf", "scale=320:-2",
+            "-q:v", "4",
+            "-f", "image2",
+            str(poster_path),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=10)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return False
+        return proc.returncode == 0 and poster_path.exists() and poster_path.stat().st_size > 0
+    except Exception:
+        return False
+
+
 async def _bg_extract_poster(app_state, shot_id: int, source_url: str, page_url: str) -> None:
     """Fire-and-forget background poster extraction for pre-warming the cache."""
     # Fast in-memory check — avoids disk stat entirely
@@ -1193,6 +1239,12 @@ async def _bg_extract_poster(app_state, shot_id: int, source_url: str, page_url:
                     _mark_poster_cached(shot_id)
                     return
                 _POSTERS_DIR.mkdir(parents=True, exist_ok=True)
+                # Try local cached video first (fastest)
+                if _is_video_cached(shot_id):
+                    cached_path = _video_cache_path(shot_id)
+                    if await _poster_via_ffmpeg_local(str(cached_path), poster_path):
+                        _mark_poster_cached(shot_id)
+                        return
                 client: httpx.AsyncClient = app_state.http_client
                 fc_key: str = getattr(getattr(app_state, "settings", None), "firecrawl_api_key", "") or ""
                 port = __import__("os").environ.get("PORT", "10000")
@@ -1297,6 +1349,20 @@ async def video_poster(shot_id: int, request: Request):
             settings = request.app.state.settings
             fc_key: str = getattr(settings, "firecrawl_api_key", "") or ""
             port = os.environ.get("PORT", "10000")
+
+            # 2b. Local cached video — extract poster from disk file (fastest)
+            if _is_video_cached(shot_id):
+                cached_path = _video_cache_path(shot_id)
+                if await _poster_via_ffmpeg_local(str(cached_path), poster_path):
+                    _mark_poster_cached(shot_id)
+                    return FileResponse(
+                        str(poster_path), media_type="image/jpeg",
+                        headers={
+                            **_CROSS_ORIGIN_MEDIA_HEADERS,
+                            "Cache-Control": "public, max-age=604800",
+                            "X-Content-Type-Options": "nosniff",
+                        },
+                    )
 
             # 3. Firecrawl (fast — no video download)
             if fc_key and page_url_val.startswith(("http://", "https://")):
@@ -1735,7 +1801,11 @@ def browse_screenshots(
                         thumb = media_url.replace(".mp4", "-poster.jpg")
                     ytdlp_shot_id = int(s["id"]) if src == "ytdlp" and s.get("id") else None
                     s["local_url"] = proxy_media_url(media_url, shot_id=ytdlp_shot_id)
-                    if _is_remote_media_url(thumb):
+                    # For ytdlp videos: always use video-poster endpoint
+                    # because PornHub thumbnail CDN URLs expire
+                    if src == "ytdlp" and is_vid and s.get("id"):
+                        s["preview_url"] = f"/api/screenshots/video-poster/{s['id']}"
+                    elif _is_remote_media_url(thumb):
                         s["preview_url"] = proxy_media_url(thumb)
                     elif is_vid:
                         s["preview_url"] = f"/api/screenshots/video-poster/{s.get('id')}"
