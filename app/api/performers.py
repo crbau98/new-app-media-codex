@@ -227,6 +227,32 @@ _CURATED_DISCOVERY_CREATORS: list[dict[str, object]] = [
     {"username": "adamramzi", "display_name": "Adam Ramzi", "platform": "OnlyFans", "bio": "Hairy muscle performer", "tags": ["hairy", "muscle"]},
 ]
 
+# Fallback discovery pool: creators NOT in the main curated list.
+# Used when AI is rate-limited or unavailable, so discovery can still
+# suggest genuinely new creators.
+_FALLBACK_DISCOVERY_CREATORS: list[dict[str, object]] = [
+    {"username": "rhyheimxxx", "display_name": "Rhyheim Shabazz", "platform": "OnlyFans", "bio": "Popular hung performer", "tags": ["hung", "muscle", "bbc"]},
+    {"username": "maborooshi", "display_name": "Maborooshi", "platform": "Twitter/X", "bio": "Asian gay adult content creator", "tags": ["asian", "muscle"]},
+    {"username": "frankydimario", "display_name": "Franky DiMario", "platform": "OnlyFans", "bio": "Muscle bear content creator", "tags": ["bear", "muscle", "hairy"]},
+    {"username": "araborofficial", "display_name": "Arabor", "platform": "OnlyFans", "bio": "Hung muscle performer", "tags": ["hung", "muscle", "latino"]},
+    {"username": "ethanchasexx", "display_name": "Ethan Chase", "platform": "OnlyFans", "bio": "Versatile performer", "tags": ["muscle", "asian"]},
+    {"username": "jakecruise", "display_name": "Jake Cruise", "platform": "OnlyFans", "bio": "Veteran performer and producer", "tags": ["daddy", "producer"]},
+    {"username": "c0letanxxx", "display_name": "Cole Tan", "platform": "OnlyFans", "bio": "Twink content creator", "tags": ["twink", "asian"]},
+    {"username": "renoGoldxxx", "display_name": "Reno Gold", "platform": "OnlyFans", "bio": "Muscular solo performer", "tags": ["muscle", "solo"]},
+    {"username": "taylorcoleman", "display_name": "Taylor Coleman", "platform": "OnlyFans", "bio": "Jock type creator", "tags": ["jock", "muscle"]},
+    {"username": "mattandrew_", "display_name": "Matt Andrew", "platform": "OnlyFans", "bio": "Fitness model and creator", "tags": ["fitness", "muscle"]},
+    {"username": "jaxfilmore", "display_name": "Jax Filmore", "platform": "OnlyFans", "bio": "Muscle bottom creator", "tags": ["muscle", "bottom"]},
+    {"username": "zariofern", "display_name": "Zario Travezz", "platform": "OnlyFans", "bio": "Popular performer", "tags": ["bbc", "muscle"]},
+    {"username": "drewsebastian", "display_name": "Drew Sebastian", "platform": "OnlyFans", "bio": "Hung bear leather daddy", "tags": ["bear", "hung", "leather"]},
+    {"username": "calvinbanksxxx", "display_name": "Calvin Banks", "platform": "OnlyFans", "bio": "Popular twink performer", "tags": ["twink", "hung"]},
+    {"username": "romantodd", "display_name": "Roman Todd", "platform": "OnlyFans", "bio": "Versatile muscle performer", "tags": ["muscle", "versatile"]},
+    {"username": "daltonriley", "display_name": "Dalton Riley", "platform": "OnlyFans", "bio": "Tattooed performer", "tags": ["tattooed", "jock"]},
+    {"username": "sharokcxxx", "display_name": "Sharok", "platform": "OnlyFans", "bio": "Middle Eastern muscle creator", "tags": ["hairy", "muscle", "hung"]},
+    {"username": "michelangelo_of", "display_name": "Michelangelo", "platform": "OnlyFans", "bio": "Brazilian muscle creator", "tags": ["muscle", "latino"]},
+    {"username": "davinciofficial", "display_name": "Da Vinci", "platform": "OnlyFans", "bio": "Hung performer", "tags": ["hung", "bbc"]},
+    {"username": "kameronfrost", "display_name": "Kameron Frost", "platform": "OnlyFans", "bio": "Jock creator", "tags": ["jock", "twink"]},
+]
+
 _PLATFORM_NAME_MAP = {
     "fansly": "Fansly",
     "instagram": "Instagram",
@@ -625,30 +651,40 @@ def _request_discovery_suggestions(settings, prompt: str) -> list[dict]:
 
     for label, extra_payload in attempts:
         attempt_info: dict = {"label": label}
-        try:
-            resp = req.post(
-                f"{settings.openai_base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.openai_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={**base_payload, **extra_payload},
-                timeout=25,
-            )
-            attempt_info["status_code"] = resp.status_code
-            resp.raise_for_status()
-            raw = str(resp.json()["choices"][0]["message"].get("content") or "").strip()
-            attempt_info["raw_length"] = len(raw)
-            attempt_info["raw_preview"] = raw[:200]
-            suggestions = _coerce_discovery_suggestions(_parse_discovery_payload(raw))
-            attempt_info["parsed_count"] = len(suggestions)
-            if suggestions:
-                _last_discovery_debug["attempts"].append(attempt_info)
-                return suggestions
-            print(f"[performers] discover {label} attempt produced no usable suggestions")
-        except Exception as exc:
-            attempt_info["error"] = str(exc)[:200]
-            print(f"[performers] discover {label} attempt failed: {exc}")
+        for retry in range(3):
+            try:
+                resp = req.post(
+                    f"{settings.openai_base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.openai_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={**base_payload, **extra_payload},
+                    timeout=25,
+                )
+                attempt_info["status_code"] = resp.status_code
+                if resp.status_code == 429:
+                    import time as _time
+                    wait = min(2 ** retry * 2, 10)
+                    attempt_info["retry"] = retry
+                    attempt_info["wait"] = wait
+                    _time.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                raw = str(resp.json()["choices"][0]["message"].get("content") or "").strip()
+                attempt_info["raw_length"] = len(raw)
+                attempt_info["raw_preview"] = raw[:200]
+                suggestions = _coerce_discovery_suggestions(_parse_discovery_payload(raw))
+                attempt_info["parsed_count"] = len(suggestions)
+                if suggestions:
+                    _last_discovery_debug["attempts"].append(attempt_info)
+                    return suggestions
+                print(f"[performers] discover {label} attempt produced no usable suggestions")
+                break
+            except Exception as exc:
+                attempt_info["error"] = str(exc)[:200]
+                print(f"[performers] discover {label} attempt failed: {exc}")
+                break
         _last_discovery_debug["attempts"].append(attempt_info)
     return []
 
@@ -722,6 +758,7 @@ def _heuristic_discover_performers(
 
     candidates: list[dict[str, object]] = []
     candidates.extend(_CURATED_DISCOVERY_CREATORS)
+    candidates.extend(_FALLBACK_DISCOVERY_CREATORS)
     candidates.extend(_mine_local_creator_candidates(db, desired_platform))
 
     deduped: dict[str, dict] = {}
