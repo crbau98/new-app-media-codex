@@ -2279,7 +2279,7 @@ export function MediaPage() {
     if (!node) return
     observerRef.current = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) fetchNextPage()
-    }, { rootMargin: "1200px 0px" })
+    }, { rootMargin: "2000px 0px" })
     observerRef.current.observe(node)
   }, [fetchNextPage, hasNextPage, isFetchingNextPage])
 
@@ -2292,7 +2292,7 @@ export function MediaPage() {
       startTransition(() => {
         setMosaicVisibleCount((count) => Math.min(count + MOSAIC_BATCH_SIZE, visibleShots.length))
       })
-    }, { rootMargin: "1000px 0px" })
+    }, { rootMargin: "1500px 0px" })
     mosaicObserverRef.current.observe(node)
   }, [mosaicVisibleCount, viewMode, visibleShots.length])
 

@@ -1154,26 +1154,23 @@ async def _poster_via_firecrawl(
 
 
 async def _poster_via_ffmpeg(source_url: str, poster_path: Path, port: str) -> bool:
-    """Extract first frame via ffmpeg streaming from our proxy — no temp file.
+    """Extract a frame via ffmpeg streaming directly from the source URL.
 
+    Seeks 3s into the video for a more representative frame.
     Uses -probesize 3MB so ffmpeg stops reading after 3 MB of probe data.
-    For fast-start MP4s this is enough to decode the first frame (<1–3 MB).
     """
-    from urllib.parse import quote as _quote
-    proxy_url = (
-        f"http://127.0.0.1:{port}/api/screenshots/proxy-media"
-        f"?url={_quote(source_url, safe='')}"
-    )
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y",
+            "-headers", "User-Agent: Mozilla/5.0\r\n",
             "-probesize", "3000000",
             "-analyzeduration", "0",
-            "-i", proxy_url,
+            "-ss", "3",
+            "-i", source_url,
             "-frames:v", "1",
             "-vf", "scale=320:-2",
             "-q:v", "4",
-            "-f", "image2",
+            "-update", "1",
             str(poster_path),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
@@ -1189,15 +1186,16 @@ async def _poster_via_ffmpeg(source_url: str, poster_path: Path, port: str) -> b
 
 
 async def _poster_via_ffmpeg_local(local_path: str, poster_path: Path) -> bool:
-    """Extract first frame via ffmpeg from a local cached video file — instant."""
+    """Extract a frame via ffmpeg from a local cached video file — instant."""
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y",
+            "-ss", "2",
             "-i", local_path,
             "-frames:v", "1",
             "-vf", "scale=320:-2",
             "-q:v", "4",
-            "-f", "image2",
+            "-update", "1",
             str(poster_path),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
