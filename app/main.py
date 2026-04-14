@@ -589,6 +589,11 @@ app.include_router(recommendations_router)
 from app.api.performers import router as performers_router
 app.include_router(performers_router)
 
+# Convenience alias so /api/capture-queue also works (without /performers/ prefix)
+@app.get("/api/capture-queue", include_in_schema=False)
+def capture_queue_alias(request: Request):
+    return {"queue": request.app.state.db.get_capture_queue()}
+
 from app.api.playlists import router as playlists_router
 app.include_router(playlists_router)
 

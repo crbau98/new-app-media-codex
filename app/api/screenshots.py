@@ -1399,8 +1399,8 @@ _PREVIEW_JPEG_QUALITY = 72
 _SYNC_PREVIEW_WARM_LIMIT_FIRST_PAGE = 0
 _SYNC_PREVIEW_WARM_LIMIT_OTHER_PAGES = 0
 _PREVIEW_WORKER_COUNT = 3
-_FIRST_PAGE_LIMIT_CAP = 48  # first page shows enough content without feeling empty
-_MAX_BROWSE_SCAN_ROWS = 3500  # scan entire DB if needed — filter-heavy data requires deep scans
+_FIRST_PAGE_LIMIT_CAP = 60  # first page shows enough content without feeling empty
+_MAX_BROWSE_SCAN_ROWS = 5000  # scan entire DB if needed — filter-heavy data requires deep scans
 
 
 def _screenshots_cache_bucket(app_state):
@@ -1693,7 +1693,7 @@ def browse_screenshots(
     source: str | None = None,
     min_rating: int | None = None,
     sort: str | None = None,
-    limit: int = Query(default=40, ge=1, le=200),
+    limit: int = Query(default=60, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     tag: str | None = None,
     has_description: bool | None = None,
@@ -1825,7 +1825,7 @@ def browse_screenshots(
             "next_offset": raw_cursor,
         }
 
-    payload = _get_cached_screenshots_payload(request.app.state, cache_key, 300.0, build, copy_payload=True)
+    payload = _get_cached_screenshots_payload(request.app.state, cache_key, 60.0, build, copy_payload=True)
 
     # Pre-warm poster cache for video items via BackgroundTasks (safe in sync endpoints).
     # Uses in-memory disk cache to skip already-extracted posters without stat() calls.

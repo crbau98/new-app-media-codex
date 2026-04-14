@@ -21,8 +21,8 @@ from app.performer_identity import performer_identity_signature, score_candidate
 
 router = APIRouter(prefix="/api/performers", tags=["performers"])
 
-_FIRST_PAGE_LIMIT_CAP_COMPACT = 36
-_FIRST_PAGE_LIMIT_CAP_FULL = 24
+_FIRST_PAGE_LIMIT_CAP_COMPACT = 80
+_FIRST_PAGE_LIMIT_CAP_FULL = 60
 
 
 def _performers_cache_bucket(app_state):
@@ -630,13 +630,8 @@ def _coerce_discovery_suggestions(parsed: dict | list | None) -> list[dict]:
     return normalized
 
 
-_last_discovery_debug: dict = {}
-
 def _request_discovery_suggestions(settings, prompt: str) -> list[dict]:
-    global _last_discovery_debug
-    _last_discovery_debug = {"has_key": bool(settings.openai_api_key), "attempts": []}
     if not settings.openai_api_key:
-        _last_discovery_debug["error"] = "no_api_key"
         return []
 
     base_payload = {
@@ -650,7 +645,6 @@ def _request_discovery_suggestions(settings, prompt: str) -> list[dict]:
     ]
 
     for label, extra_payload in attempts:
-        attempt_info: dict = {"label": label}
         for retry in range(3):
             try:
                 resp = req.post(
@@ -662,30 +656,21 @@ def _request_discovery_suggestions(settings, prompt: str) -> list[dict]:
                     json={**base_payload, **extra_payload},
                     timeout=25,
                 )
-                attempt_info["status_code"] = resp.status_code
                 if resp.status_code == 429:
                     import time as _time
                     wait = min(2 ** retry * 2, 10)
-                    attempt_info["retry"] = retry
-                    attempt_info["wait"] = wait
                     _time.sleep(wait)
                     continue
                 resp.raise_for_status()
                 raw = str(resp.json()["choices"][0]["message"].get("content") or "").strip()
-                attempt_info["raw_length"] = len(raw)
-                attempt_info["raw_preview"] = raw[:200]
                 suggestions = _coerce_discovery_suggestions(_parse_discovery_payload(raw))
-                attempt_info["parsed_count"] = len(suggestions)
                 if suggestions:
-                    _last_discovery_debug["attempts"].append(attempt_info)
                     return suggestions
                 print(f"[performers] discover {label} attempt produced no usable suggestions")
                 break
             except Exception as exc:
-                attempt_info["error"] = str(exc)[:200]
                 print(f"[performers] discover {label} attempt failed: {exc}")
                 break
-        _last_discovery_debug["attempts"].append(attempt_info)
     return []
 
 
@@ -952,14 +937,6 @@ def discover_performers(body: DiscoverBody, request: Request):
         results.extend(results_existing[:remaining])
     return {
         "suggestions": results,
-        "_debug": {
-            "ai_count": len(ai_suggestions),
-            "heuristic_count": len(heuristic_suggestions),
-            "new_count": len(results_new),
-            "existing_count": len(results_existing),
-            "has_api_key": bool(settings.openai_api_key),
-            "ai_detail": _last_discovery_debug,
-        },
     }
 
 
@@ -1185,6 +1162,104 @@ def add_performer(body: AddPerformerBody, request: Request):
         raise HTTPException(400, detail=str(e))
 
 
+# ── Named routes (must precede /{performer_id} to avoid shadowing) ───
+
+@router.post("/capture-stale")
+def capture_stale(
+    request: Request,
+    stale_days: int = Query(7, ge=1, le=365),
+):
+    """Enqueue capture for all performers not checked in stale_days days."""
+    db = request.app.state.db
+    ids = db.get_stale_performer_ids(stale_days)
+    queued = sum(1 for pid in ids if db.enqueue_capture(pid) is not None)
+    return {"queued": queued, "total_stale": len(ids)}
+
+
+@router.post("/capture-all")
+def capture_all_performers(request: Request):
+    """Enqueue capture for ALL active performers."""
+    db = request.app.state.db
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT id FROM performers WHERE status != 'inactive' "
+            "ORDER BY last_checked_at ASC NULLS FIRST"
+        ).fetchall()
+    queued = sum(1 for r in rows if db.enqueue_capture(r["id"]) is not None)
+    return {"status": "queued", "queued": queued}
+
+
+@router.post("/watchlist/capture-all")
+def capture_watchlist(request: Request):
+    """Enqueue capture for all favorited performers."""
+    db = request.app.state.db
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT id FROM performers WHERE is_favorite = 1 AND status != 'inactive' "
+            "ORDER BY last_checked_at ASC NULLS FIRST"
+        ).fetchall()
+    if not rows:
+        return {"status": "no_watchlist", "queued": 0}
+    queued = sum(1 for r in rows if db.enqueue_capture(r["id"]) is not None)
+    return {"status": "queued", "queued": queued}
+
+
+@router.get("/export.csv")
+def export_performers_csv(request: Request):
+    """Export all performers as CSV."""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    db = request.app.state.db
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT id, username, display_name, platform, profile_url, bio, tags, "
+            "follower_count, media_count, is_verified, is_favorite, status, "
+            "subscription_price, is_subscribed, reddit_username, twitter_username, "
+            "first_seen_at, last_checked_at, created_at "
+            "FROM performers ORDER BY created_at DESC"
+        ).fetchall()
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=[
+        "id", "username", "display_name", "platform", "profile_url", "bio", "tags",
+        "follower_count", "media_count", "is_verified", "is_favorite", "status",
+        "subscription_price", "is_subscribed", "reddit_username", "twitter_username",
+        "first_seen_at", "last_checked_at", "created_at"
+    ])
+    writer.writeheader()
+    for row in rows:
+        d = dict(row)
+        # Flatten tags JSON to comma-separated
+        if d.get("tags"):
+            try:
+                tags_list = json.loads(d["tags"])
+                d["tags"] = ", ".join(tags_list) if isinstance(tags_list, list) else d["tags"]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        writer.writerow(d)
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=creators.csv"},
+    )
+
+
+@router.get("/watchlist")
+def get_watchlist(request: Request):
+    """Return all favorited performers (the watchlist)."""
+    db = request.app.state.db
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT id, username, platform, display_name, avatar_url, avatar_local, status, media_count, last_checked_at "
+            "FROM performers WHERE is_favorite = 1 ORDER BY display_name, username"
+        ).fetchall()
+    return {"performers": [dict(r) for r in rows], "total": len(rows)}
+
+
 # ── Single performer ──────────────────────────────────────────────────
 
 @router.get("/{performer_id}")
@@ -1339,6 +1414,83 @@ def add_media(performer_id: int, body: AddMediaBody, request: Request):
         return media
     except Exception as e:
         raise HTTPException(400, detail=str(e))
+
+
+# ── Username variation helpers for coomer.st resolution ───────────────
+
+_COOMER_STRIP_SUFFIXES = [
+    "_official", "official", "_xxx", "xxx", "_nyc", "nyc",
+    "_fit", "fit", "_real", "real", "_of", "of",
+    "_nsfw", "nsfw", "_vip", "vip",
+]
+
+
+def _generate_coomer_username_variants(username: str, display_name: str | None) -> list[str]:
+    """Generate plausible coomer.st username variations for a performer.
+
+    Tries the username as-is first, then strips common suffixes,
+    tries display_name (lowercased, no spaces), and first-name-only variants.
+    """
+    seen: set[str] = set()
+    variants: list[str] = []
+
+    def _add(v: str) -> None:
+        v = v.strip().lower()
+        if v and v not in seen:
+            seen.add(v)
+            variants.append(v)
+
+    # 1. Original username as-is
+    _add(username)
+
+    # 2. Strip common suffixes from username
+    uname_lower = username.lower()
+    for suffix in _COOMER_STRIP_SUFFIXES:
+        if uname_lower.endswith(suffix) and len(uname_lower) > len(suffix):
+            _add(uname_lower[: -len(suffix)])
+
+    # 3. Remove trailing digits (e.g., "austinwolf69" → "austinwolf")
+    stripped_digits = re.sub(r"\d+$", "", uname_lower)
+    if stripped_digits and stripped_digits != uname_lower:
+        _add(stripped_digits)
+
+    # 4. Remove underscores (e.g., "austin_wolf" → "austinwolf")
+    no_underscores = uname_lower.replace("_", "")
+    if no_underscores != uname_lower:
+        _add(no_underscores)
+
+    # 5. Display name variations
+    if display_name:
+        dn = display_name.strip()
+        # Lowercased, spaces removed
+        _add(dn.replace(" ", "").lower())
+        # Lowercased, spaces to underscores
+        _add(dn.replace(" ", "_").lower())
+        # First name only (if multi-word)
+        parts = dn.split()
+        if len(parts) >= 2:
+            _add(parts[0].lower())
+            # FirstLast concatenated
+            _add("".join(parts).lower())
+
+    return variants
+
+
+def _coomer_try_username(session, service: str, name: str) -> bool:
+    """Quick HEAD-style check if a username exists on coomer.st."""
+    try:
+        resp = session.get(
+            f"https://coomer.st/api/v1/{service}/user/{name}/posts",
+            params={"o": 0},
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "text/css"},
+            timeout=10,
+        )
+        if not resp.ok:
+            return False
+        posts = resp.json()
+        return bool(posts)
+    except Exception:
+        return False
 
 
 # ── Capture content for a performer ───────────────────────────────────
@@ -1514,17 +1666,24 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 _mark_page_url(cand["page_url"])
                 captured += 1
 
-    # ── Coomer.su — scrape OnlyFans/Fansly archive directly ─────────────────
+    # ── Coomer.st — scrape OnlyFans/Fansly archive with smart username resolution ──
     if platform_lower in ("onlyfans", "fansly"):
         coomer_service = "onlyfans" if platform_lower == "onlyfans" else "fansly"
-        for name in names:
+        # Generate username variants and find the first one that works
+        coomer_variants = _generate_coomer_username_variants(username, display_name)
+        coomer_resolved_name: str | None = None
+        for variant in coomer_variants:
+            if _coomer_try_username(session, coomer_service, variant):
+                coomer_resolved_name = variant
+                break
+        if coomer_resolved_name:
             try:
                 coomer_offset = 0
                 coomer_page_size = 50
                 coomer_fetched = 0
                 while coomer_fetched < 500:  # cap at 500 items per creator
                     resp = session.get(
-                        f"https://coomer.st/api/v1/{coomer_service}/user/{name}/posts",
+                        f"https://coomer.st/api/v1/{coomer_service}/user/{coomer_resolved_name}/posts",
                         params={"o": coomer_offset},
                         headers={
                             "User-Agent": "Mozilla/5.0",
@@ -1548,7 +1707,7 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                             if not att_path:
                                 continue
                             media_url = f"https://coomer.st/data{att_path}"
-                            page_url = f"https://coomer.st/{coomer_service}/user/{name}/post/{post.get('id', '')}"
+                            page_url = f"https://coomer.st/{coomer_service}/user/{coomer_resolved_name}/post/{post.get('id', '')}"
                             if _page_url_exists(media_url):
                                 continue
                             ext = Path(att_path.split("?")[0]).suffix.lower()
@@ -1576,7 +1735,7 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                     if len(posts) < coomer_page_size:
                         break  # no more pages
             except Exception as e:
-                print(f"[performer-capture] coomer.st error for {name}: {e}")
+                print(f"[performer-capture] coomer.st error for {coomer_resolved_name}: {e}")
 
     # ── Redgifs — search by each name form ──────────────────────────────────
     for name in names:
@@ -1836,6 +1995,9 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
     with db.connect() as conn:
         conn.execute("UPDATE performers SET last_checked_at = datetime('now') WHERE id = ?", (performer_id,))
         conn.commit()
+    # Invalidate DB-level caches so new captures appear immediately
+    if captured > 0:
+        db._invalidate_snapshot_cache()
     return captured
 
 
@@ -1850,18 +2012,6 @@ def capture_performer_content(performer_id: int, request: Request):
     if entry is None:
         return {"status": "already_queued", "performer_id": performer_id}
     return {"status": "queued", "performer_id": performer_id}
-
-
-@router.post("/capture-stale")
-def capture_stale(
-    request: Request,
-    stale_days: int = Query(7, ge=1, le=365),
-):
-    """Enqueue capture for all performers not checked in stale_days days."""
-    db = request.app.state.db
-    ids = db.get_stale_performer_ids(stale_days)
-    queued = sum(1 for pid in ids if db.enqueue_capture(pid) is not None)
-    return {"queued": queued, "total_stale": len(ids)}
 
 
 @router.post("/enrich/{performer_id}")
@@ -1895,78 +2045,6 @@ def enrich_performer(performer_id: int, request: Request):
         db.update_performer(performer_id, avatar_url=avatar_url, avatar_local=None)
         _invalidate_performers_cache(request.app.state)
     return {"avatar_url": avatar_url, "updated": should_update}
-
-
-@router.post("/capture-all")
-def capture_all_performers(request: Request):
-    """Enqueue capture for ALL active performers."""
-    db = request.app.state.db
-    with db.connect() as conn:
-        rows = conn.execute(
-            "SELECT id FROM performers WHERE status != 'inactive' "
-            "ORDER BY last_checked_at ASC NULLS FIRST"
-        ).fetchall()
-    queued = sum(1 for r in rows if db.enqueue_capture(r["id"]) is not None)
-    return {"status": "queued", "queued": queued}
-
-
-@router.post("/watchlist/capture-all")
-def capture_watchlist(request: Request):
-    """Enqueue capture for all favorited performers."""
-    db = request.app.state.db
-    with db.connect() as conn:
-        rows = conn.execute(
-            "SELECT id FROM performers WHERE is_favorite = 1 AND status != 'inactive' "
-            "ORDER BY last_checked_at ASC NULLS FIRST"
-        ).fetchall()
-    if not rows:
-        return {"status": "no_watchlist", "queued": 0}
-    queued = sum(1 for r in rows if db.enqueue_capture(r["id"]) is not None)
-    return {"status": "queued", "queued": queued}
-
-
-@router.get("/export.csv")
-def export_performers_csv(request: Request):
-    """Export all performers as CSV."""
-    import csv
-    import io
-    from fastapi.responses import StreamingResponse
-
-    db = request.app.state.db
-    with db.connect() as conn:
-        rows = conn.execute(
-            "SELECT id, username, display_name, platform, profile_url, bio, tags, "
-            "follower_count, media_count, is_verified, is_favorite, status, "
-            "subscription_price, is_subscribed, reddit_username, twitter_username, "
-            "first_seen_at, last_checked_at, created_at "
-            "FROM performers ORDER BY created_at DESC"
-        ).fetchall()
-
-    output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=[
-        "id", "username", "display_name", "platform", "profile_url", "bio", "tags",
-        "follower_count", "media_count", "is_verified", "is_favorite", "status",
-        "subscription_price", "is_subscribed", "reddit_username", "twitter_username",
-        "first_seen_at", "last_checked_at", "created_at"
-    ])
-    writer.writeheader()
-    for row in rows:
-        d = dict(row)
-        # Flatten tags JSON to comma-separated
-        if d.get("tags"):
-            try:
-                tags_list = json.loads(d["tags"])
-                d["tags"] = ", ".join(tags_list) if isinstance(tags_list, list) else d["tags"]
-            except (json.JSONDecodeError, TypeError):
-                pass
-        writer.writerow(d)
-
-    output.seek(0)
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=creators.csv"},
-    )
 
 
 @router.get("/{performer_id}/similar")
@@ -2059,15 +2137,3 @@ def find_similar_performers(performer_id: int, request: Request, limit: int = 8)
             return [item for _, item in scored[:limit]]
 
     return _get_cached_performers_payload(request.app.state, cache_key, 60.0, build)
-
-
-@router.get("/watchlist")
-def get_watchlist(request: Request):
-    """Return all favorited performers (the watchlist)."""
-    db = request.app.state.db
-    with db.connect() as conn:
-        rows = conn.execute(
-            "SELECT id, username, platform, display_name, avatar_url, avatar_local, status, media_count, last_checked_at "
-            "FROM performers WHERE is_favorite = 1 ORDER BY display_name, username"
-        ).fetchall()
-    return {"performers": [dict(r) for r in rows], "total": len(rows)}
