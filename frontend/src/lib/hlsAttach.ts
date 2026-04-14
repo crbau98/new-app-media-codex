@@ -189,30 +189,15 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
   const needsResolve = shotId != null && shotSource === "ytdlp"
   video.removeAttribute("src")
 
+  // We track cleanup across async pre-flight + HLS instantiation.
+  let destroyed = false
+  let hls: Hls | null = null
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+
   const tryPlay = () => {
     if (!tryAutoplay) return
     void attemptPlay(video).catch(() => {})
   }
-
-  if (!isHlsUrl(src)) {
-    video.src = absoluteMediaRequestUrl(src)
-    const onMeta = () => {
-      video.removeEventListener("loadedmetadata", onMeta)
-      tryPlay()
-    }
-    video.addEventListener("loadedmetadata", onMeta)
-    return () => {
-      video.removeEventListener("loadedmetadata", onMeta)
-      video.removeAttribute("src")
-      video.load()
-    }
-  }
-
-  // ── HLS path ──────────────────────────────────────────────────────────────
-
-  // We track cleanup across async pre-flight + HLS instantiation.
-  let destroyed = false
-  let hls: Hls | null = null
 
   const cleanup = () => {
     destroyed = true
@@ -220,9 +205,26 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
       hls.destroy()
       hls = null
     }
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
     video.removeAttribute("src")
     video.load()
   }
+
+  /** Play a plain MP4/video URL directly (no HLS). */
+  function playDirect(url: string) {
+    if (destroyed) return
+    video.src = absoluteMediaRequestUrl(url)
+    const onMeta = () => {
+      video.removeEventListener("loadedmetadata", onMeta)
+      tryPlay()
+    }
+    video.addEventListener("loadedmetadata", onMeta)
+  }
+
+  // ── HLS setup (shared by ytdlp resolve path and non-ytdlp path) ─────────
 
   const hlsConfig: ConstructorParameters<typeof Hls>[0] = {
     enableWorker: false,
@@ -239,9 +241,6 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     },
   }
 
-  let retryCount = 0
-  const MAX_RETRIES = 1
-
   /**
    * Create and start an hls.js instance for `hlsSrc`.
    */
@@ -256,33 +255,6 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
 
       const onError = (_: string, data: { fatal?: boolean; type?: string }) => {
         if (!data.fatal) return
-
-        // On fatal network error, try resolving a fresh URL (once)
-        if (data.type === "networkError" && needsResolve && retryCount < MAX_RETRIES) {
-          retryCount++
-          // Destroy the current hls instance and re-resolve
-          if (hls) { hls.destroy(); hls = null }
-          resolveStreamUrl(shotId!).then((result) => {
-            if (destroyed) return
-            if (result?.cached_url) {
-              playCachedVideo(result.cached_url)
-            } else if (result?.ip_bound && result?.direct_url) {
-              // IP-bound URL — switch to direct playback
-              video.src = result.direct_url
-              const onMeta = () => {
-                video.removeEventListener("loadedmetadata", onMeta)
-                tryPlay()
-              }
-              video.addEventListener("loadedmetadata", onMeta)
-            } else if (result?.local_url) {
-              startHls(result.local_url)
-            } else {
-              // Couldn't resolve — try restarting with original src
-              startHls(hlsSrc)
-            }
-          })
-          return
-        }
 
         // Standard recovery attempts
         if (data.type === "networkError") {
@@ -319,62 +291,60 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     video.addEventListener("loadedmetadata", onMeta)
   }
 
-  // ── Pre-flight: resolve fresh URL for ytdlp sources ────────────────────
-
-  /** Play a cached MP4 directly (no HLS needed). */
-  function playCachedVideo(cachedUrl: string) {
-    if (destroyed) return
-    video.src = absoluteMediaRequestUrl(cachedUrl)
-    const onMeta = () => {
-      video.removeEventListener("loadedmetadata", onMeta)
-      tryPlay()
-    }
-    video.addEventListener("loadedmetadata", onMeta)
-  }
-
+  // ── ytdlp pre-flight: resolve fresh URL BEFORE deciding HLS vs MP4 ──────
   if (needsResolve) {
     resolveStreamUrl(shotId!).then((result) => {
       if (destroyed) return
       if (result?.cached_url) {
-        // Locally cached video — serve directly, no HLS needed
-        playCachedVideo(result.cached_url)
+        // Locally cached video — play MP4 directly
+        playDirect(result.cached_url)
       } else if (result?.ip_bound) {
         // IP-bound but not yet cached — download in progress on server
-        // Poll every 3 seconds for up to 60 seconds for the cache to complete
+        // Poll every 3 seconds for up to 90 seconds for the cache to complete
         let pollCount = 0
-        const maxPolls = 20
-        const pollInterval = setInterval(async () => {
-          if (destroyed) { clearInterval(pollInterval); return }
+        const maxPolls = 30
+        pollTimer = setInterval(async () => {
+          if (destroyed) { if (pollTimer) clearInterval(pollTimer); return }
           pollCount++
           if (pollCount >= maxPolls) {
-            clearInterval(pollInterval)
-            // Fall back to direct URL as last resort
-            if (result?.direct_url) {
-              video.src = result.direct_url
-              const onMeta = () => {
-                video.removeEventListener("loadedmetadata", onMeta)
-                tryPlay()
-              }
-              video.addEventListener("loadedmetadata", onMeta)
-            } else {
-              onFatalError?.()
-            }
+            if (pollTimer) clearInterval(pollTimer)
+            pollTimer = null
+            onFatalError?.()
             return
           }
           const check = await resolveStreamUrl(shotId!)
-          if (destroyed) { clearInterval(pollInterval); return }
+          if (destroyed) { if (pollTimer) clearInterval(pollTimer); return }
           if (check?.cached_url) {
-            clearInterval(pollInterval)
-            playCachedVideo(check.cached_url)
+            if (pollTimer) clearInterval(pollTimer)
+            pollTimer = null
+            playDirect(check.cached_url)
           }
         }, 3000)
+      } else if (result?.local_url && isHlsUrl(result.local_url)) {
+        // Non-IP-bound HLS — use hls.js
+        startHls(result.local_url)
+      } else if (result?.local_url) {
+        // Non-IP-bound MP4 through proxy
+        playDirect(result.local_url)
       } else {
-        startHls(result?.local_url || src)
+        // Fallback to original src
+        if (isHlsUrl(src)) {
+          startHls(src)
+        } else {
+          playDirect(src)
+        }
       }
     })
-  } else {
-    startHls(src)
+    // Return cleanup immediately — the async resolve will set up playback
+    return cleanup
   }
 
+  // ── Non-ytdlp: use original src directly ────────────────────────────────
+  if (!isHlsUrl(src)) {
+    playDirect(src)
+    return cleanup
+  }
+
+  startHls(src)
   return cleanup
 }
