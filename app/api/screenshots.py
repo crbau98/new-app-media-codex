@@ -2022,6 +2022,21 @@ async def trigger_capture(request: Request, background_tasks: BackgroundTasks):
     return {"status": "started"}
 
 
+@router.delete("/clear-posters")
+def clear_poster_cache(request: Request):
+    """Clear all cached poster thumbnails so they regenerate with current settings."""
+    global _POSTER_DISK_CACHE, _POSTER_DISK_CACHE_LOADED
+    cleared = 0
+    if _POSTERS_DIR.exists():
+        for f in _POSTERS_DIR.glob("*.jpg"):
+            f.unlink(missing_ok=True)
+            cleared += 1
+    with _POSTER_DISK_CACHE_LOCK:
+        _POSTER_DISK_CACHE.clear()
+        _POSTER_DISK_CACHE_LOADED = True  # keep loaded but empty
+    return {"status": "cleared", "posters_cleared": cleared}
+
+
 @router.delete("/clear-all")
 def clear_all_captures(request: Request):
     """Delete every screenshot row and clear related caches (video cache, posters)."""
