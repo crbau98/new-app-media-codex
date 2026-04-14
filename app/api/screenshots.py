@@ -2024,6 +2024,37 @@ async def trigger_capture(request: Request, background_tasks: BackgroundTasks):
     return {"status": "started"}
 
 
+@router.delete("/clear-all")
+def clear_all_captures(request: Request):
+    """Delete every screenshot row and clear related caches (video cache, posters)."""
+    db = request.app.state.db
+    with db.connect() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM screenshots").fetchone()[0]
+        conn.execute("DELETE FROM screenshots")
+        conn.execute("DELETE FROM capture_queue")
+    # Clear video cache and poster cache on disk
+    import shutil
+    video_cache = Path("/app/data/video_cache")
+    poster_cache = _POSTERS_DIR
+    vids_cleared = 0
+    posters_cleared = 0
+    if video_cache.exists():
+        for f in video_cache.glob("*.mp4"):
+            f.unlink(missing_ok=True)
+            vids_cleared += 1
+    if poster_cache.exists():
+        for f in poster_cache.glob("*.jpg"):
+            f.unlink(missing_ok=True)
+            posters_cleared += 1
+    _invalidate_screenshots_cache(request.app.state)
+    return {
+        "status": "cleared",
+        "screenshots_deleted": total,
+        "video_cache_cleared": vids_cleared,
+        "posters_cleared": posters_cleared,
+    }
+
+
 @router.get("/status")
 def capture_status(request: Request):
     def build():

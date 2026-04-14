@@ -753,7 +753,7 @@ def _heuristic_discover_performers(
             score += 1.0
         score += len(overlap) * 3.0
         score += min(local_hits, 60) / 12.0
-        score += 1.5 if existing_match is None else 0.5
+        score += 5.0 if existing_match is None else -2.0
         if not overlap and query_tokens and local_hits < 4:
             score -= 0.5
 
@@ -812,12 +812,15 @@ def discover_performers(body: DiscoverBody, request: Request):
     existing_usernames = sorted(username_lookup.keys())[:250]
 
     prompt = (
-        f"Suggest up to {limit} creators that fit this discovery request. "
+        f"Suggest up to {limit} NEW creators that fit this discovery request. "
         f"Discovery query: {query or 'Use the supplied seed creator and term context.'}. "
         f"Preferred platform: {_normalize_platform_name(body.platform) or 'any'}. "
         f"Seed context: {json.dumps(seed_context, ensure_ascii=True)}. "
-        f"Prefer creators not already in this app, but if the strongest matches are already tracked, include them anyway. "
-        f"Already tracked usernames: {json.dumps(existing_usernames, ensure_ascii=True)}. "
+        f"IMPORTANT: Do NOT suggest any creator whose username is in this exclusion list. "
+        f"Suggest fresh, undiscovered creators that the user has not tracked yet. "
+        f"Exclusion list (already tracked): {json.dumps(existing_usernames, ensure_ascii=True)}. "
+        f"Think broadly: suggest real creators from the same niche, style, or body type "
+        f"who are NOT already tracked. Include lesser-known or up-and-coming creators. "
         f"Return JSON with a 'suggestions' array. Each item should include username, display_name, platform "
         f"(OnlyFans, Twitter/X, Instagram, Reddit, or Fansly), bio, tags, and reason."
     )
@@ -833,7 +836,8 @@ def discover_performers(body: DiscoverBody, request: Request):
         alias_lookup=alias_lookup,
     )
 
-    results: list[dict] = []
+    results_new: list[dict] = []
+    results_existing: list[dict] = []
     seen_aliases: set[str] = set()
     for suggestion in [*ai_suggestions, *heuristic_suggestions]:
         username = str(suggestion.get("username") or "").strip().lstrip("@")
@@ -860,20 +864,23 @@ def discover_performers(body: DiscoverBody, request: Request):
         if dedupe_key in seen_aliases:
             continue
         seen_aliases.add(dedupe_key)
-        results.append(
-            {
-                "username": username,
-                "display_name": display_name or None,
-                "platform": normalized_platform,
-                "bio": str(suggestion.get("bio") or ""),
-                "tags": normalized_tags[:5],
-                "reason": str(suggestion.get("reason") or ""),
-                "exists": existing_match is not None,
-            }
-        )
-        if len(results) >= limit:
-            break
+        entry = {
+            "username": username,
+            "display_name": display_name or None,
+            "platform": normalized_platform,
+            "bio": str(suggestion.get("bio") or ""),
+            "tags": normalized_tags[:5],
+            "reason": str(suggestion.get("reason") or ""),
+            "exists": existing_match is not None,
+        }
+        if existing_match is None:
+            results_new.append(entry)
+        else:
+            results_existing.append(entry)
 
+    # Always show new/undiscovered creators first, then fill remaining
+    # slots with already-tracked ones.
+    results = (results_new + results_existing)[:limit]
     return {"suggestions": results}
 
 
