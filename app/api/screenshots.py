@@ -2032,6 +2032,7 @@ def clear_all_captures(request: Request):
         total = conn.execute("SELECT COUNT(*) FROM screenshots").fetchone()[0]
         conn.execute("DELETE FROM screenshots")
         conn.execute("DELETE FROM capture_queue")
+        conn.commit()
     # Clear video cache and poster cache on disk
     import shutil
     video_cache = Path("/app/data/video_cache")
