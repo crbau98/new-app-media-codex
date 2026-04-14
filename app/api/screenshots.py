@@ -1172,15 +1172,21 @@ async def _poster_via_ffmpeg(source_url: str, poster_path: Path, port: str) -> b
             "-update", "1",
             str(poster_path),
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
         )
         try:
-            await asyncio.wait_for(proc.communicate(), timeout=12)
+            _, stderr_data = await asyncio.wait_for(proc.communicate(), timeout=12)
         except asyncio.TimeoutError:
             proc.kill()
+            _logger.warning("poster ffmpeg timeout for %s", source_url[:80])
             return False
-        return proc.returncode == 0 and poster_path.exists() and poster_path.stat().st_size > 0
-    except Exception:
+        ok = proc.returncode == 0 and poster_path.exists() and poster_path.stat().st_size > 0
+        if not ok:
+            err_snippet = (stderr_data or b"").decode(errors="replace")[-200:]
+            _logger.warning("poster ffmpeg failed (rc=%s) for %s: %s", proc.returncode, source_url[:80], err_snippet)
+        return ok
+    except Exception as exc:
+        _logger.warning("poster ffmpeg exception for %s: %s", source_url[:80], exc)
         return False
 
 
@@ -1245,8 +1251,11 @@ async def _bg_extract_poster(app_state, shot_id: int, source_url: str, page_url:
                         return
                 if await _poster_via_ffmpeg(source_url, poster_path, port):
                     _mark_poster_cached(shot_id)
-    except Exception:
-        pass
+                    _logger.info("poster generated for shot %d (%d bytes)", shot_id, poster_path.stat().st_size)
+                else:
+                    _logger.warning("poster generation failed for shot %d (url=%s)", shot_id, source_url[:80])
+    except Exception as exc:
+        _logger.warning("bg poster extraction error for shot %d: %s", shot_id, exc)
 
 
 @router.get("/video-poster/{shot_id}")
@@ -1315,6 +1324,55 @@ async def video_poster(shot_id: int, request: Request):
         asyncio.create_task(_bg_extract_poster(request.app.state, shot_id, source_url, page_url_val))
 
     return _placeholder_poster_response()
+
+
+@router.get("/poster-status")
+def poster_status(request: Request):
+    """Diagnostic: check how many posters have been generated."""
+    db = request.app.state.db
+    with db.connect() as conn:
+        total_videos = conn.execute(
+            "SELECT COUNT(*) FROM screenshots WHERE source_url LIKE '%.mp4%' OR source_url LIKE '%.webm%' OR source LIKE '%coomer%'"
+        ).fetchone()[0]
+    cached_count = len(_POSTER_DISK_CACHE)
+    on_disk = 0
+    try:
+        on_disk = sum(1 for p in _POSTERS_DIR.iterdir() if p.suffix == ".jpg" and p.stat().st_size > 0)
+    except FileNotFoundError:
+        pass
+    return {
+        "total_video_screenshots": total_videos,
+        "posters_in_memory_cache": cached_count,
+        "posters_on_disk": on_disk,
+        "semaphore_available": _POSTER_SEMAPHORE._value,
+        "semaphore_max": 4,
+    }
+
+
+@router.post("/generate-posters")
+async def generate_posters_bulk(request: Request, limit: int = Query(default=20, ge=1, le=100)):
+    """Trigger background poster generation for up to `limit` uncached video screenshots."""
+    db = request.app.state.db
+    with db.connect() as conn:
+        rows = conn.execute(
+            """SELECT id, source_url, page_url FROM screenshots
+               WHERE (source_url LIKE '%.mp4%' OR source_url LIKE '%.webm%' OR source = 'coomer')
+               ORDER BY id DESC LIMIT ?""",
+            (limit * 3,),  # fetch more since many may already be cached
+        ).fetchall()
+    scheduled = 0
+    for row in rows:
+        if scheduled >= limit:
+            break
+        shot_id = row["id"]
+        if _poster_is_cached(shot_id):
+            continue
+        source_url = str(row["source_url"] or "")
+        page_url = str(row["page_url"] or "")
+        if source_url.startswith(("http://", "https://")):
+            asyncio.create_task(_bg_extract_poster(request.app.state, shot_id, source_url, page_url))
+            scheduled += 1
+    return {"scheduled": scheduled, "message": f"Scheduled {scheduled} poster extractions in background"}
 
 
 _FEMALE_METADATA_KEYWORDS = {
