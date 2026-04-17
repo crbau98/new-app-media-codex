@@ -4,8 +4,9 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tansta
 import { cn } from "@/lib/cn"
 import { api, type Performer, type PerformerMedia, type PerformerLink, type Screenshot } from "@/lib/api"
 import { resolvePublicUrl } from "@/lib/backendOrigin"
+import { attachMediaSource } from "@/lib/hlsAttach"
 import { getPerformerAvatarSrc } from "@/lib/performer"
-import { getScreenshotMediaSrc } from "@/lib/media"
+import { getBestAvailablePreviewSrc, getScreenshotMediaSrc, isVideoShot } from "@/lib/media"
 import { useAppStore } from "@/store"
 import { Skeleton } from "@/components/Skeleton"
 import { sharedQueryKeys, useCaptureQueueQuery } from "@/features/sharedQueries"
@@ -78,6 +79,53 @@ function parseTags(tags: string | null): string[] {
 
 function isVideo(src: string): boolean {
   return /\.(mp4|webm|mov|m4v|avi|mkv)(\?|$)/i.test(src)
+}
+
+function PerformerVideo({
+  media,
+  src,
+  className,
+  previewSrc,
+  autoPlay = false,
+  loop = false,
+  controls = false,
+  preload = "metadata",
+}: {
+  media: Pick<PerformerMedia, "id" | "source_kind" | "source">
+  src: string
+  className?: string
+  previewSrc?: string
+  autoPlay?: boolean
+  loop?: boolean
+  controls?: boolean
+  preload?: "none" | "metadata" | "auto"
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !src) return
+    return attachMediaSource(video, src, {
+      tryAutoplay: autoPlay,
+      shotId: media.source_kind === "screenshot" ? media.id : undefined,
+      shotSource: media.source ?? undefined,
+    })
+  }, [autoPlay, media.id, media.source, media.source_kind, src])
+
+  return (
+    <video
+      key={src}
+      ref={videoRef}
+      muted
+      autoPlay={autoPlay}
+      loop={loop}
+      playsInline
+      controls={controls}
+      preload={preload}
+      poster={previewSrc || undefined}
+      className={className}
+    />
+  )
 }
 
 /* ── Platform Icon ────────────────────────────────────────────────────── */
@@ -468,23 +516,24 @@ function RecentCaptures({ performerId, onViewAll }: { performerId: number; onVie
 
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-6 gap-1.5">
-        {shots.map((shot: Screenshot) => {
-          const src = getScreenshotMediaSrc(shot)
-          if (!src) return null
-          const isVid = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(src)
-          return isVid ? (
-            <video
-              key={shot.id}
-              src={src}
-              muted
-              playsInline
-              preload="metadata"
-              className="aspect-square w-full rounded-lg object-cover bg-black/20"
-            />
-          ) : (
-            <img
-              key={shot.id}
+        <div className="grid grid-cols-6 gap-1.5">
+          {shots.map((shot: Screenshot) => {
+            const src = getScreenshotMediaSrc(shot)
+            const previewSrc = getBestAvailablePreviewSrc(shot)
+            if (!src) return null
+            const isVid = isVideoShot(shot)
+            return isVid ? (
+              <PerformerVideo
+                key={shot.id}
+                media={{ id: shot.id, source_kind: "screenshot", source: shot.source }}
+                src={src}
+                previewSrc={previewSrc}
+                preload="metadata"
+                className="aspect-square w-full rounded-lg object-cover bg-black/20"
+              />
+            ) : (
+              <img
+                key={shot.id}
               src={src}
               alt=""
               loading="lazy"
@@ -670,20 +719,12 @@ function MediaGallery({
                         }}
                       />
                     ) : (
-                      <video
+                      <PerformerVideo
+                        media={m}
                         src={src}
-                        muted
-                        playsInline
+                        previewSrc={previewSrc}
                         preload="metadata"
                         className="h-full w-full object-cover"
-                        onError={(e) => {
-                          const v = e.currentTarget
-                          if (!v.dataset.retried) {
-                            v.dataset.retried = "1"
-                            v.src = withCacheBust(src)
-                            v.load()
-                          }
-                        }}
                       />
                     )
                   ) : (
@@ -824,23 +865,18 @@ function PerformerMediaLightbox({
       {/* Media */}
       <div onClick={(e) => e.stopPropagation()} className="max-h-[90vh] max-w-[95vw]">
         {currentIsVideo ? (
-          <video
-            key={src}
-            src={src ?? undefined}
-            autoPlay
-            loop
-            playsInline
-            controls
-            className="max-h-[90vh] max-w-[95vw] object-contain rounded-lg"
-            onError={(e) => {
-              const v = e.currentTarget
-              if (!v.dataset.retried && src) {
-                v.dataset.retried = "1"
-                v.src = withCacheBust(src)
-                v.load()
-              }
-            }}
-          />
+          src ? (
+            <PerformerVideo
+              media={item}
+              src={src}
+              previewSrc={getPerformerMediaPreviewSrc(item)}
+              autoPlay
+              loop
+              controls
+              preload="auto"
+              className="max-h-[90vh] max-w-[95vw] object-contain rounded-lg"
+            />
+          ) : null
         ) : (
           <img
             key={src}

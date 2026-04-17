@@ -315,6 +315,7 @@ export interface PerformerLink {
 export interface PerformerMedia {
   id: number
   performer_id: number
+  source?: string | null
   media_type: string
   source_url: string | null
   local_path: string | null
