@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/activity", tags=["activity"])
 
 
@@ -34,8 +37,8 @@ def activity_feed(request: Request) -> JSONResponse:
                         "created_at": row["created_at"],
                     }
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("activity_feed: items query failed: %s", exc)
 
         # Query hypotheses — have a proper created_at column
         try:
@@ -56,8 +59,8 @@ def activity_feed(request: Request) -> JSONResponse:
                         "created_at": row["created_at"],
                     }
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("activity_feed: hypotheses query failed: %s", exc)
 
         # Query screenshots — use captured_at, expose term as the label
         try:
@@ -79,8 +82,8 @@ def activity_feed(request: Request) -> JSONResponse:
                         "created_at": row["created_at"],
                     }
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("activity_feed: screenshots query failed: %s", exc)
 
     # Merge and sort by created_at descending, return top 50
     events.sort(key=lambda e: e.get("created_at") or "", reverse=True)

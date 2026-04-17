@@ -96,9 +96,10 @@ def update_items_bulk(
 
 
 @router.get("/queue")
-def items_queue() -> JSONResponse:
+def items_queue(limit: int = Query(default=100, ge=1, le=500)) -> JSONResponse:
     from app.main import db
-    return JSONResponse(db.get_queue())
+    rows = db.get_queue()
+    return JSONResponse(rows[:limit])
 
 
 @router.get("/queue/count")

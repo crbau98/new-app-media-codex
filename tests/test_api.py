@@ -271,7 +271,7 @@ class TestScreenshotsProxyRefresh:
         monkeypatch.setattr(
             screenshots_api,
             "_resolve_ytdlp_stream_url",
-            lambda _page_url: ("https://fresh-cdn.example.test/video.mp4", "https://fresh-cdn.example.test/thumb.jpg"),
+            lambda _page_url: ("https://fresh-cdn.example.test/video.mp4", "https://fresh-cdn.example.test/thumb.jpg", False),
         )
 
         resp = screenshots_client.get(
@@ -307,7 +307,7 @@ class TestScreenshotsProxyRefresh:
             _FakeUpstreamResponse(410, content_type="application/json", body=b'{"detail":"gone"}'),
         ])
         screenshots_client.app.state.http_client = fake_client
-        monkeypatch.setattr(screenshots_api, "_resolve_ytdlp_stream_url", lambda _page_url: (None, None))
+        monkeypatch.setattr(screenshots_api, "_resolve_ytdlp_stream_url", lambda _page_url: (None, None, False))
 
         resp = screenshots_client.get(
             f"/api/screenshots/proxy-media?url=https://gone-cdn.example.test/video.mp4&shot_id={shot_id}"
