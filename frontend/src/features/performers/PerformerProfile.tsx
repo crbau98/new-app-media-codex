@@ -3,6 +3,7 @@ import { createPortal } from "react-dom"
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/cn"
 import { api, type Performer, type PerformerMedia, type PerformerLink, type Screenshot } from "@/lib/api"
+import { resolvePublicUrl } from "@/lib/backendOrigin"
 import { getPerformerAvatarSrc } from "@/lib/performer"
 import { getScreenshotMediaSrc } from "@/lib/media"
 import { useAppStore } from "@/store"
@@ -14,15 +15,15 @@ import { sharedQueryKeys, useCaptureQueueQuery } from "@/features/sharedQueries"
 function getPerformerMediaSrc(m: PerformerMedia): string {
   // local_url is a web-accessible URL computed by backend.  For screenshots-origin
   // rows it already embeds shot_id so the proxy can refresh expired yt-dlp URLs.
-  if (m.local_url) return m.local_url
+  if (m.local_url) return resolvePublicUrl(m.local_url)
   // source_url is a remote URL - use proxy to avoid CORS issues
   if (m.source_url) {
     const url = m.source_url
     if (url.startsWith("http://") || url.startsWith("https://")) {
       const shotId = m.source_kind === "screenshot" && m.id ? `&shot_id=${m.id}` : ""
-      return `/api/screenshots/proxy-media?url=${encodeURIComponent(url)}${shotId}`
+      return resolvePublicUrl(`/api/screenshots/proxy-media?url=${encodeURIComponent(url)}${shotId}`)
     }
-    return url
+    return resolvePublicUrl(url)
   }
   // thumbnail_path and local_path are filesystem paths - not directly accessible
   return ""
@@ -31,9 +32,9 @@ function getPerformerMediaSrc(m: PerformerMedia): string {
 function getPerformerMediaPreviewSrc(m: PerformerMedia): string {
   // Prefer a dedicated preview_url (extracted video poster or thumbnail).  Fall
   // back to video-poster endpoint for screenshot-origin videos, then main src.
-  if (m.preview_url) return m.preview_url
+  if (m.preview_url) return resolvePublicUrl(m.preview_url)
   if (m.source_kind === "screenshot" && m.media_type === "video" && m.id) {
-    return `/api/screenshots/video-poster/${m.id}`
+    return resolvePublicUrl(`/api/screenshots/video-poster/${m.id}`)
   }
   return getPerformerMediaSrc(m)
 }
