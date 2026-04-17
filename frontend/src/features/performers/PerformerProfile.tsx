@@ -12,18 +12,36 @@ import { sharedQueryKeys, useCaptureQueueQuery } from "@/features/sharedQueries"
 /* ── Helpers ──────────────────────────────────────────────────────────── */
 
 function getPerformerMediaSrc(m: PerformerMedia): string {
-  // local_url is a web-accessible URL computed by backend (e.g. /cached-screenshots/file.jpg)
+  // local_url is a web-accessible URL computed by backend.  For screenshots-origin
+  // rows it already embeds shot_id so the proxy can refresh expired yt-dlp URLs.
   if (m.local_url) return m.local_url
   // source_url is a remote URL - use proxy to avoid CORS issues
   if (m.source_url) {
     const url = m.source_url
     if (url.startsWith("http://") || url.startsWith("https://")) {
-      return `/api/screenshots/proxy-media?url=${encodeURIComponent(url)}`
+      const shotId = m.source_kind === "screenshot" && m.id ? `&shot_id=${m.id}` : ""
+      return `/api/screenshots/proxy-media?url=${encodeURIComponent(url)}${shotId}`
     }
     return url
   }
   // thumbnail_path and local_path are filesystem paths - not directly accessible
   return ""
+}
+
+function getPerformerMediaPreviewSrc(m: PerformerMedia): string {
+  // Prefer a dedicated preview_url (extracted video poster or thumbnail).  Fall
+  // back to video-poster endpoint for screenshot-origin videos, then main src.
+  if (m.preview_url) return m.preview_url
+  if (m.source_kind === "screenshot" && m.media_type === "video" && m.id) {
+    return `/api/screenshots/video-poster/${m.id}`
+  }
+  return getPerformerMediaSrc(m)
+}
+
+function withCacheBust(url: string): string {
+  if (!url) return url
+  const sep = url.includes("?") ? "&" : "?"
+  return `${url}${sep}bust=${Date.now()}`
 }
 
 /* ── Constants ────────────────────────────────────────────────────────── */
@@ -623,24 +641,66 @@ function MediaGallery({
         <div className="grid grid-cols-3 gap-1.5">
           {allMedia.map((m, i) => {
             const src = getPerformerMediaSrc(m)
+            const previewSrc = getPerformerMediaPreviewSrc(m)
             const isVid = m.media_type === "video" || (src ? isVideo(src) : false)
+            const key = `${m.source_kind ?? "m"}-${m.id}`
             return (
               <button
-                key={m.id}
+                key={key}
                 onClick={() => onOpenLightbox(allMedia, i)}
                 className="group relative aspect-square overflow-hidden rounded-lg bg-white/5 transition-all hover:ring-2 hover:ring-accent/50"
               >
                 {src ? (
                   isVid ? (
-                    <video
-                      src={src}
-                      muted
-                      playsInline
-                      preload="metadata"
-                      className="h-full w-full object-cover"
-                    />
+                    previewSrc && previewSrc !== src ? (
+                      <img
+                        src={previewSrc}
+                        alt={m.caption ?? ""}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                        onError={(e) => {
+                          const img = e.currentTarget
+                          if (!img.dataset.retried) {
+                            img.dataset.retried = "1"
+                            img.src = withCacheBust(previewSrc)
+                          } else {
+                            img.style.visibility = "hidden"
+                          }
+                        }}
+                      />
+                    ) : (
+                      <video
+                        src={src}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          const v = e.currentTarget
+                          if (!v.dataset.retried) {
+                            v.dataset.retried = "1"
+                            v.src = withCacheBust(src)
+                            v.load()
+                          }
+                        }}
+                      />
+                    )
                   ) : (
-                    <img src={src} alt={m.caption ?? ""} className="h-full w-full object-cover" loading="lazy" />
+                    <img
+                      src={src}
+                      alt={m.caption ?? ""}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      onError={(e) => {
+                        const img = e.currentTarget
+                        if (!img.dataset.retried) {
+                          img.dataset.retried = "1"
+                          img.src = withCacheBust(src)
+                        } else {
+                          img.style.visibility = "hidden"
+                        }
+                      }}
+                    />
                   )
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-muted">
@@ -771,6 +831,14 @@ function PerformerMediaLightbox({
             playsInline
             controls
             className="max-h-[90vh] max-w-[95vw] object-contain rounded-lg"
+            onError={(e) => {
+              const v = e.currentTarget
+              if (!v.dataset.retried && src) {
+                v.dataset.retried = "1"
+                v.src = withCacheBust(src)
+                v.load()
+              }
+            }}
           />
         ) : (
           <img
@@ -779,6 +847,13 @@ function PerformerMediaLightbox({
             alt={item.caption ?? ""}
             className="max-h-[90vh] max-w-[95vw] object-contain rounded-lg select-none"
             draggable={false}
+            onError={(e) => {
+              const img = e.currentTarget
+              if (!img.dataset.retried && src) {
+                img.dataset.retried = "1"
+                img.src = withCacheBust(src)
+              }
+            }}
           />
         )}
       </div>
