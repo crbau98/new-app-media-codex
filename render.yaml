@@ -30,3 +30,14 @@ services:
       # Example: https://your-app.vercel.app,https://your-app-git-main-xxx.vercel.app
       - key: CORS_ALLOW_ORIGINS
         sync: false
+
+  # Keep-alive cron — pings /healthz every 14 minutes so Render never spins
+  # the starter-plan service down. Cold starts caused 30-90s first-load delays.
+  # Update APP_URL if the service hostname changes.
+  - type: cron
+    name: keep-alive-ping
+    runtime: image
+    image:
+      url: docker.io/curlimages/curl:latest
+    schedule: "*/14 * * * *"
+    startCommand: "curl -fsS https://codex-research-radar.onrender.com/healthz"

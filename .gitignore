@@ -3,9 +3,16 @@ __pycache__/
 .pytest_cache/
 *.pyc
 data/research.db
+data/*.db
+data/*.log
 data/images/*
 !.gitkeep
 .env
 app/static/dist/
 frontend/dist/
 .claude/worktrees/
+.DS_Store
+*.log
+*.bak
+Dockerfile.bak
+requirements.txt.bak
