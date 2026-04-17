@@ -319,15 +319,19 @@ export interface PerformerMedia {
   source_url: string | null
   local_path: string | null
   thumbnail_path: string | null
+  thumbnail_url?: string | null
+  preview_url?: string | null
   width: number | null
   height: number | null
   duration: number | null
   file_size: number | null
   caption: string | null
   ai_summary: string | null
+  ai_tags?: string | null
   is_favorite: number
   captured_at: string
-  local_url?: string
+  local_url?: string | null
+  source_kind?: "screenshot" | "performer_media"
 }
 
 export interface PerformerStats {

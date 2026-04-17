@@ -1339,6 +1339,71 @@ def delete_link(performer_id: int, link_id: int, request: Request):
 
 # ── Media ──────────────────────────────────────────────────────────────
 
+def _screenshot_row_to_media(row: dict, app_state) -> dict:
+    """Convert a screenshots row to the unified performer-media shape.
+
+    Crucially, builds `local_url` via proxy_media_url(..., shot_id=row.id) so the
+    backend can auto-refresh expired yt-dlp CDN URLs on 410/404. Without shot_id
+    in the proxy URL, expired videos silently fail to load.
+    """
+    from app.api.screenshots import _decorate_screenshot_media, _screenshot_is_video
+
+    decorated = _decorate_screenshot_media(app_state, dict(row))
+    media_type = "video" if _screenshot_is_video(decorated) else "photo"
+    return {
+        "id": decorated.get("id"),
+        "source_kind": "screenshot",
+        "performer_id": decorated.get("performer_id"),
+        "media_type": media_type,
+        "source_url": decorated.get("source_url"),
+        "local_url": decorated.get("local_url"),
+        "local_path": decorated.get("local_path"),
+        "thumbnail_path": None,
+        "thumbnail_url": decorated.get("thumbnail_url"),
+        "preview_url": decorated.get("preview_url"),
+        "caption": decorated.get("term"),
+        "ai_summary": decorated.get("ai_summary"),
+        "ai_tags": decorated.get("ai_tags"),
+        "is_favorite": 0,
+        "captured_at": decorated.get("captured_at"),
+        "width": None,
+        "height": None,
+        "duration": None,
+        "file_size": None,
+    }
+
+
+def _performer_media_row_to_media(row: dict) -> dict:
+    from app.api.screenshots import proxy_media_url
+
+    d = dict(row)
+    source_url = str(d.get("source_url") or "")
+    local_url = None
+    if source_url.startswith(("http://", "https://")):
+        local_url = proxy_media_url(source_url)
+    return {
+        "id": d.get("id"),
+        "source_kind": "performer_media",
+        "performer_id": d.get("performer_id"),
+        "media_type": d.get("media_type"),
+        "source_url": source_url or None,
+        "local_url": local_url,
+        "local_path": d.get("local_path"),
+        "thumbnail_path": d.get("thumbnail_path"),
+        "thumbnail_url": None,
+        "preview_url": None,
+        "caption": d.get("caption"),
+        "ai_summary": d.get("ai_summary"),
+        "ai_tags": d.get("ai_tags"),
+        "is_favorite": d.get("is_favorite") or 0,
+        "captured_at": d.get("captured_at"),
+        "width": d.get("width"),
+        "height": d.get("height"),
+        "duration": d.get("duration"),
+        "file_size": d.get("file_size"),
+    }
+
+
 @router.get("/{performer_id}/media")
 def browse_media(
     performer_id: int,
@@ -1350,12 +1415,33 @@ def browse_media(
     db = request.app.state.db
     if not db.get_performer(performer_id):
         raise HTTPException(404, detail="Performer not found")
-    return db.browse_performer_media(
-        performer_id=performer_id,
-        media_type=media_type,
-        limit=limit,
-        offset=offset,
-    )
+
+    # Combine manually-added performer_media with auto-captured screenshots
+    # linked by performer_id. The latter is the main data source for most
+    # performers (manual performer_media is rare).
+    with db.connect() as conn:
+        pm_rows = conn.execute(
+            "SELECT * FROM performer_media WHERE performer_id = ? ORDER BY captured_at DESC",
+            (performer_id,),
+        ).fetchall()
+        shot_rows = conn.execute(
+            "SELECT * FROM screenshots WHERE performer_id = ? ORDER BY captured_at DESC",
+            (performer_id,),
+        ).fetchall()
+
+    app_state = request.app.state
+    items: list[dict] = [_performer_media_row_to_media(dict(r)) for r in pm_rows]
+    items.extend(_screenshot_row_to_media(dict(r), app_state) for r in shot_rows)
+
+    if media_type in ("photo", "video"):
+        items = [m for m in items if m.get("media_type") == media_type]
+
+    items.sort(key=lambda m: m.get("captured_at") or "", reverse=True)
+
+    total = len(items)
+    page = items[offset : offset + limit]
+    has_more = offset + len(page) < total
+    return {"items": page, "total": total, "offset": offset, "limit": limit, "has_more": has_more}
 
 
 @router.get("/{performer_id}/activity")
