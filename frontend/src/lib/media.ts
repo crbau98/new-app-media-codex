@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react"
 import type { Screenshot } from "./api"
-import { archiverPlaybackCandidatesFromAnyRef, extractProxyMediaTargetUrl, isArchiverDirectMediaUrl } from "./archiverMedia"
+import { archiverPlaybackCandidatesFromAnyRef, extractProxyMediaTargetUrl, isArchiverDirectMediaUrl, shouldPreferArchiverEdgeProxy } from "./archiverMedia"
 import { getBackendOrigin, resolvePublicUrl } from "./backendOrigin"
 
 const BROKEN_MEDIA_LIMIT = 300
@@ -33,24 +33,15 @@ function isProxyMediaUrl(url: string): boolean {
 
 function buildProxyMediaUrl(url: string): string {
   if (!isRenderableRemoteUrl(url) || isProxyMediaUrl(url)) return ""
-  if (
-    typeof window !== "undefined" &&
-    getBackendOrigin() &&
-    isArchiverDirectMediaUrl(url)
-  ) {
+  if (typeof window !== "undefined" && shouldPreferArchiverEdgeProxy() && isArchiverDirectMediaUrl(url)) {
     return `${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(url)}`
   }
   return resolvePublicUrl(`/api/screenshots/proxy-media?url=${encodeURIComponent(url)}`)
 }
 
-function splitUiFromApi(): boolean {
-  return Boolean(getBackendOrigin())
-}
-
 function flattenArchiverPlaybackChoices(candidates: Array<string | null | undefined>): string[] {
-  const split = splitUiFromApi()
   return uniqueMediaCandidates(
-    candidates.flatMap((c) => archiverPlaybackCandidatesFromAnyRef(normalizeMediaUrl(c), split)),
+    candidates.flatMap((c) => archiverPlaybackCandidatesFromAnyRef(normalizeMediaUrl(c))),
   )
 }
 

@@ -14,6 +14,11 @@ const ARCHIVER_MEDIA_NETLOCS = new Set([
 
 const PROXY_MEDIA_PATH = "/api/screenshots/proxy-media"
 
+/** True on Vercel deployments where `/api/archiver-proxy` Edge route exists. */
+export function shouldPreferArchiverEdgeProxy(): boolean {
+  return typeof window !== "undefined" && /\.vercel\.app$/i.test(window.location.hostname)
+}
+
 export function isArchiverDirectMediaUrl(url: string): boolean {
   try {
     const u = new URL(url)
@@ -69,44 +74,35 @@ export function extractProxyMediaTargetUrl(ref: string): string {
 }
 
 /**
- * When the SPA is on Vercel and the API on another host, try the Edge proxy first
- * (same origin as the page), then the raw HTTPS URL in the browser. Without this,
- * a missing Edge route (HTML 200) marks all variants broken and the UI shows
- * "Media unavailable" with an empty preview chain.
+ * Playback URLs for coomer/kemono file targets.
+ *
+ * - **Always** include the raw `https://coomer…/data/…` when decoded from a proxy URL, so
+ *   same-origin SPA+API (e.g. Render) still loads media in the **browser** when the
+ *   server cannot reach the CDN.
+ * - On **Vercel** (`*.vercel.app`), try Edge `/api/archiver-proxy` first.
  */
-export function archiverPlaybackCandidatesFromAnyRef(ref: string, splitDeploy: boolean): string[] {
+export function archiverPlaybackCandidatesFromAnyRef(ref: string): string[] {
   const r = ref.trim()
   if (!r) return []
-  if (!splitDeploy || typeof window === "undefined") return [r]
 
   let httpsTarget: string | null = null
-
-  try {
-    const u = r.startsWith("http://") || r.startsWith("https://")
-      ? new URL(r)
-      : new URL(r, window.location.origin)
-    const param = u.searchParams.get("url")
-    if (param) {
-      const path = u.pathname
-      if (path.includes("proxy-media") || path.includes("archiver-proxy")) {
-        const decoded = param.trim()
-        if (isArchiverDirectMediaUrl(decoded)) httpsTarget = decoded
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-
-  if (!httpsTarget && (r.startsWith("http://") || r.startsWith("https://")) && isArchiverDirectMediaUrl(r)) {
-    httpsTarget = r
-  }
-  if (!httpsTarget && r.includes("proxy-media")) {
+  if (r.includes("proxy-media") || r.includes("archiver-proxy")) {
     const inner = extractProxyMediaTargetUrl(r)
     if (inner && isArchiverDirectMediaUrl(inner)) httpsTarget = inner
+  }
+  if (!httpsTarget && (r.startsWith("http://") || r.startsWith("https://")) && isArchiverDirectMediaUrl(r)) {
+    httpsTarget = r
   }
 
   if (!httpsTarget) return [r]
 
-  const edge = `${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(httpsTarget)}`
-  return [edge, httpsTarget]
+  const out: string[] = []
+  if (typeof window !== "undefined" && /\.vercel\.app$/i.test(window.location.hostname)) {
+    out.push(`${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(httpsTarget)}`)
+  }
+  out.push(httpsTarget)
+  if (r !== httpsTarget && !out.includes(r)) {
+    out.push(r)
+  }
+  return out
 }
