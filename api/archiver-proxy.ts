@@ -1,6 +1,12 @@
 /**
- * Vercel Edge: stream coomer/kemono file URLs for clients where the primary API
- * (e.g. Render) cannot reach those CDNs. Only allowlisted hosts are forwarded.
+ * Vercel Edge: stream coomer/kemono file URLs when the primary API host cannot
+ * reach those CDNs. Only allowlisted hosts are forwarded.
+ *
+ * Must live under `frontend/api/` when the Vercel project root is `frontend/`.
+ *
+ * For coomer/kemono image URLs we rewrite to the `img.*` thumbnail host, which is
+ * reachable from datacenter IPs (including Vercel/Render) unlike `n*.coomer.st`
+ * which frequently blocks datacenter ranges and causes `Connection reset by peer`.
  */
 export const config = { runtime: "edge" }
 
@@ -12,18 +18,38 @@ const ALLOWED = new Set([
   "kemono.cr",
 ])
 
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|avif)(?:$|\?)/i
+
 function allowedArchiverHost(hostname: string): boolean {
   const h = hostname.toLowerCase()
   if (ALLOWED.has(h)) return true
-  if (/^n\d+\.coomer\.(st|su)$/i.test(h)) return true
-  if (/^n\d+\.kemono\.(su|party|cr)$/i.test(h)) return true
+  if (/^(?:img|n\d+)\.coomer\.(st|su)$/i.test(h)) return true
+  if (/^(?:img|n\d+)\.kemono\.(su|party|cr)$/i.test(h)) return true
   return false
+}
+
+function rewriteArchiverUrlToThumbnail(target: URL): URL {
+  const host = target.hostname.toLowerCase()
+  if (!target.pathname.startsWith("/data/")) return target
+  if (!IMAGE_EXT_RE.test(target.pathname)) return target
+
+  let nextHost: string | null = null
+  if (/coomer\.su$/i.test(host)) nextHost = "img.coomer.su"
+  else if (/coomer\.st$/i.test(host)) nextHost = "img.coomer.st"
+  else if (/kemono\.su$/i.test(host)) nextHost = "img.kemono.su"
+  else if (/kemono\.party$/i.test(host)) nextHost = "img.kemono.party"
+  else if (/kemono\.cr$/i.test(host)) nextHost = "img.kemono.cr"
+
+  if (!nextHost) return target
+  const next = new URL(`https://${nextHost}/thumbnail${target.pathname}${target.search}`)
+  return next
 }
 
 function buildUpstreamHeaders(target: URL, range: string | null): Headers {
   const referer = `${target.protocol}//${target.host}/`
   const h = new Headers({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     Referer: referer,
     Origin: referer.replace(/\/$/, ""),
     Accept: "image/webp,image/avif,image/apng,image/*,video/*,*/*;q=0.8",
@@ -72,17 +98,28 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: "host_not_allowed" }), { status: 403, headers: { "Content-Type": "application/json" } })
   }
 
+  target = rewriteArchiverUrlToThumbnail(target)
+
   const range = req.headers.get("range")
-  const upstream = await fetch(target.href, {
-    method: req.method,
-    headers: buildUpstreamHeaders(target, range),
-    redirect: "follow",
-  })
+  let upstream: Response
+  try {
+    upstream = await fetch(target.href, {
+      method: req.method,
+      headers: buildUpstreamHeaders(target, range),
+      redirect: "follow",
+      // @ts-expect-error edge-specific: disable caching by default for media
+      cf: { cacheTtl: 3600 },
+    })
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: "upstream_fetch_failed", detail: String(err), target: target.href }),
+      { status: 502, headers: { "Content-Type": "application/json" } },
+    )
+  }
 
   const out = new Headers(upstream.headers)
   out.set("Cross-Origin-Resource-Policy", "cross-origin")
   out.set("Access-Control-Allow-Origin", "*")
-  // Avoid caching stale errors at the edge
   if (!upstream.ok && !upstream.headers.get("cache-control")) {
     out.set("Cache-Control", "no-store")
   }
