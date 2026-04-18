@@ -86,6 +86,7 @@ _VIDEO_CACHE_DIR = Path(os.getenv("VIDEO_CACHE_DIR") or (_APP_DATA_ROOT / "video
 _VIDEO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 _VIDEO_CACHE_MAX_MB = 5000  # 5 GB max cache size
 _VIDEO_CACHE_LOCK = _ThreadLock()
+_VIDEO_CACHE_INFLIGHT: set[int] = set()
 
 
 def _video_cache_path(shot_id: int) -> Path:
@@ -169,8 +170,16 @@ def _download_video_with_ytdlp(page_url: str, shot_id: int) -> str | None:
 
 async def _bg_download_video(page_url: str, shot_id: int):
     """Background task to download a video via yt-dlp."""
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, _download_video_with_ytdlp, page_url, shot_id)
+    with _VIDEO_CACHE_LOCK:
+        if shot_id in _VIDEO_CACHE_INFLIGHT or _is_video_cached(shot_id):
+            return
+        _VIDEO_CACHE_INFLIGHT.add(shot_id)
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _download_video_with_ytdlp, page_url, shot_id)
+    finally:
+        with _VIDEO_CACHE_LOCK:
+            _VIDEO_CACHE_INFLIGHT.discard(shot_id)
 
 
 def _should_proxy_media(source: str, url: str) -> bool:
@@ -686,7 +695,7 @@ async def serve_cached_video(shot_id: int, request: Request):
 
 @router.post("/{shot_id}/resolve-stream")
 async def resolve_stream(shot_id: int, request: Request, background_tasks: BackgroundTasks):
-    """Pre-resolve a fresh HLS/video stream URL for a screenshot via yt-dlp.
+    """Pre-resolve a fresh or cacheable video stream URL for a screenshot.
 
     Called by the frontend before playback so the player always starts with a
     valid (non-expired) CDN token.  Returns the updated local_url proxy path
@@ -715,7 +724,7 @@ async def resolve_stream(shot_id: int, request: Request, background_tasks: Backg
             return ""
         return f"/api/screenshots/proxy-media?url={_url_quote(raw_source, safe='')}&shot_id={shot_id}"
 
-    if source != "ytdlp" or not page_url:
+    if source not in {"ytdlp", "coomer"} or not (page_url or current_source_url):
         # Nothing to refresh — return whatever we have
         return JSONResponse({
             "shot_id": shot_id,
@@ -724,6 +733,32 @@ async def resolve_stream(shot_id: int, request: Request, background_tasks: Backg
             "direct_url": None,
             "cached_url": None,
             "ip_bound": False,
+            "refreshed": False,
+        })
+
+    if source == "coomer":
+        if _is_video_cached(shot_id):
+            _logger.debug("resolve-stream fast-path: coomer shot %d already cached on disk", shot_id)
+            return JSONResponse({
+                "shot_id": shot_id,
+                "source_url": current_source_url,
+                "local_url": _build_local_url(current_source_url),
+                "direct_url": None,
+                "cached_url": f"/api/screenshots/cached-video/{shot_id}",
+                "ip_bound": True,
+                "refreshed": False,
+            })
+
+        cache_target = current_source_url or page_url
+        if cache_target:
+            background_tasks.add_task(_bg_download_video, cache_target, shot_id)
+        return JSONResponse({
+            "shot_id": shot_id,
+            "source_url": current_source_url,
+            "local_url": _build_local_url(current_source_url),
+            "direct_url": None,
+            "cached_url": None,
+            "ip_bound": True,
             "refreshed": False,
         })
 

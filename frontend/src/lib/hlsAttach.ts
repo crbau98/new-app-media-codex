@@ -149,7 +149,7 @@ type ResolveResult = {
 const _inflightResolves = new Map<number, Promise<ResolveResult | null>>()
 
 /**
- * Ask the backend to resolve a fresh stream URL for a ytdlp screenshot.
+ * Ask the backend to resolve a fresh or cached stream URL for a video screenshot.
  * Returns the resolve result with local_url, direct_url, and ip_bound flag.
  */
 async function resolveStreamUrl(shotId: number): Promise<ResolveResult | null> {
@@ -185,8 +185,9 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
   const onFatalError = options?.onFatalError
   const shotId = options?.shotId
   const shotSource = (options?.shotSource ?? "").toLowerCase()
-  // Only ytdlp sources have expiring CDN tokens that need pre-flight resolution
-  const needsResolve = shotId != null && shotSource === "ytdlp"
+  // Some sources need a backend pre-flight before playback:
+  // ytdlp for expiring tokens, coomer for cached-file fallback when proxying fails.
+  const needsResolve = shotId != null && (shotSource === "ytdlp" || shotSource === "coomer")
   video.removeAttribute("src")
 
   // We track cleanup across async pre-flight + HLS instantiation.
@@ -291,7 +292,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     video.addEventListener("loadedmetadata", onMeta)
   }
 
-  // ── ytdlp pre-flight: resolve fresh URL BEFORE deciding HLS vs MP4 ──────
+  // ── backend pre-flight: resolve fresh/cached URL BEFORE deciding HLS vs MP4 ──
   if (needsResolve) {
     resolveStreamUrl(shotId!).then((result) => {
       if (destroyed) return
