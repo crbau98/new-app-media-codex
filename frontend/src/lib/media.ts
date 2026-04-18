@@ -137,7 +137,7 @@ export function isKnownBrokenMediaUrl(url: string | null | undefined): boolean {
 
 export function getScreenshotMediaSrc(s: Screenshot): string {
   const archiverFirst = archiverDirectUrlCandidates(s)[0]
-  if (archiverFirst) return archiverFirst
+  if (archiverFirst) return resolvePublicUrl(archiverFirst)
 
   const localUrl = normalizeMediaUrl(s.local_url)
   if (isRenderableRemoteUrl(localUrl)) return resolvePublicUrl(localUrl)
@@ -163,10 +163,10 @@ export function getScreenshotPreviewSrc(s: Screenshot): string {
   if (preview && isRenderableRemoteUrl(preview) && !isVideoProxyUrl(preview)) {
     if (preview.includes("proxy-media")) {
       const inner = extractProxyMediaTargetUrl(preview)
-      if (inner && isArchiverDirectMediaUrl(inner) && !isVideoUrl(inner)) return inner
+      if (inner && isArchiverDirectMediaUrl(inner) && !isVideoUrl(inner)) return resolvePublicUrl(inner)
     }
     if ((preview.startsWith("http://") || preview.startsWith("https://")) && isArchiverDirectMediaUrl(preview) && !isVideoUrl(preview)) {
-      return preview
+      return resolvePublicUrl(preview)
     }
     return resolvePublicUrl(preview)
   }
@@ -184,10 +184,10 @@ export function getScreenshotPosterSrc(s: Screenshot): string {
   if (preview && isRenderableRemoteUrl(preview) && !isVideoProxyUrl(preview)) {
     if (preview.includes("proxy-media")) {
       const inner = extractProxyMediaTargetUrl(preview)
-      if (inner && isArchiverDirectMediaUrl(inner) && !isVideoUrl(inner)) return inner
+      if (inner && isArchiverDirectMediaUrl(inner) && !isVideoUrl(inner)) return resolvePublicUrl(inner)
     }
     if ((preview.startsWith("http://") || preview.startsWith("https://")) && isArchiverDirectMediaUrl(preview) && !isVideoUrl(preview)) {
-      return preview
+      return resolvePublicUrl(preview)
     }
     return resolvePublicUrl(preview)
   }
@@ -200,8 +200,11 @@ export function getBestAvailableMediaSrc(s: Screenshot): string {
   // When the proxy URL fails, fall back to the raw source_url so the browser
   // can attempt a direct CDN request (works for some hosts from real IPs).
   const rawSource = normalizeMediaUrl(s.source_url)
-  const directFallback = rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) ? rawSource : ""
-  const archiverExtras = archiverDirectUrlCandidates(s).filter((u) => u !== mediaSrc && u !== directFallback)
+  const directFallback =
+    rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) ? resolvePublicUrl(rawSource) : ""
+  const archiverExtras = archiverDirectUrlCandidates(s)
+    .map((u) => resolvePublicUrl(u))
+    .filter((u) => u !== mediaSrc && u !== directFallback)
   return pickUsableMediaUrl([mediaSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(mediaSrc)])
 }
 
@@ -217,14 +220,17 @@ export function getBestAvailablePreviewSrc(s: Screenshot): string {
   if (previewSrc) {
     // Thumbnail direct → proxy of preview → video-poster as fallbacks
     const directFallback =
-      (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? rawThumb :
-      (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? rawSource : ""
-    const archiverExtras = archiverDirectUrlCandidates(s).filter((u) => u !== previewSrc && u !== directFallback)
+      (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? resolvePublicUrl(rawThumb) :
+      (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? resolvePublicUrl(rawSource) : ""
+    const archiverExtras = archiverDirectUrlCandidates(s)
+      .map((u) => resolvePublicUrl(u))
+      .filter((u) => u !== previewSrc && u !== directFallback)
     return pickUsableMediaUrl([previewSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback])
   }
   const mediaSrc = getScreenshotMediaSrc(s)
   if (isVideoUrl(mediaSrc)) return videoPosterFallback ? pickUsableMediaUrl([videoPosterFallback]) : ""
-  const directFallback = rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource) ? rawSource : ""
+  const directFallback =
+    rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource) ? resolvePublicUrl(rawSource) : ""
   return pickUsableMediaUrl([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)])
 }
 
@@ -237,14 +243,17 @@ export function getBestAvailablePosterSrc(s: Screenshot): string {
     : ""
   if (previewSrc) {
     const directFallback =
-      (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? rawThumb :
-      (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? rawSource : ""
-    const archiverExtras = archiverDirectUrlCandidates(s).filter((u) => u !== previewSrc && u !== directFallback)
+      (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? resolvePublicUrl(rawThumb) :
+      (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? resolvePublicUrl(rawSource) : ""
+    const archiverExtras = archiverDirectUrlCandidates(s)
+      .map((u) => resolvePublicUrl(u))
+      .filter((u) => u !== previewSrc && u !== directFallback)
     return pickUsableMediaUrl([previewSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback])
   }
   const mediaSrc = getScreenshotMediaSrc(s)
   if (isVideoUrl(mediaSrc)) return videoPosterFallback ? pickUsableMediaUrl([videoPosterFallback]) : ""
-  const directFallback = rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource) ? rawSource : ""
+  const directFallback =
+    rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource) ? resolvePublicUrl(rawSource) : ""
   return pickUsableMediaUrl([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)])
 }
 
@@ -263,7 +272,11 @@ export function useResolvedScreenshotMedia(s: Screenshot) {
       // First error: attempt a cache-busted retry by marking the current URL broken
       // and incrementing retry counter — the next render will pick the proxy variant
       setRetryCount(1)
-      if (target && target.includes("/api/screenshots/proxy-media?url=") && !target.includes("&bust=")) {
+      if (
+        target
+        && (target.includes("/api/screenshots/proxy-media?url=") || target.includes("/api/archiver-proxy?url="))
+        && !target.includes("&bust=")
+      ) {
         // Already a proxy URL — add cache bust param to force fresh fetch
         const bustedUrl = target + "&bust=1"
         // Temporarily register the original as broken so the hook returns the busted URL

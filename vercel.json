@@ -4,5 +4,10 @@
   "outputDirectory": "frontend/dist",
   "installCommand": "cd frontend && npm install",
   "framework": null,
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/((?!api/archiver-proxy).*)",
+      "destination": "/index.html"
+    }
+  ]
 }
