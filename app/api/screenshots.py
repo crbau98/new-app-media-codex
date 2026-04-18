@@ -820,9 +820,10 @@ async def proxy_status():
             if not ok:
                 error = f"upstream status {resp.status_code}"
             await resp.aclose()
-    except Exception as exc:
+    except Exception:
         ok = False
-        error = f"{type(exc).__name__}: {exc}"
+        _logger.exception("Proxy status check failed")
+        error = "Proxy connectivity check failed"
 
     return JSONResponse({
         "configured": True,
