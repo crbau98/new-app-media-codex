@@ -1,6 +1,6 @@
 import Hls, { XhrLoader } from "hls.js"
 import { isArchiverDirectMediaUrl } from "./archiverMedia"
-import { apiUrl, getPublicOrigin, resolvePublicUrl } from "./backendOrigin"
+import { apiUrl, getBackendOrigin, getPublicOrigin } from "./backendOrigin"
 import { api } from "./api"
 
 const PROXY_PATH = "/api/screenshots/proxy-media"
@@ -120,8 +120,8 @@ export function rewriteMediaUrlForProxy(url: string): string {
     }
   }
   if (url.startsWith("http://") || url.startsWith("https://")) {
-    if (isArchiverDirectMediaUrl(url)) {
-      return resolvePublicUrl(url)
+    if (isArchiverDirectMediaUrl(url) && getBackendOrigin() && typeof window !== "undefined") {
+      return `${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(url)}`
     }
     return absoluteMediaRequestUrl(`${PROXY_PATH}?${PROXY_QUERY}${encodeURIComponent(url)}`)
   }

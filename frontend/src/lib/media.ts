@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react"
 import type { Screenshot } from "./api"
-import { extractProxyMediaTargetUrl, isArchiverDirectMediaUrl } from "./archiverMedia"
-import { resolvePublicUrl } from "./backendOrigin"
+import { archiverPlaybackCandidatesFromAnyRef, extractProxyMediaTargetUrl, isArchiverDirectMediaUrl } from "./archiverMedia"
+import { getBackendOrigin, resolvePublicUrl } from "./backendOrigin"
 
 const BROKEN_MEDIA_LIMIT = 300
 const brokenMediaUrls = new Set<string>()
@@ -33,7 +33,25 @@ function isProxyMediaUrl(url: string): boolean {
 
 function buildProxyMediaUrl(url: string): string {
   if (!isRenderableRemoteUrl(url) || isProxyMediaUrl(url)) return ""
+  if (
+    typeof window !== "undefined" &&
+    getBackendOrigin() &&
+    isArchiverDirectMediaUrl(url)
+  ) {
+    return `${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(url)}`
+  }
   return resolvePublicUrl(`/api/screenshots/proxy-media?url=${encodeURIComponent(url)}`)
+}
+
+function splitUiFromApi(): boolean {
+  return Boolean(getBackendOrigin())
+}
+
+function flattenArchiverPlaybackChoices(candidates: Array<string | null | undefined>): string[] {
+  const split = splitUiFromApi()
+  return uniqueMediaCandidates(
+    candidates.flatMap((c) => archiverPlaybackCandidatesFromAnyRef(normalizeMediaUrl(c), split)),
+  )
 }
 
 function uniqueMediaCandidates(candidates: Array<string | null | undefined>): string[] {
@@ -136,8 +154,10 @@ export function isKnownBrokenMediaUrl(url: string | null | undefined): boolean {
 }
 
 export function getScreenshotMediaSrc(s: Screenshot): string {
-  const archiverFirst = archiverDirectUrlCandidates(s)[0]
-  if (archiverFirst) return resolvePublicUrl(archiverFirst)
+  const archiverList = archiverDirectUrlCandidates(s)
+  if (archiverList.length) {
+    return pickUsableMediaUrl(flattenArchiverPlaybackChoices(archiverList))
+  }
 
   const localUrl = normalizeMediaUrl(s.local_url)
   if (isRenderableRemoteUrl(localUrl)) return resolvePublicUrl(localUrl)
@@ -163,10 +183,12 @@ export function getScreenshotPreviewSrc(s: Screenshot): string {
   if (preview && isRenderableRemoteUrl(preview) && !isVideoProxyUrl(preview)) {
     if (preview.includes("proxy-media")) {
       const inner = extractProxyMediaTargetUrl(preview)
-      if (inner && isArchiverDirectMediaUrl(inner) && !isVideoUrl(inner)) return resolvePublicUrl(inner)
+      if (inner && isArchiverDirectMediaUrl(inner) && !isVideoUrl(inner)) {
+        return pickUsableMediaUrl(flattenArchiverPlaybackChoices([inner]))
+      }
     }
     if ((preview.startsWith("http://") || preview.startsWith("https://")) && isArchiverDirectMediaUrl(preview) && !isVideoUrl(preview)) {
-      return resolvePublicUrl(preview)
+      return pickUsableMediaUrl(flattenArchiverPlaybackChoices([preview]))
     }
     return resolvePublicUrl(preview)
   }
@@ -184,10 +206,12 @@ export function getScreenshotPosterSrc(s: Screenshot): string {
   if (preview && isRenderableRemoteUrl(preview) && !isVideoProxyUrl(preview)) {
     if (preview.includes("proxy-media")) {
       const inner = extractProxyMediaTargetUrl(preview)
-      if (inner && isArchiverDirectMediaUrl(inner) && !isVideoUrl(inner)) return resolvePublicUrl(inner)
+      if (inner && isArchiverDirectMediaUrl(inner) && !isVideoUrl(inner)) {
+        return pickUsableMediaUrl(flattenArchiverPlaybackChoices([inner]))
+      }
     }
     if ((preview.startsWith("http://") || preview.startsWith("https://")) && isArchiverDirectMediaUrl(preview) && !isVideoUrl(preview)) {
-      return resolvePublicUrl(preview)
+      return pickUsableMediaUrl(flattenArchiverPlaybackChoices([preview]))
     }
     return resolvePublicUrl(preview)
   }
@@ -202,10 +226,10 @@ export function getBestAvailableMediaSrc(s: Screenshot): string {
   const rawSource = normalizeMediaUrl(s.source_url)
   const directFallback =
     rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) ? resolvePublicUrl(rawSource) : ""
-  const archiverExtras = archiverDirectUrlCandidates(s)
-    .map((u) => resolvePublicUrl(u))
-    .filter((u) => u !== mediaSrc && u !== directFallback)
-  return pickUsableMediaUrl([mediaSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(mediaSrc)])
+  const archiverExtras = archiverDirectUrlCandidates(s).filter((u) => u !== rawSource)
+  return pickUsableMediaUrl(
+    flattenArchiverPlaybackChoices([mediaSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(mediaSrc)]),
+  )
 }
 
 export function getBestAvailablePreviewSrc(s: Screenshot): string {
@@ -222,16 +246,18 @@ export function getBestAvailablePreviewSrc(s: Screenshot): string {
     const directFallback =
       (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? resolvePublicUrl(rawThumb) :
       (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? resolvePublicUrl(rawSource) : ""
-    const archiverExtras = archiverDirectUrlCandidates(s)
-      .map((u) => resolvePublicUrl(u))
-      .filter((u) => u !== previewSrc && u !== directFallback)
-    return pickUsableMediaUrl([previewSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback])
+    const archiverExtras = archiverDirectUrlCandidates(s).filter((u) => u !== rawSource && u !== rawThumb)
+    return pickUsableMediaUrl(
+      flattenArchiverPlaybackChoices([previewSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback]),
+    )
   }
   const mediaSrc = getScreenshotMediaSrc(s)
   if (isVideoUrl(mediaSrc)) return videoPosterFallback ? pickUsableMediaUrl([videoPosterFallback]) : ""
   const directFallback =
     rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource) ? resolvePublicUrl(rawSource) : ""
-  return pickUsableMediaUrl([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)])
+  return pickUsableMediaUrl(
+    flattenArchiverPlaybackChoices([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)]),
+  )
 }
 
 export function getBestAvailablePosterSrc(s: Screenshot): string {
@@ -245,16 +271,18 @@ export function getBestAvailablePosterSrc(s: Screenshot): string {
     const directFallback =
       (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? resolvePublicUrl(rawThumb) :
       (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? resolvePublicUrl(rawSource) : ""
-    const archiverExtras = archiverDirectUrlCandidates(s)
-      .map((u) => resolvePublicUrl(u))
-      .filter((u) => u !== previewSrc && u !== directFallback)
-    return pickUsableMediaUrl([previewSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback])
+    const archiverExtras = archiverDirectUrlCandidates(s).filter((u) => u !== rawSource && u !== rawThumb)
+    return pickUsableMediaUrl(
+      flattenArchiverPlaybackChoices([previewSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback]),
+    )
   }
   const mediaSrc = getScreenshotMediaSrc(s)
   if (isVideoUrl(mediaSrc)) return videoPosterFallback ? pickUsableMediaUrl([videoPosterFallback]) : ""
   const directFallback =
     rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource) ? resolvePublicUrl(rawSource) : ""
-  return pickUsableMediaUrl([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)])
+  return pickUsableMediaUrl(
+    flattenArchiverPlaybackChoices([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)]),
+  )
 }
 
 export function useResolvedScreenshotMedia(s: Screenshot) {
