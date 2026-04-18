@@ -30,6 +30,13 @@ services:
       # Example: https://your-app.vercel.app,https://your-app-git-main-xxx.vercel.app
       - key: CORS_ALLOW_ORIGINS
         sync: false
+      # Outbound proxy for coomer/kemono fetches (blocked from datacenter IPs).
+      # Set in Render dashboard: http://user:pass@host:port
+      # (Webshare/IPRoyal/Smartproxy/etc.) See /api/screenshots/proxy-status to verify.
+      - key: ARCHIVER_PROXY_URL
+        sync: false
+      - key: ARCHIVER_PROXY_DISABLE_IMG
+        value: "1"
 
   # Keep-alive cron — pings /healthz every 14 minutes so Render never spins
   # the starter-plan service down. Cold starts caused 30-90s first-load delays.
