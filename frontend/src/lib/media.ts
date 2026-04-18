@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react"
 import type { Screenshot } from "./api"
+import { extractProxyMediaTargetUrl, isArchiverDirectMediaUrl } from "./archiverMedia"
 import { resolvePublicUrl } from "./backendOrigin"
 
 const BROKEN_MEDIA_LIMIT = 300
@@ -80,6 +81,43 @@ function pickUsableMediaUrl(candidates: Array<string | null | undefined>): strin
   return uniqueMediaCandidates(candidates).find((url) => !brokenMediaUrls.has(url)) ?? ""
 }
 
+/**
+ * Prefer HTTPS URLs on coomer/kemono CDNs in the browser. Server-side proxying
+ * often fails from datacenter IPs while clients can still load these files.
+ */
+function archiverDirectUrlCandidates(s: Screenshot): string[] {
+  const urls: string[] = []
+  const push = (u: string | null | undefined) => {
+    const n = normalizeMediaUrl(u)
+    if (!n || !isArchiverDirectMediaUrl(n)) return
+    if (!urls.includes(n)) urls.push(n)
+  }
+
+  const local = normalizeMediaUrl(s.local_url)
+  if (local.startsWith("http://") || local.startsWith("https://")) {
+    push(local)
+  } else if (local.includes("proxy-media")) {
+    push(extractProxyMediaTargetUrl(local))
+  }
+
+  push(s.source_url)
+
+  const page = normalizeMediaUrl(s.page_url)
+  if (page.startsWith("http://") || page.startsWith("https://")) {
+    if (!isVideoUrl(page)) push(page)
+  }
+
+  const preview = normalizeMediaUrl(s.preview_url)
+  if (preview.includes("proxy-media")) {
+    const inner = extractProxyMediaTargetUrl(preview)
+    if (inner && !isVideoUrl(inner)) push(inner)
+  } else if ((preview.startsWith("http://") || preview.startsWith("https://")) && !isVideoUrl(preview)) {
+    push(preview)
+  }
+
+  return urls
+}
+
 export function rememberBrokenMediaUrl(url: string | null | undefined): boolean {
   const normalized = normalizeMediaUrl(url)
   if (!normalized || brokenMediaUrls.has(normalized)) return false
@@ -98,6 +136,9 @@ export function isKnownBrokenMediaUrl(url: string | null | undefined): boolean {
 }
 
 export function getScreenshotMediaSrc(s: Screenshot): string {
+  const archiverFirst = archiverDirectUrlCandidates(s)[0]
+  if (archiverFirst) return archiverFirst
+
   const localUrl = normalizeMediaUrl(s.local_url)
   if (isRenderableRemoteUrl(localUrl)) return resolvePublicUrl(localUrl)
 
@@ -120,6 +161,13 @@ export function getScreenshotPreviewSrc(s: Screenshot): string {
   // Only use preview_url if it's a renderable URL that isn't a raw video or a proxy
   // wrapping a video (e.g. preview_url accidentally set to the .mp4 source URL).
   if (preview && isRenderableRemoteUrl(preview) && !isVideoProxyUrl(preview)) {
+    if (preview.includes("proxy-media")) {
+      const inner = extractProxyMediaTargetUrl(preview)
+      if (inner && isArchiverDirectMediaUrl(inner) && !isVideoUrl(inner)) return inner
+    }
+    if ((preview.startsWith("http://") || preview.startsWith("https://")) && isArchiverDirectMediaUrl(preview) && !isVideoUrl(preview)) {
+      return preview
+    }
     return resolvePublicUrl(preview)
   }
   // For non-video items, fall back to the media src
@@ -134,6 +182,13 @@ export function getScreenshotPreviewSrc(s: Screenshot): string {
 export function getScreenshotPosterSrc(s: Screenshot): string {
   const preview = normalizeMediaUrl(s.preview_url)
   if (preview && isRenderableRemoteUrl(preview) && !isVideoProxyUrl(preview)) {
+    if (preview.includes("proxy-media")) {
+      const inner = extractProxyMediaTargetUrl(preview)
+      if (inner && isArchiverDirectMediaUrl(inner) && !isVideoUrl(inner)) return inner
+    }
+    if ((preview.startsWith("http://") || preview.startsWith("https://")) && isArchiverDirectMediaUrl(preview) && !isVideoUrl(preview)) {
+      return preview
+    }
     return resolvePublicUrl(preview)
   }
   const mediaSrc = getScreenshotMediaSrc(s)
@@ -146,7 +201,8 @@ export function getBestAvailableMediaSrc(s: Screenshot): string {
   // can attempt a direct CDN request (works for some hosts from real IPs).
   const rawSource = normalizeMediaUrl(s.source_url)
   const directFallback = rawSource !== mediaSrc && isRenderableRemoteUrl(rawSource) ? rawSource : ""
-  return pickUsableMediaUrl([mediaSrc, directFallback, buildProxyMediaUrl(mediaSrc)])
+  const archiverExtras = archiverDirectUrlCandidates(s).filter((u) => u !== mediaSrc && u !== directFallback)
+  return pickUsableMediaUrl([mediaSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(mediaSrc)])
 }
 
 export function getBestAvailablePreviewSrc(s: Screenshot): string {
@@ -163,7 +219,8 @@ export function getBestAvailablePreviewSrc(s: Screenshot): string {
     const directFallback =
       (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? rawThumb :
       (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? rawSource : ""
-    return pickUsableMediaUrl([previewSrc, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback])
+    const archiverExtras = archiverDirectUrlCandidates(s).filter((u) => u !== previewSrc && u !== directFallback)
+    return pickUsableMediaUrl([previewSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback])
   }
   const mediaSrc = getScreenshotMediaSrc(s)
   if (isVideoUrl(mediaSrc)) return videoPosterFallback ? pickUsableMediaUrl([videoPosterFallback]) : ""
@@ -182,7 +239,8 @@ export function getBestAvailablePosterSrc(s: Screenshot): string {
     const directFallback =
       (rawThumb && rawThumb !== previewSrc && isRenderableRemoteUrl(rawThumb) && !isVideoProxyUrl(rawThumb)) ? rawThumb :
       (rawSource && rawSource !== previewSrc && isRenderableRemoteUrl(rawSource) && !isVideoUrl(rawSource)) ? rawSource : ""
-    return pickUsableMediaUrl([previewSrc, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback])
+    const archiverExtras = archiverDirectUrlCandidates(s).filter((u) => u !== previewSrc && u !== directFallback)
+    return pickUsableMediaUrl([previewSrc, ...archiverExtras, directFallback, buildProxyMediaUrl(previewSrc), videoPosterFallback])
   }
   const mediaSrc = getScreenshotMediaSrc(s)
   if (isVideoUrl(mediaSrc)) return videoPosterFallback ? pickUsableMediaUrl([videoPosterFallback]) : ""
