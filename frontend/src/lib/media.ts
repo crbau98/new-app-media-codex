@@ -82,15 +82,10 @@ function isVideoProxyUrl(url: string): boolean {
   if (!url) return false
   // Direct video URL
   if (isVideoUrl(url)) return true
-  // Proxy URL wrapping a video
-  const PROXY_PREFIX = "/api/screenshots/proxy-media?url="
-  if (url.startsWith(PROXY_PREFIX)) {
-    try {
-      const inner = decodeURIComponent(url.slice(PROXY_PREFIX.length).split("&")[0])
-      if (isVideoUrl(inner)) return true
-    } catch {
-      // ignore decode errors
-    }
+  // Proxy URL wrapping a video (relative or absolute API host)
+  if (url.includes("proxy-media")) {
+    const inner = extractProxyMediaTargetUrl(url)
+    if (inner && isVideoUrl(inner)) return true
   }
   return false
 }

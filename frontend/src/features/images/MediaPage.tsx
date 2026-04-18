@@ -494,17 +494,19 @@ const MediaCard = memo(function MediaCard({
   /** Instagram-style square grid: flush tiles, minimal chrome */
   profileTile?: boolean
 }) {
-  const { mediaSrc: src, previewSrc, isVideo: vid, isGif: gif, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
+  const { mediaSrc: src, previewSrc, posterSrc, isVideo: vid, isGif: gif, markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const mediaLabel = getMediaDebugLabel(shot)
   const [imgLoaded, setImgLoaded] = useState(false)
   const isAboveFold = index <= 3  // only 4 eager loads; rest are lazy to avoid poster-endpoint flood
   const parsedTags = parseAiTags(shot.ai_tags)
-  // Use the API's preview_url (already proxied) → video-poster endpoint → proxy of thumbnail_url as fallback chain
-  const rawVideoPoster =
-    (shot.preview_url?.trim())
-    || `/api/screenshots/video-poster/${shot.id}`
-    || (shot.thumbnail_url ? `/api/screenshots/proxy-media?url=${encodeURIComponent(shot.thumbnail_url)}` : "")
-  const videoPosterSrc = resolvePublicUrl(rawVideoPoster)
+  // Hook posterSrc applies archiver Edge → direct coomer fallbacks; legacy chain kept as last resort.
+  const legacyVideoPoster =
+    resolvePublicUrl(
+      (shot.preview_url?.trim())
+      || `/api/screenshots/video-poster/${shot.id}`
+      || (shot.thumbnail_url ? `/api/screenshots/proxy-media?url=${encodeURIComponent(shot.thumbnail_url)}` : ""),
+    )
+  const videoPosterSrc = posterSrc || legacyVideoPoster
 
   const prevSrcRef = useRef("")
   useEffect(() => {

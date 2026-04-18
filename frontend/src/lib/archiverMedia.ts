@@ -27,21 +27,35 @@ export function isArchiverDirectMediaUrl(url: string): boolean {
   }
 }
 
-/** If `ref` is `/api/screenshots/proxy-media?url=...`, return the decoded target URL; else if ref is already http(s), return it. */
+/** Decode inner `url=` from proxy paths, including absolute API URLs (`https://api.../proxy-media?url=`). */
 export function extractProxyMediaTargetUrl(ref: string): string {
   const probe = ref.trim()
   if (!probe) return ""
-  if (probe.startsWith("http://") || probe.startsWith("https://")) return probe
+
+  const decodeParam = (raw: string): string => {
+    const t = raw.trim()
+    if (!t) return ""
+    try {
+      return decodeURIComponent(t)
+    } catch {
+      return t
+    }
+  }
+
   try {
     const base = typeof window !== "undefined" ? window.location.origin : "https://invalid.invalid"
-    const u = new URL(probe, base)
-    if (u.pathname === PROXY_MEDIA_PATH || u.pathname.endsWith("/proxy-media")) {
+    const u = probe.startsWith("http://") || probe.startsWith("https://")
+      ? new URL(probe)
+      : new URL(probe, base)
+    const path = u.pathname
+    if (path.includes("proxy-media") || path.includes("archiver-proxy")) {
       const inner = u.searchParams.get("url")
-      return inner?.trim() || ""
+      return decodeParam(inner || "")
     }
   } catch {
-    /* ignore */
+    /* fall through */
   }
+
   const marker = `${PROXY_MEDIA_PATH}?url=`
   if (probe.startsWith(marker)) {
     try {
@@ -50,6 +64,7 @@ export function extractProxyMediaTargetUrl(ref: string): string {
       return ""
     }
   }
+  if (probe.startsWith("http://") || probe.startsWith("https://")) return probe
   return ""
 }
 
