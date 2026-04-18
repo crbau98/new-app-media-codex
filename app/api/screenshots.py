@@ -61,6 +61,88 @@ _HLS_URI_ATTR_RE = re.compile(r'URI=(["\'])(.+?)\1')
 _NO_PROXY_SOURCES: frozenset[str] = frozenset()  # all sources are proxied
 _NO_PROXY_NETLOC_SUFFIXES: tuple[str, ...] = ()  # all hosts are proxied
 
+# ---------------------------------------------------------------------------
+# Outbound residential / clean-DC HTTP proxy for archiver hosts
+# ---------------------------------------------------------------------------
+# coomer.st / kemono.su / their `n*` and `img.*` shards block many datacenter
+# IP ranges. Operators can route those fetches through a residential or
+# clean-datacenter HTTP(S) proxy by setting:
+#
+#   ARCHIVER_PROXY_URL="http://user:pass@host:port"      (or socks5h://...)
+#   ARCHIVER_PROXY_HOSTS="coomer.st,coomer.su,kemono.su,kemono.party,kemono.cr"  # optional
+#   ARCHIVER_PROXY_DISABLE_IMG=1    # optional: do NOT proxy img.* (they usually
+#                                   #           work without a proxy and are faster)
+#
+# The proxy is applied both to the in-process httpx client (`proxy_media`) and
+# to external subprocesses (yt-dlp, ffmpeg) for video cache downloads.
+def _archiver_proxy_url() -> str:
+    raw = (os.getenv("ARCHIVER_PROXY_URL") or "").strip()
+    return raw
+
+
+def _archiver_proxy_hosts_suffixes() -> tuple[str, ...]:
+    raw = (os.getenv("ARCHIVER_PROXY_HOSTS") or "").strip()
+    if raw:
+        parts = [p.strip().lower() for p in raw.split(",") if p.strip()]
+        return tuple(parts)
+    # Default: every coomer/kemono host family. `n*.coomer.st` is matched via
+    # suffix `coomer.st`; subdomains match too.
+    return ("coomer.st", "coomer.su", "kemono.su", "kemono.party", "kemono.cr")
+
+
+def _archiver_proxy_skip_img() -> bool:
+    return (os.getenv("ARCHIVER_PROXY_DISABLE_IMG") or "").strip().lower() in {"1", "true", "yes"}
+
+
+def _url_needs_archiver_proxy(url: str) -> bool:
+    proxy_url = _archiver_proxy_url()
+    if not proxy_url:
+        return False
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    suffixes = _archiver_proxy_hosts_suffixes()
+    if not any(host == s or host.endswith("." + s) for s in suffixes):
+        return False
+    if _archiver_proxy_skip_img() and host.startswith("img."):
+        return False
+    return True
+
+
+_archiver_proxy_client_lock = _ThreadLock()
+_archiver_proxy_client: "httpx.AsyncClient | None" = None
+_archiver_proxy_client_for: str | None = None
+
+
+def _get_archiver_proxy_client() -> "httpx.AsyncClient | None":
+    """Return a cached httpx.AsyncClient configured with the archiver proxy."""
+    global _archiver_proxy_client, _archiver_proxy_client_for
+    proxy_url = _archiver_proxy_url()
+    if not proxy_url:
+        return None
+    with _archiver_proxy_client_lock:
+        if _archiver_proxy_client is not None and _archiver_proxy_client_for == proxy_url:
+            return _archiver_proxy_client
+        try:
+            _archiver_proxy_client = httpx.AsyncClient(
+                proxy=proxy_url,
+                timeout=httpx.Timeout(connect=10, read=120, write=10, pool=10),
+                limits=httpx.Limits(max_connections=25, max_keepalive_connections=10),
+                follow_redirects=True,
+                cookies=httpx.Cookies(),
+            )
+            _archiver_proxy_client_for = proxy_url
+            _logger.info("Archiver proxy client initialized (host suffixes: %s)",
+                         ",".join(_archiver_proxy_hosts_suffixes()))
+        except Exception as exc:
+            _logger.warning("Archiver proxy client init failed: %s", exc)
+            _archiver_proxy_client = None
+            _archiver_proxy_client_for = None
+        return _archiver_proxy_client
+
 
 def _resolve_app_data_root() -> Path:
     explicit = os.getenv("APP_DATA_DIR")
@@ -145,6 +227,11 @@ def _download_video_with_ytdlp(page_url: str, shot_id: int) -> str | None:
         "postprocessors": [],
         "socket_timeout": 30,
     }
+    if _url_needs_archiver_proxy(page_url):
+        proxy = _archiver_proxy_url()
+        if proxy:
+            ydl_opts["proxy"] = proxy
+            _logger.info("yt-dlp: routing shot %d through archiver proxy", shot_id)
 
     try:
         _evict_video_cache_if_needed()
@@ -179,6 +266,49 @@ def _download_video_direct(source_url: str, shot_id: int) -> str | None:
     """Download a direct media URL to the persistent cache via ffmpeg."""
     output_path = _video_cache_path(shot_id)
     temp_path = output_path.with_suffix(".tmp.mp4")
+
+    # Prefer yt-dlp (with proxy support) for archiver hosts so ffmpeg does not try
+    # to connect to blocked `n*.coomer.st` directly.
+    if _url_needs_archiver_proxy(source_url):
+        proxy = _archiver_proxy_url()
+        if proxy:
+            try:
+                import yt_dlp  # type: ignore
+            except Exception:
+                yt_dlp = None
+            if yt_dlp is not None:
+                ydl_opts = {
+                    "quiet": True,
+                    "no_warnings": True,
+                    "outtmpl": str(temp_path.with_suffix("")),
+                    "merge_output_format": "mp4",
+                    "postprocessors": [],
+                    "socket_timeout": 60,
+                    "proxy": proxy,
+                    "http_headers": {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                        "Referer": f"{urlparse(source_url).scheme}://{urlparse(source_url).netloc}/",
+                    },
+                }
+                try:
+                    _evict_video_cache_if_needed()
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([source_url])
+                    for ext in (".mp4", ".mkv", ".webm"):
+                        candidate = temp_path.with_suffix(ext)
+                        if candidate.exists() and candidate.stat().st_size > 0:
+                            candidate.rename(output_path)
+                            _logger.info(
+                                "Proxy-downloaded video for shot %d: %.1f MB",
+                                shot_id, output_path.stat().st_size / 1024 / 1024,
+                            )
+                            return str(output_path)
+                    _logger.warning("Proxy yt-dlp produced no file for shot %d", shot_id)
+                except Exception as exc:
+                    _logger.warning("Proxy yt-dlp failed for shot %d: %s", shot_id, exc)
+                finally:
+                    for f in _VIDEO_CACHE_DIR.glob(f"{shot_id}.tmp*"):
+                        f.unlink(missing_ok=True)
 
     try:
         _evict_video_cache_if_needed()
@@ -647,6 +777,56 @@ def _allow_local_media(app_state) -> bool:
 router = APIRouter(prefix="/api/screenshots", tags=["screenshots"])
 
 
+@router.get("/proxy-status")
+async def proxy_status():
+    """Report whether the archiver outbound proxy is configured and reachable.
+
+    Used by the UI/operator to verify coomer/kemono video playback is wired up.
+    Redacts credentials from the configured proxy URL.
+    """
+    proxy_url = _archiver_proxy_url()
+    if not proxy_url:
+        return JSONResponse({
+            "configured": False,
+            "hint": "Set ARCHIVER_PROXY_URL=http://user:pass@host:port to enable coomer/kemono video fetch.",
+        })
+
+    redacted = re.sub(r"://([^:@/]+)(:[^@/]*)?@", "://***@", proxy_url)
+    ok: bool | None = None
+    error: str | None = None
+    latency_ms: int | None = None
+    try:
+        client = _get_archiver_proxy_client()
+        if client is None:
+            error = "Proxy client could not be created"
+        else:
+            import time as _time
+            start = _time.monotonic()
+            resp = await client.get(
+                "https://img.coomer.st/thumbnail/data/89/f7/89f7ccb66862a64ea631d3550edccbaefc0980b8a2a66b80d905cb47b3117491.jpg",
+                headers={"User-Agent": "Mozilla/5.0", "Range": "bytes=0-0"},
+                timeout=10.0,
+            )
+            latency_ms = int((_time.monotonic() - start) * 1000)
+            ok = 200 <= resp.status_code < 400
+            if not ok:
+                error = f"upstream status {resp.status_code}"
+            await resp.aclose()
+    except Exception as exc:
+        ok = False
+        error = f"{type(exc).__name__}: {exc}"
+
+    return JSONResponse({
+        "configured": True,
+        "proxy_url": redacted,
+        "hosts": list(_archiver_proxy_hosts_suffixes()),
+        "skip_img": _archiver_proxy_skip_img(),
+        "reachable": ok,
+        "latency_ms": latency_ms,
+        "error": error,
+    })
+
+
 async def _refresh_shot_media_url(request: Request, shot_id: int, failed_url: str) -> str | None:
     """Attempt to refresh an expired ytdlp stream URL for a screenshot row."""
     db: Database = request.app.state.db
@@ -956,8 +1136,17 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
                 headers={**_CROSS_ORIGIN_MEDIA_HEADERS, "Cache-Control": "public, max-age=86400"},
             )
 
-    client: httpx.AsyncClient = request.app.state.http_client
+    default_client: httpx.AsyncClient = request.app.state.http_client
     target_url = url
+
+    def _client_for(u: str) -> httpx.AsyncClient:
+        if _url_needs_archiver_proxy(u):
+            pc = _get_archiver_proxy_client()
+            if pc is not None:
+                return pc
+        return default_client
+
+    client = _client_for(target_url)
     try:
         resp = await client.send(
             client.build_request("GET", target_url, headers=_build_request_headers(target_url)),
@@ -983,6 +1172,7 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
         if refreshed_url:
             await resp.aclose()
             target_url = refreshed_url
+            client = _client_for(target_url)
             try:
                 resp = await client.send(
                     client.build_request("GET", target_url, headers=_build_request_headers(target_url)),
