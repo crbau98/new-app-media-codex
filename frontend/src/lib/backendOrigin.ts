@@ -1,3 +1,5 @@
+import { extractProxyMediaTargetUrl, isArchiverDirectMediaUrl } from "./archiverMedia"
+
 /**
  * When the UI is hosted separately from FastAPI (e.g. Vercel + Render), set
  * `VITE_BACKEND_ORIGIN` to the API origin, e.g. `https://your-service.onrender.com`
@@ -16,13 +18,39 @@ export function apiUrl(path: string): string {
   return base ? `${base}${p}` : p
 }
 
-/** Prefix relative `/api/...` and `/cached-...` URLs for `<img>` / `<video>` when the UI is on another host. */
+/** Same-origin Edge proxy on the Vercel deployment (see `/api/archiver-proxy`). */
+function archiverEdgeProxyUrl(targetUrl: string): string {
+  if (typeof window === "undefined") return targetUrl
+  return `${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(targetUrl)}`
+}
+
+/**
+ * Prefix relative `/api/...` and `/cached-...` URLs for `<img>` / `<video>` when the UI is on another host.
+ * Coomer/kemono file URLs: Render and similar hosts often cannot reach those CDNs; route through the
+ * Vercel Edge proxy when the UI is split from the API so media loads same-origin to the SPA.
+ */
 export function resolvePublicUrl(url: string): string {
   if (!url) return url
-  if (url.startsWith("http://") || url.startsWith("https://")) return url
+  const split = Boolean(getBackendOrigin())
+
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    if (split && typeof window !== "undefined" && isArchiverDirectMediaUrl(url)) {
+      return archiverEdgeProxyUrl(url)
+    }
+    return url
+  }
+
   const origin = getBackendOrigin()
   if (!origin) return url
-  if (url.startsWith("/")) return `${origin}${url}`
+  if (url.startsWith("/")) {
+    if (split && typeof window !== "undefined" && url.includes("proxy-media")) {
+      const inner = extractProxyMediaTargetUrl(url)
+      if (inner && isArchiverDirectMediaUrl(inner)) {
+        return archiverEdgeProxyUrl(inner)
+      }
+    }
+    return `${origin}${url}`
+  }
   return url
 }
 
