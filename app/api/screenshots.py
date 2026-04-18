@@ -268,7 +268,9 @@ def _download_video_direct(source_url: str, shot_id: int) -> str | None:
     temp_path = output_path.with_suffix(".tmp.mp4")
 
     # Prefer yt-dlp (with proxy support) for archiver hosts so ffmpeg does not try
-    # to connect to blocked `n*.coomer.st` directly.
+    # to connect to blocked `n*.coomer.st` directly. Residential proxy pools rotate
+    # IPs per TCP connection — retry up to N times so we surf through IPs until one
+    # reaches the n* shard successfully.
     if _url_needs_archiver_proxy(source_url):
         proxy = _archiver_proxy_url()
         if proxy:
@@ -277,38 +279,44 @@ def _download_video_direct(source_url: str, shot_id: int) -> str | None:
             except Exception:
                 yt_dlp = None
             if yt_dlp is not None:
-                ydl_opts = {
-                    "quiet": True,
-                    "no_warnings": True,
-                    "outtmpl": str(temp_path.with_suffix("")),
-                    "merge_output_format": "mp4",
-                    "postprocessors": [],
-                    "socket_timeout": 60,
-                    "proxy": proxy,
-                    "http_headers": {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                        "Referer": f"{urlparse(source_url).scheme}://{urlparse(source_url).netloc}/",
-                    },
-                }
-                try:
-                    _evict_video_cache_if_needed()
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        ydl.download([source_url])
-                    for ext in (".mp4", ".mkv", ".webm"):
-                        candidate = temp_path.with_suffix(ext)
-                        if candidate.exists() and candidate.stat().st_size > 0:
-                            candidate.rename(output_path)
-                            _logger.info(
-                                "Proxy-downloaded video for shot %d: %.1f MB",
-                                shot_id, output_path.stat().st_size / 1024 / 1024,
-                            )
-                            return str(output_path)
-                    _logger.warning("Proxy yt-dlp produced no file for shot %d", shot_id)
-                except Exception as exc:
-                    _logger.warning("Proxy yt-dlp failed for shot %d: %s", shot_id, exc)
-                finally:
-                    for f in _VIDEO_CACHE_DIR.glob(f"{shot_id}.tmp*"):
-                        f.unlink(missing_ok=True)
+                max_attempts = int(os.getenv("ARCHIVER_PROXY_MAX_ATTEMPTS", "8"))
+                for attempt in range(1, max_attempts + 1):
+                    ydl_opts = {
+                        "quiet": True,
+                        "no_warnings": True,
+                        "outtmpl": str(temp_path.with_suffix("")),
+                        "merge_output_format": "mp4",
+                        "postprocessors": [],
+                        "socket_timeout": 30,
+                        "proxy": proxy,
+                        "http_headers": {
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                            "Referer": f"{urlparse(source_url).scheme}://{urlparse(source_url).netloc}/",
+                        },
+                    }
+                    try:
+                        _evict_video_cache_if_needed()
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            ydl.download([source_url])
+                        for ext in (".mp4", ".mkv", ".webm"):
+                            candidate = temp_path.with_suffix(ext)
+                            if candidate.exists() and candidate.stat().st_size > 0:
+                                candidate.rename(output_path)
+                                _logger.info(
+                                    "Proxy-downloaded video for shot %d: %.1f MB (attempt %d)",
+                                    shot_id, output_path.stat().st_size / 1024 / 1024, attempt,
+                                )
+                                return str(output_path)
+                        _logger.debug("Proxy yt-dlp produced no file for shot %d (attempt %d)", shot_id, attempt)
+                    except Exception as exc:
+                        _logger.debug("Proxy yt-dlp attempt %d for shot %d failed: %s", attempt, shot_id, exc)
+                    finally:
+                        for f in _VIDEO_CACHE_DIR.glob(f"{shot_id}.tmp*"):
+                            f.unlink(missing_ok=True)
+                _logger.warning(
+                    "Proxy yt-dlp exhausted %d attempts for shot %d; giving up",
+                    max_attempts, shot_id,
+                )
 
     try:
         _evict_video_cache_if_needed()
@@ -1147,25 +1155,57 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
         return default_client
 
     client = _client_for(target_url)
-    try:
-        resp = await client.send(
-            client.build_request("GET", target_url, headers=_build_request_headers(target_url)),
-            stream=True,
-        )
-    except httpx.TimeoutException:
+
+    # Rotating residential proxies succeed on a fraction of attempts. Retry the
+    # initial request a few times when a proxy is in use and the failure is a
+    # transient tunnel error (504/502/timeout). Only applied to archiver hosts.
+    proxy_retry_budget = (
+        int(os.getenv("ARCHIVER_PROXY_REQUEST_ATTEMPTS", "4"))
+        if _url_needs_archiver_proxy(target_url)
+        else 1
+    )
+    resp = None
+    last_error: Exception | None = None
+    for _attempt in range(1, proxy_retry_budget + 1):
+        try:
+            resp = await client.send(
+                client.build_request("GET", target_url, headers=_build_request_headers(target_url)),
+                stream=True,
+            )
+        except httpx.TimeoutException as exc:
+            last_error = exc
+            if _attempt >= proxy_retry_budget:
+                return JSONResponse(
+                    status_code=502,
+                    content={"error": "upstream_timeout", "detail": "Upstream media request timed out"},
+                )
+            continue
+        except httpx.RequestError as exc:
+            last_error = exc
+            if _attempt >= proxy_retry_budget:
+                return JSONResponse(
+                    status_code=502,
+                    content={"error": "upstream_connection_error", "detail": f"Could not fetch media: {exc}"},
+                )
+            continue
+        except Exception as exc:
+            last_error = exc
+            if _attempt >= proxy_retry_budget:
+                return JSONResponse(
+                    status_code=502,
+                    content={"error": "proxy_media_failed", "detail": f"Could not fetch media: {exc}"},
+                )
+            continue
+        # Gateway-level errors from the proxy itself: retry with a fresh tunnel.
+        if resp.status_code in (502, 503, 504) and _attempt < proxy_retry_budget:
+            await resp.aclose()
+            resp = None
+            continue
+        break
+    if resp is None:
         return JSONResponse(
             status_code=502,
-            content={"error": "upstream_timeout", "detail": "Upstream media request timed out"},
-        )
-    except httpx.RequestError as exc:
-        return JSONResponse(
-            status_code=502,
-            content={"error": "upstream_connection_error", "detail": f"Could not fetch media: {exc}"},
-        )
-    except Exception as exc:
-        return JSONResponse(
-            status_code=502,
-            content={"error": "proxy_media_failed", "detail": f"Could not fetch media: {exc}"},
+            content={"error": "proxy_media_failed", "detail": f"{last_error}" if last_error else "unknown"},
         )
     if resp.status_code >= 400 and shot_id and _is_refreshable_upstream_status(resp.status_code):
         refreshed_url = await _refresh_shot_media_url(request, int(shot_id), failed_url=target_url)
