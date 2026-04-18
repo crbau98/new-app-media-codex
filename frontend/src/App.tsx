@@ -28,7 +28,11 @@ const SettingsPage = lazy(() =>
   }))
 )
 
-const PerformersPage = lazy(() => loadViewModule("performers"))
+const PerformersPage = lazy(() =>
+  loadViewModule("performers").then(m => ({
+    default: (m as typeof import("./features/performers/PerformersPage")).default,
+  }))
+)
 
 const CommandPalette = lazy(() =>
   import("./components/CommandPalette").then(m => ({ default: m.CommandPalette }))

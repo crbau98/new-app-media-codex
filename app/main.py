@@ -121,7 +121,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = db
     app.state.settings = settings
     app.state.service = service
-    Path("/app/data/posters").mkdir(parents=True, exist_ok=True)
+    posters_dir = Path(os.getenv("POSTERS_DIR") or (Path(os.getenv("DATABASE_PATH", "/app/data/research.db")).expanduser().parent / "posters"))
+    posters_dir.mkdir(parents=True, exist_ok=True)
     global _COMMIT_HASH
     _COMMIT_HASH = _resolve_commit_hash()
     if settings.stream_only_media:

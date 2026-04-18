@@ -261,7 +261,7 @@ export function getMediaDebugLabel(s: Screenshot): string {
 }
 
 const _VIDEO_RE = /\.(mp4|webm|mov|avi|mkv|m3u8)/i
-const _VIDEO_SOURCES = new Set(["redgifs", "ytdlp", "coomer"])
+const _VIDEO_SOURCES = new Set(["redgifs", "ytdlp"])
 
 /** Detect if a screenshot is a video based on URL patterns and source field. */
 export function isVideoShot(s: Screenshot): boolean {

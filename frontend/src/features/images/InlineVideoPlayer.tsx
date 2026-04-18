@@ -523,7 +523,7 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
             <video
               ref={videoRef}
               poster={posterSrc || undefined}
-              preload="auto"
+              preload="metadata"
               playsInline
               loop={loop}
               muted={muted}

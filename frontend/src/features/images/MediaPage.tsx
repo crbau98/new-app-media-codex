@@ -1321,7 +1321,7 @@ export function MediaPage() {
   useEffect(() => {
     if (mediaStatsEnabled) return
     let cancelled = false
-    let timeoutId: number | null = null
+    let timeoutId: ReturnType<Window["setTimeout"]> | null = null
     const win = window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void }
     const enable = () => {
       if (!cancelled) setMediaStatsEnabled(true)
@@ -1881,16 +1881,27 @@ export function MediaPage() {
 
   useEffect(() => {
     if (!allShots.length) return
-    const id = typeof window !== "undefined" && "requestIdleCallback" in window
-      ? window.requestIdleCallback(() => {
-          void qc.prefetchQuery({ queryKey: ["top-rated-screenshots"], queryFn: api.topRatedScreenshots, staleTime: 300000 })
-        })
-      : window.setTimeout(() => {
-          void qc.prefetchQuery({ queryKey: ["top-rated-screenshots"], queryFn: api.topRatedScreenshots, staleTime: 300000 })
-        }, 2000)
+    if (typeof window === "undefined") return
+    const win = window as Window & {
+      requestIdleCallback?: (cb: IdleRequestCallback, options?: IdleRequestOptions) => number
+      cancelIdleCallback?: (id: number) => void
+    }
+    let idleId: number | null = null
+    let timeoutId: number | null = null
+
+    const prefetchTopRated = () => {
+      void qc.prefetchQuery({ queryKey: ["top-rated-screenshots"], queryFn: api.topRatedScreenshots, staleTime: 300000 })
+    }
+
+    if (typeof win.requestIdleCallback === "function") {
+      idleId = win.requestIdleCallback(prefetchTopRated)
+    } else {
+      timeoutId = win.setTimeout(prefetchTopRated, 2000)
+    }
+
     return () => {
-      if (typeof window !== "undefined" && "cancelIdleCallback" in window) window.cancelIdleCallback(id as number)
-      else window.clearTimeout(id as number)
+      if (idleId != null && typeof win.cancelIdleCallback === "function") win.cancelIdleCallback(idleId)
+      if (timeoutId != null) win.clearTimeout(timeoutId)
     }
   }, [allShots.length, qc])
 

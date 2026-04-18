@@ -412,23 +412,22 @@ export function CommandPalette() {
   type FlatEntry =
     | { kind: "performer"; cmd: Command; performer: Performer; matchIndices: number[] }
     | { kind: "command"; cmd: Command; matchIndices: number[] }
+  type CommandFlatEntry = Extract<FlatEntry, { kind: "command" }>
 
   const flatList = useMemo<FlatEntry[]>(() => {
     if (query.trim()) {
       return [
-        ...performerResultCommands.map(({ cmd, performer }) => ({ kind: "performer" as const, cmd, performer, matchIndices: [] })),
+        ...performerResultCommands.map(({ cmd, performer }) => ({ kind: "performer" as const, cmd, performer, matchIndices: [] as number[] })),
         ...scoredCommands.map(({ cmd, matchIndices }) => ({ kind: "command" as const, cmd, matchIndices })),
       ]
     }
-    const recentCmds: FlatEntry[] = recentItems
-      .map((r) => {
+    const recentCmds: CommandFlatEntry[] = recentItems.flatMap((r) => {
         const found = commands.find((c) => c.id === r.id)
-        return found ? { kind: "command" as const, cmd: found, matchIndices: [] } : null
+        return found ? [{ kind: "command" as const, cmd: found, matchIndices: [] as number[] }] : []
       })
-      .filter((x): x is FlatEntry => x !== null)
-    const actionCmds: FlatEntry[] = commands
+    const actionCmds: CommandFlatEntry[] = commands
       .filter((c) => !recentCmds.some((r) => r.cmd.id === c.id))
-      .map((cmd) => ({ kind: "command" as const, cmd, matchIndices: [] }))
+      .map((cmd) => ({ kind: "command" as const, cmd, matchIndices: [] as number[] }))
     return [...recentCmds, ...actionCmds]
   }, [commands, performerResultCommands, query, recentItems, scoredCommands])
 

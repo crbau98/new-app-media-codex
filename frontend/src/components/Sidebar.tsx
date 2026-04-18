@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, startTransition, type ReactNode } from "re
 import { cn } from "@/lib/cn"
 import { useAppStore, type ActiveView } from "../store"
 import { useAppShellSummary } from "@/hooks/useAppShellSummary"
-import { api } from "../lib/api"
+import { api, type CaptureQueueEntry } from "../lib/api"
 import {
   useCaptureQueueQuery,
   useMediaStatsQuery,
@@ -201,9 +201,10 @@ function CrawlFooter({ collapsed, ready }: { collapsed: boolean; ready: boolean 
   }, [ready, screenshotRunning, setScreenshotRunning])
 
   const lastRun = footerSummary?.last_run
-  const lastRunAgo = lastRun?.finished_at
+  const lastFinishedAt = typeof lastRun?.finished_at === "string" ? lastRun.finished_at : null
+  const lastRunAgo = lastFinishedAt
     ? (() => {
-        const diff = Date.now() - new Date(lastRun.finished_at).getTime()
+        const diff = Date.now() - new Date(lastFinishedAt).getTime()
         const mins = Math.floor(diff / 60000)
         if (mins < 60) return `${mins}m ago`
         return `${Math.floor(mins / 60)}h ago`
@@ -322,12 +323,12 @@ export function Sidebar() {
     enabled: sidebarEnhancementsReady,
     refetchInterval: (query) => {
       const queue = query.state.data?.queue ?? []
-      return queue.some((e) => e.status === "queued" || e.status === "running") ? 5_000 : 60_000
+      return queue.some((e: CaptureQueueEntry) => e.status === "queued" || e.status === "running") ? 5_000 : 60_000
     },
     staleTime: 0,
   })
   const captureQueueActive = (captureQueueData?.queue ?? []).some(
-    (e) => e.status === "queued" || e.status === "running"
+    (e: CaptureQueueEntry) => e.status === "queued" || e.status === "running"
   )
   // Use media-stats for accurate screenshot count (app-shell-summary returns 0 for image_count)
   const { data: mediaStats } = useMediaStatsQuery(sidebarEnhancementsReady)

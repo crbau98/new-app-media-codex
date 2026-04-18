@@ -1,7 +1,22 @@
-export function SourceDonut() {
+interface SourceDonutProps {
+  sourceMix?: Array<{ source_type: string; count: number }>
+  onSliceClick?: (sourceType: string) => void
+}
+
+export function SourceDonut({ sourceMix = [], onSliceClick }: SourceDonutProps) {
   return (
     <div className="rounded-xl bg-white/5 p-4 text-center text-sm text-white/40">
-      Source distribution chart
+      {sourceMix.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => onSliceClick?.(sourceMix[0]!.source_type)}
+          className="text-inherit"
+        >
+          Source distribution chart
+        </button>
+      ) : (
+        "Source distribution chart"
+      )}
     </div>
   )
 }

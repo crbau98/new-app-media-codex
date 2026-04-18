@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/cn"
-import { api, type Performer, type PerformerMedia, type PerformerLink, type Screenshot } from "@/lib/api"
+import { api, type CaptureQueueEntry, type Performer, type PerformerMedia, type PerformerLink, type Screenshot } from "@/lib/api"
 import { resolvePublicUrl } from "@/lib/backendOrigin"
 import { attachMediaSource } from "@/lib/hlsAttach"
 import { getPerformerAvatarSrc } from "@/lib/performer"
@@ -34,6 +34,7 @@ function getPerformerMediaPreviewSrc(m: PerformerMedia): string {
   // Prefer a dedicated preview_url (extracted video poster or thumbnail).  Fall
   // back to video-poster endpoint for screenshot-origin videos, then main src.
   if (m.preview_url) return resolvePublicUrl(m.preview_url)
+  if (m.thumbnail_url) return resolvePublicUrl(m.thumbnail_url)
   if (m.source_kind === "screenshot" && m.media_type === "video" && m.id) {
     return resolvePublicUrl(`/api/screenshots/video-poster/${m.id}`)
   }
@@ -245,14 +246,14 @@ function CaptureButton({ performerId }: { performerId: number }) {
   const { data: queueData } = useCaptureQueueQuery({
     refetchInterval: (query) => {
       const queue = query.state.data?.queue ?? []
-      const active = queue.some((e) => e.performer_id === performerId && (e.status === "queued" || e.status === "running"))
+      const active = queue.some((e: CaptureQueueEntry) => e.performer_id === performerId && (e.status === "queued" || e.status === "running"))
       return active ? 3_000 : 30_000
     },
     staleTime: 0,
   })
 
   const queueEntry = useMemo(
-    () => (queueData?.queue ?? []).find((e) => e.performer_id === performerId),
+    () => (queueData?.queue ?? []).find((e: CaptureQueueEntry) => e.performer_id === performerId),
     [queueData, performerId]
   )
   const isActive = queueEntry?.status === "queued" || queueEntry?.status === "running"
@@ -520,9 +521,9 @@ function RecentCaptures({ performerId, onViewAll }: { performerId: number; onVie
           {shots.map((shot: Screenshot) => {
             const src = getScreenshotMediaSrc(shot)
             const previewSrc = getBestAvailablePreviewSrc(shot)
-            if (!src) return null
+            if (!src && !previewSrc) return null
             const isVid = isVideoShot(shot)
-            return isVid ? (
+            return isVid && src ? (
               <PerformerVideo
                 key={shot.id}
                 media={{ id: shot.id, source_kind: "screenshot", source: shot.source }}
@@ -534,14 +535,14 @@ function RecentCaptures({ performerId, onViewAll }: { performerId: number; onVie
             ) : (
               <img
                 key={shot.id}
-              src={src}
-              alt=""
-              loading="lazy"
-              className="aspect-square w-full rounded-lg object-cover bg-black/20"
-            />
-          )
-        })}
-      </div>
+                src={previewSrc || src}
+                alt=""
+                loading="lazy"
+                className="aspect-square w-full rounded-lg object-cover bg-black/20"
+              />
+            )
+          })}
+        </div>
       {(data?.total ?? 0) > 0 && (
         <button
           type="button"
@@ -700,8 +701,8 @@ function MediaGallery({
                 onClick={() => onOpenLightbox(allMedia, i)}
                 className="group relative aspect-square overflow-hidden rounded-lg bg-white/5 transition-all hover:ring-2 hover:ring-accent/50"
               >
-                {src ? (
-                  isVid ? (
+                {previewSrc || src ? (
+                  isVid && src ? (
                     previewSrc && previewSrc !== src ? (
                       <img
                         src={previewSrc}
@@ -729,15 +730,16 @@ function MediaGallery({
                     )
                   ) : (
                     <img
-                      src={src}
+                      src={previewSrc || src}
                       alt={m.caption ?? ""}
                       className="h-full w-full object-cover"
                       loading="lazy"
                       onError={(e) => {
                         const img = e.currentTarget
-                        if (!img.dataset.retried) {
+                        const fallbackSrc = previewSrc || src
+                        if (!img.dataset.retried && fallbackSrc) {
                           img.dataset.retried = "1"
-                          img.src = withCacheBust(src)
+                          img.src = withCacheBust(fallbackSrc)
                         } else {
                           img.style.visibility = "hidden"
                         }
@@ -800,6 +802,7 @@ function PerformerMediaLightbox({
 }) {
   const item = media[idx]
   const src = getPerformerMediaSrc(item)
+  const previewSrc = getPerformerMediaPreviewSrc(item)
   const currentIsVideo = item.media_type === "video" || (src ? isVideo(src) : false)
 
   const onCloseRef = useRef(onClose)
@@ -869,26 +872,35 @@ function PerformerMediaLightbox({
             <PerformerVideo
               media={item}
               src={src}
-              previewSrc={getPerformerMediaPreviewSrc(item)}
+              previewSrc={previewSrc}
               autoPlay
               loop
               controls
               preload="auto"
               className="max-h-[90vh] max-w-[95vw] object-contain rounded-lg"
             />
+          ) : previewSrc ? (
+            <img
+              key={previewSrc}
+              src={previewSrc}
+              alt={item.caption ?? ""}
+              className="max-h-[90vh] max-w-[95vw] object-contain rounded-lg select-none"
+              draggable={false}
+            />
           ) : null
         ) : (
           <img
-            key={src}
-            src={src ?? ""}
+            key={previewSrc || src}
+            src={previewSrc || src || ""}
             alt={item.caption ?? ""}
             className="max-h-[90vh] max-w-[95vw] object-contain rounded-lg select-none"
             draggable={false}
             onError={(e) => {
               const img = e.currentTarget
-              if (!img.dataset.retried && src) {
+              const fallbackSrc = previewSrc || src
+              if (!img.dataset.retried && fallbackSrc) {
                 img.dataset.retried = "1"
-                img.src = withCacheBust(src)
+                img.src = withCacheBust(fallbackSrc)
               }
             }}
           />

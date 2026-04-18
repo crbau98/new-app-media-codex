@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import logging
+import os
 import re
 import shutil
 import time
@@ -59,10 +60,29 @@ _HLS_URI_ATTR_RE = re.compile(r'URI=(["\'])(.+?)\1')
 _NO_PROXY_SOURCES: frozenset[str] = frozenset()  # all sources are proxied
 _NO_PROXY_NETLOC_SUFFIXES: tuple[str, ...] = ()  # all hosts are proxied
 
+
+def _resolve_app_data_root() -> Path:
+    explicit = os.getenv("APP_DATA_DIR")
+    if explicit:
+        return Path(explicit).expanduser()
+
+    database_path = os.getenv("DATABASE_PATH")
+    if database_path:
+        return Path(database_path).expanduser().parent
+
+    image_dir = os.getenv("IMAGE_DIR")
+    if image_dir:
+        return Path(image_dir).expanduser().parent
+
+    return Path("/app/data")
+
+
+_APP_DATA_ROOT = _resolve_app_data_root()
+
 # ---------------------------------------------------------------------------
 # Video download cache on persistent disk
 # ---------------------------------------------------------------------------
-_VIDEO_CACHE_DIR = Path("/app/data/video_cache")
+_VIDEO_CACHE_DIR = Path(os.getenv("VIDEO_CACHE_DIR") or (_APP_DATA_ROOT / "video_cache"))
 _VIDEO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 _VIDEO_CACHE_MAX_MB = 5000  # 5 GB max cache size
 _VIDEO_CACHE_LOCK = _ThreadLock()
@@ -470,7 +490,7 @@ def _screenshot_is_video(record: dict) -> bool:
     source = str(record.get("source") or "").lower()
     media_url = str(record.get("source_url") or record.get("local_url") or record.get("local_path") or record.get("page_url") or "")
     ext = Path(media_url.split("?")[0]).suffix.lower()
-    return ext in _VIDEO_EXTS or source in {"redgifs", "ytdlp", "coomer"}
+    return ext in _VIDEO_EXTS or source in {"redgifs", "ytdlp"}
 
 
 def _is_video_url_str(url: str) -> bool:
@@ -980,7 +1000,7 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
 
 # ---------------------------------------------------------------------------
 # Video poster extraction (server-side first-frame thumbnail via ffmpeg).
-# Cached to /app/data/posters/ on persistent disk.
+# Cached to the configured app-data posters directory on persistent disk.
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # Global semaphore — cap concurrent poster extractions.  Render starter has
@@ -1005,7 +1025,7 @@ _POSTER_DISK_CACHE_LOCK = Lock()
 
 
 def _load_poster_disk_cache() -> None:
-    """Scan /app/data/posters/ once at startup and populate _POSTER_DISK_CACHE."""
+    """Scan the on-disk poster cache once at startup and populate _POSTER_DISK_CACHE."""
     global _POSTER_DISK_CACHE_LOADED
     with _POSTER_DISK_CACHE_LOCK:
         if _POSTER_DISK_CACHE_LOADED:
@@ -1046,7 +1066,8 @@ def _get_poster_extract_lock(shot_id: int) -> asyncio.Lock:
         return _POSTER_EXTRACT_LOCKS[shot_id]
 
 
-_POSTERS_DIR = Path("/app/data/posters")
+_POSTERS_DIR = Path(os.getenv("POSTERS_DIR") or (_APP_DATA_ROOT / "posters"))
+_POSTERS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 _PLACEHOLDER_POSTER_BYTES: bytes | None = None
@@ -1767,7 +1788,7 @@ def browse_screenshots(
                         continue
                     src = s.get("source", "")
                     ext = Path(media_url.split("?", 1)[0]).suffix.lower()
-                    if ext in {".mp4", ".webm", ".mov", ".avi", ".mkv"} or src in ("redgifs", "ytdlp", "coomer"):
+                    if ext in {".mp4", ".webm", ".mov", ".avi", ".mkv"} or src in ("redgifs", "ytdlp"):
                         media_kind = "video"
                     elif ext in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
                         media_kind = "image"
@@ -2037,7 +2058,7 @@ def clear_all_captures(request: Request):
         conn.commit()
     # Clear video cache and poster cache on disk
     import shutil
-    video_cache = Path("/app/data/video_cache")
+    video_cache = _VIDEO_CACHE_DIR
     poster_cache = _POSTERS_DIR
     vids_cleared = 0
     posters_cleared = 0

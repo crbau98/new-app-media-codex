@@ -1594,15 +1594,15 @@ export default function PerformersPage() {
     enabled: queueReady,
     refetchInterval: (query) => {
       const queue = query.state.data?.queue ?? []
-      const hasActive = queue.some((e) => e.status === "queued" || e.status === "running")
+      const hasActive = queue.some((e: CaptureQueueEntry) => e.status === "queued" || e.status === "running")
       return hasActive ? 5_000 : 120_000
     },
     staleTime: 15_000,
   })
   const activePerformerIds = useMemo(() => new Set(
     (queueData?.queue ?? [])
-      .filter((e) => e.status === "queued" || e.status === "running")
-      .map((e) => e.performer_id)
+      .filter((e: CaptureQueueEntry) => e.status === "queued" || e.status === "running")
+      .map((e: CaptureQueueEntry) => e.performer_id)
   ), [queueData])
   async function handleCaptureAll() {
     setCaptureAllRunning(true)

@@ -563,7 +563,7 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
               <video
                 ref={videoRef}
                 poster={posterSrc || undefined}
-                preload="auto"
+                preload="metadata"
                 loop
                 playsInline
                 muted

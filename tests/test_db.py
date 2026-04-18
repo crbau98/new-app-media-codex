@@ -198,6 +198,23 @@ def _insert_screenshot(db: Database, performer_id: int | None, page_url: str) ->
         return int(cur.lastrowid)
 
 
+def _insert_remote_screenshot(
+    db: Database,
+    *,
+    term: str,
+    source: str,
+    page_url: str,
+    source_url: str,
+) -> None:
+    inserted = db.insert_screenshot(
+        term=term,
+        source=source,
+        page_url=page_url,
+        source_url=source_url,
+    )
+    assert inserted is True
+
+
 class TestFTS5:
     def test_item_indexed_on_insert(self, db: Database) -> None:
         _insert_item(db, "Nitric oxide and erectile function", "Study on NO pathways")
@@ -234,6 +251,34 @@ class TestFTS5:
                 "SELECT rowid FROM items_fts WHERE items_fts MATCH '\"zxqwerty\"'",
             ).fetchall()
         assert len(rows) == 0
+
+
+class TestScreenshotBrowseMediaType:
+    def test_coomer_images_are_excluded_from_video_browse(self, db: Database) -> None:
+        _insert_remote_screenshot(
+            db,
+            term="creator-image",
+            source="coomer",
+            page_url="https://coomer.st/onlyfans/user/test/post/image",
+            source_url="https://coomer.st/data/aa/bb/example-image.jpg",
+        )
+        _insert_remote_screenshot(
+            db,
+            term="creator-video",
+            source="coomer",
+            page_url="https://coomer.st/onlyfans/user/test/post/video",
+            source_url="https://coomer.st/data/cc/dd/example-video.mp4",
+        )
+
+        video_rows = db.browse_screenshots(media_type="video", limit=20, offset=0)["screenshots"]
+        image_rows = db.browse_screenshots(media_type="image", limit=20, offset=0)["screenshots"]
+
+        video_urls = {row["source_url"] for row in video_rows}
+        image_urls = {row["source_url"] for row in image_rows}
+
+        assert "https://coomer.st/data/cc/dd/example-video.mp4" in video_urls
+        assert "https://coomer.st/data/aa/bb/example-image.jpg" not in video_urls
+        assert "https://coomer.st/data/aa/bb/example-image.jpg" in image_urls
 
 
 class TestBrowsePerformers:

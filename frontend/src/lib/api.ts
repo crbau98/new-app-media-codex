@@ -332,7 +332,7 @@ export interface PerformerMedia {
   is_favorite: number
   captured_at: string
   local_url?: string | null
-  source_kind?: "screenshot" | "performer_media"
+  source_kind?: "screenshot" | "performer_media" | null
 }
 
 export interface PerformerStats {

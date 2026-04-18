@@ -348,3 +348,39 @@ class TestScreenshotsProxyRefresh:
         assert resp.status_code == 404
         assert "Upstream media returned 404" in resp.text
         assert fake_client.requested_urls == ["https://cdn.redgifs.example/clip.mp4"]
+
+
+class TestScreenshotsBrowseMediaType:
+    def test_browse_screenshots_keeps_coomer_jpgs_out_of_video_feed(self, screenshots_client, test_db) -> None:
+        test_db.insert_screenshot(
+            term="creator-image",
+            source="coomer",
+            page_url="https://coomer.st/onlyfans/user/test/post/image",
+            source_url="https://coomer.st/data/aa/bb/example-image.jpg",
+        )
+        test_db.insert_screenshot(
+            term="creator-video",
+            source="coomer",
+            page_url="https://coomer.st/onlyfans/user/test/post/video",
+            source_url="https://coomer.st/data/cc/dd/example-video.mp4",
+        )
+
+        video_resp = screenshots_client.get("/api/screenshots?media_type=video&limit=20")
+        image_resp = screenshots_client.get("/api/screenshots?media_type=image&limit=20")
+
+        assert video_resp.status_code == 200
+        assert image_resp.status_code == 200
+
+        video_rows = video_resp.json()["screenshots"]
+        image_rows = image_resp.json()["screenshots"]
+
+        video_urls = {row["source_url"] for row in video_rows}
+        image_rows_by_url = {row["source_url"]: row for row in image_rows}
+
+        assert "https://coomer.st/data/cc/dd/example-video.mp4" in video_urls
+        assert "https://coomer.st/data/aa/bb/example-image.jpg" not in video_urls
+
+        image_row = image_rows_by_url["https://coomer.st/data/aa/bb/example-image.jpg"]
+        assert image_row["local_url"].endswith("example-image.jpg")
+        assert image_row["preview_url"] == image_row["local_url"]
+        assert "/api/screenshots/video-poster/" not in image_row["preview_url"]
