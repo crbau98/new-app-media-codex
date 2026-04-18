@@ -124,6 +124,20 @@ export function rewriteMediaUrlForProxy(url: string): string {
   return url
 }
 
+function unwrapProxyMediaUrl(url: string | null | undefined): string {
+  if (!url) return ""
+  const probe = url.trim()
+  const marker = `${PROXY_PATH}?${PROXY_QUERY}`
+  const idx = probe.indexOf(marker)
+  if (idx === -1) return probe
+  try {
+    const encoded = probe.slice(idx + marker.length).split("&")[0]
+    return decodeURIComponent(encoded)
+  } catch {
+    return probe
+  }
+}
+
 export type AttachMediaOptions = {
   /** Call `video.play()` once the stream is ready (HLS manifest parsed or metadata loaded). */
   tryAutoplay?: boolean
@@ -300,6 +314,13 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
         // Locally cached video — play MP4 directly
         playDirect(result.cached_url)
       } else if (result?.ip_bound) {
+        if (shotSource === "coomer") {
+          const directUrl = unwrapProxyMediaUrl(result.local_url || src)
+          if (directUrl.startsWith("http://") || directUrl.startsWith("https://")) {
+            playDirect(directUrl)
+            return
+          }
+        }
         // IP-bound but not yet cached — download in progress on server
         // Poll every 3 seconds for up to 90 seconds for the cache to complete
         let pollCount = 0
