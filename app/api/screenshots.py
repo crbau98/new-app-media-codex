@@ -1174,6 +1174,7 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
             )
         except httpx.TimeoutException as exc:
             last_error = exc
+            _logger.warning("Upstream media request timed out for %s", target_url, exc_info=exc)
             if _attempt >= proxy_retry_budget:
                 return JSONResponse(
                     status_code=502,
@@ -1182,18 +1183,20 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
             continue
         except httpx.RequestError as exc:
             last_error = exc
+            _logger.warning("Upstream media request error for %s", target_url, exc_info=exc)
             if _attempt >= proxy_retry_budget:
                 return JSONResponse(
                     status_code=502,
-                    content={"error": "upstream_connection_error", "detail": f"Could not fetch media: {exc}"},
+                    content={"error": "upstream_connection_error", "detail": "Could not fetch media"},
                 )
             continue
         except Exception as exc:
             last_error = exc
+            _logger.exception("Unexpected error while fetching upstream media for %s", target_url)
             if _attempt >= proxy_retry_budget:
                 return JSONResponse(
                     status_code=502,
-                    content={"error": "proxy_media_failed", "detail": f"Could not fetch media: {exc}"},
+                    content={"error": "proxy_media_failed", "detail": "Could not fetch media"},
                 )
             continue
         # Gateway-level errors from the proxy itself: retry with a fresh tunnel.
@@ -1205,7 +1208,7 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
     if resp is None:
         return JSONResponse(
             status_code=502,
-            content={"error": "proxy_media_failed", "detail": f"{last_error}" if last_error else "unknown"},
+            content={"error": "proxy_media_failed", "detail": "Could not fetch media"},
         )
     if resp.status_code >= 400 and shot_id and _is_refreshable_upstream_status(resp.status_code):
         refreshed_url = await _refresh_shot_media_url(request, int(shot_id), failed_url=target_url)
@@ -1224,14 +1227,16 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
                     content={"error": "upstream_timeout", "detail": "Upstream media request timed out"},
                 )
             except httpx.RequestError as exc:
+                _logger.warning("Upstream media request error after URL refresh for %s", target_url, exc_info=exc)
                 return JSONResponse(
                     status_code=502,
-                    content={"error": "upstream_connection_error", "detail": f"Could not fetch media: {exc}"},
+                    content={"error": "upstream_connection_error", "detail": "Could not fetch media"},
                 )
             except Exception as exc:
+                _logger.exception("Unexpected error while fetching refreshed upstream media for %s", target_url)
                 return JSONResponse(
                     status_code=502,
-                    content={"error": "proxy_media_failed", "detail": f"Could not fetch media: {exc}"},
+                    content={"error": "proxy_media_failed", "detail": "Could not fetch media"},
                 )
     if resp.status_code >= 400:
         status_code = resp.status_code if resp.status_code in {401, 403, 404, 416} else 502
