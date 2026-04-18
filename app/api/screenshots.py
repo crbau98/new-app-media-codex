@@ -885,6 +885,36 @@ async def resolve_stream(shot_id: int, request: Request, background_tasks: Backg
     })
 
 
+_COOMER_HOST_RE = re.compile(r"^(?:[a-z0-9-]+\.)?coomer\.(?:st|su)$", re.I)
+_KEMONO_HOST_RE = re.compile(r"^(?:[a-z0-9-]+\.)?kemono\.(?:su|party|cr)$", re.I)
+_IMAGE_EXT_RE = re.compile(r"\.(jpe?g|png|webp|gif|avif)(?:$|\?)", re.I)
+
+
+def _rewrite_archiver_url_to_thumbnail(target_url: str) -> str:
+    """Rewrite coomer/kemono `/data/…` URLs to the always-reachable `img.*` thumbnail host.
+
+    `coomer.st/data/…` redirects to `n*.coomer.st`, which blocks many datacenter
+    IPs (Render, etc). `img.coomer.st/thumbnail/data/…` serves JPEG thumbnails for
+    both images and videos and is reachable from the same ranges — switch to it so
+    the proxy does not fail with `All connection attempts failed` on every request.
+    """
+    try:
+        parsed = urlparse(target_url)
+    except Exception:
+        return target_url
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or ""
+    if not path.startswith("/data/"):
+        return target_url
+    if _COOMER_HOST_RE.match(host):
+        tld = "su" if host.endswith("coomer.su") else "st"
+        return f"https://img.coomer.{tld}/thumbnail{path}"
+    if _KEMONO_HOST_RE.match(host):
+        tld = host.rsplit(".", 1)[-1] if "." in host else "su"
+        return f"https://img.kemono.{tld}/thumbnail{path}"
+    return target_url
+
+
 @router.get("/proxy-media")
 async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default=None, ge=1), request: Request = None):
     """Proxy a remote image/video URL via streaming to avoid CORS and hotlink issues."""
@@ -893,6 +923,14 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
     from starlette.responses import StreamingResponse
 
     range_header = request.headers.get("range") if request else None
+    # For coomer/kemono images, datacenter IPs cannot reach n*.coomer — use the
+    # `img.*` thumbnail mirror which serves the same image path from a reachable
+    # host. Only rewrite image extensions; videos still go through the original
+    # URL because thumbnail/data/*.mp4 returns 404.
+    if _IMAGE_EXT_RE.search(url):
+        rewritten = _rewrite_archiver_url_to_thumbnail(url)
+        if rewritten != url:
+            url = rewritten
 
     def _build_request_headers(target_url: str) -> dict[str, str]:
         target_origin = urlparse(target_url)
