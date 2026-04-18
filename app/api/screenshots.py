@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import time
 import uuid
 from copy import deepcopy
@@ -121,6 +122,12 @@ def _download_video_with_ytdlp(page_url: str, shot_id: int) -> str | None:
     Returns the local file path on success, None on failure.
     yt-dlp handles CDN authentication internally, so IP-bound tokens work.
     """
+    page_url_no_query = page_url.split("?", 1)[0].lower()
+    if page_url_no_query.endswith((".mp4", ".webm", ".mov", ".mkv")):
+        direct_path = _download_video_direct(page_url, shot_id)
+        if direct_path:
+            return direct_path
+
     try:
         import yt_dlp
     except Exception:
@@ -166,6 +173,42 @@ def _download_video_with_ytdlp(page_url: str, shot_id: int) -> str | None:
         for f in _VIDEO_CACHE_DIR.glob(f"{shot_id}.*"):
             f.unlink(missing_ok=True)
         return None
+
+
+def _download_video_direct(source_url: str, shot_id: int) -> str | None:
+    """Download a direct media URL to the persistent cache via ffmpeg."""
+    output_path = _video_cache_path(shot_id)
+    temp_path = output_path.with_suffix(".tmp.mp4")
+
+    try:
+        _evict_video_cache_if_needed()
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-headers", "User-Agent: Mozilla/5.0\r\n",
+                "-i", source_url,
+                "-c", "copy",
+                "-movflags", "+faststart",
+                str(temp_path),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=180,
+            check=False,
+        )
+        if proc.returncode == 0 and temp_path.exists() and temp_path.stat().st_size > 0:
+            temp_path.rename(output_path)
+            _logger.info("Direct-downloaded video for shot %d: %.1f MB", shot_id, output_path.stat().st_size / 1024 / 1024)
+            return str(output_path)
+
+        err_snippet = (proc.stderr or b"").decode(errors="replace")[-200:]
+        _logger.warning("Direct video download failed for shot %d (rc=%s): %s", shot_id, proc.returncode, err_snippet)
+    except Exception as exc:
+        _logger.warning("Direct video download exception for shot %d: %s", shot_id, exc)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+    return None
 
 
 async def _bg_download_video(page_url: str, shot_id: int):
