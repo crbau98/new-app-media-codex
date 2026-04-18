@@ -54,10 +54,10 @@ _HLS_MANIFEST_CONTENT_TYPES = (
 _HLS_URI_ATTR_RE = re.compile(r'URI=(["\'])(.+?)\1')
 
 # Sources / netloc suffixes where server-side proxying HURTS rather than helps.
-# NOTE: coomer.st and kemono.su were previously excluded because we suspected
-# datacenter IPs were blocked. Tests confirm the Render IP CAN reach both hosts.
-# More importantly, n1.coomer.st returns CORS:"https://coomer.st" only — the
-# browser is always blocked. We MUST proxy these URLs through the backend.
+# Coomer/Kemono CDNs often block or refuse connections from cloud datacenters; the
+# SPA therefore prefers direct https://…/data/… URLs in the browser when possible.
+# n*.coomer hosts may still send CORS:"https://coomer.st" on XHR — HLS stays proxied
+# unless the client can fetch the playlist without CORS errors.
 _NO_PROXY_SOURCES: frozenset[str] = frozenset()  # all sources are proxied
 _NO_PROXY_NETLOC_SUFFIXES: tuple[str, ...] = ()  # all hosts are proxied
 
