@@ -1,6 +1,6 @@
 import Hls, { XhrLoader } from "hls.js"
 import { isArchiverDirectMediaUrl, shouldPreferArchiverEdgeProxy } from "./archiverMedia"
-import { apiUrl, getPublicOrigin } from "./backendOrigin"
+import { apiUrl, getBackendOrigin, getPublicOrigin } from "./backendOrigin"
 import { api } from "./api"
 
 const PROXY_PATH = "/api/screenshots/proxy-media"
@@ -142,6 +142,23 @@ function unwrapProxyMediaUrl(url: string | null | undefined): string {
   }
 }
 
+function isLikelyLocalBackend(): boolean {
+  const origin = getBackendOrigin() || getPublicOrigin()
+  if (!origin) return false
+  try {
+    const host = new URL(origin).hostname.toLowerCase()
+    if (host === "localhost" || host === "::1") return true
+    if (/^127(?:\.\d{1,3}){3}$/.test(host)) return true
+    if (/^10(?:\.\d{1,3}){3}$/.test(host)) return true
+    if (/^192\.168(?:\.\d{1,3}){2}$/.test(host)) return true
+    if (/^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(host)) return true
+    if (host.endsWith(".local")) return true
+  } catch {
+    return false
+  }
+  return false
+}
+
 export type AttachMediaOptions = {
   /** Call `video.play()` once the stream is ready (HLS manifest parsed or metadata loaded). */
   tryAutoplay?: boolean
@@ -149,7 +166,7 @@ export type AttachMediaOptions = {
   onFatalError?: () => void
   /** Screenshot ID — if provided, enables pre-flight stream resolution & retry on expired tokens. */
   shotId?: number
-  /** Screenshot source field (e.g. "ytdlp", "coomer"). Pre-flight resolve only runs for "ytdlp". */
+  /** Screenshot source field (e.g. "ytdlp", "coomer"). Pre-flight resolve runs for sources that need refresh/fallback handling. */
   shotSource?: string
 }
 
@@ -320,23 +337,27 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
       } else if (result?.ip_bound) {
         if (shotSource === "coomer") {
           const localOrProxyUrl = (result.local_url ?? src).trim()
-          if (localOrProxyUrl.startsWith("/") || localOrProxyUrl.startsWith("http://") || localOrProxyUrl.startsWith("https://")) {
-            // coomer direct URLs can fail for some client networks. Try the current
-            // local/proxy candidate first so app playback still works when direct
-            // browser fetch is blocked, while polling keeps running for cached MP4.
+          const directFromApi = (result.direct_url ?? "").trim()
+          const directUrl = unwrapProxyMediaUrl(directFromApi || src)
+
+          // In the local app, our own FastAPI proxy is often more reliable than
+          // handing the browser a raw coomer URL directly. On remote split
+          // deploys the inverse is usually true because datacenter IPs are
+          // blocked, so keep browser-direct playback there.
+          if (
+            isLikelyLocalBackend()
+            && (localOrProxyUrl.startsWith("/") || localOrProxyUrl.startsWith("http://") || localOrProxyUrl.startsWith("https://"))
+          ) {
             playDirect(localOrProxyUrl)
-          } else {
-            const directFromApi = (result.direct_url ?? "").trim()
-            if (directFromApi.startsWith("http://") || directFromApi.startsWith("https://")) {
-              playDirect(directFromApi)
-            } else {
-              // localOrProxyUrl is invalid above, so only the incoming src can be
-              // unwrapped into a direct URL fallback here.
-              const directUrl = unwrapProxyMediaUrl(src)
-              if (directUrl.startsWith("http://") || directUrl.startsWith("https://")) {
-                playDirect(directUrl)
-              }
-            }
+            return
+          }
+          if (directUrl.startsWith("http://") || directUrl.startsWith("https://")) {
+            playDirect(directUrl)
+            return
+          }
+          if (localOrProxyUrl.startsWith("/") || localOrProxyUrl.startsWith("http://") || localOrProxyUrl.startsWith("https://")) {
+            playDirect(localOrProxyUrl)
+            return
           }
         }
         // IP-bound but not yet cached — download in progress on server
