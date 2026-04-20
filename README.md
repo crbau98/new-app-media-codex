@@ -18,9 +18,12 @@ It is built as a research-monitoring system, not a treatment recommender. The da
 - targeted LPSG forum thread scraping from public pages
   - extracts thread-embedded images when public thread pages expose them
 - targeted coomer.su post scraping via the public `/api/v1/posts` search API
-  - extracts post file + attachment images, rewritten through the archiver proxy
+  - image attachments rewritten through the archiver proxy for direct display
+  - video attachments (`.mp4/.webm/.mov`) written into the `screenshots` table
+    with `source="coomer"` so the existing `scripts/precache_coomer.py` flow
+    can pre-cache them on a residential IP and stream them from server disk
 - targeted kemono.su/.cr post scraping via the public `/api/v1/posts` search API
-  - extracts post file + attachment images, rewritten through the archiver proxy
+  - images and videos handled the same way as coomer (videos use `source="kemono"`)
 - related imagery via DuckDuckGo image search
 - Persists results in SQLite
 - Deduplicates by URL and tracks first/last seen timestamps

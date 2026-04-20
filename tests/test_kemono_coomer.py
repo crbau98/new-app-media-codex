@@ -187,3 +187,126 @@ def test_collect_kemono_dedupes_by_url(theme: Theme, settings: Settings) -> None
     )
     items, _images = collect_kemono(session, settings, theme)  # type: ignore[arg-type]
     assert len(items) == 1
+
+
+def _video_and_image_post() -> dict[str, Any]:
+    return {
+        "id": "42",
+        "user": "creator_v",
+        "service": "onlyfans",
+        "title": "Video post",
+        "content": "preview",
+        "published": "2025-03-01T00:00:00",
+        "file": {"name": "poster.jpg", "path": "/data/aa/bb/poster.jpg"},
+        "attachments": [
+            {"name": "clip.mp4", "path": "/data/aa/bb/clip.mp4"},
+            {"name": "clip2.webm", "path": "/data/aa/bb/clip2.webm"},
+            {"name": "still.png", "path": "/data/aa/bb/still.png"},
+            {"name": "notes.txt", "path": "/data/aa/bb/notes.txt"},
+        ],
+    }
+
+
+def test_collect_coomer_separates_videos_from_images(
+    theme: Theme, settings: Settings
+) -> None:
+    session = _FakeSession(
+        {
+            "/api/v1/creators.txt": _FakeResponse(status_code=200, text="ok"),
+            "/api/v1/posts": _FakeResponse(json_data=[_video_and_image_post()]),
+        }
+    )
+    items, images = collect_coomer(session, settings, theme)  # type: ignore[arg-type]
+
+    assert len(items) == 1
+    item = items[0]
+
+    # Images stay in the image pipeline (poster + still).
+    image_urls = {img.image_url for img in images}
+    assert any("poster.jpg" in u for u in image_urls)
+    assert any("still.png" in u for u in image_urls)
+    assert not any(".mp4" in u for u in image_urls)
+    assert not any(".webm" in u for u in image_urls)
+
+    # Videos land in metadata under a direct .mp4/.webm CDN URL so that when
+    # service.py inserts them into the screenshots table, the cache-status
+    # SQL filter (source_url LIKE '%.mp4'/'%.webm'/'%.mov') will match.
+    videos = item.metadata["videos"]
+    assert len(videos) == 2
+    urls = [v["source_url"] for v in videos]
+    assert "https://coomer.st/data/aa/bb/clip.mp4" in urls
+    assert "https://coomer.st/data/aa/bb/clip2.webm" in urls
+    # Non-media attachments (.txt) are dropped entirely.
+    assert all(".txt" not in u for u in urls)
+
+
+def test_collect_kemono_separates_videos_from_images(
+    theme: Theme, settings: Settings
+) -> None:
+    session = _FakeSession(
+        {
+            "/api/v1/creators.txt": _FakeResponse(status_code=200, text="ok"),
+            "/api/v1/posts": _FakeResponse(json_data=[_video_and_image_post()]),
+        }
+    )
+    items, _images = collect_kemono(session, settings, theme)  # type: ignore[arg-type]
+    videos = items[0].metadata["videos"]
+    assert [v["source_url"] for v in videos] == [
+        "https://kemono.cr/data/aa/bb/clip.mp4",
+        "https://kemono.cr/data/aa/bb/clip2.webm",
+    ]
+
+
+def test_collect_coomer_video_urls_match_cache_status_filter(
+    theme: Theme, settings: Settings
+) -> None:
+    """The cache-status endpoint's SQL only matches source_url endings
+    .mp4/.webm/.mov; any video URL we emit must satisfy that filter or
+    precache_coomer.py will never see it."""
+    session = _FakeSession(
+        {
+            "/api/v1/creators.txt": _FakeResponse(status_code=200, text="ok"),
+            "/api/v1/posts": _FakeResponse(json_data=[_video_and_image_post()]),
+        }
+    )
+    items, _ = collect_coomer(session, settings, theme)  # type: ignore[arg-type]
+    for video in items[0].metadata["videos"]:
+        url = video["source_url"].lower()
+        assert url.endswith((".mp4", ".webm", ".mov"))
+
+
+def test_coomer_video_row_is_visible_to_cache_status_query(tmp_path) -> None:
+    """End-to-end: insert a coomer video row the same way service.py does,
+    then re-run the exact SQL predicate from the cache-status handler at
+    app/api/screenshots.py:977-979. The row must match — otherwise
+    precache_coomer.py cannot discover or pre-cache the video."""
+    from app.db import Database
+
+    db = Database(tmp_path / "e2e.db", timeout_seconds=5, busy_timeout_ms=5000)
+    db.init()
+
+    video_url = "https://coomer.st/data/aa/bb/clip.mp4"
+    inserted = db.insert_screenshot(
+        term="Video post",
+        source="coomer",
+        page_url=video_url,
+        local_path=None,
+        source_url=video_url,
+        thumbnail_url="https://img.coomer.st/data/aa/bb/poster.jpg",
+    )
+    assert inserted is True
+
+    with db.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, source, source_url, page_url FROM screenshots
+             WHERE source = ?
+               AND (source_url LIKE '%.mp4' OR source_url LIKE '%.mp4?%'
+                    OR source_url LIKE '%.webm' OR source_url LIKE '%.webm?%'
+                    OR source_url LIKE '%.mov' OR source_url LIKE '%.mov?%')
+            """,
+            ("coomer",),
+        ).fetchall()
+
+    assert len(rows) == 1
+    assert rows[0]["source_url"] == video_url

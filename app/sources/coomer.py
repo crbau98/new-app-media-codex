@@ -20,6 +20,13 @@ from app.sources.base import (
 
 COOMER_HOSTS = ("coomer.su", "coomer.st")
 COOMER_IMG_HOST = "https://img.coomer.st"
+COOMER_VIDEO_HOST = "https://coomer.st"
+
+# Extensions the /api/screenshots/cache-status SQL filter recognises as videos.
+# Keep this set aligned with that query — other extensions would be orphaned
+# rows that precache_coomer.py would never see.
+VIDEO_EXTS = (".mp4", ".webm", ".mov")
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif")
 
 COOMER_QUERIES = {
     "onlyfans_creators": ["gay onlyfans", "male onlyfans", "gay creator"],
@@ -59,20 +66,50 @@ def _search_posts(
     return data[:limit]
 
 
-def _post_image_urls(post: dict[str, Any]) -> list[str]:
-    urls: list[str] = []
-    file_obj = post.get("file") or {}
-    path = file_obj.get("path") if isinstance(file_obj, dict) else None
-    if path:
-        urls.append(f"{COOMER_IMG_HOST}{path}")
+def _classify_path(path: str) -> str:
+    lowered = path.lower()
+    if any(lowered.endswith(ext) for ext in VIDEO_EXTS):
+        return "video"
+    if any(lowered.endswith(ext) for ext in IMAGE_EXTS):
+        return "image"
+    return "other"
+
+
+def _split_post_media(post: dict[str, Any]) -> tuple[list[str], list[dict[str, str]]]:
+    """Return (image_urls, video_entries) extracted from a coomer post.
+
+    Video entries are dicts shaped for later insertion into the screenshots
+    table: ``{"source_url": <direct .mp4/.webm/.mov URL>, "filename": ...}``.
+    """
+    image_urls: list[str] = []
+    video_entries: list[dict[str, str]] = []
+    attachments: list[dict[str, Any]] = []
+    file_obj = post.get("file")
+    if isinstance(file_obj, dict) and file_obj.get("path"):
+        attachments.append(file_obj)
     for att in post.get("attachments") or []:
-        if not isinstance(att, dict):
+        if isinstance(att, dict) and att.get("path"):
+            attachments.append(att)
+
+    for att in attachments:
+        path = str(att.get("path") or "")
+        if not path:
             continue
-        att_path = att.get("path")
-        if att_path:
-            urls.append(f"{COOMER_IMG_HOST}{att_path}")
-    normalized = [normalize_image_url(u) for u in urls]
-    return dedupe_image_urls([u for u in normalized if is_useful_image_url(u)])
+        kind = _classify_path(path)
+        filename = str(att.get("name") or path.rsplit("/", 1)[-1] or "")
+        if kind == "video":
+            video_entries.append(
+                {
+                    "source_url": f"{COOMER_VIDEO_HOST}{path}",
+                    "filename": filename,
+                }
+            )
+        elif kind == "image":
+            candidate = normalize_image_url(f"{COOMER_IMG_HOST}{path}")
+            if candidate and is_useful_image_url(candidate):
+                image_urls.append(candidate)
+
+    return dedupe_image_urls(image_urls), video_entries
 
 
 def _post_page_url(host: str, post: dict[str, Any]) -> str:
@@ -118,7 +155,7 @@ def collect_coomer(
             summary = body_text[:320] or title or "No summary available."
             combined = "\n".join([title, body_text, query, post.get("service", "") or ""])
             compounds, mechanisms = extract_terms(combined)
-            image_urls = _post_image_urls(post)
+            image_urls, video_entries = _split_post_media(post)
             primary_image = image_urls[0] if image_urls else ""
             published = post.get("published") or post.get("added") or ""
 
@@ -141,6 +178,7 @@ def collect_coomer(
                     "engine": "coomer_api",
                     "service": post.get("service", ""),
                     "post_id": post.get("id", ""),
+                    "videos": video_entries,
                 },
             )
             items.append(item)

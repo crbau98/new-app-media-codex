@@ -459,6 +459,30 @@ class ResearchService:
                                     },
                                 ),
                             )
+                        # Coomer/Kemono post attachments that are videos must
+                        # land in the `screenshots` table (not images) so the
+                        # /api/screenshots/cache-status endpoint exposes them
+                        # and scripts/precache_coomer.py can stream them into
+                        # the server video cache from a residential IP.
+                        if source_key in ("coomer", "kemono"):
+                            videos = item.metadata.get("videos") if isinstance(item.metadata, dict) else None
+                            for video in videos or []:
+                                video_url = (video or {}).get("source_url")
+                                if not video_url:
+                                    continue
+                                try:
+                                    self.db.insert_screenshot(
+                                        term=item.title or source_key,
+                                        source=source_key,
+                                        page_url=video_url,
+                                        local_path=None,
+                                        source_url=video_url,
+                                        thumbnail_url=item.image_url or None,
+                                    )
+                                except Exception as exc:
+                                    notes["errors"].append(
+                                        f"{theme.slug}:{source_key}_video_insert:{exc}"
+                                    )
 
                 # ── DDG image search ─────────────────────────────────────────
                 try:
