@@ -151,13 +151,21 @@ export function getScreenshotMediaSrc(s: Screenshot): string {
     const sourceUrl = normalizeMediaUrl(s.source_url)
     const pageUrl = normalizeMediaUrl(s.page_url)
     const videoCandidates = uniqueMediaCandidates([
+      // Keep local/source even when extension sniffing fails (many signed
+      // video endpoints omit .mp4/.m3u8 in the URL).
       localUrl,
       sourceUrl,
-      pageUrl,
-    ]).filter((url) => isVideoUrl(url) || isVideoProxyUrl(url))
+      // page_url is often an HTML permalink; only keep if it already looks like
+      // a direct video stream URL.
+      (isVideoUrl(pageUrl) || isVideoProxyUrl(pageUrl)) ? pageUrl : "",
+    ])
 
     const archiverVideoCandidates = flattenArchiverPlaybackChoices(
-      videoCandidates.filter((url) => isArchiverDirectMediaUrl(url)),
+      videoCandidates.filter((url) => {
+        if (isArchiverDirectMediaUrl(url)) return true
+        const proxyTargetUrl = extractProxyMediaTargetUrl(url)
+        return Boolean(proxyTargetUrl) && isArchiverDirectMediaUrl(proxyTargetUrl)
+      }),
     )
     const usableArchiver = pickUsableMediaUrl(archiverVideoCandidates)
     if (usableArchiver) return usableArchiver
