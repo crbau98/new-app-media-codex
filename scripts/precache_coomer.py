@@ -119,8 +119,95 @@ def _fetch_missing(server: str, token: str, source: str, limit: int) -> list[dic
     return items
 
 
-def _download_video(source_url: str, shot_id: int, temp_dir: Path) -> tuple[Path | None, str]:
-    """Download one video with yt-dlp, return (path_or_None, reason)."""
+_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/17.5 Safari/605.1.15"
+)
+
+
+def _coomer_referer(url: str) -> str:
+    try:
+        host = urlparse(url).hostname or ""
+    except Exception:
+        host = ""
+    # coomer/kemono DDoS-Guard expects the front-domain Referer, not the
+    # n*.coomer.st mirror hostname.
+    if host.endswith("coomer.st") or host.endswith("coomer.su"):
+        return "https://coomer.st/"
+    if any(host.endswith(s) for s in ("kemono.su", "kemono.party", "kemono.cr")):
+        return f"https://{host.split('.', 1)[-1] if '.' in host else host}/"
+    return f"{urlparse(url).scheme}://{urlparse(url).netloc}/"
+
+
+def _build_session() -> "requests.Session":
+    """A requests.Session pre-warmed with DDoS-Guard cookies on coomer/kemono.
+
+    Coomer's file shards (n*.coomer.st) sit behind DDoS-Guard, which sets a
+    chain of `__ddg*` cookies on the root domain before allowing media
+    downloads. Hitting `https://coomer.st/` once at session start populates
+    them; subsequent GETs to any shard reuse the cookie jar.
+    """
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": _UA,
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "*/*",
+    })
+    for warmup in ("https://coomer.st/", "https://kemono.cr/"):
+        try:
+            s.get(warmup, timeout=15, allow_redirects=True)
+        except requests.RequestException:
+            pass
+    return s
+
+
+def _download_via_requests(
+    session: "requests.Session", source_url: str, shot_id: int, temp_dir: Path,
+) -> tuple[Path | None, str]:
+    """Stream a direct media URL with cookies + real browser headers.
+
+    This is the primary download path for coomer because the URLs are direct
+    files, not post pages. yt-dlp's generic extractor fails here because it
+    first HEADs the URL with no cookies, gets DDoS-Guard's 302 challenge, and
+    bails with 'unable to download video'.
+    """
+    target = temp_dir / f"{shot_id}.mp4"
+    headers = {
+        "User-Agent": _UA,
+        "Referer": _coomer_referer(source_url),
+        "Accept": "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5",
+        "Accept-Encoding": "identity",  # avoid gzip on binary streams
+        "Range": "bytes=0-",
+    }
+    try:
+        with session.get(source_url, stream=True, timeout=(15, 300), headers=headers, allow_redirects=True) as r:
+            if r.status_code >= 400:
+                return None, f"HTTP {r.status_code}"
+            ct = (r.headers.get("content-type") or "").lower()
+            if ct.startswith("text/html"):
+                return None, "got HTML (DDoS-Guard challenge or 404 page)"
+            if not ct.startswith(("video/", "application/octet-stream", "binary/")):
+                return None, f"unexpected content-type {ct!r}"
+            total = 0
+            with open(target, "wb") as out:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    total += len(chunk)
+                    if total > MAX_FILE_BYTES:
+                        target.unlink(missing_ok=True)
+                        return None, f"file exceeds {_human(MAX_FILE_BYTES)} limit"
+                    out.write(chunk)
+            if total == 0:
+                target.unlink(missing_ok=True)
+                return None, "empty response"
+            return target, ""
+    except requests.RequestException as exc:
+        return None, f"requests: {exc}"
+
+
+def _download_via_ytdlp(source_url: str, shot_id: int, temp_dir: Path) -> tuple[Path | None, str]:
+    """yt-dlp fallback for sources whose `source_url` is not a direct file."""
     try:
         from yt_dlp import YoutubeDL  # type: ignore
     except ImportError:
@@ -138,8 +225,8 @@ def _download_video(source_url: str, shot_id: int, temp_dir: Path) -> tuple[Path
         "concurrent_fragment_downloads": 4,
         "postprocessors": [],
         "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Referer": f"{urlparse(source_url).scheme}://{urlparse(source_url).netloc}/",
+            "User-Agent": _UA,
+            "Referer": _coomer_referer(source_url),
         },
     }
     try:
@@ -153,43 +240,6 @@ def _download_video(source_url: str, shot_id: int, temp_dir: Path) -> tuple[Path
         if candidate.exists() and candidate.stat().st_size > 0:
             return candidate, ""
     return None, "yt-dlp produced no file"
-
-
-def _download_via_requests(source_url: str, shot_id: int, temp_dir: Path) -> tuple[Path | None, str]:
-    """Fallback for simple direct-MP4 URLs when yt-dlp can't parse them."""
-    target = temp_dir / f"{shot_id}.mp4"
-    try:
-        with requests.get(
-            source_url,
-            stream=True,
-            timeout=120,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                "Referer": f"{urlparse(source_url).scheme}://{urlparse(source_url).netloc}/",
-                "Accept": "video/*,*/*;q=0.8",
-            },
-        ) as r:
-            if r.status_code >= 400:
-                return None, f"HTTP {r.status_code}"
-            ct = (r.headers.get("content-type") or "").lower()
-            if not ct.startswith(("video/", "application/octet-stream", "binary/")):
-                return None, f"unexpected content-type {ct!r}"
-            total = 0
-            with open(target, "wb") as out:
-                for chunk in r.iter_content(chunk_size=1024 * 512):
-                    if not chunk:
-                        continue
-                    total += len(chunk)
-                    if total > MAX_FILE_BYTES:
-                        target.unlink(missing_ok=True)
-                        return None, f"file exceeds {_human(MAX_FILE_BYTES)} limit"
-                    out.write(chunk)
-            if total == 0:
-                target.unlink(missing_ok=True)
-                return None, "empty response"
-            return target, ""
-    except requests.RequestException as exc:
-        return None, f"requests: {exc}"
 
 
 def _upload(server: str, token: str, shot_id: int, path: Path, overwrite: bool = False) -> tuple[bool, str]:
@@ -226,6 +276,7 @@ def _process(
     temp_dir: Path,
     keep_local: bool,
     dry_run: bool,
+    session: "requests.Session",
 ) -> tuple[int, bool, str]:
     shot_id = int(item["id"])
     source_url = str(item.get("source_url") or "")
@@ -236,25 +287,47 @@ def _process(
     if dry_run:
         return shot_id, True, f"dry-run ({source_url[:80]})"
 
-    # Prefer yt-dlp (it handles the DDoS-Guard cookie dance + any quirks).
-    local_path, reason = _download_video(source_url, shot_id, temp_dir)
+    bare = source_url.lower().split("?")[0]
+    is_direct_media = bare.endswith((".mp4", ".webm", ".mov", ".mkv"))
 
-    # Fallback: straight HTTP GET if yt-dlp refused to parse the URL. coomer
-    # MP4 URLs are direct files, so a plain GET is fine from a residential IP.
-    if local_path is None and source_url.lower().split("?")[0].endswith(
-        (".mp4", ".webm", ".mov", ".mkv")
-    ):
-        local_path, reason2 = _download_via_requests(source_url, shot_id, temp_dir)
-        if local_path is None:
+    reason = "not attempted"
+    local_path: Path | None = None
+
+    # Primary: streaming GET with the pre-warmed DDoS-Guard cookie jar. Works
+    # for coomer/kemono direct-media URLs which are 99% of source_url values.
+    if is_direct_media:
+        local_path, reason = _download_via_requests(session, source_url, shot_id, temp_dir)
+
+    # Fallback 1: yt-dlp on the direct URL (retries with its own logic).
+    if local_path is None:
+        lp, reason2 = _download_via_ytdlp(source_url, shot_id, temp_dir)
+        if lp is not None:
+            local_path = lp
+        else:
             reason = f"{reason}; {reason2}"
 
-    # If page_url is different from source_url, try it as a last resort (yt-dlp
-    # can occasionally extract from the post page even when the direct file
-    # returns 403).
+    # Fallback 2: yt-dlp on the post page URL (sometimes extracts a different
+    # CDN variant than the stored source_url).
     if local_path is None and page_url and page_url != source_url:
-        local_path, reason3 = _download_video(page_url, shot_id, temp_dir)
-        if local_path is None:
+        lp, reason3 = _download_via_ytdlp(page_url, shot_id, temp_dir)
+        if lp is not None:
+            local_path = lp
+        else:
             reason = f"{reason}; page: {reason3}"
+
+    # Fallback 3: GET page_url too in case it's itself a direct file (some rows
+    # store the file URL only in page_url).
+    if (
+        local_path is None
+        and page_url
+        and page_url.lower().split("?")[0].endswith((".mp4", ".webm", ".mov", ".mkv"))
+        and page_url != source_url
+    ):
+        lp, reason4 = _download_via_requests(session, page_url, shot_id, temp_dir)
+        if lp is not None:
+            local_path = lp
+        else:
+            reason = f"{reason}; page-req: {reason4}"
 
     if local_path is None or not local_path.exists():
         return shot_id, False, f"download failed: {reason}"
@@ -341,6 +414,9 @@ def main(argv: Iterable[str]) -> int:
     skipped = 0
     start = time.monotonic()
 
+    # Pre-warm a shared cookie jar so every request has DDoS-Guard cookies set.
+    session = _build_session() if not args.dry_run else requests.Session()
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as ex:
         futures = {
             ex.submit(
@@ -351,6 +427,7 @@ def main(argv: Iterable[str]) -> int:
                 temp_dir,
                 args.keep_local,
                 args.dry_run,
+                session,
             ): item
             for item in items
         }
