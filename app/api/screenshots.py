@@ -1109,8 +1109,17 @@ async def evict_cached_video(
     """Delete a cached video from disk (admin only)."""
     _require_admin(x_admin_token)
     path = _video_cache_path(shot_id)
-    if path.exists():
-        path.unlink()
+
+    # Defensive validation: ensure resolved target remains within cache root.
+    cache_root = _VIDEO_CACHE_DIR.resolve()
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(cache_root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid cache path")
+
+    if resolved_path.exists():
+        resolved_path.unlink()
         return JSONResponse({"ok": True, "shot_id": shot_id, "deleted": True})
     return JSONResponse({"ok": True, "shot_id": shot_id, "deleted": False})
 
