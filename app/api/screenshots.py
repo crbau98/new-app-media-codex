@@ -317,6 +317,9 @@ def _download_video_direct(source_url: str, shot_id: int) -> str | None:
                     "Proxy yt-dlp exhausted %d attempts for shot %d; giving up",
                     max_attempts, shot_id,
                 )
+                # Skip the raw ffmpeg fallback for archiver hosts — ffmpeg would
+                # try direct TCP to blocked n*.coomer.st and always fail.
+                return None
 
     try:
         _evict_video_cache_if_needed()
