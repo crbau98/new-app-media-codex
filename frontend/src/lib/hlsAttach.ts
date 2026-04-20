@@ -1,6 +1,8 @@
 import Hls, { XhrLoader } from "hls.js"
 import { isArchiverDirectMediaUrl, shouldPreferArchiverEdgeProxy } from "./archiverMedia"
-import { apiUrl, getBackendOrigin, getPublicOrigin } from "./backendOrigin"
+import { apiUrl, getPublicOrigin } from "./backendOrigin"
+
+const COOMER_PLAYBACK_STALL_MS = 25_000
 import { api } from "./api"
 
 const PROXY_PATH = "/api/screenshots/proxy-media"
@@ -142,23 +144,6 @@ function unwrapProxyMediaUrl(url: string | null | undefined): string {
   }
 }
 
-function isLikelyLocalBackend(): boolean {
-  const origin = getBackendOrigin() || getPublicOrigin()
-  if (!origin) return false
-  try {
-    const host = new URL(origin).hostname.toLowerCase()
-    if (host === "localhost" || host === "::1") return true
-    if (/^127(?:\.\d{1,3}){3}$/.test(host)) return true
-    if (/^10(?:\.\d{1,3}){3}$/.test(host)) return true
-    if (/^192\.168(?:\.\d{1,3}){2}$/.test(host)) return true
-    if (/^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(host)) return true
-    if (host.endsWith(".local")) return true
-  } catch {
-    return false
-  }
-  return false
-}
-
 export type AttachMediaOptions = {
   /** Call `video.play()` once the stream is ready (HLS manifest parsed or metadata loaded). */
   tryAutoplay?: boolean
@@ -229,6 +214,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
   let destroyed = false
   let hls: Hls | null = null
   let pollTimer: ReturnType<typeof setInterval> | null = null
+  let stopCoomerWaterfall: (() => void) | null = null
 
   const tryPlay = () => {
     if (!tryAutoplay) return
@@ -237,6 +223,8 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
 
   const cleanup = () => {
     destroyed = true
+    stopCoomerWaterfall?.()
+    stopCoomerWaterfall = null
     if (hls) {
       hls.destroy()
       hls = null
@@ -258,6 +246,122 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
       tryPlay()
     }
     video.addEventListener("loadedmetadata", onMeta)
+  }
+
+  /**
+   * Coomer `n*` shards often block browser-direct HTTPS from some networks while
+   * still allowing our Vercel Edge `/api/archiver-proxy` or the FastAPI
+   * `proxy-media` hop (different egress / TCP path). Try those before raw CDN.
+   */
+  function buildCoomerPlaybackWaterfall(
+    directUrl: string,
+    localOrProxyFromApi: string,
+    shotIdNum: number,
+  ): string[] {
+    const out: string[] = []
+    const seen = new Set<string>()
+    const push = (u: string) => {
+      const t = u.trim()
+      if (!t || seen.has(t)) return
+      seen.add(t)
+      out.push(t)
+    }
+
+    const raw = directUrl.trim()
+    if (typeof window !== "undefined" && shouldPreferArchiverEdgeProxy() && raw && isArchiverDirectMediaUrl(raw)) {
+      push(`${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(raw)}`)
+    }
+
+    const proxyHint = localOrProxyFromApi.trim()
+    if (proxyHint.startsWith("/") || proxyHint.startsWith("http://") || proxyHint.startsWith("https://")) {
+      push(proxyHint)
+    } else if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      push(
+        apiUrl(
+          `${PROXY_PATH}?${PROXY_QUERY}${encodeURIComponent(raw)}&shot_id=${shotIdNum}`,
+        ),
+      )
+    }
+
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      push(raw)
+    }
+    return out
+  }
+
+  /** Sequential playback attempts — used for coomer when one CDN path works but others do not. */
+  function playDirectWaterfall(urls: string[]) {
+    if (destroyed || urls.length === 0) {
+      onFatalError?.()
+      return
+    }
+
+    let stallTimer: ReturnType<typeof setTimeout> | null = null
+    let detachAttempt: (() => void) | null = null
+
+    const clearStall = () => {
+      if (stallTimer) {
+        clearTimeout(stallTimer)
+        stallTimer = null
+      }
+    }
+
+    const abort = () => {
+      detachAttempt?.()
+      detachAttempt = null
+      clearStall()
+      stopCoomerWaterfall = null
+    }
+
+    stopCoomerWaterfall = abort
+
+    const tryIndex = (i: number) => {
+      if (destroyed) return
+      detachAttempt?.()
+      detachAttempt = null
+      clearStall()
+      if (i >= urls.length) {
+        abort()
+        onFatalError?.()
+        return
+      }
+      const url = urls[i]
+      video.removeAttribute("src")
+      video.load()
+      video.src = absoluteMediaRequestUrl(url)
+
+      const onErr = () => {
+        detachAttempt?.()
+        detachAttempt = null
+        clearStall()
+        tryIndex(i + 1)
+      }
+
+      const succeed = () => {
+        detachAttempt?.()
+        detachAttempt = null
+        clearStall()
+        stopCoomerWaterfall = null
+        tryPlay()
+      }
+
+      const onMeta = () => succeed()
+      const onCanPlay = () => succeed()
+
+      const detach = () => {
+        video.removeEventListener("error", onErr)
+        video.removeEventListener("loadedmetadata", onMeta)
+        video.removeEventListener("canplay", onCanPlay)
+      }
+
+      detachAttempt = detach
+      video.addEventListener("error", onErr)
+      video.addEventListener("loadedmetadata", onMeta)
+      video.addEventListener("canplay", onCanPlay)
+      stallTimer = setTimeout(onErr, COOMER_PLAYBACK_STALL_MS)
+    }
+
+    tryIndex(0)
   }
 
   // ── HLS setup (shared by ytdlp resolve path and non-ytdlp path) ─────────
@@ -340,19 +444,11 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
           const directFromApi = (result.direct_url ?? "").trim()
           const directUrl = unwrapProxyMediaUrl(directFromApi || src)
 
-          // In the local app, our own FastAPI proxy is often more reliable than
-          // handing the browser a raw coomer URL directly. On remote split
-          // deploys the inverse is usually true because datacenter IPs are
-          // blocked, so keep browser-direct playback there.
-          if (
-            isLikelyLocalBackend()
-            && (localOrProxyUrl.startsWith("/") || localOrProxyUrl.startsWith("http://") || localOrProxyUrl.startsWith("https://"))
-          ) {
-            playDirect(localOrProxyUrl)
-            return
-          }
+          // Try Edge proxy → backend proxy → direct CDN — each path can work
+          // when the others fail (datacenter blocks, mobile CORS, etc.).
           if (directUrl.startsWith("http://") || directUrl.startsWith("https://")) {
-            playDirect(directUrl)
+            const seq = buildCoomerPlaybackWaterfall(directUrl, localOrProxyUrl, shotId!)
+            playDirectWaterfall(seq)
             return
           }
           if (localOrProxyUrl.startsWith("/") || localOrProxyUrl.startsWith("http://") || localOrProxyUrl.startsWith("https://")) {
