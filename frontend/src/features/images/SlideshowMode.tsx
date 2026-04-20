@@ -3,7 +3,7 @@ import { createPortal } from "react-dom"
 import type { Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
-import { attachMediaSource } from "@/lib/hlsAttach"
+import { attachMediaSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
 function isVideoPath(url: string): boolean {
   if (!url) return false
@@ -209,7 +209,10 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
             playsInline
             muted
             onEnded={handleVideoEnded}
-            onError={() => { markMediaBroken(); setVideoLoadFailed(true) }}
+            onError={(e) => {
+              if (isCoomerWaterfallActive(e.currentTarget)) return
+              markMediaBroken(); setVideoLoadFailed(true)
+            }}
             className="max-h-[90vh] max-w-[95vw] object-contain"
           />
         ) : previewSrc && !previewLoadFailed ? (

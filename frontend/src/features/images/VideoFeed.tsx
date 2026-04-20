@@ -6,7 +6,7 @@ import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
 import { useResolvedScreenshotMedia } from "@/lib/media"
 import { sharedQueryKeys } from "@/features/sharedQueries"
-import { attachMediaSource } from "@/lib/hlsAttach"
+import { attachMediaSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
 function sourceLabel(s: string) {
   return s === "ddg" ? "DDG" : s === "redgifs" ? "Redgifs" : s === "x" ? "X" : s
@@ -346,7 +346,10 @@ const VideoSlide = memo(function VideoSlide({
           preload={isActive ? "auto" : "none"}
           className="h-full w-full cursor-pointer object-cover"
           onClick={handleTap}
-          onError={markMediaBroken}
+          onError={(e) => {
+            if (isCoomerWaterfallActive(e.currentTarget)) return
+            markMediaBroken()
+          }}
           onCanPlay={(e) => { if (isActive) { (e.target as HTMLVideoElement).play().catch(() => {}) } }}
         />
       ) : previewSrc ? (

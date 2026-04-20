@@ -4,7 +4,7 @@ import { api, type Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { StarRating } from "@/components/StarRating"
 import { getBestAvailableMediaSrc, getBestAvailablePosterSrc, getBestAvailablePreviewSrc, useResolvedScreenshotMedia } from "@/lib/media"
-import { attachMediaSource } from "@/lib/hlsAttach"
+import { attachMediaSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -581,7 +581,10 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
               loop={loop}
               muted={muted}
               onWheel={handleWheel}
-              onError={() => { setBuffering(false); setPlaybackFailed(true); markMediaBroken() }}
+              onError={(e) => {
+                if (isCoomerWaterfallActive(e.currentTarget)) return
+                setBuffering(false); setPlaybackFailed(true); markMediaBroken()
+              }}
               onWaiting={() => setBuffering(true)}
               onCanPlay={() => { setBuffering(false); setPlaybackFailed(false) }}
               onPlaying={() => { setBuffering(false); setPlaybackFailed(false) }}
