@@ -321,7 +321,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
         if (shotSource === "coomer") {
           const localFromApi = (result.local_url ?? src).trim()
           if (localFromApi) {
-            // Coomer direct URLs can fail for some client networks. Try the current
+            // coomer direct URLs can fail for some client networks. Try the current
             // local/proxy candidate first so app playback still works when direct
             // browser fetch is blocked, while polling keeps running for cached MP4.
             playDirect(localFromApi)
@@ -330,7 +330,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
             if (directFromApi.startsWith("http://") || directFromApi.startsWith("https://")) {
               playDirect(directFromApi)
             } else {
-              const directUrl = unwrapProxyMediaUrl(result.local_url || src)
+              const directUrl = unwrapProxyMediaUrl(src)
               if (directUrl.startsWith("http://") || directUrl.startsWith("https://")) {
                 playDirect(directUrl)
               }
