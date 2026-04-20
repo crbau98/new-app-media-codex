@@ -140,6 +140,35 @@ export function isKnownBrokenMediaUrl(url: string | null | undefined): boolean {
 }
 
 export function getScreenshotMediaSrc(s: Screenshot): string {
+  const videoShot = isVideoShot(s)
+
+  if (videoShot) {
+    // Video playback URLs must remain video resources. Some providers attach a
+    // usable image preview_url while source/local are stale; if we include the
+    // preview in playback candidate selection the <video> tag receives an image
+    // URL, poster renders, and playback never starts.
+    const localUrl = normalizeMediaUrl(s.local_url)
+    const sourceUrl = normalizeMediaUrl(s.source_url)
+    const pageUrl = normalizeMediaUrl(s.page_url)
+    const videoCandidates = uniqueMediaCandidates([
+      // Keep local/source even when extension sniffing fails (many signed
+      // video endpoints omit .mp4/.m3u8 in the URL).
+      localUrl,
+      sourceUrl,
+      // page_url is often an HTML permalink; only keep if it already looks like
+      // a direct video stream URL.
+      (isVideoUrl(pageUrl) || isVideoProxyUrl(pageUrl)) ? pageUrl : "",
+    ])
+
+    const archiverVideoCandidates = flattenArchiverPlaybackChoices(
+      videoCandidates.filter((url) => isArchiverDirectMediaUrl(url)),
+    )
+    const usableArchiver = pickUsableMediaUrl(archiverVideoCandidates)
+    if (usableArchiver) return usableArchiver
+
+    return pickUsableMediaUrl(videoCandidates.map((url) => resolvePublicUrl(url)))
+  }
+
   const archiverList = archiverDirectUrlCandidates(s)
   if (archiverList.length) {
     return pickUsableMediaUrl(flattenArchiverPlaybackChoices(archiverList))
