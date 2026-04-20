@@ -61,6 +61,48 @@ function BigPlayButton({ onClick }: { onClick: () => void }) {
   )
 }
 
+function VideoUnavailableCard({ shot }: { shot: Screenshot }) {
+  const isCoomer = (shot.source || "").toLowerCase() === "coomer"
+  const pageHref = shot.page_url?.startsWith("http") ? shot.page_url : null
+  const sourceHref = shot.source_url?.startsWith("http") ? shot.source_url : null
+  return (
+    <div className="absolute inset-0 z-[6] flex items-center justify-center bg-black/60 px-6 py-10">
+      <div className="flex max-w-xl flex-col items-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-8 py-8 text-center">
+        <div className="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100">
+          Video unavailable in browser
+        </div>
+        <p className="text-sm text-amber-100/80">
+          {isCoomer
+            ? "This video is not yet cached on the server and your network could not reach the archiver CDN. It may load later once the server finishes caching it."
+            : "This video could not be loaded. The source may be offline or blocked by your network."}
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+          {pageHref && (
+            <a
+              href={pageHref}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/80 transition-colors hover:border-white/25 hover:bg-white/10"
+            >
+              Open original post ↗
+            </a>
+          )}
+          {sourceHref && sourceHref !== pageHref && (
+            <a
+              href={sourceHref}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/60 transition-colors hover:border-white/20 hover:bg-white/10"
+            >
+              Open file URL ↗
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /*  Seek indicator overlay (double-tap rewind/forward)                */
 /* ------------------------------------------------------------------ */
@@ -110,6 +152,7 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
   const [playing, setPlaying] = useState(false)
   const [hasStarted, setHasStarted] = useState(false)
   const [buffering, setBuffering] = useState(true)
+  const [playbackFailed, setPlaybackFailed] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [buffered, setBuffered] = useState(0)
@@ -148,8 +191,18 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
   useEffect(() => {
     const v = videoRef.current
     if (!v || !currentIsVideo || !src) return
-    return attachMediaSource(v, src, { tryAutoplay: true, onFatalError: markMediaBroken, shotId: shot.id, shotSource: shot.source })
-  }, [currentIsVideo, src, shot.id, shot.source])
+    setPlaybackFailed(false)
+    return attachMediaSource(v, src, {
+      tryAutoplay: true,
+      onFatalError: () => {
+        setBuffering(false)
+        setPlaybackFailed(true)
+        markMediaBroken()
+      },
+      shotId: shot.id,
+      shotSource: shot.source,
+    })
+  }, [currentIsVideo, src, shot.id, shot.source, markMediaBroken])
 
   useEffect(() => {
     const v = videoRef.current
@@ -528,12 +581,19 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
               loop={loop}
               muted={muted}
               onWheel={handleWheel}
-              onError={() => { setBuffering(false); markMediaBroken() }}
+              onError={() => { setBuffering(false); setPlaybackFailed(true); markMediaBroken() }}
               onWaiting={() => setBuffering(true)}
-              onCanPlay={() => setBuffering(false)}
-              onPlaying={() => setBuffering(false)}
-              className="mx-auto max-h-[70vh] w-full cursor-pointer object-contain"
+              onCanPlay={() => { setBuffering(false); setPlaybackFailed(false) }}
+              onPlaying={() => { setBuffering(false); setPlaybackFailed(false) }}
+              className={cn(
+                "mx-auto max-h-[70vh] w-full cursor-pointer object-contain",
+                playbackFailed && "hidden",
+              )}
             />
+
+            {playbackFailed && (
+              <VideoUnavailableCard shot={shot} />
+            )}
 
             {/* Buffering spinner */}
             {buffering && (

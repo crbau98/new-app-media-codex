@@ -21,7 +21,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 import requests as http_requests
-from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Header, HTTPException, Query, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse, Response
 from PIL import Image, ImageOps
 
@@ -928,6 +928,193 @@ async def serve_cached_video(shot_id: int, request: Request):
     )
 
 
+# ----------------------------------------------------------------------------
+# Pre-cache endpoints (used by scripts/precache_coomer.py run from a residential
+# network). Admin-token-protected.
+# ----------------------------------------------------------------------------
+
+def _require_admin(token: str | None) -> None:
+    from app.config import settings as _settings
+    if not _settings.admin_token:
+        # Fallback only in non-production to ease local testing.
+        if _settings.environment == "production":
+            raise HTTPException(500, "ADMIN_TOKEN not configured on server")
+        return
+    if token != _settings.admin_token:
+        raise HTTPException(401, "Missing or invalid admin token")
+
+
+def _video_source_kind(source_url: str, source: str) -> str:
+    """Classify a screenshot's kind for pre-cache filtering."""
+    s = (source or "").lower()
+    u = (source_url or "").split("?")[0].lower()
+    if s == "coomer" and any(u.endswith(ext) for ext in (".mp4", ".webm", ".mov", ".mkv")):
+        return "coomer_video"
+    return "other"
+
+
+@router.get("/cache-status")
+async def cache_status(
+    request: Request,
+    source: str = Query(default="coomer", regex=r"^[a-z0-9_-]{1,32}$"),
+    missing_only: bool = Query(default=False),
+    limit: int = Query(default=500, ge=1, le=5000),
+    offset: int = Query(default=0, ge=0),
+):
+    """Report cache coverage for video shots of a given source.
+
+    Returns the list of shots whose video files the backend can serve from
+    disk (cached) versus which ones are still missing. Used by the pre-cache
+    script to decide what to upload.
+    """
+    db: Database = request.app.state.db
+    with db.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, source, source_url, page_url, captured_at, term
+              FROM screenshots
+             WHERE source = ?
+               AND (source_url LIKE '%.mp4' OR source_url LIKE '%.mp4?%'
+                    OR source_url LIKE '%.webm' OR source_url LIKE '%.webm?%'
+                    OR source_url LIKE '%.mov' OR source_url LIKE '%.mov?%')
+             ORDER BY id DESC
+            """,
+            (source,),
+        ).fetchall()
+
+    items: list[dict] = []
+    cached_count = 0
+    for r in rows:
+        shot_id = int(r["id"])
+        cached = _is_video_cached(shot_id)
+        if cached:
+            cached_count += 1
+        if missing_only and cached:
+            continue
+        items.append({
+            "id": shot_id,
+            "source": r["source"],
+            "source_url": r["source_url"],
+            "page_url": r["page_url"],
+            "term": r["term"],
+            "captured_at": r["captured_at"],
+            "cached": cached,
+            "size_bytes": (
+                _video_cache_path(shot_id).stat().st_size
+                if cached else 0
+            ),
+        })
+
+    total = len(rows)
+    window = items[offset:offset + limit]
+    return JSONResponse({
+        "source": source,
+        "total": total,
+        "cached": cached_count,
+        "missing": total - cached_count,
+        "coverage_pct": round(100 * cached_count / total, 1) if total else 0.0,
+        "returned": len(window),
+        "offset": offset,
+        "limit": limit,
+        "items": window,
+    })
+
+
+_UPLOAD_VIDEO_MAX_BYTES = int(os.getenv("UPLOAD_VIDEO_MAX_MB", "500")) * 1024 * 1024
+
+
+@router.post("/{shot_id}/upload-cached-video")
+async def upload_cached_video(
+    shot_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    overwrite: bool = Form(default=False),
+    x_admin_token: str | None = Header(default=None),
+):
+    """Accept a pre-downloaded video file and store it in the server disk cache.
+
+    Intended for the pre-cache script to upload videos that the server itself
+    cannot download (because it sits behind a datacenter IP blocked by coomer).
+    Authenticated with the admin token. Streams the body directly to disk so we
+    do not buffer 500+ MB in memory.
+    """
+    _require_admin(x_admin_token)
+
+    db: Database = request.app.state.db
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT id, source, source_url FROM screenshots WHERE id = ?",
+            (shot_id,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Shot not found")
+
+    # Reject non-video uploads
+    if not (file.content_type or "").startswith(("video/", "application/octet-stream")):
+        raise HTTPException(400, f"Unexpected content-type: {file.content_type}")
+
+    output_path = _video_cache_path(int(row["id"]))
+    if output_path.exists() and not overwrite:
+        return JSONResponse({
+            "ok": True,
+            "shot_id": shot_id,
+            "already_cached": True,
+            "size_bytes": output_path.stat().st_size,
+        })
+
+    temp_path = output_path.with_suffix(".upload.tmp")
+    total = 0
+    _evict_video_cache_if_needed()
+    try:
+        with open(temp_path, "wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)  # 1 MB
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _UPLOAD_VIDEO_MAX_BYTES:
+                    raise HTTPException(
+                        413,
+                        f"Upload exceeds limit ({_UPLOAD_VIDEO_MAX_BYTES} bytes)",
+                    )
+                out.write(chunk)
+        if total == 0:
+            raise HTTPException(400, "Empty upload")
+        os.replace(temp_path, output_path)
+        _logger.info(
+            "Pre-cache upload for shot %d: %.1f MB", shot_id, total / 1024 / 1024,
+        )
+    except HTTPException:
+        temp_path.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        temp_path.unlink(missing_ok=True)
+        _logger.warning("Pre-cache upload failed for shot %d: %s", shot_id, exc)
+        raise HTTPException(500, f"Upload failed: {exc}")
+
+    return JSONResponse({
+        "ok": True,
+        "shot_id": shot_id,
+        "already_cached": False,
+        "size_bytes": total,
+        "cached_url": f"/api/screenshots/cached-video/{shot_id}",
+    })
+
+
+@router.post("/{shot_id}/evict-cached-video")
+async def evict_cached_video(
+    shot_id: int,
+    x_admin_token: str | None = Header(default=None),
+):
+    """Delete a cached video from disk (admin only)."""
+    _require_admin(x_admin_token)
+    path = _video_cache_path(shot_id)
+    if path.exists():
+        path.unlink()
+        return JSONResponse({"ok": True, "shot_id": shot_id, "deleted": True})
+    return JSONResponse({"ok": True, "shot_id": shot_id, "deleted": False})
+
+
 @router.post("/{shot_id}/resolve-stream")
 async def resolve_stream(shot_id: int, request: Request, background_tasks: BackgroundTasks):
     """Pre-resolve a fresh or cacheable video stream URL for a screenshot.
@@ -984,14 +1171,20 @@ async def resolve_stream(shot_id: int, request: Request, background_tasks: Backg
                 "refreshed": False,
             })
 
+        # Not cached. Queue a best-effort server-side download (may fail from
+        # datacenter IPs) AND return the raw coomer URL so a viewer whose home
+        # ISP can reach coomer plays it directly. `ip_bound: True` + a valid
+        # direct_url tells the client to try browser-direct playback first.
         cache_target = current_source_url or page_url
         if cache_target:
             background_tasks.add_task(_bg_download_video, cache_target, shot_id)
+        direct_url = current_source_url if current_source_url.startswith(("http://", "https://")) else None
         return JSONResponse({
             "shot_id": shot_id,
             "source_url": current_source_url,
             "local_url": _build_local_url(current_source_url),
-            "direct_url": None,
+            "direct_url": direct_url,
+            "page_url": page_url or None,
             "cached_url": None,
             "ip_bound": True,
             "refreshed": False,
