@@ -177,12 +177,26 @@ export function archiverPlaybackCandidatesFromAnyRef(ref: string): string[] {
 
   const out: string[] = []
   const thumb = archiverThumbnailUrl(httpsTarget)
-  if (thumb) out.push(thumb)
-  if (shouldPreferArchiverEdgeProxy()) {
-    const edgeUrl = archiverEdgeProxyUrl(httpsTarget)
-    if (edgeUrl && !out.includes(edgeUrl)) out.push(edgeUrl)
+  const isVideo = /\.(mp4|m4v|webm|mov|mkv|avi)(?:$|\?)/i.test(httpsTarget)
+
+  // For images: thumbnail > edge > direct (thumbnail host is always reachable).
+  // For videos: direct > edge > thumbnail (/thumbnail/data/*.mp4 is always 404,
+  // and residential browsers can usually hit coomer.st → n*.coomer.st directly
+  // while datacenter Edge/Render egress is often blocked).
+  if (isVideo) {
+    out.push(httpsTarget)
+    if (shouldPreferArchiverEdgeProxy()) {
+      const edgeUrl = archiverEdgeProxyUrl(httpsTarget)
+      if (edgeUrl && !out.includes(edgeUrl)) out.push(edgeUrl)
+    }
+  } else {
+    if (thumb) out.push(thumb)
+    if (shouldPreferArchiverEdgeProxy()) {
+      const edgeUrl = archiverEdgeProxyUrl(httpsTarget)
+      if (edgeUrl && !out.includes(edgeUrl)) out.push(edgeUrl)
+    }
+    out.push(httpsTarget)
   }
-  out.push(httpsTarget)
   if (r !== httpsTarget && !out.includes(r)) {
     out.push(r)
   }

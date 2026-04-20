@@ -61,7 +61,13 @@ function BigPlayButton({ onClick }: { onClick: () => void }) {
   )
 }
 
-function VideoUnavailableCard({ shot }: { shot: Screenshot }) {
+function VideoUnavailableCard({
+  shot,
+  onTryInlineFallback,
+}: {
+  shot: Screenshot
+  onTryInlineFallback?: () => void
+}) {
   const isCoomer = (shot.source || "").toLowerCase() === "coomer"
   const pageHref = shot.page_url?.startsWith("http") ? shot.page_url : null
   const sourceHref = shot.source_url?.startsWith("http") ? shot.source_url : null
@@ -73,10 +79,19 @@ function VideoUnavailableCard({ shot }: { shot: Screenshot }) {
         </div>
         <p className="text-sm text-amber-100/80">
           {isCoomer
-            ? "This video is not yet cached on the server and your network could not reach the archiver CDN. It may load later once the server finishes caching it."
+            ? "Our server cannot reach coomer's CDN from here. Try the inline browser fallback below — if your ISP can reach coomer.st directly, the video plays natively."
             : "This video could not be loaded. The source may be offline or blocked by your network."}
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+          {isCoomer && sourceHref && onTryInlineFallback && (
+            <button
+              type="button"
+              onClick={onTryInlineFallback}
+              className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-4 py-1.5 text-xs font-semibold text-emerald-100 transition-colors hover:border-emerald-300/60 hover:bg-emerald-500/25"
+            >
+              ▶ Play in browser
+            </button>
+          )}
           {pageHref && (
             <a
               href={pageHref}
@@ -153,6 +168,7 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
   const [hasStarted, setHasStarted] = useState(false)
   const [buffering, setBuffering] = useState(true)
   const [playbackFailed, setPlaybackFailed] = useState(false)
+  const [inlineFallback, setInlineFallback] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [buffered, setBuffered] = useState(0)
@@ -190,19 +206,28 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
 
   useEffect(() => {
     const v = videoRef.current
-    if (!v || !currentIsVideo || !src) return
+    if (!v || !currentIsVideo || !src || inlineFallback) return
     setPlaybackFailed(false)
+    const isCoomer = (shot.source || "").toLowerCase() === "coomer"
     return attachMediaSource(v, src, {
       tryAutoplay: true,
       onFatalError: () => {
         setBuffering(false)
+        // For coomer, skip the "unavailable" card and auto-switch to the
+        // iframe fallback. The browser's native MP4 handler can talk to
+        // n*.coomer.st directly from the user's residential IP, which is the
+        // ONLY reliable path when server-side proxies are blocked.
+        if (isCoomer && shot.source_url?.startsWith("http")) {
+          setInlineFallback(true)
+          return
+        }
         setPlaybackFailed(true)
         markMediaBroken()
       },
       shotId: shot.id,
       shotSource: shot.source,
     })
-  }, [currentIsVideo, src, shot.id, shot.source, markMediaBroken])
+  }, [currentIsVideo, src, shot.id, shot.source, markMediaBroken, inlineFallback, shot.source_url])
 
   useEffect(() => {
     const v = videoRef.current
@@ -572,6 +597,24 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
       >
         {currentIsVideo && src ? (
           <>
+            {/* Native-browser MP4 fallback — no React state, no attachMediaSource,
+                no proxy. The <video> tag pointed at the raw coomer URL follows
+                the 302 to n*.coomer.st from the USER's IP, with native controls
+                handling Range requests + DDoS-Guard cookies + CORS-less media
+                loading. If the user's ISP can reach coomer, this WILL play. */}
+            {inlineFallback && shot.source_url?.startsWith("http") ? (
+              <video
+                key={`inline-${shot.id}`}
+                src={shot.source_url}
+                poster={posterSrc || undefined}
+                controls
+                autoPlay
+                playsInline
+                loop
+                className="mx-auto max-h-[70vh] w-full bg-black object-contain"
+              />
+            ) : null}
+
             {/* Video element - no native controls */}
             <video
               ref={videoRef}
@@ -590,26 +633,29 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
               onPlaying={() => { setBuffering(false); setPlaybackFailed(false) }}
               className={cn(
                 "mx-auto max-h-[70vh] w-full cursor-pointer object-contain",
-                playbackFailed && "hidden",
+                (playbackFailed || inlineFallback) && "hidden",
               )}
             />
 
-            {playbackFailed && (
-              <VideoUnavailableCard shot={shot} />
+            {playbackFailed && !inlineFallback && (
+              <VideoUnavailableCard
+                shot={shot}
+                onTryInlineFallback={() => setInlineFallback(true)}
+              />
             )}
 
             {/* Buffering spinner */}
-            {buffering && (
+            {buffering && !inlineFallback && (
               <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
                 <div className="h-10 w-10 rounded-full border-2 border-white/30 border-t-white animate-spin" />
               </div>
             )}
 
             {/* Big play button when not started */}
-            {!hasStarted && !playing && !buffering && <BigPlayButton onClick={togglePlay} />}
+            {!hasStarted && !playing && !buffering && !inlineFallback && <BigPlayButton onClick={togglePlay} />}
 
             {/* Click area for play/pause & double-tap seek */}
-            {hasStarted && (
+            {hasStarted && !inlineFallback && (
               <div className="absolute inset-0 z-[5]" onClick={handleVideoClick} />
             )}
           </>

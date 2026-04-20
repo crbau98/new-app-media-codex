@@ -282,10 +282,20 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     }
 
     const raw = directUrl.trim()
+
+    // 1. RAW coomer URL first — the browser's native MP4 fetch from the user's
+    //    residential IP is the most reliable path for coomer (datacenter-based
+    //    Vercel Edge and Render proxies are routinely blocked from n*.coomer.st).
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      push(raw)
+    }
+
+    // 2. Vercel Edge archiver-proxy with multi-shard fallback.
     if (shouldPreferArchiverEdgeProxy() && raw && isArchiverDirectMediaUrl(raw)) {
       push(archiverEdgeProxyUrl(raw))
     }
 
+    // 3. Backend proxy-media (FastAPI) — works if ARCHIVER_PROXY_URL is set.
     const proxyHint = localOrProxyFromApi.trim()
     if (proxyHint.startsWith("/") || proxyHint.startsWith("http://") || proxyHint.startsWith("https://")) {
       push(proxyHint)
@@ -297,9 +307,6 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
       )
     }
 
-    if (raw.startsWith("http://") || raw.startsWith("https://")) {
-      push(raw)
-    }
     return out
   }
 
