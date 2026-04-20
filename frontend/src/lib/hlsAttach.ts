@@ -319,17 +319,19 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
         playDirect(result.cached_url)
       } else if (result?.ip_bound) {
         if (shotSource === "coomer") {
-          const localFromApi = (result.local_url ?? src).trim()
-          if (localFromApi.startsWith("/") || localFromApi.startsWith("http://") || localFromApi.startsWith("https://")) {
+          const localOrProxyUrl = (result.local_url ?? src).trim()
+          if (localOrProxyUrl.startsWith("/") || localOrProxyUrl.startsWith("http://") || localOrProxyUrl.startsWith("https://")) {
             // coomer direct URLs can fail for some client networks. Try the current
             // local/proxy candidate first so app playback still works when direct
             // browser fetch is blocked, while polling keeps running for cached MP4.
-            playDirect(localFromApi)
+            playDirect(localOrProxyUrl)
           } else {
             const directFromApi = (result.direct_url ?? "").trim()
             if (directFromApi.startsWith("http://") || directFromApi.startsWith("https://")) {
               playDirect(directFromApi)
             } else {
+              // localOrProxyUrl is invalid above, so only the incoming src can be
+              // unwrapped into a direct URL fallback here.
               const directUrl = unwrapProxyMediaUrl(src)
               if (directUrl.startsWith("http://") || directUrl.startsWith("https://")) {
                 playDirect(directUrl)
