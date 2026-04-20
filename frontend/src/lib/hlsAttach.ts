@@ -1,9 +1,20 @@
 import Hls, { XhrLoader } from "hls.js"
 import { isArchiverDirectMediaUrl, shouldPreferArchiverEdgeProxy } from "./archiverMedia"
 import { apiUrl, getPublicOrigin } from "./backendOrigin"
+import { api } from "./api"
 
 const COOMER_PLAYBACK_STALL_MS = 25_000
-import { api } from "./api"
+const COOMER_WATERFALL_ATTR = "data-coomer-waterfall"
+
+/**
+ * True when a coomer playback waterfall is currently cycling through fallback
+ * URLs on this video element. Parent React components should skip their
+ * `markMediaBroken()` / `setPlaybackFailed(true)` logic for intermediate
+ * `error` events while this flag is set.
+ */
+export function isCoomerWaterfallActive(video: HTMLVideoElement | null | undefined): boolean {
+  return Boolean(video && video.hasAttribute(COOMER_WATERFALL_ATTR))
+}
 
 const PROXY_PATH = "/api/screenshots/proxy-media"
 const PROXY_QUERY = "url="
@@ -202,7 +213,10 @@ async function resolveStreamUrl(shotId: number): Promise<ResolveResult | null> {
  */
 export function attachMediaSource(video: HTMLVideoElement, src: string, options?: AttachMediaOptions): () => void {
   const tryAutoplay = options?.tryAutoplay ?? false
-  const onFatalError = options?.onFatalError
+  // Indirection so the coomer branch can intercept the "all URLs exhausted"
+  // signal and start cache-status polling instead of giving up.
+  let onFatalErrorRef: (() => void) | undefined = options?.onFatalError
+  const onFatalError = () => onFatalErrorRef?.()
   const shotId = options?.shotId
   const shotSource = (options?.shotSource ?? "").toLowerCase()
   // Some sources need a backend pre-flight before playback:
@@ -289,7 +303,16 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     return out
   }
 
-  /** Sequential playback attempts — used for coomer when one CDN path works but others do not. */
+  /**
+   * Sequential playback attempts for coomer: Edge proxy → backend proxy → direct CDN.
+   *
+   * Critical subtlety: the React inline `<video onError>` handler in the parent
+   * calls `markMediaBroken()` on EVERY `error` event, which changes `mediaSrc`
+   * and re-runs the effect — destroying this waterfall before it can reach the
+   * next URL. We mark the video element with a data attribute during the
+   * waterfall; the parent handler (via `isCoomerWaterfallActive`) skips
+   * `markMediaBroken` while that flag is set.
+   */
   function playDirectWaterfall(urls: string[]) {
     if (destroyed || urls.length === 0) {
       onFatalError?.()
@@ -298,6 +321,9 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
 
     let stallTimer: ReturnType<typeof setTimeout> | null = null
     let detachAttempt: (() => void) | null = null
+    let succeeded = false
+
+    video.setAttribute(COOMER_WATERFALL_ATTR, "1")
 
     const clearStall = () => {
       if (stallTimer) {
@@ -310,6 +336,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
       detachAttempt?.()
       detachAttempt = null
       clearStall()
+      video.removeAttribute(COOMER_WATERFALL_ATTR)
       stopCoomerWaterfall = null
     }
 
@@ -326,11 +353,21 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
         return
       }
       const url = urls[i]
+      // Keep the flag active during load; only clear on final failure/success.
+      if (!video.hasAttribute(COOMER_WATERFALL_ATTR)) {
+        video.setAttribute(COOMER_WATERFALL_ATTR, "1")
+      }
       video.removeAttribute("src")
       video.load()
       video.src = absoluteMediaRequestUrl(url)
+      if (typeof console !== "undefined") {
+        // One-line trace so deployment errors are diagnosable.
+        // eslint-disable-next-line no-console
+        console.debug(`[coomer-waterfall] ${i + 1}/${urls.length} trying ${url.slice(0, 140)}`)
+      }
 
       const onErr = () => {
+        if (succeeded) return
         detachAttempt?.()
         detachAttempt = null
         clearStall()
@@ -338,10 +375,17 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
       }
 
       const succeed = () => {
+        if (succeeded) return
+        succeeded = true
         detachAttempt?.()
         detachAttempt = null
         clearStall()
+        video.removeAttribute(COOMER_WATERFALL_ATTR)
         stopCoomerWaterfall = null
+        if (typeof console !== "undefined") {
+          // eslint-disable-next-line no-console
+          console.debug(`[coomer-waterfall] \u2713 playable on URL ${i + 1}/${urls.length}`)
+        }
         tryPlay()
       }
 
@@ -358,7 +402,14 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
       video.addEventListener("error", onErr)
       video.addEventListener("loadedmetadata", onMeta)
       video.addEventListener("canplay", onCanPlay)
-      stallTimer = setTimeout(onErr, COOMER_PLAYBACK_STALL_MS)
+      // Stall timeout advances to the next URL if no error/canplay arrives.
+      stallTimer = setTimeout(() => {
+        if (succeeded || destroyed) return
+        detachAttempt?.()
+        detachAttempt = null
+        stallTimer = null
+        tryIndex(i + 1)
+      }, COOMER_PLAYBACK_STALL_MS)
     }
 
     tryIndex(0)
@@ -439,15 +490,45 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
         // Locally cached video — play MP4 directly
         playDirect(result.cached_url)
       } else if (result?.ip_bound) {
+        const startCachePoll = () => {
+          if (destroyed) return
+          if (pollTimer) return
+          let pollCount = 0
+          const maxPolls = 30
+          pollTimer = setInterval(async () => {
+            if (destroyed) { if (pollTimer) clearInterval(pollTimer); return }
+            pollCount++
+            if (pollCount >= maxPolls) {
+              if (pollTimer) clearInterval(pollTimer)
+              pollTimer = null
+              onFatalError?.()
+              return
+            }
+            const check = await resolveStreamUrl(shotId!)
+            if (destroyed) { if (pollTimer) clearInterval(pollTimer); return }
+            if (check?.cached_url) {
+              if (pollTimer) clearInterval(pollTimer)
+              pollTimer = null
+              playDirect(check.cached_url)
+            }
+          }, 3000)
+        }
+
         if (shotSource === "coomer") {
           const localOrProxyUrl = (result.local_url ?? src).trim()
           const directFromApi = (result.direct_url ?? "").trim()
           const directUrl = unwrapProxyMediaUrl(directFromApi || src)
 
-          // Try Edge proxy → backend proxy → direct CDN — each path can work
-          // when the others fail (datacenter blocks, mobile CORS, etc.).
+          // Waterfall: Edge proxy → backend proxy → direct CDN. If ALL fail,
+          // start polling for the server-side download to complete.
           if (directUrl.startsWith("http://") || directUrl.startsWith("https://")) {
             const seq = buildCoomerPlaybackWaterfall(directUrl, localOrProxyUrl, shotId!)
+            const prevOnFatal = onFatalErrorRef
+            onFatalErrorRef = () => {
+              onFatalErrorRef = prevOnFatal
+              if (destroyed) return
+              startCachePoll()
+            }
             playDirectWaterfall(seq)
             return
           }
@@ -456,27 +537,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
             return
           }
         }
-        // IP-bound but not yet cached — download in progress on server
-        // Poll every 3 seconds for up to 90 seconds for the cache to complete
-        let pollCount = 0
-        const maxPolls = 30
-        pollTimer = setInterval(async () => {
-          if (destroyed) { if (pollTimer) clearInterval(pollTimer); return }
-          pollCount++
-          if (pollCount >= maxPolls) {
-            if (pollTimer) clearInterval(pollTimer)
-            pollTimer = null
-            onFatalError?.()
-            return
-          }
-          const check = await resolveStreamUrl(shotId!)
-          if (destroyed) { if (pollTimer) clearInterval(pollTimer); return }
-          if (check?.cached_url) {
-            if (pollTimer) clearInterval(pollTimer)
-            pollTimer = null
-            playDirect(check.cached_url)
-          }
-        }, 3000)
+        startCachePoll()
       } else if (result?.local_url && isHlsUrl(result.local_url)) {
         // Non-IP-bound HLS — use hls.js
         startHls(result.local_url)
@@ -484,7 +545,17 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
         // Non-IP-bound MP4 through proxy
         playDirect(result.local_url)
       } else {
-        // Fallback to original src
+        // Fallback to original src. For coomer, still use the waterfall so the
+        // first attempt doesn't commit to a raw n*.coomer.st URL.
+        if (shotSource === "coomer") {
+          const directUrl = unwrapProxyMediaUrl(src)
+          const httpDirect = directUrl.startsWith("http") ? directUrl : src
+          const seq = buildCoomerPlaybackWaterfall(httpDirect, src, shotId!)
+          if (seq.length > 1) {
+            playDirectWaterfall(seq)
+            return
+          }
+        }
         if (isHlsUrl(src)) {
           startHls(src)
         } else {

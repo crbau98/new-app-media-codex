@@ -5,7 +5,7 @@ import type { Screenshot } from "@/lib/api"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getScreenshotMediaSrc, useResolvedScreenshotMedia } from "@/lib/media"
-import { attachMediaSource } from "@/lib/hlsAttach"
+import { attachMediaSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
 interface ScreenshotLightboxProps {
   shots: Screenshot[]
@@ -570,7 +570,10 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
                 controls
                 className="max-h-[80vh] max-w-[95vw] object-contain mx-auto rounded-lg"
                 onCanPlay={(e) => { (e.target as HTMLVideoElement).playbackRate = playbackRate }}
-                onError={markMediaBroken}
+                onError={(e) => {
+                  if (isCoomerWaterfallActive(e.currentTarget)) return
+                  markMediaBroken()
+                }}
               />
               {/* Speed badge — top-left corner of video */}
               <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5">
