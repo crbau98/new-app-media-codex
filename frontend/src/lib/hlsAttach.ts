@@ -177,7 +177,7 @@ async function resolveStreamUrl(shotId: number): Promise<ResolveResult | null> {
   const p = api.resolveStream(shotId)
     .then((res) => ({
       local_url: res.local_url || null,
-      direct_url: res.direct_url || null,
+      direct_url: res.direct_url != null && res.direct_url !== "" ? res.direct_url : null,
       cached_url: res.cached_url || null,
       ip_bound: res.ip_bound ?? false,
     }))
@@ -319,6 +319,11 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
         playDirect(result.cached_url)
       } else if (result?.ip_bound) {
         if (shotSource === "coomer") {
+          const directFromApi = (result.direct_url ?? "").trim()
+          if (directFromApi.startsWith("http://") || directFromApi.startsWith("https://")) {
+            playDirect(directFromApi)
+            return
+          }
           const directUrl = unwrapProxyMediaUrl(result.local_url || src)
           if (directUrl.startsWith("http://") || directUrl.startsWith("https://")) {
             playDirect(directUrl)
