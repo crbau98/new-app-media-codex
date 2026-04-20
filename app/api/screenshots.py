@@ -1309,6 +1309,46 @@ def _rewrite_archiver_url_to_thumbnail(target_url: str) -> str:
     return target_url
 
 
+_VIDEO_EXT_RE = re.compile(r"\.(mp4|m4v|webm|mov|mkv|avi)(?:$|\?)", re.I)
+
+
+def _archiver_shard_candidates(target_url: str) -> list[str]:
+    """For coomer/kemono video URLs, expand `coomer.st` / `n3.coomer.st` into
+    the full list of sibling `n1..n8` shards. CDN pools are sometimes only
+    partially blocked, and the apex host 302-redirects to a random shard — so
+    trying siblings can succeed when the apex-chosen shard fails.
+    """
+    try:
+        parsed = urlparse(target_url)
+    except Exception:
+        return [target_url]
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or ""
+    query = parsed.query or ""
+    if not _VIDEO_EXT_RE.search(path):
+        return [target_url]
+
+    brand: str | None = None
+    tld: str | None = None
+    m = re.match(r"^n\d+\.(coomer|kemono)\.(st|su|party|cr)$", host)
+    if m:
+        brand, tld = m.group(1), m.group(2)
+    else:
+        m2 = re.match(r"^(?:[a-z0-9-]+\.)?(coomer|kemono)\.(st|su|party|cr)$", host)
+        if m2:
+            brand, tld = m2.group(1), m2.group(2)
+    if not brand or not tld:
+        return [target_url]
+
+    suffix = path + (f"?{query}" if query else "")
+    out: list[str] = [target_url]
+    for i in range(1, 9):
+        candidate = f"https://n{i}.{brand}.{tld}{suffix}"
+        if candidate not in out:
+            out.append(candidate)
+    return out
+
+
 @router.get("/proxy-media")
 async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default=None, ge=1), request: Request = None):
     """Proxy a remote image/video URL via streaming to avoid CORS and hotlink issues."""
@@ -1362,6 +1402,13 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
 
     client = _client_for(target_url)
 
+    # For coomer/kemono videos, expand into sibling shards (n1..n8). The apex
+    # host 302-redirects to whichever shard its DDoS-Guard layer chooses, but
+    # that shard may be blocked for our egress IP while sibling shards are
+    # reachable. Trying siblings is a cheap last-ditch recovery before giving
+    # up on the request.
+    url_candidates = _archiver_shard_candidates(target_url)
+
     # Rotating residential proxies succeed on a fraction of attempts. Retry the
     # initial request a few times when a proxy is in use and the failure is a
     # transient tunnel error (504/502/timeout). Only applied to archiver hosts.
@@ -1372,49 +1419,59 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
     )
     resp = None
     last_error: Exception | None = None
-    for _attempt in range(1, proxy_retry_budget + 1):
-        try:
-            resp = await client.send(
-                client.build_request("GET", target_url, headers=_build_request_headers(target_url)),
-                stream=True,
-            )
-        except httpx.TimeoutException as exc:
-            last_error = exc
-            _logger.warning("Upstream media request timed out for %s", target_url, exc_info=exc)
-            if _attempt >= proxy_retry_budget:
-                return JSONResponse(
-                    status_code=502,
-                    content={"error": "upstream_timeout", "detail": "Upstream media request timed out"},
+    last_bad_status: int | None = None
+    for candidate_url in url_candidates:
+        resp = None
+        client = _client_for(candidate_url)
+        for _attempt in range(1, proxy_retry_budget + 1):
+            try:
+                resp = await client.send(
+                    client.build_request("GET", candidate_url, headers=_build_request_headers(candidate_url)),
+                    stream=True,
                 )
-            continue
-        except httpx.RequestError as exc:
-            last_error = exc
-            _logger.warning("Upstream media request error for %s", target_url, exc_info=exc)
-            if _attempt >= proxy_retry_budget:
-                return JSONResponse(
-                    status_code=502,
-                    content={"error": "upstream_connection_error", "detail": "Could not fetch media"},
+            except httpx.TimeoutException as exc:
+                last_error = exc
+                _logger.warning("Upstream media request timed out for %s", candidate_url, exc_info=exc)
+                if _attempt >= proxy_retry_budget:
+                    break
+                continue
+            except httpx.RequestError as exc:
+                last_error = exc
+                _logger.warning("Upstream media request error for %s", candidate_url, exc_info=exc)
+                if _attempt >= proxy_retry_budget:
+                    break
+                continue
+            except Exception as exc:
+                last_error = exc
+                _logger.exception("Unexpected error while fetching upstream media for %s", candidate_url)
+                if _attempt >= proxy_retry_budget:
+                    break
+                continue
+            # Gateway-level errors from the proxy itself: retry with a fresh tunnel.
+            if resp.status_code in (502, 503, 504) and _attempt < proxy_retry_budget:
+                await resp.aclose()
+                resp = None
+                continue
+            break
+        if resp is not None and resp.status_code < 400:
+            if candidate_url != target_url:
+                _logger.info(
+                    "proxy-media shard fallback: %s worked for original %s",
+                    candidate_url, target_url,
                 )
-            continue
-        except Exception as exc:
-            last_error = exc
-            _logger.exception("Unexpected error while fetching upstream media for %s", target_url)
-            if _attempt >= proxy_retry_budget:
-                return JSONResponse(
-                    status_code=502,
-                    content={"error": "proxy_media_failed", "detail": "Could not fetch media"},
-                )
-            continue
-        # Gateway-level errors from the proxy itself: retry with a fresh tunnel.
-        if resp.status_code in (502, 503, 504) and _attempt < proxy_retry_budget:
+            target_url = candidate_url
+            break
+        if resp is not None:
+            last_bad_status = resp.status_code
+            # 404 is not recoverable by switching shards
+            if resp.status_code == 404:
+                break
             await resp.aclose()
             resp = None
-            continue
-        break
     if resp is None:
         return JSONResponse(
             status_code=502,
-            content={"error": "proxy_media_failed", "detail": "Could not fetch media"},
+            content={"error": "proxy_media_failed", "detail": "Could not fetch media", "last_status": last_bad_status},
         )
     if resp.status_code >= 400 and shot_id and _is_refreshable_upstream_status(resp.status_code):
         refreshed_url = await _refresh_shot_media_url(request, int(shot_id), failed_url=target_url)

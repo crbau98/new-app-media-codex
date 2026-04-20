@@ -1,5 +1,5 @@
 import Hls, { XhrLoader } from "hls.js"
-import { isArchiverDirectMediaUrl, shouldPreferArchiverEdgeProxy } from "./archiverMedia"
+import { archiverEdgeProxyUrl, isArchiverDirectMediaUrl, shouldPreferArchiverEdgeProxy } from "./archiverMedia"
 import { apiUrl, getPublicOrigin } from "./backendOrigin"
 import { api } from "./api"
 
@@ -133,8 +133,8 @@ export function rewriteMediaUrlForProxy(url: string): string {
     }
   }
   if (url.startsWith("http://") || url.startsWith("https://")) {
-    if (isArchiverDirectMediaUrl(url) && typeof window !== "undefined" && shouldPreferArchiverEdgeProxy()) {
-      return `${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(url)}`
+    if (isArchiverDirectMediaUrl(url) && shouldPreferArchiverEdgeProxy()) {
+      return archiverEdgeProxyUrl(url)
     }
     return absoluteMediaRequestUrl(`${PROXY_PATH}?${PROXY_QUERY}${encodeURIComponent(url)}`)
   }
@@ -282,8 +282,8 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     }
 
     const raw = directUrl.trim()
-    if (typeof window !== "undefined" && shouldPreferArchiverEdgeProxy() && raw && isArchiverDirectMediaUrl(raw)) {
-      push(`${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(raw)}`)
+    if (shouldPreferArchiverEdgeProxy() && raw && isArchiverDirectMediaUrl(raw)) {
+      push(archiverEdgeProxyUrl(raw))
     }
 
     const proxyHint = localOrProxyFromApi.trim()

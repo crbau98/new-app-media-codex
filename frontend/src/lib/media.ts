@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react"
 import type { Screenshot } from "./api"
-import { archiverPlaybackCandidatesFromAnyRef, extractProxyMediaTargetUrl, isArchiverDirectMediaUrl, shouldPreferArchiverEdgeProxy } from "./archiverMedia"
+import { archiverEdgeProxyUrl, archiverPlaybackCandidatesFromAnyRef, extractProxyMediaTargetUrl, isArchiverDirectMediaUrl, shouldPreferArchiverEdgeProxy } from "./archiverMedia"
 import { getBackendOrigin, resolvePublicUrl } from "./backendOrigin"
 
 const BROKEN_MEDIA_LIMIT = 300
@@ -33,8 +33,8 @@ function isProxyMediaUrl(url: string): boolean {
 
 function buildProxyMediaUrl(url: string): string {
   if (!isRenderableRemoteUrl(url) || isProxyMediaUrl(url)) return ""
-  if (typeof window !== "undefined" && shouldPreferArchiverEdgeProxy() && isArchiverDirectMediaUrl(url)) {
-    return `${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(url)}`
+  if (shouldPreferArchiverEdgeProxy() && isArchiverDirectMediaUrl(url)) {
+    return archiverEdgeProxyUrl(url)
   }
   return resolvePublicUrl(`/api/screenshots/proxy-media?url=${encodeURIComponent(url)}`)
 }
@@ -379,7 +379,7 @@ export function getMediaDebugLabel(s: Screenshot): string {
 }
 
 const _VIDEO_RE = /\.(mp4|webm|mov|avi|mkv|m3u8)/i
-const _VIDEO_SOURCES = new Set(["redgifs", "ytdlp"])
+const _VIDEO_SOURCES = new Set(["redgifs", "ytdlp", "coomer_video", "kemono_video"])
 
 /** Detect if a screenshot is a video based on URL patterns and source field. */
 export function isVideoShot(s: Screenshot): boolean {
