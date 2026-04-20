@@ -17,6 +17,10 @@ It is built as a research-monitoring system, not a treatment recommender. The da
   - X media/image extraction is strongest through the official API path
 - targeted LPSG forum thread scraping from public pages
   - extracts thread-embedded images when public thread pages expose them
+- targeted coomer.su post scraping via the public `/api/v1/posts` search API
+  - extracts post file + attachment images, rewritten through the archiver proxy
+- targeted kemono.su/.cr post scraping via the public `/api/v1/posts` search API
+  - extracts post file + attachment images, rewritten through the archiver proxy
 - related imagery via DuckDuckGo image search
 - Persists results in SQLite
 - Deduplicates by URL and tracks first/last seen timestamps
@@ -120,6 +124,8 @@ Environment variables:
 - `REDDIT_RESULTS`: targeted Reddit results per theme
 - `X_RESULTS`: targeted X results per theme
 - `LPSG_RESULTS`: targeted LPSG results per theme
+- `COOMER_RESULTS`: targeted coomer.su results per theme (via `/api/v1/posts`)
+- `KEMONO_RESULTS`: targeted kemono.su/.cr results per theme (via `/api/v1/posts`)
 - `ADMIN_TOKEN`: protects `POST /api/run` when the app is exposed publicly
 - `VITE_BACKEND_URL`: optional dev proxy target for the Vite frontend
 
