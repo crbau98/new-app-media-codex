@@ -161,7 +161,11 @@ export function getScreenshotMediaSrc(s: Screenshot): string {
     ])
 
     const archiverVideoCandidates = flattenArchiverPlaybackChoices(
-      videoCandidates.filter((url) => isArchiverDirectMediaUrl(url)),
+      videoCandidates.filter((url) => {
+        if (isArchiverDirectMediaUrl(url)) return true
+        const proxyTargetUrl = extractProxyMediaTargetUrl(url)
+        return Boolean(proxyTargetUrl) && isArchiverDirectMediaUrl(proxyTargetUrl)
+      }),
     )
     const usableArchiver = pickUsableMediaUrl(archiverVideoCandidates)
     if (usableArchiver) return usableArchiver
