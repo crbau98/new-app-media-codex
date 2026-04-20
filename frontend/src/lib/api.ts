@@ -563,6 +563,10 @@ export const api = {
     apiFetch<Screenshot[]>(`/api/screenshots/${id}/related`),
   mediaStats: () =>
     apiFetch<MediaStatsPayload>("/api/screenshots/media-stats"),
+  cacheStatus: (source: string = "coomer") =>
+    apiFetch<{ source: string; total: number; cached: number; missing: number; coverage_pct: number; returned: number; items: Array<{ id: number; cached: boolean; size_bytes: number }> }>(
+      `/api/screenshots/cache-status?source=${encodeURIComponent(source)}&limit=1`,
+    ),
   screenshotSources: () =>
     apiFetch<{ sources: ScreenshotSourceSummary[] }>("/api/screenshots/sources").then((r) => r.sources),
   screenshotDelete: (id: number) =>

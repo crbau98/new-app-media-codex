@@ -123,6 +123,60 @@ Environment variables:
 - `ADMIN_TOKEN`: protects `POST /api/run` when the app is exposed publicly
 - `VITE_BACKEND_URL`: optional dev proxy target for the Vite frontend
 
+## Pre-caching coomer videos from your residential network
+
+Coomer's video shards (`n*.coomer.st`, `n*.kemono.cr`) block datacenter IP ranges
+(Render, Vercel Edge, etc.) at the TCP or TLS layer. Images are handled by rewriting
+to `img.coomer.st/thumbnail/…`, which IS datacenter-reachable. Videos have no
+equivalent mirror, so the server cannot download them on its own.
+
+The fix is to download videos from a computer with a **residential IP** (your
+home laptop, a phone hotspot, etc.) and upload them into the server's video
+cache via an admin-authenticated endpoint. After that, every visitor to the app
+gets instant playback from the server's disk cache.
+
+### One-time setup
+
+On the server, set `ADMIN_TOKEN` to a non-empty value (see `render.yaml` or your
+hosting provider's env-var UI). Optionally set `UPLOAD_VIDEO_MAX_MB` to raise
+the per-file size limit (default 500 MB).
+
+On your laptop:
+
+```bash
+pip install "yt-dlp>=2026.3.0" "requests>=2.32"
+```
+
+### Run it
+
+```bash
+export ADMIN_TOKEN=<your admin token>
+python3 scripts/precache_coomer.py                 # cache every missing coomer video
+python3 scripts/precache_coomer.py --limit 25      # cache the 25 newest
+python3 scripts/precache_coomer.py --concurrency 2 # fewer parallel downloads
+python3 scripts/precache_coomer.py --dry-run       # see what would run
+```
+
+The script:
+
+1. Calls `GET /api/screenshots/cache-status?source=coomer&missing_only=true`.
+2. For each missing video, downloads with yt-dlp (falls back to a plain HTTP GET
+   for direct `.mp4` URLs).
+3. Uploads the file to `POST /api/screenshots/{id}/upload-cached-video` with the
+   admin token, which streams it to disk at `video_cache/{id}.mp4`.
+4. Deletes the local temp file and moves on.
+
+Interruptions are safe — rerunning just resumes from whatever is still missing.
+The server's cache is a 5 GB rolling LRU (configurable via `VIDEO_CACHE_DIR` and
+the constant `_VIDEO_CACHE_MAX_MB` in `app/api/screenshots.py`); older videos
+are evicted automatically when you upload new ones.
+
+### What about brand-new crawls?
+
+Rerun the script after each crawl (or on a weekly cadence). Until then, the UI
+shows a friendly "video unavailable" message with an **Open original post** link
+so viewers can still watch the video on coomer directly.
+
 ## Notes
 
 - The scheduler starts automatically on app startup. Immediate startup crawls are disabled by default and can be re-enabled with `RUN_STARTUP_CRAWL=true`.
