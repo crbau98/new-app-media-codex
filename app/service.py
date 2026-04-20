@@ -382,8 +382,10 @@ class ResearchService:
     def run_crawl(self) -> dict[str, Any]:
         from app.sources import (
             build_session,
+            collect_coomer,
             collect_firecrawl_images,
             collect_images,
+            collect_kemono,
             collect_lpsg,
             collect_reddit,
             collect_x,
@@ -410,15 +412,19 @@ class ResearchService:
                         "reddit": 0,
                         "x": 0,
                         "lpsg": 0,
+                        "coomer": 0,
+                        "kemono": 0,
                         "images": 0,
                     },
                 )
 
-                # ── Reddit / X / LPSG — images from social sources ───────────
+                # ── Reddit / X / LPSG / Coomer / Kemono — images from social sources ─
                 for source_key, collector in (
                     ("reddit", collect_reddit),
                     ("x", collect_x),
                     ("lpsg", collect_lpsg),
+                    ("coomer", collect_coomer),
+                    ("kemono", collect_kemono),
                 ):
                     self._emit({"type": "source_start", "source": source_key, "theme": theme.slug})
                     try:
@@ -604,7 +610,7 @@ class ResearchService:
             "images": self.serialize_images(self.db.get_recent_images(limit=24)),
             "hypotheses": self.db.get_recent_hypotheses(limit=8),
             "themes": [{"slug": theme.slug, "label": theme.label} for theme in self.settings.themes],
-            "source_types": ["literature", "anecdote", "reddit", "x", "lpsg", "pubmed", "biorxiv", "arxiv", "firecrawl"],
+            "source_types": ["literature", "anecdote", "reddit", "x", "lpsg", "coomer", "kemono", "pubmed", "biorxiv", "arxiv", "firecrawl"],
             "review_status_options": ["new", "reviewing", "shortlisted", "archived"],
             "hypothesis_review_options": ["new", "reviewing", "promoted", "dismissed"],
             "image_source_types": [
@@ -614,6 +620,8 @@ class ResearchService:
                 "reddit_image",
                 "x_image",
                 "lpsg_image",
+                "coomer_image",
+                "kemono_image",
                 "item_image",
             ],
             "is_running": self.lock.locked(),

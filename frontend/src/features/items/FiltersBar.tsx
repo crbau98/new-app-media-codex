@@ -12,6 +12,8 @@ const SOURCE_LABELS: Record<string, string> = {
   reddit: 'Reddit',
   x: 'X / Twitter',
   lpsg: 'LPSG',
+  coomer: 'Coomer',
+  kemono: 'Kemono',
   web: 'Web',
   visual_capture: 'Visual Capture',
   ddg: 'DDG Images',

@@ -1,6 +1,7 @@
 import {
   MessageSquare, FlaskConical, FileText, Twitter,
-  MessageCircle, Search, Globe, Flame, Camera, Diamond
+  MessageCircle, Search, Globe, Flame, Camera, Diamond,
+  Image as ImageIcon, Video
 } from 'lucide-react'
 
 const ICONS: Record<string, React.FC<{ size?: number; className?: string }>> = {
@@ -17,6 +18,8 @@ const ICONS: Record<string, React.FC<{ size?: number; className?: string }>> = {
   firecrawl:      (p) => <Flame {...p} />,
   visual_capture: (p) => <Camera {...p} />,
   literature:     (p) => <FileText {...p} />,
+  coomer:         (p) => <Video {...p} />,
+  kemono:         (p) => <ImageIcon {...p} />,
 }
 
 export function SourceIcon({ sourceType, size = 12, className }: {
