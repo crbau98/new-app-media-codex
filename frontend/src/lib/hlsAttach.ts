@@ -224,7 +224,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
   let onFatalErrorRef: (() => void) | undefined = options?.onFatalError
   const onFatalError = () => onFatalErrorRef?.()
   const shotId = options?.shotId
-  const shotSource = (options?.shotSource ?? "").toLowerCase()
+  const shotSource = (options?.shotSource ?? "").toLowerCase().trim()
   // Some sources need a backend pre-flight before playback:
   // ytdlp for expiring tokens; archiver (coomer/kemono) for cached-file fallback + waterfall.
   const needsResolve = shotId != null && (shotSource === "ytdlp" || isArchiverVideoSource(shotSource))
@@ -495,7 +495,60 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
     video.addEventListener("loadedmetadata", onMeta)
   }
 
+  // ── Archiver (coomer/kemono): start the client waterfall immediately so playback
+  // does not wait on resolve-stream (CORS / missing VITE_BACKEND_ORIGIN / slow API).
+  // resolve-stream still runs in parallel for disk cache + server-side download.
   // ── backend pre-flight: resolve fresh/cached URL BEFORE deciding HLS vs MP4 ──
+  if (needsResolve && isArchiverVideoSource(shotSource) && shotId != null) {
+    const startCachePollArchiver = () => {
+      if (destroyed) return
+      if (pollTimer) return
+      let pollCount = 0
+      const maxPolls = 30
+      pollTimer = setInterval(async () => {
+        if (destroyed) { if (pollTimer) clearInterval(pollTimer); return }
+        pollCount++
+        if (pollCount >= maxPolls) {
+          if (pollTimer) clearInterval(pollTimer)
+          pollTimer = null
+          onFatalError?.()
+          return
+        }
+        const check = await resolveStreamUrl(shotId)
+        if (destroyed) { if (pollTimer) clearInterval(pollTimer); return }
+        if (check?.cached_url) {
+          if (pollTimer) clearInterval(pollTimer)
+          pollTimer = null
+          playDirect(check.cached_url)
+        }
+      }, 3000)
+    }
+
+    void resolveStreamUrl(shotId).then((result) => {
+      if (destroyed) return
+      if (result?.cached_url) {
+        stopCoomerWaterfall?.()
+        playDirect(result.cached_url)
+      }
+    })
+
+    const directUrl = unwrapProxyMediaUrl(src)
+    const httpDirect = directUrl.startsWith("http") ? directUrl : src
+    const seq = buildCoomerPlaybackWaterfall(httpDirect, src, shotId)
+    if (seq.length >= 1) {
+      const prevOnFatal = onFatalErrorRef
+      onFatalErrorRef = () => {
+        onFatalErrorRef = prevOnFatal
+        if (destroyed) return
+        startCachePollArchiver()
+      }
+      playDirectWaterfall(seq)
+    } else {
+      onFatalError?.()
+    }
+    return cleanup
+  }
+
   if (needsResolve) {
     resolveStreamUrl(shotId!).then((result) => {
       if (destroyed) return
@@ -527,29 +580,6 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
           }, 3000)
         }
 
-        if (isArchiverVideoSource(shotSource)) {
-          const localOrProxyUrl = (result.local_url ?? src).trim()
-          const directFromApi = (result.direct_url ?? "").trim()
-          const directUrl = unwrapProxyMediaUrl(directFromApi || src)
-
-          // Waterfall: Edge proxy → backend proxy → direct CDN. If ALL fail,
-          // start polling for the server-side download to complete.
-          if (directUrl.startsWith("http://") || directUrl.startsWith("https://")) {
-            const seq = buildCoomerPlaybackWaterfall(directUrl, localOrProxyUrl, shotId!)
-            const prevOnFatal = onFatalErrorRef
-            onFatalErrorRef = () => {
-              onFatalErrorRef = prevOnFatal
-              if (destroyed) return
-              startCachePoll()
-            }
-            playDirectWaterfall(seq)
-            return
-          }
-          if (localOrProxyUrl.startsWith("/") || localOrProxyUrl.startsWith("http://") || localOrProxyUrl.startsWith("https://")) {
-            playDirect(localOrProxyUrl)
-            return
-          }
-        }
         startCachePoll()
       } else if (result?.local_url && isHlsUrl(result.local_url)) {
         // Non-IP-bound HLS — use hls.js
@@ -558,17 +588,6 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
         // Non-IP-bound MP4 through proxy
         playDirect(result.local_url)
       } else {
-        // Fallback to original src. For coomer, still use the waterfall so the
-        // first attempt doesn't commit to a raw n*.coomer.st URL.
-        if (isArchiverVideoSource(shotSource)) {
-          const directUrl = unwrapProxyMediaUrl(src)
-          const httpDirect = directUrl.startsWith("http") ? directUrl : src
-          const seq = buildCoomerPlaybackWaterfall(httpDirect, src, shotId!)
-          if (seq.length > 1) {
-            playDirectWaterfall(seq)
-            return
-          }
-        }
         if (isHlsUrl(src)) {
           startHls(src)
         } else {
