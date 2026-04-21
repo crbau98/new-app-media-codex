@@ -33,6 +33,12 @@ function isProxyMediaUrl(url: string): boolean {
 
 function buildProxyMediaUrl(url: string): string {
   if (!isRenderableRemoteUrl(url) || isProxyMediaUrl(url)) return ""
+  const t = url.trim()
+  // proxy-media is for fetching remote http(s) assets. Never wrap same-app paths
+  // (video-poster, cached-*, etc.) — that produces nested / broken proxy targets.
+  if (t.startsWith("/") && !t.startsWith("//")) {
+    return ""
+  }
   if (shouldPreferArchiverEdgeProxy() && isArchiverDirectMediaUrl(url)) {
     return archiverEdgeProxyUrl(url)
   }

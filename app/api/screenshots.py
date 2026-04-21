@@ -1150,7 +1150,7 @@ async def resolve_stream(shot_id: int, request: Request, background_tasks: Backg
         ).fetchone()
     if row is None:
         raise HTTPException(404, "Screenshot not found")
-    source = str(row["source"] or "").lower()
+    source = str(row["source"] or "").lower().strip()
     page_url = str(row["page_url"] or "")
     current_source_url = str(row["source_url"] or "")
 
