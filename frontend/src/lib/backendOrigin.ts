@@ -5,8 +5,23 @@
  */
 export function getBackendOrigin(): string {
   const raw = import.meta.env.VITE_BACKEND_ORIGIN as string | undefined
-  if (!raw?.trim()) return ""
-  return raw.trim().replace(/\/$/, "")
+  if (raw?.trim()) return raw.trim().replace(/\/$/, "")
+
+  // Production split UI: some deployments set `VITE_BACKEND_URL` (remote https) but not `VITE_BACKEND_ORIGIN`.
+  if (import.meta.env.PROD) {
+    const alt = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim()
+    if (alt && /^https:\/\//i.test(alt)) {
+      try {
+        const u = new URL(alt)
+        if (u.hostname !== "localhost" && u.hostname !== "127.0.0.1") {
+          return u.origin.replace(/\/$/, "")
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return ""
 }
 
 /** Absolute URL for API paths like `/api/items`. */
