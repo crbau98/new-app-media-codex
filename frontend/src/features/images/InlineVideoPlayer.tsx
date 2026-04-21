@@ -4,7 +4,7 @@ import { api, type Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { StarRating } from "@/components/StarRating"
 import { getBestAvailableMediaSrc, getBestAvailablePosterSrc, getBestAvailablePreviewSrc, useResolvedScreenshotMedia } from "@/lib/media"
-import { attachMediaSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
+import { attachMediaSource, isArchiverVideoSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -68,7 +68,7 @@ function VideoUnavailableCard({
   shot: Screenshot
   onTryInlineFallback?: () => void
 }) {
-  const isCoomer = (shot.source || "").toLowerCase() === "coomer"
+  const isArchiver = isArchiverVideoSource(shot.source)
   const pageHref = shot.page_url?.startsWith("http") ? shot.page_url : null
   const sourceHref = shot.source_url?.startsWith("http") ? shot.source_url : null
   return (
@@ -78,12 +78,12 @@ function VideoUnavailableCard({
           Video unavailable in browser
         </div>
         <p className="text-sm text-amber-100/80">
-          {isCoomer
-            ? "Our server cannot reach coomer's CDN from here. Try the inline browser fallback below — if your ISP can reach coomer.st directly, the video plays natively."
+          {isArchiver
+            ? "Our server often cannot reach this CDN from a datacenter. Try “Play in browser” below — if your ISP can reach the file host directly, playback works natively."
             : "This video could not be loaded. The source may be offline or blocked by your network."}
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-          {isCoomer && sourceHref && onTryInlineFallback && (
+          {isArchiver && sourceHref && onTryInlineFallback && (
             <button
               type="button"
               onClick={onTryInlineFallback}
@@ -208,16 +208,14 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
     const v = videoRef.current
     if (!v || !currentIsVideo || !src || inlineFallback) return
     setPlaybackFailed(false)
-    const isCoomer = (shot.source || "").toLowerCase() === "coomer"
+    const isArchiver = isArchiverVideoSource(shot.source)
     return attachMediaSource(v, src, {
       tryAutoplay: true,
       onFatalError: () => {
         setBuffering(false)
-        // For coomer, skip the "unavailable" card and auto-switch to the
-        // iframe fallback. The browser's native MP4 handler can talk to
-        // n*.coomer.st directly from the user's residential IP, which is the
-        // ONLY reliable path when server-side proxies are blocked.
-        if (isCoomer && shot.source_url?.startsWith("http")) {
+        // For coomer/kemono archiver URLs, skip the "unavailable" card and auto-switch to the
+        // inline <video src={source_url}> fallback. Native playback can reach n* CDN from the user's IP.
+        if (isArchiver && shot.source_url?.startsWith("http")) {
           setInlineFallback(true)
           return
         }

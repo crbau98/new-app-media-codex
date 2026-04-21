@@ -6,7 +6,7 @@ import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
 import { useResolvedScreenshotMedia } from "@/lib/media"
 import { sharedQueryKeys } from "@/features/sharedQueries"
-import { attachMediaSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
+import { attachMediaSource, isArchiverVideoSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
 function sourceLabel(s: string) {
   return s === "ddg" ? "DDG" : s === "redgifs" ? "Redgifs" : s === "x" ? "X" : s
@@ -174,11 +174,11 @@ const VideoSlide = memo(function VideoSlide({
   useEffect(() => {
     const v = videoRef.current
     if (!v || !currentIsVideo || !videoSrc || inlineFallback) return
-    const isCoomer = (shot.source || "").toLowerCase() === "coomer"
+    const isArchiver = isArchiverVideoSource(shot.source)
     return attachMediaSource(v, videoSrc, {
       tryAutoplay: false,
       onFatalError: () => {
-        if (isCoomer && shot.source_url?.startsWith("http")) {
+        if (isArchiver && shot.source_url?.startsWith("http")) {
           setInlineFallback(true)
           return
         }

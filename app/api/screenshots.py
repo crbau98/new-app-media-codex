@@ -1124,6 +1124,11 @@ async def evict_cached_video(
     return JSONResponse({"ok": True, "shot_id": shot_id, "deleted": False})
 
 
+# Coomer/Kemono archiver rows — same resolve-stream + client waterfall as legacy `source="coomer"`.
+_ARCHIVER_RESOLVE_SOURCES = frozenset({"coomer", "coomer_video", "kemono", "kemono_video"})
+_RESOLVABLE_STREAM_SOURCES = frozenset({"ytdlp"}).union(_ARCHIVER_RESOLVE_SOURCES)
+
+
 @router.post("/{shot_id}/resolve-stream")
 async def resolve_stream(shot_id: int, request: Request, background_tasks: BackgroundTasks):
     """Pre-resolve a fresh or cacheable video stream URL for a screenshot.
@@ -1155,7 +1160,7 @@ async def resolve_stream(shot_id: int, request: Request, background_tasks: Backg
             return ""
         return f"/api/screenshots/proxy-media?url={_url_quote(raw_source, safe='')}&shot_id={shot_id}"
 
-    if source not in {"ytdlp", "coomer"} or not (page_url or current_source_url):
+    if source not in _RESOLVABLE_STREAM_SOURCES or not (page_url or current_source_url):
         # Nothing to refresh — return whatever we have
         return JSONResponse({
             "shot_id": shot_id,
@@ -1167,9 +1172,9 @@ async def resolve_stream(shot_id: int, request: Request, background_tasks: Backg
             "refreshed": False,
         })
 
-    if source == "coomer":
+    if source in _ARCHIVER_RESOLVE_SOURCES:
         if _is_video_cached(shot_id):
-            _logger.debug("resolve-stream fast-path: coomer shot %d already cached on disk", shot_id)
+            _logger.debug("resolve-stream fast-path: archiver shot %d already cached on disk", shot_id)
             return JSONResponse({
                 "shot_id": shot_id,
                 "source_url": current_source_url,

@@ -16,6 +16,12 @@ export function isCoomerWaterfallActive(video: HTMLVideoElement | null | undefin
   return Boolean(video && video.hasAttribute(COOMER_WATERFALL_ATTR))
 }
 
+/** Coomer/Kemono archiver videos — same CDN + resolve-stream / waterfall behavior. */
+export function isArchiverVideoSource(source: string | undefined | null): boolean {
+  const s = (source ?? "").toLowerCase().trim()
+  return s === "coomer" || s === "coomer_video" || s === "kemono" || s === "kemono_video"
+}
+
 const PROXY_PATH = "/api/screenshots/proxy-media"
 const PROXY_QUERY = "url="
 const SCREENSHOTS_API_PREFIX = "/api/screenshots/"
@@ -220,8 +226,8 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
   const shotId = options?.shotId
   const shotSource = (options?.shotSource ?? "").toLowerCase()
   // Some sources need a backend pre-flight before playback:
-  // ytdlp for expiring tokens, coomer for cached-file fallback when proxying fails.
-  const needsResolve = shotId != null && (shotSource === "ytdlp" || shotSource === "coomer")
+  // ytdlp for expiring tokens; archiver (coomer/kemono) for cached-file fallback + waterfall.
+  const needsResolve = shotId != null && (shotSource === "ytdlp" || isArchiverVideoSource(shotSource))
   video.removeAttribute("src")
 
   // We track cleanup across async pre-flight + HLS instantiation.
@@ -521,7 +527,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
           }, 3000)
         }
 
-        if (shotSource === "coomer") {
+        if (isArchiverVideoSource(shotSource)) {
           const localOrProxyUrl = (result.local_url ?? src).trim()
           const directFromApi = (result.direct_url ?? "").trim()
           const directUrl = unwrapProxyMediaUrl(directFromApi || src)
@@ -554,7 +560,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
       } else {
         // Fallback to original src. For coomer, still use the waterfall so the
         // first attempt doesn't commit to a raw n*.coomer.st URL.
-        if (shotSource === "coomer") {
+        if (isArchiverVideoSource(shotSource)) {
           const directUrl = unwrapProxyMediaUrl(src)
           const httpDirect = directUrl.startsWith("http") ? directUrl : src
           const seq = buildCoomerPlaybackWaterfall(httpDirect, src, shotId!)

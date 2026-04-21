@@ -3,7 +3,7 @@ import { createPortal } from "react-dom"
 import type { Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
-import { attachMediaSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
+import { attachMediaSource, isArchiverVideoSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
 function isVideoPath(url: string): boolean {
   if (!url) return false
@@ -65,11 +65,11 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
   useEffect(() => {
     const v = videoRef.current
     if (!v || !currentIsVideo || !src || videoLoadFailed || inlineFallback) return
-    const isCoomer = (shot?.source || "").toLowerCase() === "coomer"
+    const isArchiver = isArchiverVideoSource(shot?.source)
     return attachMediaSource(v, src, {
       tryAutoplay: true,
       onFatalError: () => {
-        if (isCoomer && shot?.source_url?.startsWith("http")) {
+        if (isArchiver && shot?.source_url?.startsWith("http")) {
           setInlineFallback(true)
           return
         }

@@ -5,7 +5,7 @@ import type { Screenshot } from "@/lib/api"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getScreenshotMediaSrc, useResolvedScreenshotMedia } from "@/lib/media"
-import { attachMediaSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
+import { attachMediaSource, isArchiverVideoSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
 interface ScreenshotLightboxProps {
   shots: Screenshot[]
@@ -135,16 +135,18 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
     const v = videoRef.current
     if (!v || !currentIsVideo || !src || inlineFallback) return
     setInlineFallback(false)
-    const isCoomer = (shot.source || "").toLowerCase() === "coomer"
+    const isArchiver = isArchiverVideoSource(shot.source)
     return attachMediaSource(v, src, {
       tryAutoplay: true,
       onFatalError: () => {
-        if (isCoomer && shot.source_url?.startsWith("http")) {
+        if (isArchiver && shot.source_url?.startsWith("http")) {
           setInlineFallback(true)
           return
         }
         markMediaBroken()
       },
+      shotId: shot.id,
+      shotSource: shot.source,
     })
   }, [currentIsVideo, src, shot.id, inlineFallback, markMediaBroken, shot.source, shot.source_url])
 
