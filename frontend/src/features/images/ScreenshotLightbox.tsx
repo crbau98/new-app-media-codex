@@ -5,7 +5,7 @@ import type { Screenshot } from "@/lib/api"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getScreenshotMediaSrc, useResolvedScreenshotMedia } from "@/lib/media"
-import { attachMediaSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
+import { attachMediaSource, isArchiverVideoSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
 interface ScreenshotLightboxProps {
   shots: Screenshot[]
@@ -129,11 +129,26 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
     panOffsetRef.current = { x: 0, y: 0 }
   }, [idx, shot.ai_summary, shot.ai_tags])
 
+  const [inlineFallback, setInlineFallback] = useState(false)
+
   useEffect(() => {
     const v = videoRef.current
-    if (!v || !currentIsVideo || !src) return
-    return attachMediaSource(v, src, { tryAutoplay: true, onFatalError: markMediaBroken })
-  }, [currentIsVideo, src, shot.id])
+    if (!v || !currentIsVideo || !src || inlineFallback) return
+    setInlineFallback(false)
+    const isArchiver = isArchiverVideoSource(shot.source)
+    return attachMediaSource(v, src, {
+      tryAutoplay: true,
+      onFatalError: () => {
+        if (isArchiver && shot.source_url?.startsWith("http")) {
+          setInlineFallback(true)
+          return
+        }
+        markMediaBroken()
+      },
+      shotId: shot.id,
+      shotSource: shot.source,
+    })
+  }, [currentIsVideo, src, shot.id, inlineFallback, markMediaBroken, shot.source, shot.source_url])
 
   // Auto-scroll filmstrip to keep current thumbnail visible
   useEffect(() => {
@@ -560,6 +575,19 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
         >
           {currentIsVideo && src ? (
             <div className="relative inline-block">
+              {inlineFallback && shot.source_url?.startsWith("http") ? (
+                <video
+                  key={`inline-${shot.id}`}
+                  src={shot.source_url}
+                  poster={posterSrc || undefined}
+                  controls
+                  autoPlay
+                  playsInline
+                  loop
+                  muted
+                  className="max-h-[80vh] max-w-[95vw] object-contain mx-auto rounded-lg"
+                />
+              ) : (
               <video
                 ref={videoRef}
                 poster={posterSrc || undefined}
@@ -575,6 +603,7 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
                   markMediaBroken()
                 }}
               />
+              )}
               {/* Speed badge — top-left corner of video */}
               <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5">
                 {playbackRate !== 1 && (

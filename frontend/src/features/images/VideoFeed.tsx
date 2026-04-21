@@ -6,7 +6,7 @@ import { StarRating } from "@/components/StarRating"
 import { cn } from "@/lib/cn"
 import { useResolvedScreenshotMedia } from "@/lib/media"
 import { sharedQueryKeys } from "@/features/sharedQueries"
-import { attachMediaSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
+import { attachMediaSource, isArchiverVideoSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
 function sourceLabel(s: string) {
   return s === "ddg" ? "DDG" : s === "redgifs" ? "Redgifs" : s === "x" ? "X" : s
@@ -169,11 +169,25 @@ const VideoSlide = memo(function VideoSlide({
   const shouldLoadVideo = isActive
   const videoSrc = shouldLoadVideo ? src : undefined
 
+  const [inlineFallback, setInlineFallback] = useState(false)
+
   useEffect(() => {
     const v = videoRef.current
-    if (!v || !currentIsVideo || !videoSrc) return
-    return attachMediaSource(v, videoSrc, { tryAutoplay: false, onFatalError: markMediaBroken, shotId: shot.id, shotSource: shot.source })
-  }, [currentIsVideo, videoSrc, shot.id, shot.source])
+    if (!v || !currentIsVideo || !videoSrc || inlineFallback) return
+    const isArchiver = isArchiverVideoSource(shot.source)
+    return attachMediaSource(v, videoSrc, {
+      tryAutoplay: false,
+      onFatalError: () => {
+        if (isArchiver && shot.source_url?.startsWith("http")) {
+          setInlineFallback(true)
+          return
+        }
+        markMediaBroken()
+      },
+      shotId: shot.id,
+      shotSource: shot.source,
+    })
+  }, [currentIsVideo, videoSrc, shot.id, shot.source, shot.source_url, inlineFallback, markMediaBroken])
 
   // Autoplay via IntersectionObserver — re-connect when videoSrc changes so play
   // fires after the src is actually assigned to the <video> element.
@@ -337,6 +351,20 @@ const VideoSlide = memo(function VideoSlide({
       onTouchEnd={handleTouchEnd}
     >
       {currentIsVideo && src ? (
+        inlineFallback && shot.source_url?.startsWith("http") ? (
+          <video
+            key={`inline-${shot.id}`}
+            src={shot.source_url}
+            poster={posterSrc || undefined}
+            loop
+            muted={muted}
+            playsInline
+            autoPlay={isActive}
+            controls
+            className="h-full w-full cursor-pointer object-cover"
+            onClick={handleTap}
+          />
+        ) : (
         <video
           ref={videoRef}
           poster={posterSrc || undefined}
@@ -352,6 +380,7 @@ const VideoSlide = memo(function VideoSlide({
           }}
           onCanPlay={(e) => { if (isActive) { (e.target as HTMLVideoElement).play().catch(() => {}) } }}
         />
+        )
       ) : previewSrc ? (
         <img
           src={previewSrc}

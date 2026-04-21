@@ -60,9 +60,34 @@ export function archiverThumbnailUrl(url: string): string {
   }
 }
 
-/** True on Vercel deployments where `/api/archiver-proxy` Edge route exists. */
+/**
+ * True when the running page might have a same-origin `/api/archiver-proxy`
+ * Edge route (Vercel deployments: both `*.vercel.app` and custom domains).
+ *
+ * We can't perfectly detect a custom-domain Vercel site, but we can rule out
+ * obvious non-Vercel cases (localhost, direct FastAPI backend). When in doubt,
+ * return true — the waterfall will skip the URL on a 404 and try the next.
+ */
 export function shouldPreferArchiverEdgeProxy(): boolean {
-  return typeof window !== "undefined" && /\.vercel\.app$/i.test(window.location.hostname)
+  if (typeof window === "undefined") return false
+  const host = window.location.hostname.toLowerCase()
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") return false
+  if (/^10\.\d+\.\d+\.\d+$/.test(host)) return false
+  if (/^192\.168\.\d+\.\d+$/.test(host)) return false
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host)) return false
+  if (host.endsWith(".local")) return false
+  // Exclude known Render API hosts (where only FastAPI runs, no Edge function)
+  if (/\.onrender\.com$/i.test(host)) return false
+  // Default on: try the Edge proxy and fall through on 404. Works for Vercel
+  // apex domains, *.vercel.app preview deployments, and custom domains where
+  // the Edge route is present.
+  return true
+}
+
+/** Use the page origin for same-origin Edge proxy requests. */
+export function archiverEdgeProxyUrl(targetUrl: string): string {
+  if (typeof window === "undefined") return ""
+  return `${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(targetUrl)}`
 }
 
 export function isArchiverDirectMediaUrl(url: string): boolean {
@@ -152,11 +177,26 @@ export function archiverPlaybackCandidatesFromAnyRef(ref: string): string[] {
 
   const out: string[] = []
   const thumb = archiverThumbnailUrl(httpsTarget)
-  if (thumb) out.push(thumb)
-  if (typeof window !== "undefined" && /\.vercel\.app$/i.test(window.location.hostname)) {
-    out.push(`${window.location.origin}/api/archiver-proxy?url=${encodeURIComponent(httpsTarget)}`)
+  const isVideo = /\.(mp4|m4v|webm|mov|mkv|avi)(?:$|\?)/i.test(httpsTarget)
+
+  // For images: thumbnail > edge > direct (thumbnail host is always reachable).
+  // For videos: direct > edge > thumbnail (/thumbnail/data/*.mp4 is always 404,
+  // and residential browsers can usually hit coomer.st → n*.coomer.st directly
+  // while datacenter Edge/Render egress is often blocked).
+  if (isVideo) {
+    out.push(httpsTarget)
+    if (shouldPreferArchiverEdgeProxy()) {
+      const edgeUrl = archiverEdgeProxyUrl(httpsTarget)
+      if (edgeUrl && !out.includes(edgeUrl)) out.push(edgeUrl)
+    }
+  } else {
+    if (thumb) out.push(thumb)
+    if (shouldPreferArchiverEdgeProxy()) {
+      const edgeUrl = archiverEdgeProxyUrl(httpsTarget)
+      if (edgeUrl && !out.includes(edgeUrl)) out.push(edgeUrl)
+    }
+    out.push(httpsTarget)
   }
-  out.push(httpsTarget)
   if (r !== httpsTarget && !out.includes(r)) {
     out.push(r)
   }

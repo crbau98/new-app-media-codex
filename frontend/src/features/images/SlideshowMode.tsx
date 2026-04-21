@@ -3,7 +3,7 @@ import { createPortal } from "react-dom"
 import type { Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
-import { attachMediaSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
+import { attachMediaSource, isArchiverVideoSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
 function isVideoPath(url: string): boolean {
   if (!url) return false
@@ -59,11 +59,26 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
     setPreviewLoadFailed(false)
   }, [src])
 
+  const [inlineFallback, setInlineFallback] = useState(false)
+  useEffect(() => { setInlineFallback(false) }, [src])
+
   useEffect(() => {
     const v = videoRef.current
-    if (!v || !currentIsVideo || !src || videoLoadFailed) return
-    return attachMediaSource(v, src, { tryAutoplay: true, onFatalError: markMediaBroken })
-  }, [currentIsVideo, src, videoLoadFailed])
+    if (!v || !currentIsVideo || !src || videoLoadFailed || inlineFallback) return
+    const isArchiver = isArchiverVideoSource(shot?.source)
+    return attachMediaSource(v, src, {
+      tryAutoplay: true,
+      onFatalError: () => {
+        if (isArchiver && shot?.source_url?.startsWith("http")) {
+          setInlineFallback(true)
+          return
+        }
+        markMediaBroken()
+      },
+      shotId: shot?.id,
+      shotSource: shot?.source,
+    })
+  }, [currentIsVideo, src, videoLoadFailed, inlineFallback, shot?.id, shot?.source, shot?.source_url, markMediaBroken])
 
   // Preload next image
   const nextIdx = shuffle
@@ -204,6 +219,19 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
         style={{ opacity: transitioning ? 0 : 1 }}
       >
         {currentIsVideo && src && !videoLoadFailed ? (
+          inlineFallback && shot?.source_url?.startsWith("http") ? (
+            <video
+              key={`inline-${shot.id}`}
+              src={shot.source_url}
+              playsInline
+              muted
+              autoPlay
+              loop
+              controls
+              onEnded={handleVideoEnded}
+              className="max-h-[90vh] max-w-[95vw] object-contain"
+            />
+          ) : (
           <video
             ref={videoRef}
             playsInline
@@ -215,6 +243,7 @@ export function SlideshowMode({ shots, startIdx = 0, onClose }: SlideshowModePro
             }}
             className="max-h-[90vh] max-w-[95vw] object-contain"
           />
+          )
         ) : previewSrc && !previewLoadFailed ? (
           <img
             key={previewSrc}
