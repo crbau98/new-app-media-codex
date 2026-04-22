@@ -1,5 +1,5 @@
 import type { Screenshot } from "@/lib/api"
-import { MosaicCard } from "../components/MediaCard"
+import { MosaicCard } from "../components/MosaicCard"
 
 export interface MediaMosaicViewProps {
   visibleMosaicShots: Screenshot[]

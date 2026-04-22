@@ -46,15 +46,15 @@ export interface NewThisWeekItem {
   performer_username: string | null
 }
 
-function mockScreenshotToTrending(s: Screenshot, idx: number): TrendingItem {
+function mockScreenshotToTrending(s: Screenshot, _idx: number): TrendingItem {
   return {
     id: s.id,
     type: "screenshot",
     title: s.term,
-    thumbnail_url: s.thumbnail_url || s.preview_url || s.local_url || "",
+    thumbnail_url: s.thumbnail_url ?? s.preview_url ?? s.local_url ?? "",
     views_count: s.views_count || Math.floor(Math.random() * 5000) + 100,
     likes_count: s.likes_count || Math.floor(Math.random() * 500) + 10,
-    performer_username: s.performer_username,
+    performer_username: s.performer_username ?? null,
   }
 }
 

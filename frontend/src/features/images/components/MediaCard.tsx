@@ -2,13 +2,13 @@ import { memo, useState, useRef, useEffect, useCallback } from "react"
 import { motion } from "framer-motion"
 import type { Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
-import { StarRating } from "@/components/StarRating"
+
 import { LikeButton } from "@/components/LikeButton"
 import { ViewCounter } from "@/components/ViewCounter"
 import { getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
 import { resolvePublicUrl } from "@/lib/backendOrigin"
 import { isHlsUrl } from "@/lib/hlsAttach"
-import { sourceLabel, parseAiTags, isNewShot, MediaUnavailableTile } from "../mediaHelpers"
+import { sourceLabel, isNewShot, MediaUnavailableTile } from "../mediaHelpers"
 
 export const MediaCard = memo(function MediaCard({
   shot,
@@ -19,9 +19,9 @@ export const MediaCard = memo(function MediaCard({
   onSelect,
   onHover,
   favorite,
-  onToggleFavorite,
-  onDescribe,
-  onRate,
+  onToggleFavorite: _onToggleFavorite,
+  onDescribe: _onDescribe,
+  onRate: _onRate,
   onContextMenu,
   onNavigateToPerformer,
   profileTile,
@@ -45,7 +45,6 @@ export const MediaCard = memo(function MediaCard({
   const mediaLabel = getMediaDebugLabel(shot)
   const [imgLoaded, setImgLoaded] = useState(false)
   const isAboveFold = index <= 3
-  const parsedTags = parseAiTags(shot.ai_tags)
   const legacyVideoPoster =
     resolvePublicUrl(
       (shot.preview_url?.trim())
@@ -111,11 +110,11 @@ export const MediaCard = memo(function MediaCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); batchMode ? onSelect() : onClick() } }}
       onContextMenu={onContextMenu}
       className={cn(
-        "group relative aspect-square cursor-pointer overflow-hidden bg-black/25",
+        "group relative cursor-pointer overflow-hidden bg-black/20",
         !profileTile && "content-card content-card-interactive",
         profileTile
-          ? "rounded-none border-0 shadow-none hover:brightness-[1.06] active:brightness-95"
-          : "rounded-[24px] border border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.18)]",
+          ? "rounded-none border-0 shadow-none hover:brightness-[1.06] active:brightness-95 aspect-square"
+          : "rounded-[16px] md:rounded-[24px] border border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.18)] aspect-square",
         selected && "ring-2 ring-accent"
       )}
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
@@ -125,7 +124,7 @@ export const MediaCard = memo(function MediaCard({
       animate={index <= 20 ? { opacity: 1, y: 0, scale: 1 } : false}
       transition={index <= 20 ? { duration: 0.4, delay: index * 0.03, ease: [0.16, 1, 0.3, 1] } : undefined}
     >
-      <div style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
+      <div className="relative h-full w-full" style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
         {!imgLoaded && (previewSrc || vid) && (
           <div className="absolute inset-0 shimmer z-[1]" aria-hidden="true" />
         )}
@@ -169,10 +168,15 @@ export const MediaCard = memo(function MediaCard({
               className="relative z-[2] h-full w-full object-cover transition-[filter,opacity] duration-200 group-hover:brightness-110"
               alt=""
             />
-            <div className="absolute inset-0 z-[3] flex items-center justify-center pointer-events-none">
-              <div className="rounded-full bg-black/60 p-3 shadow-lg transition-transform duration-200 group-hover:scale-110 group-hover:bg-white/20">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
-              </div>
+            {/* Play icon centered on hover (desktop only) */}
+            <div className="absolute inset-0 z-[3] hidden md:flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              <motion.div
+                initial={{ scale: 0.8 }}
+                whileHover={{ scale: 1 }}
+                className="rounded-full bg-black/50 backdrop-blur-sm p-3 shadow-lg"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
+              </motion.div>
             </div>
           </>
         ) : !previewSrc ? (
@@ -204,84 +208,36 @@ export const MediaCard = memo(function MediaCard({
           />
         )}
 
-        <div className="absolute top-1.5 left-1.5 flex flex-col gap-1">
+        {/* Top-left badges */}
+        <div className="absolute top-2 left-2 flex flex-col gap-1 z-[4]">
           <div className="flex gap-1">
             {isNewShot(shot) && (
-              <span className="rounded bg-accent/90 px-1.5 py-1 text-[10px] font-bold leading-none text-white shadow sm:px-1 sm:py-0.5 sm:text-[9px]">
+              <span className="rounded-md bg-accent/90 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow">
                 NEW
               </span>
             )}
             {gif && (
-              <span className="rounded bg-emerald-500/80 px-1.5 py-1 text-[10px] font-bold leading-none text-white shadow sm:px-1 sm:py-0.5 sm:text-[9px]">
+              <span className="rounded-md bg-emerald-500/80 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow">
                 GIF
               </span>
             )}
             {vid && (
-              <span className="rounded bg-amber-500/85 px-1.5 py-1 text-[10px] font-bold leading-none text-white shadow sm:px-1 sm:py-0.5 sm:text-[9px]">
+              <span className="rounded-md bg-amber-500/85 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow">
                 VIDEO
               </span>
             )}
           </div>
-          {shot.performer_username && shot.performer_id && onNavigateToPerformer && (
-            <button
-              type="button"
-              className="min-h-[36px] min-w-[36px] max-w-[120px] truncate rounded bg-sky-500/85 px-2 py-1.5 text-[10px] font-medium leading-none text-white shadow transition-colors hover:bg-sky-400/90 sm:min-h-0 sm:min-w-0 sm:px-1.5 sm:py-0.5 sm:text-[9px]"
-              onClick={(e) => { e.stopPropagation(); onNavigateToPerformer(shot.performer_id!, shot.performer_username!) }}
-              title={`View @${shot.performer_username}'s profile`}
-            >
-              @{shot.performer_username}
-            </button>
-          )}
-          {shot.performer_username && (!shot.performer_id || !onNavigateToPerformer) && (
-            <span className="max-w-[120px] truncate rounded bg-sky-500/85 px-2 py-1.5 text-[10px] font-medium leading-none text-white shadow sm:px-1.5 sm:py-0.5 sm:text-[9px]">
-              @{shot.performer_username}
+          {/* Duration badge top-left for videos (desktop hover) */}
+          {vid && (
+            <span className="hidden md:inline-block rounded-md bg-black/60 px-1.5 py-0.5 text-[9px] font-medium text-white/80 opacity-0 group-hover:opacity-100 transition-opacity">
+              ▶
             </span>
           )}
         </div>
 
-        {parsedTags.length > 0 && (
-          <div className="absolute bottom-8 left-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-wrap gap-0.5 overflow-hidden max-h-6">
-            {parsedTags.slice(0, 4).map((tag) => (
-              <span key={tag} className="rounded bg-purple-500/75 px-1 py-0.5 text-[8px] font-medium leading-none text-white shadow truncate max-w-[70px]">
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {vid && !batchMode && (
-          <div className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:hidden">
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,0 10,5 2,10" /></svg>
-          </div>
-        )}
-
-        {favorite && (
-          <div className="absolute top-1.5 right-1.5 text-sm text-red-400 drop-shadow">&#9829;</div>
-        )}
-
-        {(shot.rating ?? 0) > 0 ? (
-          <div className="absolute bottom-1.5 left-1.5 z-10" onClick={(e) => e.stopPropagation()}>
-            <StarRating value={shot.rating ?? 0} onChange={onRate} compact />
-          </div>
-        ) : (
-          !batchMode && (
-            <div className="absolute bottom-1.5 left-1.5 z-10 hidden group-hover:block" onClick={(e) => e.stopPropagation()}>
-              <StarRating value={0} onChange={onRate} compact />
-            </div>
-          )
-        )}
-
-        {batchMode && (
-          <div className={cn(
-            "absolute top-1.5 left-1.5 flex h-5 w-5 items-center justify-center rounded border text-[10px]",
-            selected ? "border-blue-500 bg-blue-500 text-white" : "border-white/40 bg-black/50 text-transparent"
-          )}>
-            {selected && "✓"}
-          </div>
-        )}
-
+        {/* Like button top-right (desktop hover) */}
         {!batchMode && (
-          <div className="absolute bottom-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="absolute top-2 right-2 z-[4] hidden md:block opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <LikeButton
               screenshotId={shot.id}
               initialLiked={shot.is_liked ?? false}
@@ -289,69 +245,69 @@ export const MediaCard = memo(function MediaCard({
               size="sm"
               className="h-7 w-7 rounded-full bg-black/60 text-white/80 hover:text-rose-400"
             />
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors hover:text-red-400"
-              title={favorite ? "Unfavorite" : "Favorite"}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill={favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
-                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-              </svg>
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDescribe() }}
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors hover:text-purple-400"
-              title="AI Describe"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z" />
-                <path d="M18 15l.75 2.25L21 18l-2.25.75L18 21l-.75-2.25L15 18l2.25-.75z" />
-              </svg>
-            </button>
-            {shot.page_url && (
-              <a
-                href={shot.page_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/80 transition-colors hover:text-blue-400"
-                title="Open source"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
-              </a>
-            )}
           </div>
         )}
 
-        {/* Performer avatar — bottom-left */}
-        {shot.performer_id && shot.performer_username && (
-          <div className="absolute bottom-1.5 left-1.5 z-10">
-            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-black/60 ring-1 ring-white/20">
-              <span className="text-[9px] font-bold text-white">{shot.performer_username.charAt(0).toUpperCase()}</span>
-            </div>
+        {/* Favorite indicator */}
+        {favorite && (
+          <div className="absolute top-2 right-2 z-[4] text-sm text-red-400 drop-shadow md:hidden">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
           </div>
         )}
 
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-2.5 pb-2.5 pt-8">
+        {/* Batch mode checkbox */}
+        {batchMode && (
+          <div className={cn(
+            "absolute top-2 left-2 z-[4] flex h-5 w-5 items-center justify-center rounded border text-[10px]",
+            selected ? "border-blue-500 bg-blue-500 text-white" : "border-white/40 bg-black/50 text-transparent"
+          )}>
+            {selected && "✓"}
+          </div>
+        )}
+
+        {/* Bottom gradient overlay with info */}
+        <div className="absolute inset-x-0 bottom-0 z-[4] bg-gradient-to-t from-black/70 via-black/30 to-transparent px-2.5 pb-2 pt-8">
           <div className="flex items-end justify-between gap-2">
-            <div className="min-w-0">
-              <p className="truncate text-[11px] font-semibold text-white">{shot.term}</p>
-              <p className="truncate text-[10px] text-white/65">
-                {shot.performer_username ? `@${shot.performer_username} · ${sourceLabel(shot.source)}` : sourceLabel(shot.source)}
-                {(shot.views_count ?? 0) > 0 && (
-                  <span className="ml-1.5 text-white/50">· <ViewCounter screenshotId={shot.id} count={shot.views_count} className="text-white/50" /></span>
-                )}
-              </p>
+            {/* Creator avatar + username */}
+            <div className="min-w-0 flex items-center gap-1.5">
+              {shot.performer_id && shot.performer_username && onNavigateToPerformer && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onNavigateToPerformer(shot.performer_id!, shot.performer_username!)
+                  }}
+                  className="flex items-center gap-1.5 transition-opacity hover:opacity-80"
+                  title={`View @${shot.performer_username}'s profile`}
+                >
+                  <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-accent/20 ring-1 ring-white/20">
+                    <span className="text-[9px] font-bold text-white">{shot.performer_username.charAt(0).toUpperCase()}</span>
+                  </div>
+                  <span className="truncate text-[11px] font-medium text-white/90">@{shot.performer_username}</span>
+                </button>
+              )}
+              {shot.performer_username && (!shot.performer_id || !onNavigateToPerformer) && (
+                <span className="truncate text-[11px] font-medium text-white/90">@{shot.performer_username}</span>
+              )}
+              {!shot.performer_username && (
+                <span className="truncate text-[11px] font-medium text-white/70">{sourceLabel(shot.source)}</span>
+              )}
             </div>
-            {vid && !batchMode && (
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white">
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,0 10,5 2,10" /></svg>
-              </div>
-            )}
+
+            {/* Right side: like + view count */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {(shot.likes_count ?? 0) > 0 && (
+                <span className="flex items-center gap-0.5 text-[10px] text-white/60">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
+                  {shot.likes_count}
+                </span>
+              )}
+              {(shot.views_count ?? 0) > 0 && (
+                <span className="text-[10px] text-white/50">
+                  <ViewCounter screenshotId={shot.id} count={shot.views_count} className="text-white/50" />
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>

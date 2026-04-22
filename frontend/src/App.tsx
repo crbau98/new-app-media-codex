@@ -52,6 +52,8 @@ const RELATED_VIEWS: Record<ActiveView, ActiveView[]> = {
   images: ["performers"],
   performers: ["images"],
   settings: ["images"],
+  search: [],
+  explore: [],
 }
 
 // ── Loading skeleton ─────────────────────────────────────────────────

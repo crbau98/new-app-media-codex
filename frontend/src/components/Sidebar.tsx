@@ -31,6 +31,19 @@ const MEDIA_ITEMS: NavItem[] = [
   },
 ]
 
+const DISCOVERY_ITEMS: NavItem[] = [
+  {
+    id: "explore",
+    label: "Explore",
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>,
+  },
+  {
+    id: "search",
+    label: "Search",
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>,
+  },
+]
+
 const SETTINGS_ITEMS: NavItem[] = [
   {
     id: "settings",
@@ -445,6 +458,8 @@ export function Sidebar() {
 
         <nav className="hide-scrollbar flex-1 overflow-y-auto py-4" aria-label="Views">
           <NavGroup label="Library" items={MEDIA_ITEMS} activeView={activeView} setActiveView={setActiveView} collapsed={collapsed} counts={counts} newCounts={{ images: newImageCount > 0 ? newImageCount : undefined }} warnings={{ performers: perfStats?.stale_count }} queueActive={{ performers: captureQueueActive }} closeMobile={closeMobile} />
+          <div className={cn("mt-3 border-t border-border pt-3", collapsed ? "mx-2" : "mx-4")} />
+          <NavGroup label="Discover" items={DISCOVERY_ITEMS} activeView={activeView} setActiveView={setActiveView} collapsed={collapsed} closeMobile={closeMobile} />
           <div className={cn("mt-3 border-t border-border pt-3", collapsed ? "mx-2" : "mx-4")} />
           <NavGroup label="System" items={SETTINGS_ITEMS} activeView={activeView} setActiveView={setActiveView} collapsed={collapsed} closeMobile={closeMobile} />
         </nav>

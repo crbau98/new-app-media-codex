@@ -942,6 +942,16 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
     staleTime: 15_000,
   })
 
+  // Queue status for live indicator
+  const { data: queueData } = useCaptureQueueQuery({
+    refetchInterval: 30_000,
+    staleTime: 0,
+  })
+  const queueEntry = useMemo(
+    () => (queueData?.queue ?? []).find((e: CaptureQueueEntry) => e.performer_id === performerId),
+    [queueData, performerId]
+  )
+
   // Editing states
   const [editing, setEditing] = useState(false)
   const [editDisplayName, setEditDisplayName] = useState("")
@@ -1164,6 +1174,12 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
               <span className="ui-chip ui-chip-active !px-2.5 !py-1">Profile overview</span>
               <span className="ui-chip !px-2.5 !py-1">{performer.platform}</span>
               <span className="ui-chip !px-2.5 !py-1">{performer.status}</span>
+              {queueEntry?.status === "running" && (
+                <span className="ui-chip !px-2.5 !py-1 flex items-center gap-1.5 text-green-400 border-green-500/30 bg-green-500/10">
+                  <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+                  Capturing
+                </span>
+              )}
               {performer.last_checked_at && (
                 <span className="ui-chip !px-2.5 !py-1">
                   Checked {(() => {

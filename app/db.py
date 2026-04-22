@@ -376,6 +376,19 @@ CREATE INDEX IF NOT EXISTS idx_comments_performer_id ON comments(performer_id);
 CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id);
 CREATE INDEX IF NOT EXISTS idx_follows_user_id ON follows(user_id);
 CREATE INDEX IF NOT EXISTS idx_follows_performer_id ON follows(performer_id);
+
+-- Notifications table
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    data TEXT NOT NULL DEFAULT '{}',
+    read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
 """
 
 
@@ -403,6 +416,7 @@ class Database:
         self._snapshot_cache: dict[str, dict[str, Any]] = {}
         self._snapshot_cache_lock = Lock()
         self._snapshot_generation = 0
+        self._notification_callback: Callable[[str, dict], Any] | None = None
 
     def snapshot_generation(self) -> int:
         with self._snapshot_cache_lock:
@@ -940,6 +954,20 @@ class Database:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_source_url ON screenshots(source_url)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_performers_display_name ON performers(display_name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_images_source_created ON images(source_type, created_at DESC)")
+        # notifications table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                type TEXT NOT NULL,
+                data TEXT NOT NULL DEFAULT '{}',
+                read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC)")
         conn.execute("PRAGMA optimize")
 
     def start_run(self) -> int:
@@ -1858,12 +1886,20 @@ class Database:
         """Insert screenshot record. Returns True if inserted, False if duplicate."""
         with self.connect() as conn:
             try:
-                conn.execute(
+                cursor = conn.execute(
                     "INSERT INTO screenshots (term, source, page_url, local_path, captured_at, performer_id, source_url, thumbnail_url) VALUES (?,?,?,?,?,?,?,?)",
                     (term, source, page_url, local_path or "", utcnow(), performer_id, source_url, thumbnail_url)
                 )
                 conn.commit()
                 self._invalidate_after_write()
+                screenshot_id = cursor.lastrowid
+                if performer_id:
+                    for follower_id in self.get_followers(performer_id):
+                        self.add_notification(
+                            follower_id,
+                            "new_media_from_followed",
+                            {"performer_id": performer_id, "screenshot_id": screenshot_id, "source": source},
+                        )
                 return True
             except sqlite3.IntegrityError:
                 existing = conn.execute(
@@ -1971,6 +2007,123 @@ class Database:
             return [dict(r) for r in rows]
 
         return self._cached_snapshot(cache_key, 5.0, build)
+
+    # ── Notification callbacks ─────────────────────────────────────────────
+
+    def set_notification_callback(self, cb: Callable[[str, dict], Any] | None) -> None:
+        self._notification_callback = cb
+
+    def _notify(self, user_id: str, payload: dict) -> None:
+        cb = getattr(self, "_notification_callback", None)
+        if cb is not None:
+            try:
+                cb(user_id, payload)
+            except Exception:
+                pass
+
+    def add_notification(self, user_id: str, type: str, data: dict[str, Any] | None = None) -> dict:
+        now = utcnow()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO notifications (user_id, type, data, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, type, json.dumps(data or {}, ensure_ascii=True), now),
+            )
+            conn.commit()
+            row = conn.execute("SELECT * FROM notifications WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        self._invalidate_after_write()
+        result = dict(row) if row else {}
+        if result:
+            self._notify(user_id, {"type": "new_notification", "id": result["id"]})
+        return result
+
+    def get_notifications(self, user_id: str, limit: int = 20, offset: int = 0) -> dict[str, Any]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (user_id, limit + 1, offset),
+            ).fetchall()
+            unread = conn.execute(
+                "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND read = 0",
+                (user_id,),
+            ).fetchone()[0]
+        notifications = [dict(r) for r in rows[:limit]]
+        for n in notifications:
+            try:
+                n["data"] = json.loads(n.get("data", "{}"))
+            except json.JSONDecodeError:
+                n["data"] = {}
+        return {
+            "notifications": notifications,
+            "unread_count": unread,
+            "limit": limit,
+            "offset": offset,
+            "has_more": len(rows) > limit,
+        }
+
+    def get_unread_notification_count(self, user_id: str) -> int:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND read = 0",
+                (user_id,),
+            ).fetchone()
+        return row[0] if row else 0
+
+    def mark_notification_read(self, notification_id: int) -> bool:
+        with self.connect() as conn:
+            result = conn.execute(
+                "UPDATE notifications SET read = 1 WHERE id = ?",
+                (notification_id,),
+            )
+            conn.commit()
+        if result.rowcount:
+            self._invalidate_after_write()
+        return result.rowcount > 0
+
+    def mark_all_notifications_read(self, user_id: str) -> int:
+        with self.connect() as conn:
+            result = conn.execute(
+                "UPDATE notifications SET read = 1 WHERE user_id = ? AND read = 0",
+                (user_id,),
+            )
+            conn.commit()
+        if result.rowcount:
+            self._invalidate_after_write()
+        return result.rowcount
+
+    def delete_notification(self, notification_id: int) -> bool:
+        with self.connect() as conn:
+            result = conn.execute("DELETE FROM notifications WHERE id = ?", (notification_id,))
+            conn.commit()
+        if result.rowcount:
+            self._invalidate_after_write()
+        return result.rowcount > 0
+
+    def get_followers(self, performer_id: int) -> list[str]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT user_id FROM follows WHERE performer_id = ?",
+                (performer_id,),
+            ).fetchall()
+        return [r["user_id"] for r in rows]
+
+    def get_commenters(self, screenshot_id: int, exclude_user: str | None = None) -> list[str]:
+        with self.connect() as conn:
+            if exclude_user:
+                rows = conn.execute(
+                    "SELECT DISTINCT user_id FROM comments WHERE screenshot_id = ? AND user_id != ?",
+                    (screenshot_id, exclude_user),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT DISTINCT user_id FROM comments WHERE screenshot_id = ?",
+                    (screenshot_id,),
+                ).fetchall()
+        return [r["user_id"] for r in rows]
+
+    def get_screenshot(self, screenshot_id: int) -> dict | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM screenshots WHERE id = ?", (screenshot_id,)).fetchone()
+        return dict(row) if row else None
 
     # ── Engagement methods ─────────────────────────────────────────────────────
 
@@ -3042,7 +3195,15 @@ class Database:
             conn.commit()
             row = conn.execute("SELECT * FROM performer_media WHERE id = ?", (cursor.lastrowid,)).fetchone()
         self._invalidate_after_write()
-        return dict(row)
+        result = dict(row) if row else {}
+        if result:
+            for follower_id in self.get_followers(performer_id):
+                self.add_notification(
+                    follower_id,
+                    "new_media_from_followed",
+                    {"performer_id": performer_id, "media_id": result["id"], "media_type": media_type},
+                )
+        return result
 
     def browse_performer_media(
         self,

@@ -105,6 +105,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = db
     app.state.settings = settings
     app.state.service = service
+
+    # Wire up notification broadcast so sync DB methods can push via WebSocket
+    from app.api.notifications import notification_manager
+
+    _main_loop = asyncio.get_running_loop()
+
+    def _notify_callback(user_id: str, payload: dict) -> None:
+        try:
+            asyncio.run_coroutine_threadsafe(
+                notification_manager.send_to_user(user_id, payload),
+                _main_loop,
+            )
+        except Exception:
+            pass
+
+    db.set_notification_callback(_notify_callback)
+
     posters_dir = Path(os.getenv("POSTERS_DIR") or (Path(os.getenv("DATABASE_PATH", "/app/data/research.db")).expanduser().parent / "posters"))
     posters_dir.mkdir(parents=True, exist_ok=True)
     global _COMMIT_HASH
@@ -607,6 +624,9 @@ app.include_router(feed_router)
 
 from app.api.engagement import router as engagement_router
 app.include_router(engagement_router)
+
+from app.api.notifications import router as notifications_router
+app.include_router(notifications_router)
 
 from app.api.analytics import router as analytics_router
 app.include_router(analytics_router)

@@ -121,6 +121,31 @@ def create_comment(body: CommentBody, request: Request):
         performer_id=body.performer_id,
         parent_id=body.parent_id,
     )
+    # Notify followers of the linked performer
+    if body.screenshot_id:
+        screenshot = db.get_screenshot(body.screenshot_id)
+        if screenshot and screenshot.get("performer_id"):
+            for follower_id in db.get_followers(screenshot["performer_id"]):
+                if follower_id != _DEFAULT_USER:
+                    db.add_notification(
+                        follower_id,
+                        "comment_reply",
+                        {
+                            "screenshot_id": body.screenshot_id,
+                            "comment_id": comment["id"],
+                            "performer_id": screenshot["performer_id"],
+                        },
+                    )
+        # Notify previous commenters
+        for commenter_id in db.get_commenters(body.screenshot_id, exclude_user=_DEFAULT_USER):
+            db.add_notification(
+                commenter_id,
+                "comment_reply",
+                {
+                    "screenshot_id": body.screenshot_id,
+                    "comment_id": comment["id"],
+                },
+            )
     return comment
 
 

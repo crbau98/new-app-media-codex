@@ -85,6 +85,8 @@ function viewAction(view: ActiveView): FabAction {
           if (btn) btn.click()
         },
       }
+    default:
+      return { icon: <CameraIcon />, label: "Action", action: () => {} }
   }
 }
 

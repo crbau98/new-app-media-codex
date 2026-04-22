@@ -208,6 +208,12 @@ export interface Collection { id: number; name: string; color: string; icon: str
 export interface CollectionItemsPayload { items: ResearchItem[]; total: number; offset: number; limit: number }
 export interface ActivityEvent { event_type: 'item' | 'hypothesis' | 'screenshot'; id: number; title?: string; term?: string; source_type?: string; theme?: string; created_at: string }
 export interface SearchResult { result_type: 'item' | 'hypothesis'; id: number; title?: string; body?: string; source_type?: string; theme?: string; score?: number; created_at?: string }
+
+export type UnifiedSearchResult =
+  | { type: "media"; id: number; title: string; thumbnail: string; source: string; performer_username: string | null; views_count: number; likes_count: number }
+  | { type: "creator"; id: number; username: string; display_name: string | null; avatar_url: string | null; platform: string; follower_count: number; media_count: number }
+  | { type: "tag"; tag: string; count: number }
+  | { type: "playlist"; id: number; name: string; description: string | null; cover_url: string | null; item_count: number }
 export interface SourceHealthItem {
   name: string
   total_items: number
@@ -430,6 +436,30 @@ export interface CaptureQueueEntry {
   platform: string
   avatar_local: string | null
   avatar_url: string | null
+}
+
+export type NotificationType =
+  | 'new_media_from_followed'
+  | 'comment_reply'
+  | 'like_on_comment'
+  | 'mention'
+  | 'trending_alert'
+
+export interface AppNotification {
+  id: number
+  type: NotificationType
+  message?: string
+  data: Record<string, unknown>
+  read: number
+  created_at: string
+}
+
+export interface NotificationsPayload {
+  notifications: AppNotification[]
+  unread_count: number
+  limit: number
+  offset: number
+  has_more: boolean
 }
 
 export interface TelegramChannel {
@@ -857,4 +887,98 @@ export const api = {
     ),
   backfillPerformerLinks: () =>
     apiFetch<{ ok: boolean; linked: number }>("/api/screenshots/backfill-performers", { method: "POST" }),
+  // Notifications
+  notifications: (limit = 20, offset = 0) =>
+    apiFetch<NotificationsPayload>(`/api/notifications${buildQuery({ limit, offset })}`),
+  markNotificationRead: (id: number) =>
+    apiFetch<{ ok: boolean }>(`/api/notifications/${id}/read`, { method: "POST" }),
+  markAllNotificationsRead: () =>
+    apiFetch<{ ok: boolean; marked: number }>("/api/notifications/read-all", { method: "POST" }),
+  unreadNotificationCount: () =>
+    apiFetch<{ count: number }>("/api/notifications/unread-count"),
+  deleteNotification: (id: number) =>
+    apiFetch<{ ok: boolean }>(`/api/notifications/${id}`, { method: "DELETE" }),
+  // Unified search (client-side aggregation until backend endpoint is built)
+  unifiedSearch: async (query: string, type?: string, limit = 20, offset = 0): Promise<{ results: UnifiedSearchResult[]; total: number; has_more: boolean }> => {
+    const q = query.trim()
+    if (!q) return { results: [], total: 0, has_more: false }
+
+    const results: UnifiedSearchResult[] = []
+    const lc = q.toLowerCase()
+
+    // Fetch all types in parallel when "all" or no type is specified
+    const fetchMedia = async () => {
+      try {
+        const screenshots = await api.searchScreenshots(q)
+        return screenshots.map((s): UnifiedSearchResult => ({
+          type: "media",
+          id: s.id,
+          title: s.term,
+          thumbnail: s.thumbnail_url || s.preview_url || "",
+          source: s.source,
+          performer_username: s.performer_username || null,
+          views_count: s.views_count || 0,
+          likes_count: s.likes_count || 0,
+        }))
+      } catch { return [] }
+    }
+
+    const fetchCreators = async () => {
+      try {
+        const res = await api.searchPerformers(q, limit)
+        return res.performers.map((p): UnifiedSearchResult => ({
+          type: "creator",
+          id: p.id,
+          username: p.username,
+          display_name: p.display_name,
+          avatar_url: p.avatar_url || p.avatar_local || null,
+          platform: p.platform,
+          follower_count: p.follower_count || p.followers_count || 0,
+          media_count: p.media_count || p.media_count_actual || p.screenshots_count || 0,
+        }))
+      } catch { return [] }
+    }
+
+    const fetchTags = async () => {
+      try {
+        const tags = await api.screenshotAllTags()
+        return tags
+          .filter((t) => t.tag.toLowerCase().includes(lc))
+          .map((t): UnifiedSearchResult => ({ type: "tag", tag: t.tag, count: t.count }))
+      } catch { return [] }
+    }
+
+    const fetchPlaylists = async () => {
+      try {
+        const playlists = await api.playlists()
+        return playlists
+          .filter((p) => p.name.toLowerCase().includes(lc) || (p.description ?? "").toLowerCase().includes(lc))
+          .map((p): UnifiedSearchResult => ({
+            type: "playlist",
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            cover_url: p.cover_url,
+            item_count: p.item_count,
+          }))
+      } catch { return [] }
+    }
+
+    if (!type || type === "all") {
+      const [media, creators, tags, playlists] = await Promise.all([fetchMedia(), fetchCreators(), fetchTags(), fetchPlaylists()])
+      results.push(...media, ...creators, ...tags, ...playlists)
+    } else if (type === "media") {
+      results.push(...(await fetchMedia()))
+    } else if (type === "creators") {
+      results.push(...(await fetchCreators()))
+    } else if (type === "tags") {
+      results.push(...(await fetchTags()))
+    } else if (type === "playlists") {
+      results.push(...(await fetchPlaylists()))
+    }
+
+    const total = results.length
+    const sliced = results.slice(offset, offset + limit)
+    return { results: sliced, total, has_more: offset + sliced.length < total }
+  },
 }
