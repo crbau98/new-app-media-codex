@@ -157,7 +157,8 @@ def _resolve_app_data_root() -> Path:
     if image_dir:
         return Path(image_dir).expanduser().parent
 
-    return Path("/app/data")
+    # Fallback to project-root data/ (works both locally and in Docker)
+    return Path(__file__).resolve().parent.parent.parent / "data"
 
 
 _APP_DATA_ROOT = _resolve_app_data_root()
