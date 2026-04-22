@@ -9,6 +9,7 @@ import {
   usePerformerStatsQuery,
 } from "@/features/sharedQueries"
 import { prefetchViewModule } from "@/lib/view-loader"
+import { Logo } from "./Logo"
 
 interface NavItem {
   id: ActiveView
@@ -85,18 +86,18 @@ function NavGroup({
                 aria-current={isActive ? "page" : undefined}
                 title={collapsed ? item.label : undefined}
                 className={cn(
-                  "group relative flex w-full items-center gap-2.5 overflow-hidden rounded-xl border border-transparent px-3 py-2.5 text-left transition-[background-color,border-color,color,box-shadow,transform] duration-150",
+                  "group relative flex w-full items-center gap-2.5 overflow-hidden rounded-xl border border-transparent px-3 py-2.5 text-left transition-[background-color,border-color,color,box-shadow,transform] duration-200",
                   collapsed ? "justify-center px-2.5" : "",
                   isActive
-                    ? "bg-white/[0.06] text-text-primary"
-                    : "text-text-secondary hover:bg-white/[0.03] hover:text-text-primary"
+                    ? "bg-gradient-to-r from-accent/15 via-accent/5 to-transparent text-text-primary shadow-[0_0_0_1px_rgba(168,85,247,0.15)_inset]"
+                    : "text-text-secondary hover:bg-white/[0.04] hover:text-text-primary"
                 )}
               >
                 {isActive && (
                   <span
                     aria-hidden="true"
-                    className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-accent"
-                    style={{ boxShadow: "0 0 14px var(--color-accent-glow)" }}
+                    className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-gradient-to-b from-accent via-accent to-accent-secondary"
+                    style={{ boxShadow: "0 0 14px var(--color-accent-glow), 0 0 24px var(--color-accent-glow)" }}
                   />
                 )}
                 <span className="relative shrink-0 text-current transition-transform duration-200 group-hover:scale-105">
@@ -404,19 +405,19 @@ export function Sidebar() {
         aria-label="Main navigation"
       >
         <div className={cn("flex min-h-12 items-center border-b border-border py-2", collapsed ? "px-2.5 md:px-2" : "px-4") }>
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <div
-              className="brand-mark flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold tracking-[0.12em] text-accent"
+              className="brand-mark flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
               aria-hidden="true"
             >
-              C
+              <Logo size={22} />
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <span className="hero-title block truncate text-[15px] font-semibold tracking-[-0.03em] text-text-primary">
+                <span className="hero-title text-gradient-brand block truncate text-[15px] font-semibold tracking-[-0.03em]">
                   Media Codex
                 </span>
-                <span className="block truncate text-[10px] font-medium uppercase tracking-[0.14em] text-text-muted">
+                <span className="block truncate text-[10px] font-medium uppercase tracking-[0.16em] text-text-muted">
                   Queer media library
                 </span>
               </div>

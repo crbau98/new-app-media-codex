@@ -19,7 +19,7 @@ export function ImageCard({ img, onClick }: { img: ImageRecord; onClick: () => v
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       aria-label={`Open ${img.title || 'image'} in lightbox`}
-      className="relative break-inside-avoid mb-2 overflow-hidden rounded-2xl cursor-pointer group border border-white/[0.06] hover:border-white/[0.15] transition-all duration-200"
+      className="relative break-inside-avoid mb-2 overflow-hidden rounded-2xl cursor-pointer group border border-white/[0.06] hover:border-accent/35 hover:shadow-[0_18px_40px_-16px_rgba(0,0,0,0.55),0_0_0_1px_rgba(168,85,247,0.12)] tile-zoom transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5"
     >
       {src && !loaded && <div className="bg-white/[0.03] h-40 shimmer" aria-hidden="true" />}
 
@@ -50,7 +50,7 @@ export function ImageCard({ img, onClick }: { img: ImageRecord; onClick: () => v
           alt={img.title || ''}
           onLoad={() => setLoaded(true)}
           onError={() => setLoaded(true)}
-          className={`w-full object-cover transition-all duration-300 group-hover:scale-[1.03] ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          className={`w-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
           loading="lazy"
           decoding="async"
           fetchPriority="low"

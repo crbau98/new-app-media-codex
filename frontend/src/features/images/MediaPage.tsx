@@ -2668,12 +2668,15 @@ export function MediaPage() {
       <section className="px-3 pb-6 pt-1 sm:px-4" aria-labelledby="media-page-title">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.12em] text-text-muted">Your collection</p>
+            <p className="mb-2 inline-flex items-center gap-2 rounded-full border border-border bg-bg-elevated/50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-text-muted">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+              Your collection
+            </p>
             <h1
               id="media-page-title"
               className="hero-title text-[28px] font-semibold leading-[1.08] tracking-[-0.045em] text-text-primary sm:text-[34px]"
             >
-              Media
+              <span className="text-gradient-brand">Media</span>
             </h1>
             <p className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-[15px] leading-relaxed text-text-secondary">
               <span>{(visibleSummary.total ?? 0).toLocaleString()} items</span>

@@ -348,8 +348,8 @@ export function TopBar() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
           </button>
 
-          <h2 className="hero-title min-w-0 shrink-0 text-[17px] font-semibold tracking-[-0.03em] text-text-primary sm:text-[19px]">
-            {VIEW_LABELS[activeView] ?? activeView}
+          <h2 className="hero-title min-w-0 shrink-0 text-[17px] font-semibold tracking-[-0.035em] text-text-primary sm:text-[19px]">
+            <span className="text-gradient-brand">{VIEW_LABELS[activeView] ?? activeView}</span>
           </h2>
 
           <div ref={containerRef} className="relative hidden max-w-lg flex-1 md:block">
