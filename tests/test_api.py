@@ -54,6 +54,11 @@ def app_client(test_db):
 
     minimal_app.state.service = _StubService()
 
+    # Many endpoints lazily import db from app.main rather than using request.app.state.db.
+    # Monkey-patch so they use the test database.
+    import app.main as _main_module
+    _main_module.db = test_db
+
     from app.api.items import router as items_router, browse_router as items_browse_router
     from app.api.search import router as search_router
     from app.api.export import router as export_router

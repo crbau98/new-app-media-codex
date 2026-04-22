@@ -12,33 +12,50 @@ interface MediaHeroProps {
 export function MediaHero({ shots, onClick }: MediaHeroProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isHovering, setIsHovering] = useState(false)
+  const [failedIds, setFailedIds] = useState<Set<number>>(new Set())
 
-  const featured = shots.slice(0, 5).filter((s) => s.preview_url || s.local_url || s.thumbnail_url)
-  if (featured.length === 0) return null
+  const featured = shots
+    .slice(0, 5)
+    .filter((s) => s.preview_url || s.local_url || s.thumbnail_url)
+  const working = featured.filter((s) => !failedIds.has(s.id))
 
-  const current = featured[currentIndex]
+  if (working.length === 0) return null
+
+  // Clamp index if it went out of bounds after image failures
+  const safeIndex = currentIndex % working.length
+  const current = working[safeIndex]
   const isVideo = isVideoShot(current)
   const bgImage =
     resolvePublicUrl(current.preview_url || current.local_url || current.thumbnail_url || "")
 
   const nextSlide = useCallback(() => {
-    setCurrentIndex((prev) => (prev + 1) % featured.length)
-  }, [featured.length])
+    setCurrentIndex((prev) => (prev + 1) % working.length)
+  }, [working.length])
+
+  const handleImageError = useCallback(() => {
+    setFailedIds((prev) => {
+      const next = new Set(prev)
+      next.add(current.id)
+      return next
+    })
+    // Auto-advance to next slide if this image fails
+    setCurrentIndex((prev) => (prev + 1) % Math.max(working.length - 1, 1))
+  }, [current?.id, working.length])
 
   // Auto-advance every 6 seconds unless hovering
   useEffect(() => {
-    if (isHovering || featured.length <= 1) return
+    if (isHovering || working.length <= 1) return
     const id = setInterval(nextSlide, 6000)
     return () => clearInterval(id)
-  }, [isHovering, featured.length, nextSlide])
+  }, [isHovering, working.length, nextSlide])
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-      className="relative mb-6 overflow-hidden rounded-[28px] border border-white/[0.08]"
-      style={{ aspectRatio: "21 / 9", maxHeight: "420px" }}
+      className="relative mb-6 overflow-hidden rounded-[28px] border border-white/[0.08] bg-gradient-to-br from-bg-elevated to-black"
+      style={{ aspectRatio: "21 / 9", maxHeight: "320px" }}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
@@ -57,6 +74,7 @@ export function MediaHero({ shots, onClick }: MediaHeroProps) {
             alt={current.term}
             className="h-full w-full object-cover"
             loading="eager"
+            onError={handleImageError}
           />
           {/* Gradient overlays */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
@@ -121,14 +139,14 @@ export function MediaHero({ shots, onClick }: MediaHeroProps) {
         </AnimatePresence>
 
         {/* Pagination dots */}
-        {featured.length > 1 && (
+        {working.length > 1 && (
           <div className="absolute bottom-6 right-6 flex items-center gap-1.5 sm:bottom-8 sm:right-8">
-            {featured.map((_, i) => (
+            {working.map((_, i) => (
               <button
                 key={i}
                 onClick={() => setCurrentIndex(i)}
                 className={`h-1.5 rounded-full transition-all duration-300 ${
-                  i === currentIndex
+                  i === safeIndex
                     ? "w-6 bg-white"
                     : "w-1.5 bg-white/40 hover:bg-white/60"
                 }`}

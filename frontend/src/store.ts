@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import { persist } from "zustand/middleware"
 
 // ── Constants ────────────────────────────────────────────────────────
 export type ActiveView = "images" | "performers" | "settings"
@@ -67,17 +68,7 @@ const DEFAULT_FILTERS: Filters = {
   minScore: '',
 }
 
-// ── Notification types & helpers ─────────────────────────────────────
-export interface Notification {
-  id: string
-  message: string
-  type: 'crawl' | 'capture' | 'system'
-  timestamp: number
-  read: boolean
-}
-
-
-// ── Toast types ──────────────────────────────────────────────────────
+// ── Toast types & helpers ────────────────────────────────────────────
 export interface ToastAction {
   label: string
   onClick: () => void
@@ -91,6 +82,16 @@ export interface Toast {
 }
 
 export type ThemeMode = 'dark' | 'light'
+
+export type GridDensity = 'compact' | 'normal' | 'spacious'
+
+export interface AppNotification {
+  id: string
+  message: string
+  type: 'crawl' | 'capture' | 'system'
+  timestamp: number
+  read: boolean
+}
 
 // ── App State Interface ──────────────────────────────────────────────
 interface AppState {
@@ -132,9 +133,9 @@ interface AppState {
   removeToast: (id: string) => void
 
   // Notifications
-  notifications: Notification[]
+  notifications: AppNotification[]
   unreadCount: number
-  addNotification: (msg: string, type: Notification['type']) => void
+  addNotification: (msg: string, type: AppNotification['type']) => void
   markNotificationRead: (id: string) => void
   markAllRead: () => void
   clearNotifications: () => void
@@ -151,6 +152,10 @@ interface AppState {
   mobileNavOpen: boolean
   setMobileNavOpen: (v: boolean) => void
 
+  // Grid density
+  gridDensity: GridDensity
+  setGridDensity: (v: GridDensity) => void
+
   // Creator media filter
   mediaCreatorId: number | null
   mediaCreatorName: string | null
@@ -159,6 +164,11 @@ interface AppState {
   // Deep-link to a performer profile
   pendingPerformerId: number | null
   setPendingPerformer: (id: number | null) => void
+
+  // Recently viewed screenshot IDs
+  recentlyViewed: number[]
+  addRecentlyViewed: (id: number) => void
+  clearRecentlyViewed: () => void
 }
 
 // ── Theme helpers ────────────────────────────────────────────────────
@@ -166,124 +176,166 @@ function applyTheme(theme: ThemeMode) {
   document.documentElement.dataset.theme = theme
 }
 
-// ── Store ────────────────────────────────────────────────────────────
-export const useAppStore = create<AppState>((set) => ({
-  theme: 'dark',
-  setTheme: (theme) => {
-    applyTheme(theme)
-    set({ theme })
-  },
-  toggleTheme: () =>
-    set((s) => {
-      const next: ThemeMode = s.theme === 'dark' ? 'light' : 'dark'
-      applyTheme(next)
-      return { theme: next }
-    }),
-
-  activeView: getViewFromHash(),
-  setActiveView: (activeView) => {
-    window.location.hash = HASH_VIEWS[activeView] || '#/media'
-    set({ activeView })
-  },
-
-  selectedTheme: null,
-  setSelectedTheme: (selectedTheme) => set({ selectedTheme }),
-  selectedSource: null,
-  setSelectedSource: (selectedSource) => set({ selectedSource }),
-
-  commandPaletteOpen: false,
-  setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
-
-  selectedItemIds: new Set(),
-  toggleItemSelection: (id) =>
-    set((s) => {
-      const next = new Set(s.selectedItemIds)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return { selectedItemIds: next }
-    }),
-  clearItemSelection: () => set({ selectedItemIds: new Set() }),
-
-  crawlRunning: false,
-  setCrawlRunning: (crawlRunning) => set({ crawlRunning }),
-  screenshotRunning: false,
-  setScreenshotRunning: (screenshotRunning) => set({ screenshotRunning }),
-
-  filters: { ...DEFAULT_FILTERS },
-  setFilter: (key, value) =>
-    set((s) => ({ filters: { ...s.filters, [key]: value } })),
-  resetFilters: () => set({ filters: { ...DEFAULT_FILTERS } }),
-
-  // Drawer
-  selectedItemId: null,
-  setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
-
-  // Toasts – capped at 3 visible, deduplication built in
-  toasts: [],
-  addToast: (message, type = "success", action) =>
-    set((s) => {
-      if (s.toasts.some((t) => t.message === message)) return {}
-      const newToast: Toast = { id: uniqueId(), message, type, action }
-      const next = [...s.toasts, newToast]
-      return { toasts: next.length > 3 ? next.slice(next.length - 3) : next }
-    }),
-  removeToast: (id) =>
-    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
-
-  // Notifications
-  notifications: [],
-  unreadCount: 0,
-  addNotification: (message, type) =>
-    set((s) => {
-      const n: Notification = {
-        id: uniqueId(),
-        message,
-        type,
-        timestamp: Date.now(),
-        read: false,
+// ── Persisted preferences ────────────────────────────────────────────
+function getPersistedTheme(): ThemeMode {
+  try {
+    const raw = localStorage.getItem('app-preferences')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed?.state?.theme === 'dark' || parsed?.state?.theme === 'light') {
+        return parsed.state.theme
       }
-      const next = [n, ...s.notifications].slice(0, MAX_NOTIFICATIONS)
-      return { notifications: next, unreadCount: next.filter((x) => !x.read).length }
+    }
+  } catch { /* ignore */ }
+  return 'dark'
+}
+
+// ── Store ────────────────────────────────────────────────────────────
+export const useAppStore = create<AppState>()(
+  persist(
+    (set) => ({
+      theme: getPersistedTheme(),
+      setTheme: (theme) => {
+        applyTheme(theme)
+        set({ theme })
+      },
+      toggleTheme: () =>
+        set((s) => {
+          const next: ThemeMode = s.theme === 'dark' ? 'light' : 'dark'
+          applyTheme(next)
+          return { theme: next }
+        }),
+
+      activeView: getViewFromHash(),
+      setActiveView: (activeView) => {
+        window.location.hash = HASH_VIEWS[activeView] || '#/media'
+        set({ activeView })
+      },
+
+      selectedTheme: null,
+      setSelectedTheme: (selectedTheme) => set({ selectedTheme }),
+      selectedSource: null,
+      setSelectedSource: (selectedSource) => set({ selectedSource }),
+
+      commandPaletteOpen: false,
+      setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
+
+      selectedItemIds: new Set(),
+      toggleItemSelection: (id) =>
+        set((s) => {
+          const next = new Set(s.selectedItemIds)
+          next.has(id) ? next.delete(id) : next.add(id)
+          return { selectedItemIds: next }
+        }),
+      clearItemSelection: () => set({ selectedItemIds: new Set() }),
+
+      crawlRunning: false,
+      setCrawlRunning: (crawlRunning) => set({ crawlRunning }),
+      screenshotRunning: false,
+      setScreenshotRunning: (screenshotRunning) => set({ screenshotRunning }),
+
+      filters: { ...DEFAULT_FILTERS },
+      setFilter: (key, value) =>
+        set((s) => ({ filters: { ...s.filters, [key]: value } })),
+      resetFilters: () => set({ filters: { ...DEFAULT_FILTERS } }),
+
+      // Drawer
+      selectedItemId: null,
+      setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
+
+      // Toasts – capped at 3 visible, deduplication built in
+      toasts: [],
+      addToast: (message, type = "success", action) =>
+        set((s) => {
+          if (s.toasts.some((t) => t.message === message)) return {}
+          const newToast: Toast = { id: uniqueId(), message, type, action }
+          const next = [...s.toasts, newToast]
+          return { toasts: next.length > 3 ? next.slice(next.length - 3) : next }
+        }),
+      removeToast: (id) =>
+        set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+      // Notifications
+      notifications: [],
+      unreadCount: 0,
+      addNotification: (message, type) =>
+        set((s) => {
+          const n: AppNotification = {
+            id: uniqueId(),
+            message,
+            type,
+            timestamp: Date.now(),
+            read: false,
+          }
+          const next = [n, ...s.notifications].slice(0, MAX_NOTIFICATIONS)
+          return { notifications: next, unreadCount: next.filter((x) => !x.read).length }
+        }),
+      markNotificationRead: (id) =>
+        set((s) => {
+          const next = s.notifications.map((n) =>
+            n.id === id ? { ...n, read: true } : n
+          )
+          return { notifications: next, unreadCount: next.filter((x) => !x.read).length }
+        }),
+      markAllRead: () =>
+        set((s) => {
+          const next = s.notifications.map((n) => ({ ...n, read: true }))
+          return { notifications: next, unreadCount: 0 }
+        }),
+      clearNotifications: () => {
+        set({ notifications: [], unreadCount: 0 })
+      },
+
+      // Connectivity – listeners registered below
+      isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+      setOnline: (isOnline) => set({ isOnline }),
+      apiUnreachable: false,
+      setApiUnreachable: (apiUnreachable) => set({ apiUnreachable }),
+
+      // Sidebar
+      sidebarCollapsed: false,
+      setSidebarCollapsed: (sidebarCollapsed) => {
+        set({ sidebarCollapsed })
+      },
+      mobileNavOpen: false,
+      setMobileNavOpen: (mobileNavOpen) => set({ mobileNavOpen }),
+
+      // Grid density
+      gridDensity: 'normal',
+      setGridDensity: (gridDensity) => set({ gridDensity }),
+
+      // Creator media filter
+      mediaCreatorId: null,
+      mediaCreatorName: null,
+      setMediaCreator: (id, name = null) =>
+        set({ mediaCreatorId: id, mediaCreatorName: name }),
+
+      // Deep-link to a performer profile
+      pendingPerformerId: null,
+      setPendingPerformer: (id) => set({ pendingPerformerId: id }),
+
+      // Recently viewed
+      recentlyViewed: [],
+      addRecentlyViewed: (id) =>
+        set((s) => ({
+          recentlyViewed: [id, ...s.recentlyViewed.filter((x) => x !== id)].slice(0, 30),
+        })),
+      clearRecentlyViewed: () => set({ recentlyViewed: [] }),
     }),
-  markNotificationRead: (id) =>
-    set((s) => {
-      const next = s.notifications.map((n) =>
-        n.id === id ? { ...n, read: true } : n
-      )
-      return { notifications: next, unreadCount: next.filter((x) => !x.read).length }
-    }),
-  markAllRead: () =>
-    set((s) => {
-      const next = s.notifications.map((n) => ({ ...n, read: true }))
-      return { notifications: next, unreadCount: 0 }
-    }),
-  clearNotifications: () => {
-    set({ notifications: [], unreadCount: 0 })
-  },
+    {
+      name: 'app-preferences',
+      partialize: (state) => ({
+        theme: state.theme,
+        sidebarCollapsed: state.sidebarCollapsed,
+        gridDensity: state.gridDensity,
+        recentlyViewed: state.recentlyViewed,
+      }),
+    }
+  )
+)
 
-  // Connectivity – listeners registered below
-  isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
-  setOnline: (isOnline) => set({ isOnline }),
-  apiUnreachable: false,
-  setApiUnreachable: (apiUnreachable) => set({ apiUnreachable }),
-
-  // Sidebar
-  sidebarCollapsed: false,
-  setSidebarCollapsed: (sidebarCollapsed) => {
-    set({ sidebarCollapsed })
-  },
-  mobileNavOpen: false,
-  setMobileNavOpen: (mobileNavOpen) => set({ mobileNavOpen }),
-
-  // Creator media filter
-  mediaCreatorId: null,
-  mediaCreatorName: null,
-  setMediaCreator: (id, name = null) =>
-    set({ mediaCreatorId: id, mediaCreatorName: name }),
-
-  // Deep-link to a performer profile
-  pendingPerformerId: null,
-  setPendingPerformer: (id) => set({ pendingPerformerId: id }),
-}))
+// Apply theme on load
+applyTheme(useAppStore.getState().theme)
 
 // ── Side-effects: online/offline listeners ───────────────────────────
 if (typeof window !== 'undefined') {

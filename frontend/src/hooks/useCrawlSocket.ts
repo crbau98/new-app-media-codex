@@ -20,8 +20,13 @@ export function useCrawlSocket(onEvent?: (e: CrawlEvent) => void) {
         if (event.type === "crawl_start") setCrawlRunning(true)
         if (event.type === "crawl_done") {
           setCrawlRunning(false)
-          // Refresh all views so new items, hypotheses, and stats are visible immediately
-          queryClient.invalidateQueries()
+          // Refresh only the views that matter — avoids thundering herd on backend
+          queryClient.invalidateQueries({ queryKey: ["screenshots"] })
+          queryClient.invalidateQueries({ queryKey: ["performers"] })
+          queryClient.invalidateQueries({ queryKey: ["media-stats"] })
+          queryClient.invalidateQueries({ queryKey: ["screenshot-terms"] })
+          queryClient.invalidateQueries({ queryKey: ["screenshot-sources"] })
+          queryClient.invalidateQueries({ queryKey: ["capture-queue"] })
         }
         cbRef.current?.(event)
       } catch (e) {

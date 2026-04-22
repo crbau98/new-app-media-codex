@@ -62,6 +62,21 @@ _HLS_URI_ATTR_RE = re.compile(r'URI=(["\'])(.+?)\1')
 _NO_PROXY_SOURCES: frozenset[str] = frozenset()  # all sources are proxied
 _NO_PROXY_NETLOC_SUFFIXES: tuple[str, ...] = ()  # all hosts are proxied
 
+# Known media domains we are willing to proxy. Prevents open-proxy abuse.
+_PROXY_MEDIA_ALLOWED_NETLOCS: frozenset[str] = frozenset({
+    "i.redd.it", "v.redd.it", "preview.redd.it",
+    "i.imgur.com",
+    "redgifs.com", "www.redgifs.com", "thumbs.redgifs.com",
+    "coomer.st", "www.coomer.st", "img.coomer.st",
+    "kemono.su", "www.kemono.su", "img.kemono.su",
+    "twitter.com", "x.com", "pbs.twimg.com",
+    "instagram.com", "www.instagram.com",
+    "thisvid.com", "www.thisvid.com",
+    "boyfriendtv.com", "www.boyfriendtv.com",
+    "spankbang.com", "www.spankbang.com",
+})
+
+
 # ---------------------------------------------------------------------------
 # Outbound residential / clean-DC HTTP proxy for archiver hosts
 # ---------------------------------------------------------------------------
@@ -1361,6 +1376,24 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
     """Proxy a remote image/video URL via streaming to avoid CORS and hotlink issues."""
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "Invalid URL")
+    # Reject open-proxy abuse: only allow known media domains or URLs that exist in screenshots table
+    parsed = urlparse(url)
+    netloc = (parsed.netloc or "").lower().lstrip("www.")
+    allowed = any(
+        netloc == a.lstrip("www.") or netloc.endswith("." + a.lstrip("www."))
+        for a in _PROXY_MEDIA_ALLOWED_NETLOCS
+    )
+    if not allowed and shot_id is None:
+        raise HTTPException(403, "Domain not allowed for proxy")
+    if not allowed and shot_id is not None and request is not None:
+        db = request.app.state.db
+        with db.connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM screenshots WHERE id = ? AND (source_url = ? OR page_url = ? OR thumbnail_url = ?)",
+                (shot_id, url, url, url)
+            ).fetchone()
+        if not row:
+            raise HTTPException(403, "URL does not match screenshot record")
     from starlette.responses import StreamingResponse
 
     range_header = request.headers.get("range") if request else None
@@ -1470,20 +1503,16 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
             break
         if resp is not None:
             last_bad_status = resp.status_code
-            # 404 is not recoverable by switching shards
+            # 404 is not recoverable by switching shards or refreshing
             if resp.status_code == 404:
                 break
-            await resp.aclose()
-            resp = None
-    if resp is None:
-        return JSONResponse(
-            status_code=502,
-            content={"error": "proxy_media_failed", "detail": "Could not fetch media", "last_status": last_bad_status},
-        )
-    if resp.status_code >= 400 and shot_id and _is_refreshable_upstream_status(resp.status_code):
+            # Don't close resp yet — we may need to refresh below
+    # If all candidates failed, try refreshing the URL before giving up
+    if resp is not None and resp.status_code >= 400 and shot_id and _is_refreshable_upstream_status(resp.status_code):
         refreshed_url = await _refresh_shot_media_url(request, int(shot_id), failed_url=target_url)
         if refreshed_url:
             await resp.aclose()
+            resp = None
             target_url = refreshed_url
             client = _client_for(target_url)
             try:
@@ -1508,6 +1537,11 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
                     status_code=502,
                     content={"error": "proxy_media_failed", "detail": "Could not fetch media"},
                 )
+    if resp is None:
+        return JSONResponse(
+            status_code=502,
+            content={"error": "proxy_media_failed", "detail": "Could not fetch media", "last_status": last_bad_status},
+        )
     if resp.status_code >= 400:
         status_code = resp.status_code if resp.status_code in {401, 403, 404, 416} else 502
         detail = f"Upstream media returned {resp.status_code}"
@@ -2658,6 +2692,9 @@ async def trigger_capture(request: Request, background_tasks: BackgroundTasks):
 
 @router.delete("/clear-posters")
 def clear_poster_cache(request: Request):
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Clear all cached poster thumbnails so they regenerate with current settings."""
     global _POSTER_DISK_CACHE, _POSTER_DISK_CACHE_LOADED
     cleared = 0
@@ -2673,6 +2710,9 @@ def clear_poster_cache(request: Request):
 
 @router.delete("/clear-all")
 def clear_all_captures(request: Request):
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Delete every screenshot row and clear related caches (video cache, posters)."""
     db = request.app.state.db
     with db.connect() as conn:
@@ -2825,6 +2865,9 @@ def _run_scan(app_state) -> dict:
 
 @router.post("/scan")
 async def trigger_scan(request: Request, background_tasks: BackgroundTasks):
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Run vision-based quality scan on all existing screenshots; delete non-qualifying ones."""
     if getattr(request.app.state, "screenshot_scan_running", False):
         return JSONResponse({"status": "already_running"}, status_code=409)
@@ -2851,6 +2894,9 @@ def scan_status(request: Request):
 
 @router.delete("/bulk")
 async def bulk_delete_screenshots(request: Request, body: dict = Body(...)):
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Delete multiple screenshots by IDs."""
     ids = body.get("ids", [])
     if not ids:
@@ -2954,13 +3000,14 @@ def bulk_rate(request: Request, body: dict = Body(...)):
     rating = max(0, min(5, int(rating)))
     db: Database = request.app.state.db
     updated = 0
+    # Single UPDATE with IN clause — O(1) round-trip instead of N
+    placeholders = ",".join("?" * len(ids))
     with db.connect() as conn:
-        for sid in ids:
-            try:
-                conn.execute("UPDATE screenshots SET rating = ? WHERE id = ?", (rating, sid))
-                updated += 1
-            except Exception:
-                pass
+        cur = conn.execute(
+            f"UPDATE screenshots SET rating = ? WHERE id IN ({placeholders})",
+            [rating] + list(ids),
+        )
+        updated = cur.rowcount
         conn.commit()
     _invalidate_screenshots_cache(request.app.state)
     return JSONResponse({"updated": updated})
@@ -3256,6 +3303,9 @@ def summarize_screenshot(screenshot_id: int, request: Request):
 
 @router.post("/batch-describe")
 async def batch_describe(request: Request, body: dict = Body(...)):
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Batch AI-describe multiple screenshots. Processes sequentially."""
     ids = body.get("ids", [])
     limit = body.get("limit", 10)
@@ -3407,6 +3457,9 @@ def _extract_tags_from_text(text: str) -> list[str]:
 
 @router.post("/auto-tag")
 def auto_tag_screenshots(request: Request, body: dict = Body(default={})):
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Extract tags from ai_summary/ai_tags for screenshots that lack user_tags."""
     limit = body.get("limit", 50)
     min_confidence = body.get("min_confidence", 0.7)  # reserved for future scoring
@@ -3552,6 +3605,9 @@ def _resolve_redgifs_url(url: str) -> str | None:
 
 @router.post("/capture-url")
 def capture_from_url(request: Request, body: dict = Body(...)):
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Download media from a URL and create a screenshot record."""
     url = body.get("url", "").strip()
     if not url:
@@ -3756,6 +3812,9 @@ def update_user_tags(screenshot_id: int, request: Request, body: dict = Body(...
 
 @router.post("/purge-women")
 async def purge_women(request: Request, background_tasks: BackgroundTasks) -> JSONResponse:
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Scan all existing screenshots for female content and delete any found.
 
     Uses a targeted vision check which also evaluates a representative frame for
@@ -3828,6 +3887,9 @@ async def purge_women(request: Request, background_tasks: BackgroundTasks) -> JS
 
 @router.post("/recover-videos")
 def recover_orphaned_videos(request: Request) -> JSONResponse:
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Scan screenshots directory for .mp4 files not registered in the DB and import them."""
     import re as _re
     db = request.app.state.db
@@ -3893,6 +3955,9 @@ def recover_orphaned_videos(request: Request) -> JSONResponse:
 
 @router.post("/capture-videos")
 async def capture_videos(request: Request, background_tasks: BackgroundTasks) -> JSONResponse:
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Trigger a video-only capture pass using yt-dlp across all configured terms."""
     from app.sources.screenshot import TERM_QUERIES, _search_ytdlp_videos
     from pathlib import Path as _Path
@@ -3984,6 +4049,9 @@ def get_disk_usage(request: Request):
 
 @router.post("/cleanup")
 def cleanup_media(request: Request, max_age_days: int = Query(30, ge=1, le=365)):
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Delete screenshot files older than max_age_days to free disk space."""
     base = Path(request.app.state.settings.image_dir).parent / "screenshots"
     if not base.exists():
@@ -4010,6 +4078,9 @@ def cleanup_media(request: Request, max_age_days: int = Query(30, ge=1, le=365))
 
 @router.post("/backfill-performers")
 def backfill_performer_links(request: Request) -> JSONResponse:
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
     """Link unlinked screenshots to performers by matching term against performer aliases.
 
     Useful after adding new performers or renaming existing ones.

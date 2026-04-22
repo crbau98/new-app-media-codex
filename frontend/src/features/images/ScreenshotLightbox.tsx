@@ -379,21 +379,20 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
     setTagSuggestions([])
   }
 
-  // Share handler
+  // Share handler — generates a deep link back to this app so recipients can view the item
   const handleShare = useCallback(async () => {
-    const shareUrl = src ?? shot.page_url
-    if (!shareUrl) return
+    const appUrl = `${window.location.origin}${window.location.pathname}#/media?shot=${shot.id}`
     if (typeof navigator.share === "function") {
       try {
-        await navigator.share({ title: shot.term, url: shareUrl })
+        await navigator.share({ title: shot.term, url: appUrl })
       } catch {
         // user cancelled or error
       }
     } else {
-      const ok = await copyToClipboard(shareUrl)
-      setShareToast(ok ? "Link copied" : "Failed to copy")
+      const ok = await copyToClipboard(appUrl)
+      setShareToast(ok ? "App link copied" : "Failed to copy")
     }
-  }, [src, shot.page_url, shot.term])
+  }, [shot.id, shot.term])
 
   /** Distance between two touches */
   function touchDist(a: React.Touch, b: React.Touch) {

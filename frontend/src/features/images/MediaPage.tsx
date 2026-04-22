@@ -6,7 +6,7 @@ import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tansta
 import { api, type Screenshot, type ScreenshotTerm, type Performer, type Playlist, type MediaStatsPayload, type UserTagCount, type DiscoveredCreator } from "@/lib/api"
 import { MediaHero } from "@/components/MediaHero"
 
-import { useAppStore } from "@/store"
+import { useAppStore, type GridDensity } from "@/store"
 import { Spinner } from "@/components/Spinner"
 import { SkeletonGrid } from "@/components/Skeleton"
 import { EmptyState } from "@/components/EmptyState"
@@ -58,6 +58,16 @@ function readTermFromHash(): string | null {
   return new URLSearchParams(hash.slice(qIdx + 1)).get("term") || null
 }
 
+function readShotFromHash(): number | null {
+  const hash = window.location.hash
+  const qIdx = hash.indexOf("?")
+  if (qIdx === -1) return null
+  const raw = new URLSearchParams(hash.slice(qIdx + 1)).get("shot")
+  if (!raw) return null
+  const id = parseInt(raw, 10)
+  return isNaN(id) ? null : id
+}
+
 function writeTermToHash(term: string | null) {
   const basePath = window.location.hash.split("?")[0] || "#/media"
   if (term) window.location.hash = `${basePath}?term=${encodeURIComponent(term)}`
@@ -94,6 +104,11 @@ function isGif(src: string) {
   return /\.gif$/i.test(src)
 }
 
+
+function isNewShot(shot: Screenshot): boolean {
+  const captured = shot.captured_at ? new Date(shot.captured_at).getTime() : 0
+  return Date.now() - captured < 24 * 60 * 60 * 1000
+}
 
 function sourceLabel(s: string) {
   if (s === "ddg") return "DDG"
@@ -133,7 +148,7 @@ function parseAiTags(raw: string | null | undefined): string[] {
 
 type SortOrder = "newest" | "oldest" | "az" | "rating" | "random"
 type TabFilter = "all" | "ddg" | "redgifs" | "tube" | "favorites" | "videos" | "images" | "creators" | "rated"
-type GridDensity = "compact" | "normal" | "spacious"
+// GridDensity imported from @/store
 type ViewMode = "grid" | "list" | "timeline" | "feed" | "mosaic"
 // Simplified defaults
 const DEFAULT_GRID_DENSITY: GridDensity = "normal"
@@ -186,14 +201,21 @@ function useResponsiveColCount(density: GridDensity): number {
     return w >= 768 ? 3 : w >= 640 ? 2 : 2
   })
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
     function update() {
-      const w = window.innerWidth
-      if (density === "compact") setColCount(w >= 1024 ? 6 : w >= 768 ? 5 : w >= 640 ? 4 : 3)
-      else if (density === "normal") setColCount(3)
-      else setColCount(w >= 768 ? 3 : w >= 640 ? 2 : 2)
+      if (timeoutId) clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        const w = window.innerWidth
+        if (density === "compact") setColCount(w >= 1024 ? 6 : w >= 768 ? 5 : w >= 640 ? 4 : 3)
+        else if (density === "normal") setColCount(3)
+        else setColCount(w >= 768 ? 3 : w >= 640 ? 2 : 2)
+      }, 150)
     }
     window.addEventListener("resize", update)
-    return () => window.removeEventListener("resize", update)
+    return () => {
+      window.removeEventListener("resize", update)
+      if (timeoutId) clearTimeout(timeoutId)
+    }
   }, [density])
   return colCount
 }
@@ -630,6 +652,11 @@ const MediaCard = memo(function MediaCard({
 
         <div className="absolute top-1.5 left-1.5 flex flex-col gap-1">
           <div className="flex gap-1">
+            {isNewShot(shot) && (
+              <span className="rounded bg-accent/90 px-1.5 py-1 text-[10px] font-bold leading-none text-white shadow sm:px-1 sm:py-0.5 sm:text-[9px]">
+                NEW
+              </span>
+            )}
             {gif && (
               <span className="rounded bg-emerald-500/80 px-1.5 py-1 text-[10px] font-bold leading-none text-white shadow sm:px-1 sm:py-0.5 sm:text-[9px]">
                 GIF
@@ -1284,7 +1311,8 @@ export function MediaPage() {
   const [ftsSearching, setFtsSearching] = useState(false)
   const [autoDescribe, setAutoDescribe] = useState(false)
   const [describeProgress, setDescribeProgress] = useState<{ done: number; total: number } | null>(null)
-  const [gridDensity, setGridDensity] = useState<GridDensity>("normal")
+  const gridDensity = useAppStore((s) => s.gridDensity)
+  const setGridDensity = useAppStore((s) => s.setGridDensity)
   const [filterDescribed, setFilterDescribed] = useState(false)
   const [playlistDropdownOpen, setPlaylistDropdownOpen] = useState(false)
   const [createPlaylistOpen, setCreatePlaylistOpen] = useState(false)
@@ -1292,7 +1320,8 @@ export function MediaPage() {
   const [addToPlaylistOpen, setAddToPlaylistOpen] = useState(false)
   const [createPlaylistWithIds, setCreatePlaylistWithIds] = useState<number[] | undefined>(undefined)
 
-  const [viewHistory, setViewHistory] = useState<number[]>([])
+  const viewHistory = useAppStore((s) => s.recentlyViewed)
+  const addRecentlyViewed = useAppStore((s) => s.addRecentlyViewed)
   const [recentlyViewedCollapsed, setRecentlyViewedCollapsed] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>("grid")
   const [slideshowActive, setSlideshowActive] = useState(false)
@@ -2325,6 +2354,25 @@ export function MediaPage() {
     })
   }, [term, tab, viewMode, sortOrder, advancedFilters, filterDescribed, onlyUnlinked, onlyUnrated, onlyRecent, visibleShots.length])
 
+  // ── Deep-link: open shot from URL hash ?shot=123 ────────────────────────
+  useEffect(() => {
+    const shotId = readShotFromHash()
+    if (!shotId) return
+    // Wait for data to load, then open the shot
+    const interval = setInterval(() => {
+      const shot = shotById.get(shotId)
+      if (shot) {
+        clearInterval(interval)
+        openMedia(shot)
+        // Clean the hash so refreshing doesn't reopen
+        const base = window.location.hash.split("?")[0] || "#/media"
+        window.location.hash = base
+      }
+    }, 300)
+    const timeout = setTimeout(() => clearInterval(interval), 10000)
+    return () => { clearInterval(interval); clearTimeout(timeout) }
+  }, [shotById])
+
   // ── Lightbox ─────────────────────────────────────────────────────────────
 
   const lightboxShot = lightboxShotId != null ? (shotById.get(lightboxShotId) ?? null) : null
@@ -2563,7 +2611,7 @@ export function MediaPage() {
   const gridClass = GRID_CLASSES[gridDensity]
 
   function openMedia(shot: Screenshot) {
-    setViewHistory((prev) => [shot.id, ...prev.filter((h) => h !== shot.id)].slice(0, 20))
+    addRecentlyViewed(shot.id)
     // Use isVideoShot (checks source + URL) as primary; fall back to URL-extension check
     const src = getScreenshotMediaSrc(shot)
     if (isVideoShot(shot) || isVideo(src)) {
@@ -2974,6 +3022,14 @@ export function MediaPage() {
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
               <span className="hidden sm:inline">Open Reels</span>
+            </button>
+            <button
+              onClick={() => handleSurpriseMe()}
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-accent/30 bg-accent/10 px-2 py-2 text-xs font-medium text-accent transition-colors hover:bg-accent/20 sm:px-3"
+              title="Surprise me — open a random top-rated item (r)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <span className="hidden sm:inline">Surprise Me</span>
             </button>
 
             {/* Overflow menu */}

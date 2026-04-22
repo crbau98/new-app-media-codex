@@ -1759,15 +1759,12 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
                 f'{q} onlyfans nude gay',
                 f'{q} onlyfans leaked gay',
                 f'{q} site:onlyfans.com',
-                f'{q} site:coomer.st',        # OF archiver
-                f'{q} site:kemono.su',        # OF archiver
-            ]
+                                            ]
         elif platform_lower == "fansly":
             queries += [
                 f'{q} fansly nude gay',
                 f'{q} site:fansly.com',
-                f'{q} site:coomer.st',
-            ]
+                            ]
         elif platform_lower in ("twitter", "twitterx", "twitter/x"):
             queries += [
                 f'{q} site:x.com nude gay',

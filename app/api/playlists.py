@@ -91,6 +91,7 @@ def create_playlist(payload: PlaylistCreate) -> JSONResponse:
 
 @router.get("/{playlist_id}")
 def get_playlist(
+    request: Request,
     playlist_id: int,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),

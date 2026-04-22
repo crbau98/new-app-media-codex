@@ -109,7 +109,7 @@ export function MediaDiscoveryPanel({
       const toImport = orderedDiscoveryResults.filter(
         (c) => !addedSet.has(c.username.toLowerCase()) && !isImportedUsername?.(c.username)
       )
-      if (!toImport.length) return Promise.resolve({ created: 0, existing: 0, performers: [] })
+      if (!toImport.length) return Promise.resolve({ created: 0, existing: 0, performers: [], skipped: 0, existing_performers: [] })
       return api.importDiscoveredPerformers(toImport, true)
     },
     onSuccess: (result) => {

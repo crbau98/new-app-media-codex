@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { useAppStore, type Notification } from "../store"
+import { useAppStore, type AppNotification } from "../store"
 import { cn } from "@/lib/cn"
 
 function relativeTime(ts: number): string {
@@ -14,7 +14,7 @@ function relativeTime(ts: number): string {
   return `${days}d ago`
 }
 
-function NotificationIcon({ type }: { type: Notification["type"] }) {
+function NotificationIcon({ type }: { type: AppNotification["type"] }) {
   const base = "shrink-0 w-4 h-4"
   switch (type) {
     case "crawl":

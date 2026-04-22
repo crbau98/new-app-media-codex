@@ -2172,8 +2172,9 @@ class Database:
 
         return self._cached_snapshot(cache_key, 30.0, build)
 
-    def backfill_screenshot_performers(self) -> int:
-        """Link or repair screenshot performer assignments when the identity evidence is decisive."""
+    def backfill_screenshot_performers(self, batch_size: int = 500) -> int:
+        """Link or repair screenshot performer assignments when the identity evidence is decisive.
+        Processes screenshots in batched chunks to avoid OOM at scale."""
         with self.connect() as conn:
             performers = conn.execute(
                 "SELECT id, username, display_name, platform, twitter_username, reddit_username, profile_url FROM performers"
@@ -2188,51 +2189,56 @@ class Database:
         if not signatures:
             return 0
         updated = 0
-        with self.connect() as conn:
-            screenshots = conn.execute(
-                "SELECT id, term, source, page_url, source_url, thumbnail_url, ai_summary, performer_id "
-                "FROM screenshots"
-            ).fetchall()
-            for row in screenshots:
-                candidate = {
-                    "term": row["term"],
-                    "source": row["source"],
-                    "page_url": row["page_url"],
-                    "url": row["source_url"],
-                    "image": row["thumbnail_url"],
-                    "summary": row["ai_summary"],
-                }
-                best_match = find_best_identity_match(candidate, signatures)
-                current_performer_id = row["performer_id"]
+        offset = 0
+        while True:
+            with self.connect() as conn:
+                screenshots = conn.execute(
+                    "SELECT id, term, source, page_url, source_url, thumbnail_url, ai_summary, performer_id "
+                    "FROM screenshots ORDER BY id LIMIT ? OFFSET ?",
+                    (batch_size, offset),
+                ).fetchall()
+                if not screenshots:
+                    break
+                for row in screenshots:
+                    candidate = {
+                        "term": row["term"],
+                        "source": row["source"],
+                        "page_url": row["page_url"],
+                        "url": row["source_url"],
+                        "image": row["thumbnail_url"],
+                        "summary": row["ai_summary"],
+                    }
+                    best_match = find_best_identity_match(candidate, signatures)
+                    current_performer_id = row["performer_id"]
 
-                if current_performer_id is None:
+                    if current_performer_id is None:
+                        if best_match is None or best_match.get("performer_id") is None:
+                            continue
+                        cur = conn.execute(
+                            "UPDATE screenshots SET performer_id = ? WHERE id = ? AND performer_id IS NULL",
+                            (best_match["performer_id"], row["id"]),
+                        )
+                        updated += cur.rowcount
+                        continue
+
                     if best_match is None or best_match.get("performer_id") is None:
                         continue
+                    if int(best_match["performer_id"]) == int(current_performer_id):
+                        continue
+
+                    current_signature = signature_by_id.get(int(current_performer_id))
+                    if current_signature is None:
+                        continue
+                    current_score = float(score_candidate_identity(candidate, current_signature)["score"])
+                    best_score = float(best_match["score"])
+                    if current_score >= 5.0 or best_score < current_score + 3.0:
+                        continue
                     cur = conn.execute(
-                        "UPDATE screenshots SET performer_id = ? WHERE id = ? AND performer_id IS NULL",
-                        (best_match["performer_id"], row["id"]),
+                        "UPDATE screenshots SET performer_id = ? WHERE id = ? AND performer_id = ?",
+                        (best_match["performer_id"], row["id"], current_performer_id),
                     )
                     updated += cur.rowcount
-                    continue
-
-                if best_match is None or best_match.get("performer_id") is None:
-                    continue
-                if int(best_match["performer_id"]) == int(current_performer_id):
-                    continue
-
-                current_signature = signature_by_id.get(int(current_performer_id))
-                if current_signature is None:
-                    continue
-                current_score = float(score_candidate_identity(candidate, current_signature)["score"])
-                best_score = float(best_match["score"])
-                if current_score >= 5.0 or best_score < current_score + 3.0:
-                    continue
-                cur = conn.execute(
-                    "UPDATE screenshots SET performer_id = ? WHERE id = ? AND performer_id = ?",
-                    (best_match["performer_id"], row["id"], current_performer_id),
-                )
-                updated += cur.rowcount
-            conn.commit()
+            offset += batch_size
         if updated:
             self._invalidate_after_write()
         return updated

@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from app.config import Settings
 from app.db import Database
+from app.performer_identity import normalize_identity_alias
 
 logger = logging.getLogger(__name__)
 
@@ -270,11 +271,25 @@ class ResearchService:
             logger.info("seed: added %d default performers, queued for capture", seeded)
 
     def start(self) -> None:
-        # Clean up stale WAL/SHM files that cause disk I/O errors on network storage
+        # Clean up stale WAL/SHM files that cause disk I/O errors on network storage.
+        # Only remove when we can acquire an exclusive lock — otherwise another process
+        # may be using the DB and deletion would corrupt it.
         db_path = self.db.path
+        can_delete_wal = False
+        try:
+            # Test exclusive lock via sqlite3 URI mode; fails if DB is busy
+            import sqlite3
+            test_conn = sqlite3.connect(f"file:{db_path}?mode=rwc", uri=True, timeout=1)
+            test_conn.execute("PRAGMA locking_mode = EXCLUSIVE")
+            test_conn.execute("BEGIN IMMEDIATE")
+            test_conn.execute("COMMIT")
+            test_conn.close()
+            can_delete_wal = True
+        except Exception:
+            can_delete_wal = False
         for suffix in ["-wal", "-shm"]:
             wal_file = db_path.parent / (db_path.name + suffix)
-            if wal_file.exists():
+            if wal_file.exists() and can_delete_wal:
                 try:
                     wal_file.unlink()
                     logger.info("startup: removed stale %s", wal_file.name)
@@ -549,19 +564,18 @@ class ResearchService:
         performer_lookup: dict[str, int] = {}
         with self.db.connect() as conn:
             for row in conn.execute("SELECT id, username, display_name, twitter_username, reddit_username FROM performers").fetchall():
-                performer_lookup[row["username"].lower()] = row["id"]
+                performer_lookup[normalize_identity_alias(row["username"])] = row["id"]
                 if row["display_name"]:
-                    performer_lookup[row["display_name"].lower()] = row["id"]
+                    performer_lookup[normalize_identity_alias(row["display_name"])] = row["id"]
                 if row["twitter_username"]:
-                    performer_lookup[row["twitter_username"].lower()] = row["id"]
+                    performer_lookup[normalize_identity_alias(row["twitter_username"])] = row["id"]
                 if row["reddit_username"]:
-                    performer_lookup[row["reddit_username"].lower()] = row["id"]
+                    performer_lookup[normalize_identity_alias(row["reddit_username"])] = row["id"]
 
         # ── Phase 1: Term-based capture (TERM_QUERIES + CREATOR_QUERIES) ──────
         for result in capture_screenshots(image_dir, db=self.db, settings=settings):
             if result["ok"]:
-                term_lower = result["term"].lower()
-                performer_id = performer_lookup.get(term_lower)
+                performer_id = performer_lookup.get(normalize_identity_alias(result["term"]))
                 self.db.insert_screenshot(
                     term=result["term"],
                     source=result["source"],
