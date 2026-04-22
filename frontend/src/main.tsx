@@ -1,4 +1,4 @@
-import { StrictMode, Component, type ReactNode } from 'react'
+import { Component, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SpeedInsights } from '@vercel/speed-insights/react'
@@ -125,12 +125,10 @@ const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('Root element #root not found')
 
 createRoot(rootEl).render(
-  <StrictMode>
-    <AppErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <App />
-        <SpeedInsights />
-      </QueryClientProvider>
-    </AppErrorBoundary>
-  </StrictMode>
+  <AppErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <App />
+      <SpeedInsights />
+    </QueryClientProvider>
+  </AppErrorBoundary>
 )

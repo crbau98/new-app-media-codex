@@ -1,8 +1,10 @@
 import { useState, useCallback, useRef, useMemo, useEffect, memo, lazy, Suspense, useDeferredValue, startTransition } from "react"
 import { createPortal } from "react-dom"
+import { motion } from "framer-motion"
 import { useWindowVirtualizer } from "@tanstack/react-virtual"
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api, type Screenshot, type ScreenshotTerm, type Performer, type Playlist, type MediaStatsPayload, type UserTagCount, type DiscoveredCreator } from "@/lib/api"
+import { MediaHero } from "@/components/MediaHero"
 
 import { useAppStore } from "@/store"
 import { Spinner } from "@/components/Spinner"
@@ -517,7 +519,7 @@ const MediaCard = memo(function MediaCard({
   }, [src])
 
   return (
-    <article
+    <motion.article
       role="button"
       tabIndex={0}
       onClick={() => (batchMode ? onSelect() : onClick())}
@@ -526,14 +528,19 @@ const MediaCard = memo(function MediaCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); batchMode ? onSelect() : onClick() } }}
       onContextMenu={onContextMenu}
       className={cn(
-        "group relative aspect-square cursor-pointer overflow-hidden bg-black/25 transition-transform duration-200",
+        "group relative aspect-square cursor-pointer overflow-hidden bg-black/25",
         !profileTile && "content-card content-card-interactive",
         profileTile
           ? "rounded-none border-0 shadow-none hover:brightness-[1.06] active:brightness-95"
-          : "rounded-[24px] border border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.18)] hover:scale-[1.02]",
+          : "rounded-[24px] border border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.18)]",
         selected && "ring-2 ring-accent"
       )}
       style={index <= 20 ? { animationDelay: `${index * 30}ms` } : undefined}
+      whileHover={profileTile ? undefined : { scale: 1.02, transition: { duration: 0.25, ease: [0.16, 1, 0.3, 1] } }}
+      whileTap={profileTile ? undefined : { scale: 0.98, transition: { duration: 0.1 } }}
+      initial={index <= 20 ? { opacity: 0, y: 20, scale: 0.96 } : false}
+      animate={index <= 20 ? { opacity: 1, y: 0, scale: 1 } : false}
+      transition={index <= 20 ? { duration: 0.4, delay: index * 0.03, ease: [0.16, 1, 0.3, 1] } : undefined}
     >
       <div style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
         {/* Shimmer while image loads */}
@@ -748,7 +755,7 @@ const MediaCard = memo(function MediaCard({
           </div>
         </div>
       </div>
-    </article>
+    </motion.article>
   )
 }, (prev, next) =>
   prev.shot.id === next.shot.id &&
@@ -2692,6 +2699,13 @@ export function MediaPage() {
           </div>
         </div>
       </section>
+
+      {/* ── Cinematic Hero ───────────────────────────────────────────────── */}
+      {!search && !activePlaylistId && tab === "all" && visibleShots.length > 0 && (
+        <div className="px-3 sm:px-4">
+          <MediaHero shots={visibleShots} onClick={openMedia} />
+        </div>
+      )}
 
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
       <div className="sticky top-14 z-20 px-2 py-2 backdrop-blur-md sm:px-4">

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useDeferredValue, useMemo, startTransition } from "react"
 import type { ReactElement } from "react"
+import { AnimatePresence, motion } from "framer-motion"
 import { AppShell } from "./components/AppShell"
 import { useAppStore, type ActiveView } from "./store"
 import { useCommandPalette } from "./hooks"
@@ -189,6 +190,8 @@ function App() {
     }
   }, [deferredActiveView])
 
+  const viewKey = deferredActiveView
+
   return (
     <>
       <CrawlNotifier />
@@ -196,7 +199,18 @@ function App() {
       <AppShell>
         <div className="min-h-full">
           <Suspense fallback={<PageSkeleton activeView={deferredActiveView} />}>
-            {currentView}
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={viewKey}
+                initial={{ opacity: 0, y: 16, scale: 0.985 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -12, scale: 0.99 }}
+                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                className="min-h-full"
+              >
+                {currentView}
+              </motion.div>
+            </AnimatePresence>
           </Suspense>
         </div>
         <Suspense fallback={null}>

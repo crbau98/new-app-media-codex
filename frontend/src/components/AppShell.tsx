@@ -1,4 +1,4 @@
-import { type ReactNode, useState, useEffect, lazy, Suspense } from "react"
+import { type ReactNode, lazy, Suspense } from "react"
 import { Sidebar } from "./Sidebar"
 import { TopBar } from "./TopBar"
 import { BottomTabBar } from "./BottomTabBar"
@@ -28,31 +28,6 @@ export function AppShell({ children }: AppShellProps) {
   const activeView = useAppStore((s) => s.activeView)
   const mainRef = useScrollRestoration(activeView)
 
-  const [shellEnhancementsReady, setShellEnhancementsReady] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    let timeoutId: ReturnType<typeof setTimeout> | undefined
-
-    const enableEnhancements = () => {
-      if (!cancelled) setShellEnhancementsReady(true)
-    }
-
-    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      const idleId = window.requestIdleCallback(enableEnhancements, { timeout: 1200 })
-      return () => {
-        cancelled = true
-        window.cancelIdleCallback(idleId)
-      }
-    }
-
-    timeoutId = setTimeout(enableEnhancements, 400)
-    return () => {
-      cancelled = true
-      if (timeoutId !== undefined) clearTimeout(timeoutId)
-    }
-  }, [])
-
   const desktopSidebarOffset = collapsed ? "md:pl-[72px]" : "md:pl-[240px]"
 
   return (
@@ -63,15 +38,13 @@ export function AppShell({ children }: AppShellProps) {
       >
         Skip to main content
       </a>
-      {shellEnhancementsReady && <ConnectivityGate />}
-      {shellEnhancementsReady && (
-        <Suspense fallback={null}>
-          <OfflineBanner />
-          <InstallPrompt />
-        </Suspense>
-      )}
+      <ConnectivityGate />
+      <Suspense fallback={null}>
+        <OfflineBanner />
+        <InstallPrompt />
+      </Suspense>
       <Sidebar />
-      <div className={`min-h-screen transition-[padding] duration-200 ${desktopSidebarOffset}`}>
+      <div className={`min-h-screen transition-[padding] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${desktopSidebarOffset}`}>
         <TopBar />
         <main
           id="main-content"
@@ -79,18 +52,14 @@ export function AppShell({ children }: AppShellProps) {
           className="min-h-screen overflow-x-hidden px-4 pb-20 pt-[3.5rem] sm:px-6 md:pb-8 md:pt-16 lg:px-10"
           style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
         >
-          <div key={activeView} className="animate-page-enter min-h-full">
-            {children}
-          </div>
+          {children}
         </main>
       </div>
       <BottomTabBar />
-      {shellEnhancementsReady && (
-        <Suspense fallback={null}>
-          <ScrollToTop />
-          <FloatingActionButton />
-        </Suspense>
-      )}
+      <Suspense fallback={null}>
+        <ScrollToTop />
+        <FloatingActionButton />
+      </Suspense>
       <ToastContainer />
     </div>
   )
