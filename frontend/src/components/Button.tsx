@@ -1,0 +1,68 @@
+import { ButtonHTMLAttributes, forwardRef } from 'react'
+import { cn } from '@/lib/cn'
+import { Spinner } from './Spinner'
+
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
+type Size = 'sm' | 'md' | 'lg'
+
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: Variant
+  size?: Size
+  /** @deprecated use isLoading */
+  loading?: boolean
+  isLoading?: boolean
+}
+
+const variants: Record<Variant, string> = {
+  primary: 'btn-primary',
+  secondary:
+    'bg-bg-elevated border border-border text-text-primary hover:border-accent/60 hover:text-accent hover:bg-accent/5 hover:-translate-y-px hover:shadow-[0_6px_18px_-8px_rgba(168,85,247,0.35)]',
+  ghost:
+    'text-text-secondary hover:text-text-primary hover:bg-white/[0.05]',
+  danger:
+    'bg-red/10 border border-red/30 text-red hover:bg-red/20 hover:-translate-y-px',
+}
+
+const sizes: Record<Size, string> = {
+  sm: 'px-3 py-1 text-xs rounded-md',
+  md: 'px-4 py-2 text-sm rounded-lg',
+  lg: 'px-5 py-2.5 text-sm rounded-lg',
+}
+
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  (
+    {
+      variant = 'primary',
+      size = 'md',
+      loading = false,
+      isLoading = false,
+      className,
+      children,
+      disabled,
+      ...props
+    },
+    ref
+  ) => {
+    const busy = loading || isLoading
+
+    return (
+      <button
+        ref={ref}
+        disabled={disabled || busy}
+        aria-busy={busy || undefined}
+        className={cn(
+          'relative inline-flex items-center justify-center gap-2 overflow-hidden font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-150',
+          'cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed',
+          'active:scale-[0.97]',
+          variants[variant],
+          sizes[size],
+          className
+        )}
+        {...props}
+      >
+        {busy ? <Spinner size="sm" label="Loading" /> : children}
+      </button>
+    )
+  }
+)
+Button.displayName = 'Button'
