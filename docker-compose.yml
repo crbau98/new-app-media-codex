@@ -11,6 +11,12 @@ services:
     restart: unless-stopped
     volumes:
       - app_data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
 
 volumes:
   app_data:

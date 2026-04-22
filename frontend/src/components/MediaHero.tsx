@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import type { Screenshot } from "@/lib/api"
-import { getScreenshotMediaSrc, isVideoShot } from "@/lib/media"
+import { isVideoShot } from "@/lib/media"
 import { resolvePublicUrl } from "@/lib/backendOrigin"
 
 interface MediaHeroProps {

@@ -1,39 +1,45 @@
+# syntax=docker/dockerfile:1
+
+# ── Frontend builder ───────────────────────────────────────────────────────────
 FROM node:22-slim AS frontend-build
-
 WORKDIR /frontend
-
 COPY frontend/package*.json ./
-RUN npm ci
-
+RUN npm ci --legacy-peer-deps
 COPY frontend ./
 RUN npm run build
 
-FROM python:3.12-slim AS runtime
-
+# ── Python builder ─────────────────────────────────────────────────────────────
+FROM python:3.12-slim AS python-build
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PORT=8080
-
+    PIP_NO_CACHE_DIR=1
 WORKDIR /app
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
     gcc \
     build-essential \
+    && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt /app/requirements.txt
+RUN pip install --user -r /app/requirements.txt
+
+# ── Runtime ────────────────────────────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8080
+WORKDIR /app
+
+# Runtime-only system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install -r /app/requirements.txt
+# Copy installed Python packages from builder
+COPY --from=python-build /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
 
+# Copy application code
 COPY app /app/app
-COPY README.md /app/README.md
 COPY --from=frontend-build /app/static/dist /app/app/static/dist
-
-# Do NOT mkdir /app/data here — Render mounts a persistent disk at /app/data
-# at runtime. Creating it at build time causes filesystem conflicts.
-# The app creates necessary subdirectories on startup via config.py.
 
 EXPOSE 8080
 

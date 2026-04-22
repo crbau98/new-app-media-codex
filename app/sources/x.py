@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import logging
 import re
+import time
 from typing import Any
 
 import requests
@@ -20,6 +23,8 @@ from app.sources.base import (
     score_item,
     search_web,
 )
+
+logger = logging.getLogger(__name__)
 
 X_QUERIES = {
     "onlyfans_creators": [
@@ -71,6 +76,20 @@ X_QUERIES = {
 }
 
 
+def _extract_video_url_from_html(html_text: str) -> str:
+    """Try to extract a direct video URL from X/Twitter public HTML."""
+    # Look for video variants in embedded JSON
+    for pattern in (
+        r'"video_url":"(https://[^"]+\.mp4[^"]*)"',
+        r'"content_url":"(https://[^"]+\.mp4[^"]*)"',
+        r'"source":"(https://[^"]+\.mp4[^"]*)"',
+    ):
+        m = re.search(pattern, html_text)
+        if m:
+            return m.group(1).replace("\\u002F", "/").replace("\\/", "/")
+    return ""
+
+
 def scrape_x_post(session: requests.Session, settings: Settings, url: str) -> dict[str, Any]:
     response = session.get(url, timeout=settings.request_timeout_seconds)
     response.raise_for_status()
@@ -97,7 +116,15 @@ def scrape_x_post(session: requests.Session, settings: Settings, url: str) -> di
             description = clean_text(node["content"])
             if description:
                 break
+
     image_urls = extract_image_candidates(html_text, url, selectors=("img",), limit=6)
+
+    # Try to extract video URLs from tweet entities in the HTML
+    video_url = _extract_video_url_from_html(html_text)
+    video_urls: list[dict[str, str]] = []
+    if video_url:
+        video_urls.append({"source_url": video_url, "page_url": url})
+
     author = ""
     match = re.search(r"x\.com/([^/]+)/status/", url)
     if match:
@@ -112,27 +139,57 @@ def scrape_x_post(session: requests.Session, settings: Settings, url: str) -> di
         "domain": "x.com",
         "image_url": image_urls[0] if image_urls else "",
         "image_urls": image_urls,
+        "video_urls": video_urls,
         "metadata": {"mode": "public_html"},
     }
+
+
+def _backoff_sleep(attempt: int, base: float = 2.0) -> None:
+    """Exponential backoff with jitter."""
+    sleep_time = base * (2 ** attempt) + (attempt * 0.5)
+    time.sleep(min(sleep_time, 60.0))
 
 
 def search_x_api(session: requests.Session, settings: Settings, query: str, max_results: int | None = None) -> list[dict[str, Any]]:
     if not settings.x_bearer_token:
         return []
-    response = session.get(
-        "https://api.x.com/2/tweets/search/recent",
-        params={
-            "query": query,
-            "max_results": max(10, min(max_results or settings.x_results, 100)),
-            "expansions": "author_id,attachments.media_keys",
-            "tweet.fields": "created_at,text,author_id",
-            "user.fields": "username,name",
-            "media.fields": "preview_image_url,url",
-        },
-        headers={"Authorization": f"Bearer {settings.x_bearer_token}", "User-Agent": settings.user_agent},
-        timeout=settings.request_timeout_seconds,
-    )
-    response.raise_for_status()
+
+    last_error: Exception | None = None
+    for attempt in range(3):
+        if attempt > 0:
+            _backoff_sleep(attempt)
+        try:
+            response = session.get(
+                "https://api.x.com/2/tweets/search/recent",
+                params={
+                    "query": query,
+                    "max_results": max(10, min(max_results or settings.x_results, 100)),
+                    "expansions": "author_id,attachments.media_keys",
+                    "tweet.fields": "created_at,text,author_id",
+                    "user.fields": "username,name",
+                    "media.fields": "preview_image_url,url",
+                },
+                headers={"Authorization": f"Bearer {settings.x_bearer_token}", "User-Agent": settings.user_agent},
+                timeout=settings.request_timeout_seconds,
+            )
+            if response.status_code == 429:
+                # Rate limited — retry with backoff
+                retry_after = int(response.headers.get("Retry-After", "0") or "0")
+                if retry_after:
+                    time.sleep(retry_after)
+                else:
+                    _backoff_sleep(attempt)
+                continue
+            response.raise_for_status()
+            break
+        except Exception as exc:
+            last_error = exc
+            continue
+    else:
+        if last_error:
+            logger.warning("x_api: exhausted retries for query '%s': %s", query, last_error)
+        return []
+
     payload = response.json()
     users = {user["id"]: user for user in payload.get("includes", {}).get("users", [])}
     media = {asset["media_key"]: asset for asset in payload.get("includes", {}).get("media", [])}
@@ -141,11 +198,20 @@ def search_x_api(session: requests.Session, settings: Settings, query: str, max_
         user = users.get(tweet.get("author_id", ""), {})
         media_keys = tweet.get("attachments", {}).get("media_keys", [])
         image_urls: list[str] = []
+        video_urls: list[dict[str, str]] = []
         for key in media_keys:
             asset = media.get(key, {})
             candidate = normalize_image_url(asset.get("url") or asset.get("preview_image_url") or "")
             if is_useful_image_url(candidate):
                 image_urls.append(candidate)
+            # Detect video attachments
+            if asset.get("type") == "video" or asset.get("variants"):
+                # Use preview image as thumbnail, keep video metadata
+                video_urls.append({
+                    "source_url": candidate or "",
+                    "page_url": "",
+                    "media_key": key,
+                })
         username = user.get("username", "")
         page_url = f"https://x.com/{username}/status/{tweet['id']}" if username else f"https://x.com/i/web/status/{tweet['id']}"
         records.append(
@@ -158,6 +224,7 @@ def search_x_api(session: requests.Session, settings: Settings, query: str, max_
                 "domain": "x.com",
                 "image_url": image_urls[0] if image_urls else "",
                 "image_urls": dedupe_image_urls(image_urls),
+                "video_urls": video_urls,
                 "url": page_url,
                 "metadata": {"mode": "api"},
             }
@@ -173,7 +240,8 @@ def collect_x(session: requests.Session, settings: Settings, theme: Theme) -> tu
         api_records = []
         try:
             api_records = search_x_api(session, settings, query)
-        except Exception:
+        except Exception as exc:
+            logger.warning("x: API search failed for '%s': %s", query, exc)
             api_records = []
         for record in api_records:
             if record["url"] in seen_urls:
@@ -213,10 +281,15 @@ def collect_x(session: requests.Session, settings: Settings, theme: Theme) -> tu
             seen_urls.add(url)
             try:
                 scraped = scrape_x_post(session, settings, url)
-            except Exception:
+            except Exception as exc:
+                logger.debug("x: fallback scrape failed for %s: %s", url, exc)
                 continue
             combined = "\n".join([scraped["title"], scraped["summary"], scraped["content"]])
             compounds, mechanisms = extract_terms(combined)
+            metadata = dict(scraped["metadata"])
+            if scraped.get("video_urls"):
+                metadata["videos"] = scraped["video_urls"]
+                metadata["has_videos"] = True
             item = ResearchItem(
                 source_type="x",
                 theme=theme.slug,
@@ -232,7 +305,7 @@ def collect_x(session: requests.Session, settings: Settings, theme: Theme) -> tu
                 score=score_item(theme, combined, compounds, mechanisms),
                 compounds=compounds,
                 mechanisms=mechanisms,
-                metadata=scraped["metadata"],
+                metadata=metadata,
             )
             items.append(item)
             images.extend(build_image_records("x_image", theme.slug, item.title, url, scraped.get("image_urls", [])))

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+import random
+import time
+from typing import Any, Callable, TypeVar
 from urllib.parse import urlparse
 
 import requests
@@ -16,14 +20,16 @@ from app.sources.base import (
     search_web,
 )
 
-ANECDOTE_QUERIES = {
+logger = logging.getLogger(__name__)
+
+_ANECDOTE_QUERIES = {
     "libido": ["male libido experience forum", "sexual desire increase experience"],
     "pssd": ["persistent ssri sexual dysfunction experience", "pssd story"],
     "ejaculation_latency": ["premature ejaculation talk to frank forum", "premature ejaculation experience"],
     "erections": ["erection problems forum", "franktalk erectile dysfunction"],
     "orgasm": ["anorgasmia experience forum", "orgasm dysfunction experience"],
 }
-IMAGE_QUERIES = {
+_IMAGE_QUERIES = {
     "libido": "testosterone molecule",
     "pssd": "serotonin synapse",
     "ejaculation_latency": "male reproductive anatomy",
@@ -31,13 +37,59 @@ IMAGE_QUERIES = {
     "orgasm": "dopamine brain illustration",
 }
 
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+]
+
+T = TypeVar("T")
+
+
+def _rotate_user_agent(session: requests.Session) -> None:
+    session.headers["User-Agent"] = random.choice(_USER_AGENTS)
+
+
+def _retry_with_backoff(
+    func: Callable[..., T],
+    *args: Any,
+    max_attempts: int = 3,
+    **kwargs: Any,
+) -> T:
+    """Call *func* up to *max_attempts* times with exponential backoff."""
+    last_error: Exception | None = None
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            sleep_time = min(2 ** attempt + random.uniform(0, 1), 30.0)
+            time.sleep(sleep_time)
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            last_error = exc
+            logger.debug("duckduckgo: attempt %d failed for %s: %s", attempt + 1, func.__name__, exc)
+    if last_error:
+        raise last_error
+    raise RuntimeError("Unexpected empty retry loop")
+
+
+def search_web_retry(session: requests.Session, settings: Settings, query: str, limit: int) -> list[dict[str, str]]:
+    """Wrapper around base.search_web with user-agent rotation and retry logic."""
+    _rotate_user_agent(session)
+    try:
+        return _retry_with_backoff(search_web, session, settings, query, limit, max_attempts=3)
+    except Exception as exc:
+        logger.warning("duckduckgo: search_web failed after retries for '%s': %s", query, exc)
+        return []
+
 
 def collect_anecdotes(session: requests.Session, settings: Settings, theme: Theme, query: str) -> tuple[list[ResearchItem], list[ImageRecord]]:
     items: list[ResearchItem] = []
     images: list[ImageRecord] = []
     seen_urls: set[str] = set()
-    for search_query in ANECDOTE_QUERIES.get(theme.slug, [f"{theme.label} experience forum"]):
-        results = search_web(session, settings, search_query, settings.anecdote_results)
+    for search_query in _ANECDOTE_QUERIES.get(theme.slug, [f"{theme.label} experience forum"]):
+        results = search_web_retry(session, settings, search_query, settings.anecdote_results)
         for row in results:
             url = row.get("href") or row.get("url")
             title = (row.get("title") or "").strip()
@@ -88,12 +140,19 @@ def collect_anecdotes(session: requests.Session, settings: Settings, theme: Them
 
 def collect_images(session: requests.Session, settings: Settings, theme: Theme, query: str) -> list[ImageRecord]:
     images: list[ImageRecord] = []
-    image_query = IMAGE_QUERIES.get(theme.slug, query)
-    results = session.get(
-        "https://api.openverse.org/v1/images/",
-        params={"q": image_query, "page_size": settings.image_results},
-        timeout=settings.request_timeout_seconds,
-    ).json().get("results", [])
+    image_query = _IMAGE_QUERIES.get(theme.slug, query)
+    try:
+        response = session.get(
+            "https://api.openverse.org/v1/images/",
+            params={"q": image_query, "page_size": settings.image_results},
+            timeout=settings.request_timeout_seconds,
+        )
+        response.raise_for_status()
+        results = response.json().get("results", [])
+    except Exception as exc:
+        logger.warning("duckduckgo: openverse request failed: %s", exc)
+        results = []
+
     for row in results:
         image_url = row.get("url")
         if not image_url:
@@ -121,7 +180,7 @@ def collect_images(session: requests.Session, settings: Settings, theme: Theme, 
     if images:
         return images
 
-    fallback_results = search_web(session, settings, f"{query} diagram image", settings.image_results)
+    fallback_results = search_web_retry(session, settings, f"{query} diagram image", settings.image_results)
     for row in fallback_results:
         page_url = row.get("href") or row.get("url")
         title = (row.get("title") or query)[:180]

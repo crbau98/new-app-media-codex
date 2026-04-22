@@ -12,7 +12,7 @@ interface TabItem {
 const TABS: TabItem[] = [
   {
     id: "images",
-    label: "Media",
+    label: "Home",
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -35,7 +35,7 @@ const TABS: TabItem[] = [
   },
   {
     id: "settings",
-    label: "Settings",
+    label: "Profile",
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3" />

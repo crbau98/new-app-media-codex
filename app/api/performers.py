@@ -1103,7 +1103,7 @@ def browse_performers(
         },
         sort_keys=True,
     )
-    return _get_cached_performers_payload(
+    payload = _get_cached_performers_payload(
         request.app.state,
         cache_key,
         15.0,
@@ -1122,6 +1122,19 @@ def browse_performers(
             offset=offset,
         ),
     )
+
+    # Attach engagement data to each performer
+    performers = payload.get("performers", [])
+    if performers:
+        pids = [int(p["id"]) for p in performers if p.get("id")]
+        engagement = db.get_performers_engagement(pids)
+        for p in performers:
+            pid = int(p["id"])
+            eng = engagement.get(pid, {})
+            p["followers_count"] = eng.get("followers_count", 0)
+            p["is_following"] = eng.get("is_following", False)
+
+    return payload
 
 
 # ── Capture Queue ─────────────────────────────────────────────────────────

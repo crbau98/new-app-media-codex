@@ -196,7 +196,7 @@ export function HypothesesPage() {
   const [savedOnly, setSavedOnly] = useState(false)
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
   const [offset, setOffset] = useState(0)
-  const [pinnedIds, setPinnedIds] = useState<number[]>(() => getPinnedIds())
+  const [pinnedIds] = useState<number[]>(() => getPinnedIds())
 
   // Reset offset when filters or sort change
   useEffect(() => {

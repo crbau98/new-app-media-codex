@@ -232,6 +232,10 @@ CREATE TABLE IF NOT EXISTS performers (
     tags TEXT,
     follower_count INTEGER,
     media_count INTEGER,
+    likes_count INTEGER NOT NULL DEFAULT 0,
+    views_count INTEGER NOT NULL DEFAULT 0,
+    comments_count INTEGER NOT NULL DEFAULT 0,
+    followers_count INTEGER NOT NULL DEFAULT 0,
     is_verified INTEGER DEFAULT 0,
     is_favorite INTEGER DEFAULT 0,
     status TEXT DEFAULT 'active',
@@ -312,6 +316,66 @@ CREATE TABLE IF NOT EXISTS playlist_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist ON playlist_items(playlist_id);
+
+-- Engagement tables
+CREATE TABLE IF NOT EXISTS likes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    screenshot_id INTEGER REFERENCES screenshots(id) ON DELETE CASCADE,
+    performer_id INTEGER REFERENCES performers(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, screenshot_id),
+    UNIQUE(user_id, performer_id)
+);
+
+CREATE TABLE IF NOT EXISTS views (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    screenshot_id INTEGER REFERENCES screenshots(id) ON DELETE CASCADE,
+    performer_id INTEGER REFERENCES performers(id) ON DELETE CASCADE,
+    source_page TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+    screenshot_id INTEGER REFERENCES screenshots(id) ON DELETE CASCADE,
+    performer_id INTEGER REFERENCES performers(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    likes_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    edited_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS follows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    performer_id INTEGER NOT NULL REFERENCES performers(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, performer_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE,
+    display_name TEXT,
+    avatar_url TEXT,
+    bio TEXT,
+    created_at TEXT NOT NULL
+);
+
+-- Engagement indexes
+CREATE INDEX IF NOT EXISTS idx_likes_screenshot_id ON likes(screenshot_id);
+CREATE INDEX IF NOT EXISTS idx_likes_performer_id ON likes(performer_id);
+CREATE INDEX IF NOT EXISTS idx_likes_user_id ON likes(user_id);
+CREATE INDEX IF NOT EXISTS idx_views_screenshot_id ON views(screenshot_id);
+CREATE INDEX IF NOT EXISTS idx_views_created_at ON views(created_at);
+CREATE INDEX IF NOT EXISTS idx_comments_screenshot_id ON comments(screenshot_id);
+CREATE INDEX IF NOT EXISTS idx_comments_performer_id ON comments(performer_id);
+CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id);
+CREATE INDEX IF NOT EXISTS idx_follows_user_id ON follows(user_id);
+CREATE INDEX IF NOT EXISTS idx_follows_performer_id ON follows(performer_id);
 """
 
 
@@ -632,6 +696,21 @@ class Database:
             conn.execute("ALTER TABLE performers ADD COLUMN reddit_username TEXT DEFAULT NULL")
         if "twitter_username" not in performer_columns:
             conn.execute("ALTER TABLE performers ADD COLUMN twitter_username TEXT DEFAULT NULL")
+        # Engagement columns
+        if "likes_count" not in screenshot_columns:
+            conn.execute("ALTER TABLE screenshots ADD COLUMN likes_count INTEGER NOT NULL DEFAULT 0")
+        if "views_count" not in screenshot_columns:
+            conn.execute("ALTER TABLE screenshots ADD COLUMN views_count INTEGER NOT NULL DEFAULT 0")
+        if "comments_count" not in screenshot_columns:
+            conn.execute("ALTER TABLE screenshots ADD COLUMN comments_count INTEGER NOT NULL DEFAULT 0")
+        if "likes_count" not in performer_columns:
+            conn.execute("ALTER TABLE performers ADD COLUMN likes_count INTEGER NOT NULL DEFAULT 0")
+        if "views_count" not in performer_columns:
+            conn.execute("ALTER TABLE performers ADD COLUMN views_count INTEGER NOT NULL DEFAULT 0")
+        if "comments_count" not in performer_columns:
+            conn.execute("ALTER TABLE performers ADD COLUMN comments_count INTEGER NOT NULL DEFAULT 0")
+        if "followers_count" not in performer_columns:
+            conn.execute("ALTER TABLE performers ADD COLUMN followers_count INTEGER NOT NULL DEFAULT 0")
         # Create FTS index for AI summaries
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS screenshots_fts
@@ -1893,6 +1972,341 @@ class Database:
 
         return self._cached_snapshot(cache_key, 5.0, build)
 
+    # ── Engagement methods ─────────────────────────────────────────────────────
+
+    def like_screenshot(self, screenshot_id: int, user_id: str = "default") -> dict:
+        with self.connect() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO likes (user_id, screenshot_id, created_at) VALUES (?, ?, ?)",
+                    (user_id, screenshot_id, utcnow()),
+                )
+                conn.execute(
+                    "UPDATE screenshots SET likes_count = likes_count + 1 WHERE id = ?",
+                    (screenshot_id,),
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                pass
+            row = conn.execute(
+                "SELECT likes_count FROM screenshots WHERE id = ?", (screenshot_id,)
+            ).fetchone()
+            is_liked = conn.execute(
+                "SELECT 1 FROM likes WHERE user_id = ? AND screenshot_id = ?",
+                (user_id, screenshot_id),
+            ).fetchone() is not None
+        self._invalidate_after_write()
+        return {"liked": is_liked, "likes_count": row["likes_count"] if row else 0}
+
+    def unlike_screenshot(self, screenshot_id: int, user_id: str = "default") -> dict:
+        with self.connect() as conn:
+            conn.execute(
+                "DELETE FROM likes WHERE user_id = ? AND screenshot_id = ?",
+                (user_id, screenshot_id),
+            )
+            if conn.total_changes > 0:
+                conn.execute(
+                    "UPDATE screenshots SET likes_count = MAX(0, likes_count - 1) WHERE id = ?",
+                    (screenshot_id,),
+                )
+            conn.commit()
+            row = conn.execute(
+                "SELECT likes_count FROM screenshots WHERE id = ?", (screenshot_id,)
+            ).fetchone()
+            is_liked = conn.execute(
+                "SELECT 1 FROM likes WHERE user_id = ? AND screenshot_id = ?",
+                (user_id, screenshot_id),
+            ).fetchone() is not None
+        self._invalidate_after_write()
+        return {"liked": is_liked, "likes_count": row["likes_count"] if row else 0}
+
+    def get_screenshot_like_status(self, screenshot_id: int, user_id: str = "default") -> dict:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT likes_count FROM screenshots WHERE id = ?", (screenshot_id,)
+            ).fetchone()
+            is_liked = conn.execute(
+                "SELECT 1 FROM likes WHERE user_id = ? AND screenshot_id = ?",
+                (user_id, screenshot_id),
+            ).fetchone() is not None
+        return {"likes_count": row["likes_count"] if row else 0, "is_liked": bool(is_liked)}
+
+    def like_performer(self, performer_id: int, user_id: str = "default") -> dict:
+        with self.connect() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO likes (user_id, performer_id, created_at) VALUES (?, ?, ?)",
+                    (user_id, performer_id, utcnow()),
+                )
+                conn.execute(
+                    "UPDATE performers SET likes_count = COALESCE(likes_count, 0) + 1 WHERE id = ?",
+                    (performer_id,),
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                pass
+            row = conn.execute(
+                "SELECT COALESCE(likes_count, 0) AS likes_count FROM performers WHERE id = ?", (performer_id,)
+            ).fetchone()
+            is_liked = conn.execute(
+                "SELECT 1 FROM likes WHERE user_id = ? AND performer_id = ?",
+                (user_id, performer_id),
+            ).fetchone() is not None
+        self._invalidate_after_write()
+        return {"liked": bool(is_liked), "likes_count": row["likes_count"] if row else 0}
+
+    def unlike_performer(self, performer_id: int, user_id: str = "default") -> dict:
+        with self.connect() as conn:
+            conn.execute(
+                "DELETE FROM likes WHERE user_id = ? AND performer_id = ?",
+                (user_id, performer_id),
+            )
+            if conn.total_changes > 0:
+                conn.execute(
+                    "UPDATE performers SET likes_count = MAX(0, COALESCE(likes_count, 0) - 1) WHERE id = ?",
+                    (performer_id,),
+                )
+            conn.commit()
+            row = conn.execute(
+                "SELECT COALESCE(likes_count, 0) AS likes_count FROM performers WHERE id = ?", (performer_id,)
+            ).fetchone()
+            is_liked = conn.execute(
+                "SELECT 1 FROM likes WHERE user_id = ? AND performer_id = ?",
+                (user_id, performer_id),
+            ).fetchone() is not None
+        self._invalidate_after_write()
+        return {"liked": bool(is_liked), "likes_count": row["likes_count"] if row else 0}
+
+    def get_performer_like_status(self, performer_id: int, user_id: str = "default") -> dict:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(likes_count, 0) AS likes_count FROM performers WHERE id = ?", (performer_id,)
+            ).fetchone()
+            is_liked = conn.execute(
+                "SELECT 1 FROM likes WHERE user_id = ? AND performer_id = ?",
+                (user_id, performer_id),
+            ).fetchone() is not None
+        return {"likes_count": row["likes_count"] if row else 0, "is_liked": bool(is_liked)}
+
+    def record_view(self, screenshot_id: int | None = None, performer_id: int | None = None, source_page: str | None = None) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO views (screenshot_id, performer_id, source_page, created_at) VALUES (?, ?, ?, ?)",
+                (screenshot_id, performer_id, source_page, utcnow()),
+            )
+            if screenshot_id is not None:
+                conn.execute(
+                    "UPDATE screenshots SET views_count = views_count + 1 WHERE id = ?",
+                    (screenshot_id,),
+                )
+            if performer_id is not None:
+                conn.execute(
+                    "UPDATE performers SET views_count = COALESCE(views_count, 0) + 1 WHERE id = ?",
+                    (performer_id,),
+                )
+            conn.commit()
+        self._invalidate_after_write()
+
+    def get_comments(self, screenshot_id: int | None = None, performer_id: int | None = None, limit: int = 40, offset: int = 0) -> dict:
+        with self.connect() as conn:
+            where, params = [], []
+            if screenshot_id is not None:
+                where.append("screenshot_id = ?")
+                params.append(screenshot_id)
+            if performer_id is not None:
+                where.append("performer_id = ?")
+                params.append(performer_id)
+            clause = "WHERE " + " AND ".join(where) if where else ""
+            rows = conn.execute(
+                f"SELECT * FROM comments {clause} ORDER BY created_at ASC LIMIT ? OFFSET ?",
+                params + [limit + 1, offset],
+            ).fetchall()
+            top_level = [dict(r) for r in rows if r["parent_id"] is None][:limit]
+            replies = [dict(r) for r in rows if r["parent_id"] is not None]
+            reply_map: dict[int, list[dict]] = {}
+            for reply in replies:
+                reply_map.setdefault(reply["parent_id"], []).append(reply)
+            for comment in top_level:
+                comment["replies"] = reply_map.get(comment["id"], [])
+            total = conn.execute(f"SELECT COUNT(*) FROM comments {clause}", params).fetchone()[0] if offset == 0 else offset + len(rows)
+        return {"comments": top_level, "total": total, "limit": limit, "offset": offset, "has_more": len(rows) > limit}
+
+    def add_comment(self, user_id: str, content: str, screenshot_id: int | None = None, performer_id: int | None = None, parent_id: int | None = None) -> dict:
+        with self.connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO comments (user_id, content, screenshot_id, performer_id, parent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, content, screenshot_id, performer_id, parent_id, utcnow()),
+            )
+            if screenshot_id is not None:
+                conn.execute(
+                    "UPDATE screenshots SET comments_count = comments_count + 1 WHERE id = ?",
+                    (screenshot_id,),
+                )
+            if performer_id is not None:
+                conn.execute(
+                    "UPDATE performers SET comments_count = COALESCE(comments_count, 0) + 1 WHERE id = ?",
+                    (performer_id,),
+                )
+            conn.commit()
+            row = conn.execute("SELECT * FROM comments WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        self._invalidate_after_write()
+        return dict(row) if row else {}
+
+    def delete_comment(self, comment_id: int) -> bool:
+        with self.connect() as conn:
+            row = conn.execute("SELECT screenshot_id, performer_id FROM comments WHERE id = ?", (comment_id,)).fetchone()
+            if not row:
+                return False
+            conn.execute("DELETE FROM comments WHERE id = ?", (comment_id,))
+            if row["screenshot_id"] is not None:
+                conn.execute(
+                    "UPDATE screenshots SET comments_count = MAX(0, comments_count - 1) WHERE id = ?",
+                    (row["screenshot_id"],),
+                )
+            if row["performer_id"] is not None:
+                conn.execute(
+                    "UPDATE performers SET comments_count = MAX(0, COALESCE(comments_count, 0) - 1) WHERE id = ?",
+                    (row["performer_id"],),
+                )
+            conn.commit()
+        self._invalidate_after_write()
+        return True
+
+    def follow_performer(self, performer_id: int, user_id: str = "default") -> dict:
+        with self.connect() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO follows (user_id, performer_id, created_at) VALUES (?, ?, ?)",
+                    (user_id, performer_id, utcnow()),
+                )
+                conn.execute(
+                    "UPDATE performers SET followers_count = followers_count + 1 WHERE id = ?",
+                    (performer_id,),
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                pass
+            row = conn.execute(
+                "SELECT followers_count FROM performers WHERE id = ?", (performer_id,)
+            ).fetchone()
+            is_following = conn.execute(
+                "SELECT 1 FROM follows WHERE user_id = ? AND performer_id = ?",
+                (user_id, performer_id),
+            ).fetchone() is not None
+        self._invalidate_after_write()
+        return {"following": bool(is_following), "followers_count": row["followers_count"] if row else 0}
+
+    def unfollow_performer(self, performer_id: int, user_id: str = "default") -> dict:
+        with self.connect() as conn:
+            conn.execute(
+                "DELETE FROM follows WHERE user_id = ? AND performer_id = ?",
+                (user_id, performer_id),
+            )
+            if conn.total_changes > 0:
+                conn.execute(
+                    "UPDATE performers SET followers_count = MAX(0, followers_count - 1) WHERE id = ?",
+                    (performer_id,),
+                )
+            conn.commit()
+            row = conn.execute(
+                "SELECT followers_count FROM performers WHERE id = ?", (performer_id,)
+            ).fetchone()
+            is_following = conn.execute(
+                "SELECT 1 FROM follows WHERE user_id = ? AND performer_id = ?",
+                (user_id, performer_id),
+            ).fetchone() is not None
+        self._invalidate_after_write()
+        return {"following": bool(is_following), "followers_count": row["followers_count"] if row else 0}
+
+    def get_follow_status(self, performer_id: int | None = None, user_id: str = "default") -> dict:
+        with self.connect() as conn:
+            if performer_id is not None:
+                row = conn.execute(
+                    "SELECT followers_count FROM performers WHERE id = ?", (performer_id,)
+                ).fetchone()
+                is_following = conn.execute(
+                    "SELECT 1 FROM follows WHERE user_id = ? AND performer_id = ?",
+                    (user_id, performer_id),
+                ).fetchone() is not None
+                return {"followers_count": row["followers_count"] if row else 0, "is_following": bool(is_following)}
+            following_rows = conn.execute(
+                "SELECT performer_id FROM follows WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+            return {
+                "followers_count": 0,
+                "is_following": False,
+                "following_list": [r["performer_id"] for r in following_rows],
+            }
+
+    def get_screenshots_engagement(self, screenshot_ids: list[int], user_id: str = "default") -> dict[int, dict]:
+        if not screenshot_ids:
+            return {}
+        placeholders = ", ".join("?" for _ in screenshot_ids)
+        with self.connect() as conn:
+            likes_rows = conn.execute(
+                f"SELECT screenshot_id, COUNT(*) AS count FROM likes WHERE screenshot_id IN ({placeholders}) GROUP BY screenshot_id",
+                screenshot_ids,
+            ).fetchall()
+            user_likes = conn.execute(
+                f"SELECT screenshot_id FROM likes WHERE user_id = ? AND screenshot_id IN ({placeholders})",
+                [user_id, *screenshot_ids],
+            ).fetchall()
+            views_rows = conn.execute(
+                f"SELECT screenshot_id, COUNT(*) AS count FROM views WHERE screenshot_id IN ({placeholders}) GROUP BY screenshot_id",
+                screenshot_ids,
+            ).fetchall()
+            comments_rows = conn.execute(
+                f"SELECT screenshot_id, COUNT(*) AS count FROM comments WHERE screenshot_id IN ({placeholders}) GROUP BY screenshot_id",
+                screenshot_ids,
+            ).fetchall()
+        result: dict[int, dict] = {}
+        for sid in screenshot_ids:
+            result[sid] = {"likes_count": 0, "views_count": 0, "comments_count": 0, "is_liked": False}
+        for r in likes_rows:
+            result[r["screenshot_id"]]["likes_count"] = r["count"]
+        for r in views_rows:
+            result[r["screenshot_id"]]["views_count"] = r["count"]
+        for r in comments_rows:
+            result[r["screenshot_id"]]["comments_count"] = r["count"]
+        for r in user_likes:
+            result[r["screenshot_id"]]["is_liked"] = True
+        return result
+
+    def get_performers_engagement(self, performer_ids: list[int], user_id: str = "default") -> dict[int, dict]:
+        if not performer_ids:
+            return {}
+        placeholders = ", ".join("?" for _ in performer_ids)
+        with self.connect() as conn:
+            likes_rows = conn.execute(
+                f"SELECT performer_id, COUNT(*) AS count FROM likes WHERE performer_id IN ({placeholders}) GROUP BY performer_id",
+                performer_ids,
+            ).fetchall()
+            user_likes = conn.execute(
+                f"SELECT performer_id FROM likes WHERE user_id = ? AND performer_id IN ({placeholders})",
+                [user_id, *performer_ids],
+            ).fetchall()
+            follows_rows = conn.execute(
+                f"SELECT performer_id, COUNT(*) AS count FROM follows WHERE performer_id IN ({placeholders}) GROUP BY performer_id",
+                performer_ids,
+            ).fetchall()
+            user_follows = conn.execute(
+                f"SELECT performer_id FROM follows WHERE user_id = ? AND performer_id IN ({placeholders})",
+                [user_id, *performer_ids],
+            ).fetchall()
+        result: dict[int, dict] = {}
+        for pid in performer_ids:
+            result[pid] = {"likes_count": 0, "followers_count": 0, "is_liked": False, "is_following": False}
+        for r in likes_rows:
+            result[r["performer_id"]]["likes_count"] = r["count"]
+        for r in follows_rows:
+            result[r["performer_id"]]["followers_count"] = r["count"]
+        for r in user_likes:
+            result[r["performer_id"]]["is_liked"] = True
+        for r in user_follows:
+            result[r["performer_id"]]["is_following"] = True
+        return result
+
     # ── Settings CRUD ──────────────────────────────────────────────────
     def get_setting(self, key: str) -> str | None:
         def build():
@@ -2069,6 +2483,8 @@ class Database:
         require_media_url: bool = False,
     ) -> dict:
         where, params = [], []
+        # Permanently exclude dead sources (coomer/kemono blocked by DDoS-Guard)
+        where.append("source NOT IN ('coomer', 'coomer_video', 'kemono', 'kemono_video')")
         if term:
             where.append("term = ?")
             params.append(term)

@@ -1995,8 +1995,35 @@ async def video_poster(shot_id: int, request: Request):
 
     page_url_val = str(_row["page_url"] or "")
 
-    # Schedule background extraction (non-blocking) if we have a valid URL
+    # Try synchronous generation first (up to 8 s) so the first real request
+    # often gets the poster immediately instead of a placeholder.
     if source_url.startswith(("http://", "https://")):
+        async def _try_generate_sync() -> bool:
+            # Fast path: local cached video (usually < 1 s)
+            if _is_video_cached(shot_id):
+                cached_path = _video_cache_path(shot_id)
+                if await _poster_via_ffmpeg_local(str(cached_path), poster_path):
+                    return True
+            # Direct ffmpeg from remote source
+            port = __import__("os").environ.get("PORT", "10000")
+            return await _poster_via_ffmpeg(source_url, poster_path, port)
+
+        try:
+            generated = await asyncio.wait_for(_try_generate_sync(), timeout=8.0)
+            if generated:
+                _mark_poster_cached(shot_id)
+                return FileResponse(
+                    str(poster_path), media_type="image/jpeg",
+                    headers={
+                        **_CROSS_ORIGIN_MEDIA_HEADERS,
+                        "Cache-Control": "public, max-age=604800",
+                        "X-Content-Type-Options": "nosniff",
+                    },
+                )
+        except asyncio.TimeoutError:
+            pass  # fall through to placeholder + background task
+
+        # Schedule background extraction for future requests
         asyncio.create_task(_bg_extract_poster(request.app.state, shot_id, source_url, page_url_val))
 
     return _placeholder_poster_response()
@@ -2490,6 +2517,20 @@ def browse_screenshots(
 
     payload = _get_cached_screenshots_payload(request.app.state, cache_key, 60.0, build, copy_payload=True)
 
+    # Attach engagement data to each screenshot
+    screenshots = payload.get("screenshots", [])
+    if screenshots:
+        db = request.app.state.db
+        shot_ids = [int(s["id"]) for s in screenshots if s.get("id")]
+        engagement = db.get_screenshots_engagement(shot_ids)
+        for s in screenshots:
+            sid = int(s["id"])
+            eng = engagement.get(sid, {})
+            s["likes_count"] = eng.get("likes_count", 0)
+            s["views_count"] = eng.get("views_count", 0)
+            s["comments_count"] = eng.get("comments_count", 0)
+            s["is_liked"] = eng.get("is_liked", False)
+
     # Pre-warm poster cache for video items via BackgroundTasks (safe in sync endpoints).
     # Uses in-memory disk cache to skip already-extracted posters without stat() calls.
     _warm_count = 0
@@ -2777,6 +2818,7 @@ def screenshot_sources(request: Request):
                 SELECT source, COUNT(*) AS count
                 FROM screenshots
                 WHERE source IS NOT NULL AND source != ''
+                  AND source NOT IN ('coomer', 'coomer_video', 'kemono', 'kemono_video')
                 GROUP BY source
                 ORDER BY count DESC, source ASC
                 """
@@ -3019,30 +3061,33 @@ def media_stats(request: Request):
     db = request.app.state.db
     def build():
         with db.connect() as conn:
-            total = conn.execute("SELECT COUNT(*) AS c FROM screenshots").fetchone()["c"]
+            dead_sources = "('coomer', 'coomer_video', 'kemono', 'kemono_video')"
+            total = conn.execute(
+                f"SELECT COUNT(*) AS c FROM screenshots WHERE source NOT IN {dead_sources}"
+            ).fetchone()["c"]
 
             # By source
             source_rows = conn.execute(
-                "SELECT source, COUNT(*) AS c FROM screenshots GROUP BY source"
+                f"SELECT source, COUNT(*) AS c FROM screenshots WHERE source NOT IN {dead_sources} GROUP BY source"
             ).fetchall()
             by_source = {r["source"]: r["c"] for r in source_rows}
 
             # By type (video vs image)
             video_count = conn.execute(
-                "SELECT COUNT(*) AS c FROM screenshots WHERE local_path LIKE '%.mp4' OR local_path LIKE '%.webm' OR local_path LIKE '%.mov'"
+                f"SELECT COUNT(*) AS c FROM screenshots WHERE source NOT IN {dead_sources} AND (local_path LIKE '%.mp4' OR local_path LIKE '%.webm' OR local_path LIKE '%.mov')"
             ).fetchone()["c"]
             by_type = {"video": video_count, "image": total - video_count}
 
             # Rated count & avg
             rated_row = conn.execute(
-                "SELECT COUNT(*) AS c, COALESCE(AVG(rating), 0) AS avg FROM screenshots WHERE rating IS NOT NULL AND rating > 0"
+                f"SELECT COUNT(*) AS c, COALESCE(AVG(rating), 0) AS avg FROM screenshots WHERE source NOT IN {dead_sources} AND rating IS NOT NULL AND rating > 0"
             ).fetchone()
             rated = rated_row["c"]
             avg_rating = round(rated_row["avg"], 1) if rated_row["avg"] else 0
 
             # Described
             described = conn.execute(
-                "SELECT COUNT(*) AS c FROM screenshots WHERE ai_summary IS NOT NULL AND ai_summary != ''"
+                f"SELECT COUNT(*) AS c FROM screenshots WHERE source NOT IN {dead_sources} AND ai_summary IS NOT NULL AND ai_summary != ''"
             ).fetchone()["c"]
 
             # With performer
@@ -4074,6 +4119,26 @@ def cleanup_media(request: Request, max_age_days: int = Query(30, ge=1, le=365))
                 f.unlink()
 
     return {"deleted": deleted, "freed_mb": round(freed / (1024**2), 1)}
+
+
+@router.post("/purge-archiver")
+def purge_archiver_screenshots(request: Request) -> JSONResponse:
+    x_admin_token: str | None = Header(default=None)
+    _require_admin(x_admin_token)
+
+    """Delete all coomer/kemono screenshots from the DB.
+    These sources are permanently blocked by DDoS-Guard and their media is unplayable."""
+    db = request.app.state.db
+    removed = 0
+    with db.connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM screenshots WHERE source IN ('coomer', 'coomer_video', 'kemono', 'kemono_video')"
+        )
+        removed = cur.rowcount
+        conn.commit()
+    if removed:
+        _invalidate_screenshots_cache(request.app.state)
+    return JSONResponse({"ok": True, "removed": removed})
 
 
 @router.post("/backfill-performers")

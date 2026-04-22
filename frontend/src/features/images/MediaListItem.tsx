@@ -2,6 +2,8 @@ import type { MouseEvent as ReactMouseEvent } from "react"
 import type { Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { StarRating } from "@/components/StarRating"
+import { LikeButton } from "@/components/LikeButton"
+import { MessageCircle } from "lucide-react"
 import { getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
 
 function sourceLabel(s: string) {
@@ -110,6 +112,21 @@ export function MediaListItem({ shot, onClick, favorite, onToggleFavorite, onRat
         {formatDate(shot.captured_at)}
       </span>
 
+      <div className="flex flex-shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+        <LikeButton
+          screenshotId={shot.id}
+          initialLiked={shot.is_liked ?? false}
+          initialCount={shot.likes_count ?? 0}
+          size="sm"
+          className="text-white/30 hover:text-rose-300"
+        />
+        {(shot.comments_count ?? 0) > 0 && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-text-muted">
+            <MessageCircle size={10} />
+            {shot.comments_count}
+          </span>
+        )}
+      </div>
       <button
         onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
         className={cn(

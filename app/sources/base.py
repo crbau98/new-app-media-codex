@@ -20,6 +20,7 @@ from PIL import Image
 
 from app.config import Settings, Theme
 from app.models import ImageRecord, ResearchItem
+from app.utils.proxy import ProxyRotator
 
 IMAGE_EXCLUDE_MARKERS = (
     "avatar",
@@ -144,6 +145,10 @@ BLOCKED_TOKENS = {
 def build_session(settings: Settings) -> requests.Session:
     session = requests.Session()
     session.headers.update({"User-Agent": settings.user_agent})
+    rotator = ProxyRotator(settings.proxy_list or None)
+    proxies = rotator.get_proxy()
+    if proxies:
+        session.proxies.update(proxies)
     return session
 
 

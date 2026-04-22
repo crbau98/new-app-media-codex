@@ -9,6 +9,7 @@ import { getPerformerAvatarSrc } from "@/lib/performer"
 import { getBestAvailablePreviewSrc, getScreenshotMediaSrc, isVideoShot } from "@/lib/media"
 import { useAppStore } from "@/store"
 import { Skeleton } from "@/components/Skeleton"
+import { FollowButton } from "@/components/FollowButton"
 import { sharedQueryKeys, useCaptureQueueQuery } from "@/features/sharedQueries"
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -1234,9 +1235,9 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
 
             {/* Stats */}
             <div className="flex items-center gap-4 justify-center sm:justify-start">
-              {performer.follower_count != null && (
+              {(performer.followers_count ?? performer.follower_count ?? 0) > 0 && (
                 <div className="text-center">
-                  <p className="text-lg font-semibold text-text-primary">{performer.follower_count.toLocaleString()}</p>
+                  <p className="text-lg font-semibold text-text-primary">{(performer.followers_count ?? performer.follower_count ?? 0).toLocaleString()}</p>
                   <p className="text-[10px] text-text-muted uppercase tracking-wider">Followers</p>
                 </div>
               )}
@@ -1252,10 +1253,28 @@ export function PerformerProfile({ performerId, onClose, onNavigate }: Performer
                   <p className="text-[10px] text-text-muted uppercase tracking-wider">Captured</p>
                 </div>
               )}
+              {(performer.total_likes ?? 0) > 0 && (
+                <div className="text-center">
+                  <p className="text-lg font-semibold text-text-primary">{(performer.total_likes ?? 0).toLocaleString()}</p>
+                  <p className="text-[10px] text-text-muted uppercase tracking-wider">Total Likes</p>
+                </div>
+              )}
+              {(performer.total_views ?? 0) > 0 && (
+                <div className="text-center">
+                  <p className="text-lg font-semibold text-text-primary">{(performer.total_views ?? 0).toLocaleString()}</p>
+                  <p className="text-[10px] text-text-muted uppercase tracking-wider">Total Views</p>
+                </div>
+              )}
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-2 justify-center sm:justify-start">
+            <div className="flex items-center gap-2 justify-center sm:justify-start flex-wrap">
+              <FollowButton
+                performerId={performerId}
+                initialFollowing={performer.is_following ?? false}
+                initialCount={performer.followers_count ?? 0}
+                size="md"
+              />
               <button
                 onClick={() => favMutation.mutate()}
                 className={cn(

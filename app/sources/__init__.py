@@ -11,6 +11,11 @@ from app.sources.x import collect_x
 from app.sources.pubmed import collect_pubmed
 from app.sources.biorxiv import collect_biorxiv
 from app.sources.arxiv import collect_arxiv
+from app.sources.instagram import collect_instagram, collect_instagram_theme
+from app.sources.fansly import collect_fansly, collect_fansly_theme
+from app.sources.justforfans import collect_justforfans, collect_justforfans_theme
+from app.sources.spankbang import collect_spankbang, collect_spankbang_theme
+from app.sources.boyfriendtv import collect_boyfriendtv, collect_boyfriendtv_theme
 
 __all__ = [
     "build_session",
@@ -32,4 +37,14 @@ __all__ = [
     "collect_biorxiv",
     "collect_arxiv",
     "scrape_with_firecrawl",
+    "collect_instagram",
+    "collect_instagram_theme",
+    "collect_fansly",
+    "collect_fansly_theme",
+    "collect_justforfans",
+    "collect_justforfans_theme",
+    "collect_spankbang",
+    "collect_spankbang_theme",
+    "collect_boyfriendtv",
+    "collect_boyfriendtv_theme",
 ]

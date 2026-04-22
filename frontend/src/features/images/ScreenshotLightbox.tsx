@@ -4,6 +4,8 @@ import { useQueryClient } from "@tanstack/react-query"
 import type { Screenshot } from "@/lib/api"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/cn"
+import { EngagementBar } from "@/components/EngagementBar"
+import { CommentThread } from "@/components/CommentThread"
 import { getBestAvailableMediaSrc, getBestAvailablePreviewSrc, getScreenshotMediaSrc, useResolvedScreenshotMedia } from "@/lib/media"
 import { attachMediaSource, isArchiverVideoSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
@@ -53,6 +55,7 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
   const shotsRef = useRef(shots)
 
   const [showInfo, setShowInfo] = useState(false)
+  const [showComments, setShowComments] = useState(false)
   const [slideshowActive, setSlideshowActive] = useState(false)
   const [similar, setSimilar] = useState<Screenshot[]>([])
   const [showSimilar, setShowSimilar] = useState(false)
@@ -527,6 +530,17 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
           </button>
+          <button
+            onClick={() => setShowComments((v) => !v)}
+            title="Toggle comments"
+            className={cn(
+              "rounded-full p-2 text-sm transition-colors",
+              showComments ? "text-accent" : "text-white/60 hover:text-white"
+            )}
+            aria-label="Toggle comments"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </button>
           <div className="h-4 w-px bg-white/10" />
           <button
             onClick={onClose}
@@ -659,6 +673,22 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
           )}
         </div>
       </div>
+
+      {/* Comments side panel */}
+      {showComments && (
+        <div className="absolute top-0 right-0 z-30 h-full w-80 border-l border-white/10 bg-black/80 backdrop-blur-lg p-4 overflow-y-auto">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-medium text-white/80">Comments</span>
+            <button
+              onClick={() => setShowComments(false)}
+              className="rounded-full p-1 text-white/40 hover:text-white transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <CommentThread screenshotId={shot.id} />
+        </div>
+      )}
 
       {/* Info panel — toggleable bottom overlay */}
       {showInfo && (
@@ -807,6 +837,10 @@ export function ScreenshotLightbox({ shots, idx, onClose, onNavigate, favorites,
               >
                 More like this
               </button>
+            </div>
+
+            <div className="pt-1">
+              <EngagementBar screenshot={shot} />
             </div>
 
             <div className="flex flex-wrap gap-3 text-[11px] text-white/40 font-mono">

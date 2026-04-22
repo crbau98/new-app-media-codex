@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { cn } from "@/lib/cn"
-import { useAppStore, type ActiveView } from "../store"
+import { useAppStore } from "../store"
 import { api, type Performer } from "../lib/api"
 import { getPerformerAvatarSrc } from "@/lib/performer"
 

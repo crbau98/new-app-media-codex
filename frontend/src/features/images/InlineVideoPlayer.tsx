@@ -3,6 +3,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, type Screenshot } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { StarRating } from "@/components/StarRating"
+import { EngagementBar } from "@/components/EngagementBar"
+import { CommentThread } from "@/components/CommentThread"
+import { FollowButton } from "@/components/FollowButton"
 import { getBestAvailableMediaSrc, getBestAvailablePosterSrc, getBestAvailablePreviewSrc, useResolvedScreenshotMedia } from "@/lib/media"
 import { attachMediaSource, isArchiverVideoSource, isCoomerWaterfallActive } from "@/lib/hlsAttach"
 
@@ -208,7 +211,6 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
     const v = videoRef.current
     if (!v || !currentIsVideo || !src || inlineFallback) return
     setPlaybackFailed(false)
-    const isArchiver = isArchiverVideoSource(shot.source)
     return attachMediaSource(v, src, {
       tryAutoplay: true,
       onFatalError: () => {
@@ -777,7 +779,17 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
         theater && "w-[90vw] max-w-[1600px]",
       )}>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{shot.term}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{shot.term}</p>
+            {shot.performer_id && shot.performer_username && (
+              <FollowButton
+                performerId={shot.performer_id}
+                initialFollowing={false}
+                initialCount={0}
+                size="sm"
+              />
+            )}
+          </div>
           <p className="text-xs text-[var(--color-text-muted)]">
             {sourceLabel(shot.source)} · {shot.captured_at ? new Date(shot.captured_at).toLocaleDateString() : ""}
           </p>
@@ -811,6 +823,12 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
               <StarRating value={shot.rating ?? 0} onChange={onRate} />
             </div>
           )}
+          <div className="mt-2">
+            <EngagementBar screenshot={shot} />
+          </div>
+          <div className="mt-2">
+            <CommentThread screenshotId={shot.id} />
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <button onClick={onToggleFavorite} title={favorite ? "Unfavorite" : "Favorite"}

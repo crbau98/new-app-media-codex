@@ -356,18 +356,18 @@ class TestScreenshotsProxyRefresh:
 
 
 class TestScreenshotsBrowseMediaType:
-    def test_browse_screenshots_keeps_coomer_jpgs_out_of_video_feed(self, screenshots_client, test_db) -> None:
+    def test_browse_screenshots_keeps_jpgs_out_of_video_feed(self, screenshots_client, test_db) -> None:
         test_db.insert_screenshot(
             term="creator-image",
-            source="coomer",
-            page_url="https://coomer.st/onlyfans/user/test/post/image",
-            source_url="https://coomer.st/data/aa/bb/example-image.jpg",
+            source="ddg",
+            page_url="https://example.com/image-post",
+            source_url="https://example.com/data/aa/bb/example-image.jpg",
         )
         test_db.insert_screenshot(
             term="creator-video",
-            source="coomer",
-            page_url="https://coomer.st/onlyfans/user/test/post/video",
-            source_url="https://coomer.st/data/cc/dd/example-video.mp4",
+            source="ddg",
+            page_url="https://example.com/video-post",
+            source_url="https://example.com/data/cc/dd/example-video.mp4",
         )
 
         video_resp = screenshots_client.get("/api/screenshots?media_type=video&limit=20")
@@ -382,10 +382,10 @@ class TestScreenshotsBrowseMediaType:
         video_urls = {row["source_url"] for row in video_rows}
         image_rows_by_url = {row["source_url"]: row for row in image_rows}
 
-        assert "https://coomer.st/data/cc/dd/example-video.mp4" in video_urls
-        assert "https://coomer.st/data/aa/bb/example-image.jpg" not in video_urls
+        assert "https://example.com/data/cc/dd/example-video.mp4" in video_urls
+        assert "https://example.com/data/aa/bb/example-image.jpg" not in video_urls
 
-        image_row = image_rows_by_url["https://coomer.st/data/aa/bb/example-image.jpg"]
+        image_row = image_rows_by_url["https://example.com/data/aa/bb/example-image.jpg"]
         assert image_row["local_url"].endswith("example-image.jpg")
         assert image_row["preview_url"] == image_row["local_url"]
         assert "/api/screenshots/video-poster/" not in image_row["preview_url"]

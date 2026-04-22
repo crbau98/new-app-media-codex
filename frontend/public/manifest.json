@@ -1,13 +1,30 @@
 {
-  "name": "Codex Research Radar",
+  "name": "Codex Media",
   "short_name": "Codex",
-  "description": "Research aggregation and media analysis platform",
-  "start_url": "/#/media",
+  "description": "Discover and explore media from your favorite creators",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0e17",
-  "theme_color": "#3b82f6",
+  "background_color": "#06040a",
+  "theme_color": "#a855f7",
+  "orientation": "portrait",
+  "scope": "/",
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "categories": ["entertainment", "social"],
+  "screenshots": [
+    {
+      "src": "/screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/screenshot-narrow.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
   ]
 }

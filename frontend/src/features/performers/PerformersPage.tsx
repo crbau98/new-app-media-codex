@@ -9,6 +9,7 @@ import { useAppStore } from "@/store"
 import { useDebounce } from "@/hooks/useDebounce"
 import { Skeleton } from "@/components/Skeleton"
 import { EmptyState } from "@/components/EmptyState"
+import { FollowButton } from "@/components/FollowButton"
 import { PerformerProfile } from "./PerformerProfile"
 import {
   sharedQueryKeys,
@@ -803,6 +804,11 @@ const PerformerCard = memo(function PerformerCard({
                   {(performer.media_count ?? 0).toLocaleString()} media
                 </span>
               )}
+              {(performer.followers_count ?? 0) > 0 && (
+                <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-purple-300">
+                  {(performer.followers_count ?? 0).toLocaleString()} followers
+                </span>
+              )}
               {performer.is_verified === 1 && (
                 <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 text-emerald-200">
                   Verified
@@ -812,6 +818,12 @@ const PerformerCard = memo(function PerformerCard({
           </div>
 
           <div className="flex shrink-0 flex-col items-end gap-1.5">
+            <FollowButton
+              performerId={performer.id}
+              initialFollowing={performer.is_following ?? false}
+              initialCount={performer.followers_count ?? 0}
+              size="sm"
+            />
             <div className="flex items-center gap-0.5">
               <button
                 onClick={(e) => { e.stopPropagation(); favMutation.mutate() }}
@@ -908,6 +920,8 @@ const PerformerCard = memo(function PerformerCard({
   prev.performer.tags === next.performer.tags &&
   prev.performer.media_count === next.performer.media_count &&
   prev.performer.screenshots_count === next.performer.screenshots_count &&
+  prev.performer.followers_count === next.performer.followers_count &&
+  prev.performer.is_following === next.performer.is_following &&
   prev.performer.avatar_url === next.performer.avatar_url
 )
 
@@ -1618,24 +1632,6 @@ export default function PerformersPage() {
     }
   }
 
-  async function handleCaptureWatchlist() {
-    setWatchlistCapturing(true)
-    try {
-      const res = await api.captureWatchlist()
-      if (res.status === "no_watchlist") {
-        addToast("No favorited creators to capture. Favorite some first.", "info")
-      } else {
-        addToast(`Capturing ${res.queued} creator${res.queued !== 1 ? "s" : ""} in background…`, "success")
-        qcMain.invalidateQueries({ queryKey: ["performers"] })
-        qcMain.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
-      }
-    } catch {
-      addToast("Watchlist capture failed", "error")
-    } finally {
-      setWatchlistCapturing(false)
-    }
-  }
-
   const [visibleLimit, setVisibleLimit] = useState(24)
 
   // Debounce search to avoid firing a query on every keystroke
@@ -1802,112 +1798,91 @@ export default function PerformersPage() {
   }, [focusedIdx])
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-6 pb-24">
-      {/* Header */}
-      <div className="hero-surface relative overflow-hidden rounded-[28px] p-6 sm:p-8">
-        <div
-          aria-hidden="true"
-          className="orb-float pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full opacity-70"
-          style={{
-            background: "radial-gradient(circle, rgba(168,85,247,0.22), transparent 70%)",
-            filter: "blur(22px)",
-          }}
-        />
-        <div
-          aria-hidden="true"
-          className="orb-float pointer-events-none absolute -bottom-20 left-1/3 h-60 w-60 rounded-full opacity-55"
-          style={{
-            background: "radial-gradient(circle, rgba(236,72,153,0.18), transparent 70%)",
-            filter: "blur(24px)",
-            animationDelay: "-9s",
-          }}
-        />
-        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-3">
-            <div>
-              <p className="mb-2 inline-flex items-center gap-2 rounded-full border border-border bg-bg-elevated/50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-text-muted">
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                Roster
-              </p>
-              <h1 className="hero-title text-[clamp(1.85rem,3.2vw,2.65rem)] font-semibold leading-[1.08] tracking-[-0.045em] text-text-primary">
-                <span className="text-gradient-brand">Creators</span>
-              </h1>
-              <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-text-secondary">
-                A clean roster for the creators you follow—jump into their media in one tap.
-              </p>
-            </div>
-            {statsData && (
-              <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
-                <span className="ui-chip"><span className="font-mono text-text-primary">{statsData.total ?? 0}</span> tracked</span>
-                <span className="ui-chip"><span className="font-mono text-text-primary">{allPerformers.filter(p => (p.screenshots_count ?? p.media_count ?? 0) > 0).length ?? 0}</span> with media</span>
-                <span className="ui-chip"><span className="font-mono text-text-primary">{watchlistCount}</span> favorites</span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-1 flex-col gap-3 xl:max-w-[640px] xl:items-end">
-            <div className="relative w-full xl:max-w-md">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-              </svg>
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search creators... (/)"
-                className="w-full rounded-2xl border border-white/10 bg-black/20 py-3 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
-              />
-            </div>
-
-            <div className="grid w-full gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <button
-                onClick={() => runUiTransition(() => setShowDiscover(true))}
-                className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-3 py-3 text-left text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-400/16"
-              >
-                Discover creators
-              </button>
-              <button
-                onClick={() => runUiTransition(() => { setShowAdd(!showAdd); setShowImportUrl(false); setShowBulkImport(false) })}
-                className="rounded-2xl border border-accent/30 bg-accent/12 px-3 py-3 text-left text-sm font-medium text-text-primary transition-colors hover:bg-accent/18"
-                data-add-performer
-              >
-                {showAdd ? "Close add panel" : "Add creator"}
-              </button>
-              <button
-                onClick={handleCaptureAll}
-                className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3 text-left text-sm font-medium text-text-primary transition-colors hover:bg-white/[0.07]"
-              >
-                Capture all due
-              </button>
-              <div className="flex items-stretch">
-                <MoreMenu
-                  showBilling={showBilling}
-                  showAnalytics={showAnalytics}
-                  selectMode={selectMode}
-                  watchlistCount={watchlistCount}
-                  watchlistCapturing={watchlistCapturing}
-                  captureAllRunning={captureAllRunning}
-                  onBilling={() => runUiTransition(() => { setShowBilling(!showBilling); setShowAnalytics(false) })}
-                  onAnalytics={() => runUiTransition(() => { setShowAnalytics(!showAnalytics); setShowBilling(false) })}
-                  onImportUrl={() => runUiTransition(() => { setShowImportUrl(!showImportUrl); setShowBulkImport(false); setShowAdd(false) })}
-                  onBulkImport={() => runUiTransition(() => { setShowBulkImport(!showBulkImport); setShowImportUrl(false); setShowAdd(false) })}
-                  onExportCsv={() => {}}
-                  exportUrl={api.exportPerformersUrl()}
-                  onSelect={() => runUiTransition(() => { setSelectMode((v) => !v); setSelectedIds(new Set()) })}
-                  onCaptureStale={() => {
-                    api.captureStale().then((r) => {
-                      addToast(`Queued ${r.queued} stale creators for capture`, "success")
-                      qcMain.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
-                    }).catch(() => addToast("Failed to queue stale captures", "error"))
-                  }}
-                  onCaptureAll={handleCaptureAll}
-                />
-              </div>
-            </div>
+    <div className="mx-auto max-w-6xl pb-24">
+      {/* Compact header — matches MediaPage layout */}
+      <section className="px-3 pb-6 pt-1 sm:px-4" aria-labelledby="performers-page-title">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="mb-2 inline-flex items-center gap-2 rounded-full border border-border bg-bg-elevated/50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-text-muted">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+              Roster
+            </p>
+            <h1
+              id="performers-page-title"
+              className="hero-title text-[28px] font-semibold leading-[1.08] tracking-[-0.045em] text-text-primary sm:text-[34px]"
+            >
+              <span className="text-gradient-brand">Creators</span>
+            </h1>
+            <p className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-[15px] leading-relaxed text-text-secondary">
+              <span>{(statsData?.total ?? 0).toLocaleString()} tracked</span>
+              <span className="text-text-muted/80" aria-hidden="true">·</span>
+              <span>{allPerformers.filter(p => (p.screenshots_count ?? p.media_count ?? 0) > 0).length ?? 0} with media</span>
+              <span className="text-text-muted/80" aria-hidden="true">·</span>
+              <span>{watchlistCount} favorites</span>
+            </p>
           </div>
         </div>
-      </div>
+
+        {/* Toolbar */}
+        <div className="sticky top-14 z-20 mt-4 flex flex-wrap items-center gap-1.5 rounded-2xl border border-white/5 bg-black/20 px-2 py-2 backdrop-blur-md sm:gap-2 sm:px-3">
+          <div className="relative min-w-[180px] max-w-xs flex-1">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search creators... (/)"
+              className="w-full rounded-xl border border-white/10 bg-black/20 py-2 pl-8 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+            />
+          </div>
+          <button
+            onClick={() => runUiTransition(() => setShowDiscover(true))}
+            className="shrink-0 rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-xs font-medium text-emerald-100 transition-colors hover:bg-emerald-400/16"
+          >
+            Discover
+          </button>
+          <button
+            onClick={() => runUiTransition(() => { setShowAdd(!showAdd); setShowImportUrl(false); setShowBulkImport(false) })}
+            className="shrink-0 rounded-xl border border-accent/30 bg-accent/12 px-3 py-2 text-xs font-medium text-text-primary transition-colors hover:bg-accent/18"
+            data-add-performer
+          >
+            {showAdd ? "Close" : "Add"}
+          </button>
+          <button
+            onClick={handleCaptureAll}
+            className="shrink-0 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-text-primary transition-colors hover:bg-white/[0.07]"
+          >
+            Capture all
+          </button>
+          <div className="flex items-stretch">
+            <MoreMenu
+              showBilling={showBilling}
+              showAnalytics={showAnalytics}
+              selectMode={selectMode}
+              watchlistCount={watchlistCount}
+              watchlistCapturing={watchlistCapturing}
+              captureAllRunning={captureAllRunning}
+              onBilling={() => runUiTransition(() => { setShowBilling(!showBilling); setShowAnalytics(false) })}
+              onAnalytics={() => runUiTransition(() => { setShowAnalytics(!showAnalytics); setShowBilling(false) })}
+              onImportUrl={() => runUiTransition(() => { setShowImportUrl(!showImportUrl); setShowBulkImport(false); setShowAdd(false) })}
+              onBulkImport={() => runUiTransition(() => { setShowBulkImport(!showBulkImport); setShowImportUrl(false); setShowAdd(false) })}
+              onExportCsv={() => {}}
+              exportUrl={api.exportPerformersUrl()}
+              onSelect={() => runUiTransition(() => { setSelectMode((v) => !v); setSelectedIds(new Set()) })}
+              onCaptureStale={() => {
+                api.captureStale().then((r) => {
+                  addToast(`Queued ${r.queued} stale creators for capture`, "success")
+                  qcMain.invalidateQueries({ queryKey: sharedQueryKeys.captureQueue() })
+                }).catch(() => addToast("Failed to queue stale captures", "error"))
+              }}
+              onCaptureAll={handleCaptureAll}
+            />
+          </div>
+        </div>
+      </section>
 
       {/* Discovery modal */}
       {showDiscover && <DiscoveryModal onClose={() => runUiTransition(() => setShowDiscover(false))} />}

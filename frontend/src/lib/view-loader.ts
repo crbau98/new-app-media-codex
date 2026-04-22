@@ -10,6 +10,7 @@ const loaders: ModuleMap = {
   graph: () => import("../features/images/MediaPage"),
   performers: () => import("../features/performers/PerformersPage"),
   settings: () => import("../features/settings/SettingsPage"),
+  profile: () => import("../features/profile/ProfilePage"),
 }
 
 const cache = new Map<string, Promise<unknown>>()

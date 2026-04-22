@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react"
 import type { Screenshot } from "./api"
 import { archiverEdgeProxyUrl, archiverPlaybackCandidatesFromAnyRef, extractProxyMediaTargetUrl, isArchiverDirectMediaUrl, shouldPreferArchiverEdgeProxy } from "./archiverMedia"
-import { getBackendOrigin, resolvePublicUrl } from "./backendOrigin"
+import { resolvePublicUrl } from "./backendOrigin"
 
 const BROKEN_MEDIA_LIMIT = 300
 const brokenMediaUrls = new Set<string>()

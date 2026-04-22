@@ -177,6 +177,10 @@ export interface Screenshot {
   user_tags?: string | null
   performer_id?: number | null
   performer_username?: string | null
+  likes_count?: number
+  views_count?: number
+  comments_count?: number
+  is_liked?: boolean
 }
 
 export interface ScreenshotTerm {
@@ -302,6 +306,23 @@ export interface Performer {
   reddit_username?: string | null
   twitter_username?: string | null
   screenshots_count?: number
+  followers_count?: number
+  is_following?: boolean
+  total_likes?: number
+  total_views?: number
+  likes_count?: number
+  is_liked?: boolean
+}
+
+export interface Comment {
+  id: number
+  username: string
+  avatar_url?: string | null
+  content: string
+  created_at: string
+  likes_count?: number
+  parent_id?: number | null
+  replies?: Comment[]
 }
 
 export interface PerformerLink {
@@ -769,6 +790,33 @@ export const api = {
       body: JSON.stringify({ query, limit }),
     }),
   exportPerformersUrl: () => `/api/performers/export.csv`,
+  // Engagement
+  likeScreenshot: (id: number) =>
+    apiFetch<{ liked: boolean; count: number }>("/api/like", { method: "POST", body: JSON.stringify({ screenshot_id: id }) }),
+  unlikeScreenshot: (id: number) =>
+    apiFetch<{ liked: boolean; count: number }>("/api/like", { method: "DELETE", body: JSON.stringify({ screenshot_id: id }) }),
+  getScreenshotLikes: (id: number) =>
+    apiFetch<{ liked: boolean; count: number }>(`/api/likes?screenshot_id=${id}`),
+  likePerformer: (id: number) =>
+    apiFetch<{ liked: boolean; count: number }>("/api/like", { method: "POST", body: JSON.stringify({ performer_id: id }) }),
+  unlikePerformer: (id: number) =>
+    apiFetch<{ liked: boolean; count: number }>("/api/like", { method: "DELETE", body: JSON.stringify({ performer_id: id }) }),
+  getPerformerLikes: (id: number) =>
+    apiFetch<{ liked: boolean; count: number }>(`/api/likes?performer_id=${id}`),
+  recordView: (id: number, type: "screenshot" | "performer") =>
+    apiFetch<void>("/api/view", { method: "POST", body: JSON.stringify(type === "screenshot" ? { screenshot_id: id } : { performer_id: id }) }),
+  getComments: (id: number, type: "screenshot" | "performer") =>
+    apiFetch<{ comments: Comment[] }>(`/api/comments?${type === "screenshot" ? "screenshot_id" : "performer_id"}=${id}`),
+  postComment: (id: number, type: "screenshot" | "performer", content: string, parentId?: number) =>
+    apiFetch<Comment>("/api/comments", { method: "POST", body: JSON.stringify({ ...(type === "screenshot" ? { screenshot_id: id } : { performer_id: id }), content, parent_id: parentId }) }),
+  deleteComment: (id: number) =>
+    apiFetch<void>(`/api/comments/${id}`, { method: "DELETE" }),
+  followPerformer: (id: number) =>
+    apiFetch<{ following: boolean; count: number }>("/api/follow", { method: "POST", body: JSON.stringify({ performer_id: id }) }),
+  unfollowPerformer: (id: number) =>
+    apiFetch<{ following: boolean; count: number }>("/api/follow", { method: "DELETE", body: JSON.stringify({ performer_id: id }) }),
+  getFollows: (id: number) =>
+    apiFetch<{ following: boolean; count: number }>(`/api/follows?performer_id=${id}`),
   // Playlists
   playlists: () => apiFetch<Playlist[]>('/api/playlists'),
   createPlaylist: (data: { name: string; description?: string; is_smart?: boolean; smart_rules?: SmartRules }) =>

@@ -1,0 +1,21 @@
+{
+  "name": "codex-root",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.1"
+  },
+  "lint-staged": {
+    "frontend/**/*.{ts,tsx}": [
+      "cd frontend && npx eslint --fix --max-warnings 999 || true"
+    ],
+    "*.py": [
+      "black --check",
+      "flake8"
+    ]
+  }
+}

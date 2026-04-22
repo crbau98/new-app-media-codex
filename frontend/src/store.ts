@@ -2,7 +2,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
 // ── Constants ────────────────────────────────────────────────────────
-export type ActiveView = "images" | "performers" | "settings"
+export type ActiveView = "images" | "performers" | "settings" | "search" | "explore"
 
 const MAX_NOTIFICATIONS = 50
 
@@ -10,12 +10,16 @@ const VIEW_HASHES: Record<string, ActiveView> = {
   '#/media': 'images',
   '#/performers': 'performers',
   '#/settings': 'settings',
+  '#/search': 'search',
+  '#/explore': 'explore',
 }
 
 const HASH_VIEWS: Record<ActiveView, string> = {
   images: '#/media',
   performers: '#/performers',
   settings: '#/settings',
+  search: '#/search',
+  explore: '#/explore',
 }
 
 export function getViewFromHash(): ActiveView {
@@ -169,6 +173,19 @@ interface AppState {
   recentlyViewed: number[]
   addRecentlyViewed: (id: number) => void
   clearRecentlyViewed: () => void
+
+  // Engagement cache
+  likeCache: Map<number, { liked: boolean; count: number }>
+  setLiked: (shotId: number, liked: boolean, count?: number) => void
+  updateLikeCount: (shotId: number, count: number) => void
+
+  // Follow cache
+  followCache: Map<number, boolean>
+  setFollowing: (performerId: number, following: boolean) => void
+
+  // Search
+  searchQuery: string
+  setSearchQuery: (query: string) => void
 }
 
 // ── Theme helpers ────────────────────────────────────────────────────
@@ -321,6 +338,36 @@ export const useAppStore = create<AppState>()(
           recentlyViewed: [id, ...s.recentlyViewed.filter((x) => x !== id)].slice(0, 30),
         })),
       clearRecentlyViewed: () => set({ recentlyViewed: [] }),
+
+      // Engagement cache
+      likeCache: new Map(),
+      setLiked: (shotId, liked, count) =>
+        set((s) => {
+          const next = new Map(s.likeCache)
+          const existing = next.get(shotId)
+          next.set(shotId, { liked, count: count ?? existing?.count ?? 0 })
+          return { likeCache: next }
+        }),
+      updateLikeCount: (shotId, count) =>
+        set((s) => {
+          const next = new Map(s.likeCache)
+          const existing = next.get(shotId)
+          next.set(shotId, { liked: existing?.liked ?? false, count })
+          return { likeCache: next }
+        }),
+
+      // Follow cache
+      followCache: new Map(),
+      setFollowing: (performerId, following) =>
+        set((s) => {
+          const next = new Map(s.followCache)
+          next.set(performerId, following)
+          return { followCache: next }
+        }),
+
+      // Search
+      searchQuery: "",
+      setSearchQuery: (searchQuery) => set({ searchQuery }),
     }),
     {
       name: 'app-preferences',

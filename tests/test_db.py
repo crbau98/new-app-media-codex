@@ -254,20 +254,20 @@ class TestFTS5:
 
 
 class TestScreenshotBrowseMediaType:
-    def test_coomer_images_are_excluded_from_video_browse(self, db: Database) -> None:
+    def test_images_are_excluded_from_video_browse(self, db: Database) -> None:
         _insert_remote_screenshot(
             db,
             term="creator-image",
-            source="coomer",
-            page_url="https://coomer.st/onlyfans/user/test/post/image",
-            source_url="https://coomer.st/data/aa/bb/example-image.jpg",
+            source="ddg",
+            page_url="https://example.com/image-post",
+            source_url="https://example.com/data/aa/bb/example-image.jpg",
         )
         _insert_remote_screenshot(
             db,
             term="creator-video",
-            source="coomer",
-            page_url="https://coomer.st/onlyfans/user/test/post/video",
-            source_url="https://coomer.st/data/cc/dd/example-video.mp4",
+            source="ddg",
+            page_url="https://example.com/video-post",
+            source_url="https://example.com/data/cc/dd/example-video.mp4",
         )
 
         video_rows = db.browse_screenshots(media_type="video", limit=20, offset=0)["screenshots"]
@@ -276,9 +276,9 @@ class TestScreenshotBrowseMediaType:
         video_urls = {row["source_url"] for row in video_rows}
         image_urls = {row["source_url"] for row in image_rows}
 
-        assert "https://coomer.st/data/cc/dd/example-video.mp4" in video_urls
-        assert "https://coomer.st/data/aa/bb/example-image.jpg" not in video_urls
-        assert "https://coomer.st/data/aa/bb/example-image.jpg" in image_urls
+        assert "https://example.com/data/cc/dd/example-video.mp4" in video_urls
+        assert "https://example.com/data/aa/bb/example-image.jpg" not in video_urls
+        assert "https://example.com/data/aa/bb/example-image.jpg" in image_urls
 
 
 class TestBrowsePerformers:

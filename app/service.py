@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import traceback
@@ -118,6 +119,8 @@ class ResearchService:
         self._dashboard_cache_expires_at = 0.0
         self._dashboard_cache_payload: dict[str, Any] | None = None
         self._dashboard_cache_lock = Lock()
+        # source_key -> {successes, failures, last_success, last_failure, total_items, total_duration}
+        self._source_metrics: dict[str, dict[str, Any]] = {}
 
     def add_progress_callback(self, cb: Callable[[dict], Any]) -> None:
         with self._callbacks_lock:
@@ -394,13 +397,75 @@ class ResearchService:
             finally:
                 self.running = False
 
+    def _record_source_metric(self, source_key: str, success: bool, items: int, duration: float) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        m = self._source_metrics.setdefault(source_key, {
+            "successes": 0, "failures": 0, "last_success": "", "last_failure": "",
+            "total_items": 0, "total_duration": 0.0, "runs": 0,
+        })
+        m["runs"] += 1
+        m["total_items"] += items
+        m["total_duration"] += duration
+        if success:
+            m["successes"] += 1
+            m["last_success"] = now
+        else:
+            m["failures"] += 1
+            m["last_failure"] = now
+
+    def source_health_snapshot(self) -> list[dict[str, Any]]:
+        snapshot: list[dict[str, Any]] = []
+        for name, m in sorted(self._source_metrics.items()):
+            runs = m["runs"]
+            success_rate = round(m["successes"] / runs, 2) if runs else 1.0
+            avg_items = round(m["total_items"] / runs, 1) if runs else 0.0
+            avg_duration = round(m["total_duration"] / runs, 2) if runs else 0.0
+            status = "healthy"
+            if success_rate < 0.5:
+                status = "unhealthy"
+            elif success_rate < 0.8:
+                status = "degraded"
+            snapshot.append({
+                "name": name,
+                "status": status,
+                "last_success": m["last_success"],
+                "last_failure": m["last_failure"],
+                "success_rate": success_rate,
+                "avg_items_per_run": avg_items,
+                "avg_duration_seconds": avg_duration,
+            })
+        return snapshot
+
     def run_crawl(self) -> dict[str, Any]:
+        """Entry-point for sync callers (scheduler / background tasks)."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None:
+            # Already inside an event loop (e.g., tests) — use thread-safe helper
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(self._run_crawl_sync)
+                return future.result()
+        return self._run_crawl_sync()
+
+    def _run_crawl_sync(self) -> dict[str, Any]:
+        return asyncio.run(self._run_crawl_async())
+
+    async def _run_crawl_async(self) -> dict[str, Any]:
         from app.sources import (
             build_session,
+            collect_boyfriendtv_theme,
+            collect_fansly_theme,
             collect_firecrawl_images,
             collect_images,
+            collect_instagram_theme,
+            collect_justforfans_theme,
             collect_lpsg,
             collect_reddit,
+            collect_spankbang_theme,
             collect_x,
         )
 
@@ -426,27 +491,62 @@ class ResearchService:
                         "x": 0,
                         "lpsg": 0,
                         "images": 0,
+                        "spankbang": 0,
+                        "boyfriendtv": 0,
+                        "instagram": 0,
+                        "fansly": 0,
+                        "justforfans": 0,
                     },
                 )
 
-                # ── Reddit / X / LPSG — images from social sources ─
+                # ── Parallel social source collection ────────────────────────
+                social_tasks = []
+                social_keys = []
                 for source_key, collector in (
                     ("reddit", collect_reddit),
                     ("x", collect_x),
                     ("lpsg", collect_lpsg),
                 ):
                     self._emit({"type": "source_start", "source": source_key, "theme": theme.slug})
-                    try:
-                        source_items, source_images = collector(session, self.settings, theme)
-                    except Exception as exc:
-                        notes["errors"].append(f"{theme.slug}:{collector.__name__}:{exc}")
-                        source_items, source_images = [], []
+                    social_tasks.append(
+                        asyncio.wait_for(
+                            asyncio.to_thread(collector, session, self.settings, theme),
+                            timeout=30.0,
+                        )
+                    )
+                    social_keys.append(source_key)
+
+                # Async-native new sources
+                for source_key, collector in (
+                    ("spankbang", collect_spankbang_theme),
+                    ("boyfriendtv", collect_boyfriendtv_theme),
+                    ("instagram", collect_instagram_theme),
+                    ("fansly", collect_fansly_theme),
+                    ("justforfans", collect_justforfans_theme),
+                ):
+                    self._emit({"type": "source_start", "source": source_key, "theme": theme.slug})
+                    social_tasks.append(
+                        asyncio.wait_for(
+                            collector(self.settings, theme, self.db),
+                            timeout=30.0,
+                        )
+                    )
+                    social_keys.append(source_key)
+
+                social_results = await asyncio.gather(*social_tasks, return_exceptions=True)
+
+                for source_key, result in zip(social_keys, social_results):
+                    start_time = time.monotonic()
+                    if isinstance(result, Exception):
+                        notes["errors"].append(f"{theme.slug}:{source_key}:{result}")
+                        self._record_source_metric(source_key, success=False, items=0, duration=time.monotonic() - start_time)
+                        continue
+                    source_items, source_images = result
+                    self._record_source_metric(source_key, success=True, items=len(source_items) + len(source_images), duration=time.monotonic() - start_time)
                     for image in source_images:
                         self.db.insert_image(cache_image_record(session, self.settings, image.__dict__))
                         notes["collected"]["images"] += 1
                         theme_notes["images"] += 1
-                    # Still insert items for deduplication tracking (page_url uniqueness),
-                    # but they are no longer surfaced in any UI view.
                     for item in source_items:
                         record = item.to_record()
                         _, created = self.db.upsert_item(record, run_id)
@@ -468,8 +568,6 @@ class ResearchService:
                                     },
                                 ),
                             )
-                        # Reddit posts may contain v.redd.it videos — insert them
-                        # into screenshots so the video player can resolve them.
                         if source_key == "reddit":
                             videos = item.metadata.get("videos") if isinstance(item.metadata, dict) else None
                             for video in videos or []:
@@ -490,11 +588,18 @@ class ResearchService:
                                     notes["errors"].append(
                                         f"{theme.slug}:{source_key}_video_insert:{exc}"
                                     )
+
                 # ── DDG image search ─────────────────────────────────────────
+                start_time = time.monotonic()
                 try:
-                    query_images = collect_images(session, self.settings, theme, theme.label)
+                    query_images = await asyncio.wait_for(
+                        asyncio.to_thread(collect_images, session, self.settings, theme, theme.label),
+                        timeout=30.0,
+                    )
+                    self._record_source_metric("images", success=True, items=len(query_images), duration=time.monotonic() - start_time)
                 except Exception as exc:
                     notes["errors"].append(f"{theme.slug}:collect_images:{exc}")
+                    self._record_source_metric("images", success=False, items=0, duration=time.monotonic() - start_time)
                     query_images = []
                 for image in query_images:
                     self.db.insert_image(cache_image_record(session, self.settings, image.__dict__))
@@ -502,10 +607,16 @@ class ResearchService:
                     theme_notes["images"] += 1
 
                 # ── Firecrawl image scraping ─────────────────────────────────
+                start_time = time.monotonic()
                 try:
-                    fc_images = collect_firecrawl_images(session, self.settings, theme)
+                    fc_images = await asyncio.wait_for(
+                        asyncio.to_thread(collect_firecrawl_images, session, self.settings, theme),
+                        timeout=30.0,
+                    )
+                    self._record_source_metric("firecrawl", success=True, items=len(fc_images), duration=time.monotonic() - start_time)
                 except Exception as exc:
                     notes["errors"].append(f"{theme.slug}:collect_firecrawl_images:{exc}")
+                    self._record_source_metric("firecrawl", success=False, items=0, duration=time.monotonic() - start_time)
                     fc_images = []
                 for image in fc_images:
                     self.db.insert_image(cache_image_record(session, self.settings, image.__dict__))
@@ -639,7 +750,7 @@ class ResearchService:
             "images": self.serialize_images(self.db.get_recent_images(limit=24)),
             "hypotheses": self.db.get_recent_hypotheses(limit=8),
             "themes": [{"slug": theme.slug, "label": theme.label} for theme in self.settings.themes],
-            "source_types": ["literature", "anecdote", "reddit", "x", "lpsg", "pubmed", "biorxiv", "arxiv", "firecrawl"],
+            "source_types": ["literature", "anecdote", "reddit", "x", "lpsg", "pubmed", "biorxiv", "arxiv", "firecrawl", "spankbang", "boyfriendtv", "instagram", "fansly", "justforfans"],
             "review_status_options": ["new", "reviewing", "shortlisted", "archived"],
             "hypothesis_review_options": ["new", "reviewing", "promoted", "dismissed"],
             "image_source_types": [
@@ -650,6 +761,11 @@ class ResearchService:
                 "x_image",
                 "lpsg_image",
                 "item_image",
+                "spankbang_image",
+                "boyfriendtv_image",
+                "instagram_image",
+                "fansly_image",
+                "justforfans_image",
             ],
             "is_running": self.lock.locked(),
         }

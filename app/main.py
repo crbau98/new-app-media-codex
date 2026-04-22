@@ -27,36 +27,20 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.db import Database, check_disk_space
 from app.service import ResearchService
+from app.logging_config import configure_logging
 
-# ── Structured logging setup (5.4) ───────────────────────────────────────────
-_LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
-_IS_PRODUCTION = os.environ.get("ENVIRONMENT", "development").lower() == "production"
+configure_logging()
 
-if _IS_PRODUCTION:
-    # JSON-format for Render / cloud log aggregators
-    logging.config.dictConfig({
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "json": {
-                "()": "logging.Formatter",
-                "fmt": '{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":%(message)r}',
-                "datefmt": "%Y-%m-%dT%H:%M:%S",
-            },
-        },
-        "handlers": {
-            "console": {"class": "logging.StreamHandler", "formatter": "json"},
-        },
-        "root": {"level": _LOG_LEVEL, "handlers": ["console"]},
-    })
-else:
-    logging.basicConfig(
-        level=_LOG_LEVEL,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
+# ── Sentry (optional) ─────────────────────────────────────────────────────────
+_SENTRY_DSN = os.environ.get("SENTRY_DSN")
+if _SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    sentry_sdk.init(
+        dsn=_SENTRY_DSN,
+        integrations=[FastApiIntegration()],
+        traces_sample_rate=0.1,
     )
-
-
 
 BASE_DIR = Path(__file__).resolve().parent
 db = Database(
@@ -249,9 +233,26 @@ async def sqlite_operational_error_handler(request: Request, exc: sqlite3.Operat
 
 
 @app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    request.state.request_id = request_id
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+    _main_logger.info(
+        "request %s %s %s %.2fms",
+        request_id,
+        request.method,
+        request.url.path,
+        duration_ms,
+    )
+    return response
+
+
+@app.middleware("http")
 async def apply_response_headers(request: Request, call_next):
     response = await call_next(request)
-    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    request_id = getattr(request.state, "request_id", uuid.uuid4().hex)
     response.headers.setdefault("X-Request-ID", request_id)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -538,6 +539,9 @@ def api_version() -> JSONResponse:
 from app.api.crawl import router as crawl_router
 app.include_router(crawl_router)
 
+from app.api.health import router as health_router
+app.include_router(health_router)
+
 from app.api.hypotheses_stream import router as hyp_stream_router
 app.include_router(hyp_stream_router)
 
@@ -597,6 +601,15 @@ def capture_queue_alias(request: Request):
 
 from app.api.playlists import router as playlists_router
 app.include_router(playlists_router)
+
+from app.api.feed import router as feed_router
+app.include_router(feed_router)
+
+from app.api.engagement import router as engagement_router
+app.include_router(engagement_router)
+
+from app.api.analytics import router as analytics_router
+app.include_router(analytics_router)
 
 # SPA fallback — must be the last route
 @app.get("/{full_path:path}", response_class=HTMLResponse)

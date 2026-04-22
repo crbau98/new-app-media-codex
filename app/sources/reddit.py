@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import requests
@@ -20,6 +21,8 @@ from app.sources.base import (
     search_web,
     to_iso8601,
 )
+
+logger = logging.getLogger(__name__)
 
 REDDIT_QUERIES = {
     "onlyfans_creators": [
@@ -73,22 +76,55 @@ REDDIT_QUERIES = {
 }
 
 
+def _is_removed_post(post: dict[str, Any]) -> bool:
+    """Detect deleted or removed posts early so we can skip them."""
+    author = post.get("author", "")
+    title = post.get("title", "")
+    if author in ("[deleted]", "[removed]", "AutoModerator"):
+        return True
+    if title in ("[deleted by user]", "[removed]", "") and not post.get("selftext"):
+        return True
+    if post.get("removed_by_category"):
+        return True
+    return False
+
+
 def extract_reddit_post_image_urls(post: dict[str, Any]) -> list[str]:
     image_urls: list[str] = []
     direct_url = normalize_image_url(post.get("url_overridden_by_dest", ""))
     if is_useful_image_url(direct_url) and is_direct_image_asset(direct_url):
         image_urls.append(direct_url)
+
     preview = post.get("preview", {}).get("images", [])
     for image in preview:
         source = image.get("source", {})
         url_value = normalize_image_url(source.get("url", ""))
         if is_useful_image_url(url_value):
             image_urls.append(url_value)
-    for asset in post.get("media_metadata", {}).values():
-        source = asset.get("s", {})
-        url_value = normalize_image_url(source.get("u", ""))
-        if is_useful_image_url(url_value):
-            image_urls.append(url_value)
+
+    # Gallery posts: media_metadata may contain multiple images.
+    media_metadata = post.get("media_metadata") or {}
+    if media_metadata:
+        # gallery_data provides the ordering
+        gallery_data = post.get("gallery_data", {}).get("items", [])
+        ordered_ids = [item["media_id"] for item in gallery_data if "media_id" in item]
+        # Fallback to all keys if gallery_data missing
+        ids_to_process = ordered_ids or list(media_metadata.keys())
+        for media_id in ids_to_process:
+            asset = media_metadata.get(media_id)
+            if not isinstance(asset, dict):
+                continue
+            source = asset.get("s", {})
+            url_value = normalize_image_url(source.get("u", ""))
+            if is_useful_image_url(url_value):
+                image_urls.append(url_value)
+            # Also check variants (e.g., gif → mp4)
+            variants = source.get("variants", {})
+            for variant in variants.values():
+                v_url = normalize_image_url(variant.get("source", {}).get("url", ""))
+                if is_useful_image_url(v_url):
+                    image_urls.append(v_url)
+
     thumb_url = normalize_image_url(post.get("thumbnail", ""))
     if is_useful_image_url(thumb_url):
         image_urls.append(thumb_url)
@@ -98,8 +134,8 @@ def extract_reddit_post_image_urls(post: dict[str, Any]) -> list[str]:
 def extract_reddit_post_video_urls(post: dict[str, Any]) -> list[dict[str, str]]:
     """Extract Reddit-hosted video URLs from a post's media metadata.
 
-    Returns a list of dicts shaped like:
-        [{"source_url": "https://v.redd.it/.../DASH_720.mp4", "page_url": permalink}]
+    Includes both video and audio DASH URLs when available so downstream
+    players can mux them if desired.
     """
     videos: list[dict[str, str]] = []
     if not post.get("is_video"):
@@ -108,7 +144,6 @@ def extract_reddit_post_video_urls(post: dict[str, Any]) -> list[dict[str, str]]
     permalink = post.get("permalink") or ""
     page_url = f"https://www.reddit.com{permalink}" if permalink.startswith("/") else permalink
 
-    # Reddit stores video info in media → reddit_video
     for media_key in ("secure_media", "media"):
         media = post.get(media_key) or {}
         rv = media.get("reddit_video") if isinstance(media, dict) else None
@@ -116,16 +151,24 @@ def extract_reddit_post_video_urls(post: dict[str, Any]) -> list[dict[str, str]]
             continue
         fallback = rv.get("fallback_url")
         hls = rv.get("hls_url")
-        # Prefer direct MP4 fallback, fall back to HLS
-        url = fallback or hls
+        dash_url = rv.get("dash_url")
+        # Audio track is typically at DASH_audio.mp4 relative to the fallback base
+        audio_url = ""
+        if fallback and "/DASH_" in fallback:
+            base = fallback.rsplit("/", 1)[0]
+            audio_url = f"{base}/DASH_audio.mp4"
+        url = fallback or hls or dash_url
         if url:
-            videos.append({"source_url": url, "page_url": page_url})
-            break  # secure_media and media are duplicates; stop after first hit
+            entry: dict[str, str] = {"source_url": url, "page_url": page_url}
+            if audio_url:
+                entry["audio_url"] = audio_url
+            if hls:
+                entry["hls_url"] = hls
+            videos.append(entry)
+            break
 
-    # Some posts link to external video hosts (e.g. redgifs) via url_overridden_by_dest
     direct = post.get("url_overridden_by_dest", "")
     if direct and ".redd.it" not in direct and "/comments/" not in direct:
-        # External video link — keep it so yt-dlp can resolve on playback
         if direct not in {v["source_url"] for v in videos}:
             videos.append({"source_url": direct, "page_url": page_url})
 
@@ -138,8 +181,20 @@ def scrape_reddit_thread(session: requests.Session, settings: Settings, url: str
     response = session.get(json_url, timeout=settings.request_timeout_seconds)
     response.raise_for_status()
     payload = response.json()
-    post = payload[0]["data"]["children"][0]["data"]
-    comments = payload[1]["data"]["children"] if len(payload) > 1 else []
+
+    # Guard against unexpected payload shapes
+    if not isinstance(payload, list) or len(payload) == 0:
+        raise ValueError("Unexpected Reddit JSON shape")
+
+    children = payload[0].get("data", {}).get("children", [])
+    if not children:
+        raise ValueError("No post data in Reddit response")
+
+    post = children[0].get("data", {})
+    if _is_removed_post(post):
+        raise ValueError("Post was removed or deleted")
+
+    comments = payload[1].get("data", {}).get("children", []) if len(payload) > 1 else []
     comment_snippets: list[str] = []
     for comment in comments[:5]:
         if comment.get("kind") != "t1":
@@ -147,6 +202,7 @@ def scrape_reddit_thread(session: requests.Session, settings: Settings, url: str
         body = clean_text(comment.get("data", {}).get("body", ""))
         if body:
             comment_snippets.append(body)
+
     image_urls = extract_reddit_post_image_urls(post)
     video_urls = extract_reddit_post_video_urls(post)
     text_parts = [clean_text(post.get("selftext", ""))] + comment_snippets
@@ -185,7 +241,8 @@ def collect_reddit(session: requests.Session, settings: Settings, theme: Theme) 
             snippet = clean_text(row.get("body", ""))
             try:
                 scraped = scrape_reddit_thread(session, settings, url)
-            except Exception:
+            except Exception as exc:
+                logger.debug("reddit: skipped %s: %s", url, exc)
                 continue
             combined = "\n".join([scraped["title"], snippet, scraped["content"]])
             compounds, mechanisms = extract_terms(combined)

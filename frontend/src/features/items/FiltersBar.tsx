@@ -34,16 +34,12 @@ function loadPresets(): Record<string, Partial<Filters>> {
   return {}
 }
 
-function savePreset(_name: string, _filters: Filters) {
-  // presets kept in memory only
-}
-
 const controlClass =
   'px-3 py-2 bg-bg-subtle border border-border rounded-lg text-xs text-text-secondary focus:outline-none focus:border-accent/50 transition-colors hover:border-border/80'
 
 // ── Inline preset save row ────────────────────────────────────────────────────
 function SavePresetInline({
-  filters,
+  filters: _filters,
   onSaved,
 }: {
   filters: Filters
