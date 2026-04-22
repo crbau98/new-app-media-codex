@@ -483,7 +483,12 @@ def _looks_like_creator_term(term: str) -> bool:
                 or token.endswith(("x", "xx", "xxx"))
             )
         )
-    return len(non_generic_tokens) >= 2
+    # Multi-token: accept if at least one non-generic token looks like a handle
+    # (>= 5 chars with alpha) — catches "jakipz onlyfans", "ryan bones", etc.
+    return any(
+        len(t) >= 5 and any(ch.isalpha() for ch in t)
+        for t in non_generic_tokens
+    )
 
 
 def _creator_identity_from_term(term: str) -> tuple[str, str]:

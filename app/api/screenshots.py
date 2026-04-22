@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse, Response
 from PIL import Image, ImageOps
 
 from app.db import Database
+from app.performer_identity import normalize_identity_alias
 
 _logger = logging.getLogger(__name__)
 
@@ -2585,10 +2586,13 @@ def _run_capture(app_state):
     terms_seen: set[str] = set()
 
     # Build performer username → id lookup for auto-linking
+    # Use normalized aliases so "ryan bones" matches performer "ryanbones".
     performer_lookup: dict[str, int] = {}
     with db.connect() as conn:
         for row in conn.execute("SELECT id, username FROM performers").fetchall():
-            performer_lookup[row["username"].lower()] = row["id"]
+            alias = normalize_identity_alias(row["username"])
+            if alias:
+                performer_lookup[alias] = row["id"]
 
     for result in capture_screenshots(image_dir, db=db, settings=settings):
         # Abort capture loop if disk is nearly full
@@ -2603,7 +2607,7 @@ def _run_capture(app_state):
             current_term = term
 
         if result["ok"]:
-            performer_id = performer_lookup.get(result["term"].lower())
+            performer_id = performer_lookup.get(normalize_identity_alias(result["term"]))
             db.insert_screenshot(
                 term=result["term"],
                 source=result["source"],
