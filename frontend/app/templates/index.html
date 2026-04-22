@@ -1,0 +1,2712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ payload.app_name }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Continuous source monitor</p>
+        <h1>{{ payload.app_name }}</h1>
+        <p class="lede">
+          Tracks public literature, public anecdotes, public social discussion, and source-grounded research leads across libido,
+          SSRI-related sexual dysfunction, ejaculation latency, erections, and orgasm.
+        </p>
+        <div class="hero-status" id="hero-status"></div>
+      </div>
+
+      <aside class="hero-panel">
+        <div class="hero-panel-head">
+          <h2>Controls</h2>
+          <button id="refresh-now" class="secondary">Refresh</button>
+        </div>
+        <button id="open-command" class="secondary">Open command palette</button>
+        <button id="run-now">Run crawl now</button>
+        <p id="run-status" class="muted" role="status" aria-live="polite"></p>
+        <label class="field">
+          <span>Admin token</span>
+          <input id="admin-token" type="password" placeholder="Required for manual runs">
+        </label>
+        <div class="inline-actions">
+          <button id="save-token" class="secondary">Save token</button>
+          <button id="clear-token" class="ghost">Clear</button>
+        </div>
+        <div class="inline-actions">
+          <button id="export-items" class="secondary">Export items</button>
+          <button id="export-hypotheses" class="ghost">Export hypotheses</button>
+        </div>
+        <div class="inline-actions">
+          <select id="preset-select">
+            <option value="">Saved views</option>
+          </select>
+          <button id="save-preset" class="secondary">Save view</button>
+          <button id="load-preset" class="ghost">Load</button>
+          <button id="clear-filters" class="ghost">Clear filters</button>
+          <button id="copy-view-link" class="ghost">Copy view link</button>
+        </div>
+        <p class="warning">
+          Research dashboard only. Hypotheses are not medical advice and do not imply safe self-experimentation.
+        </p>
+      </aside>
+    </header>
+
+    <nav class="workspace-nav panel">
+      <div class="workspace-nav-head">
+        <div>
+          <h2>Workspace</h2>
+          <p id="workspace-summary" class="meta"></p>
+        </div>
+        <div class="workspace-nav-tools">
+          <label class="field field-inline compact-field">
+            <span>Density</span>
+            <select id="density-select">
+              <option value="comfortable">Comfortable</option>
+              <option value="compact">Compact</option>
+            </select>
+          </label>
+          <span class="chip subtle">Shortcut Ctrl/Cmd+K</span>
+        </div>
+      </div>
+      <div class="workspace-mode-row">
+        <button class="nav-chip" data-workspace-mode="all">All</button>
+        <button class="nav-chip" data-workspace-mode="overview">Overview</button>
+        <button class="nav-chip" data-workspace-mode="topics">Topics</button>
+        <button class="nav-chip" data-workspace-mode="review">Review</button>
+        <button class="nav-chip" data-workspace-mode="media">Media</button>
+      </div>
+      <div class="workspace-jump-row">
+        <button class="nav-chip" data-nav-target="overview-section">Overview</button>
+        <button class="nav-chip" data-nav-target="topic-spotlight-section">Topic explorer</button>
+        <button class="nav-chip" data-nav-target="captures-section">Source captures</button>
+        <button class="nav-chip" data-nav-target="images-section">Images</button>
+      </div>
+      <div id="workspace-context" class="token-row workspace-context"></div>
+    </nav>
+
+    <section class="panel topic-rack" data-workspace-view="topics">
+      <div class="section-head">
+        <div>
+          <h2>Topic workspace</h2>
+          <p id="topic-rack-summary" class="meta"></p>
+        </div>
+      </div>
+      <div class="topic-rack-grid">
+        <div>
+          <h3 class="subhead">Saved topics</h3>
+          <div id="saved-topics" class="token-row"></div>
+        </div>
+        <div>
+          <h3 class="subhead">Recent pivots</h3>
+          <div id="recent-topics" class="token-row"></div>
+        </div>
+      </div>
+      <div class="topic-rack-grid topic-rack-grid-wide">
+        <div>
+          <h3 class="subhead">Topic boards</h3>
+          <label class="field">
+            <span>Active board</span>
+            <select id="board-select">
+              <option value="">No board selected</option>
+            </select>
+          </label>
+          <div class="inline-actions">
+            <button id="create-board" class="secondary">New board</button>
+            <button id="delete-board" class="ghost">Delete board</button>
+            <button id="add-topic-to-board" class="secondary">Add current topic</button>
+          </div>
+          <div id="board-topics" class="token-row"></div>
+          <label class="field">
+            <span id="board-note-label">Board note</span>
+            <textarea id="board-note" rows="4" placeholder="Capture what this board is tracking and what needs follow-up."></textarea>
+          </label>
+          <div class="inline-actions">
+            <button id="save-board-note" class="secondary">Save board note</button>
+            <button id="clear-board-note" class="ghost">Clear board note</button>
+          </div>
+        </div>
+        <div>
+          <h3 class="subhead">Topic notebook</h3>
+          <label class="field">
+            <span id="topic-note-label">Select a topic to store a local note</span>
+            <textarea id="topic-note" rows="4" placeholder="Capture why this topic matters, what to validate next, or what changed over time."></textarea>
+          </label>
+          <div class="inline-actions">
+            <button id="save-topic-note" class="secondary">Save topic note</button>
+            <button id="clear-topic-note" class="ghost">Clear note</button>
+          </div>
+        </div>
+        <div>
+          <h3 class="subhead">Compare topics</h3>
+          <label class="field">
+            <span>Compare current topic against</span>
+            <select id="compare-topic-select">
+              <option value="">Choose a saved or recent topic</option>
+            </select>
+          </label>
+          <div class="inline-actions">
+            <button id="load-compare-topic" class="secondary">Compare</button>
+            <button id="clear-compare-topic" class="ghost">Clear compare</button>
+          </div>
+          <div id="compare-summary" class="token-row"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="stats" id="stats" data-workspace-view="overview"></section>
+
+    <section class="overview-grid" id="overview-section" data-workspace-view="overview">
+      <article class="panel panel-tall">
+        <div class="section-head">
+          <h2>Research hypotheses</h2>
+          <span id="last-run-chip" class="chip"></span>
+        </div>
+        <div id="run-meta" class="run-meta"></div>
+        <div id="hypotheses"></div>
+      </article>
+
+      <article class="panel">
+        <div class="section-head">
+          <h2>Review queue</h2>
+          <span id="queue-summary" class="chip subtle"></span>
+        </div>
+        <div id="review-queue" class="stack-list"></div>
+      </article>
+
+      <article class="panel">
+        <div class="section-head">
+          <h2>Run history</h2>
+          <span id="run-history-summary" class="chip subtle"></span>
+        </div>
+        <div id="runs" class="stack-list"></div>
+      </article>
+
+      <article class="panel">
+        <div class="section-head">
+          <h2>Source coverage</h2>
+          <span id="source-count-chip" class="chip subtle"></span>
+        </div>
+        <div id="source-mix" class="stack-list compact"></div>
+      </article>
+
+      <article class="panel">
+        <div class="section-head">
+          <h2>Theme activity</h2>
+          <span id="theme-summary-chip" class="chip subtle"></span>
+        </div>
+        <div id="theme-summaries" class="stack-list compact"></div>
+      </article>
+
+      <article class="panel">
+        <div class="section-head">
+          <h2>Run source breakdown</h2>
+          <span id="source-breakdown-chip" class="chip subtle"></span>
+        </div>
+        <div id="source-breakdown" class="stack-list compact"></div>
+      </article>
+
+      <article class="panel">
+        <div class="section-head">
+          <h2>Observed signals</h2>
+        </div>
+        <div class="signal-groups">
+          <div>
+            <h3 class="subhead">Compounds</h3>
+            <div id="compounds" class="token-row"></div>
+          </div>
+          <div>
+            <h3 class="subhead">Mechanisms</h3>
+            <div id="mechanisms" class="token-row"></div>
+          </div>
+          <div>
+            <h3 class="subhead">Review status</h3>
+            <div id="review-statuses" class="token-row"></div>
+          </div>
+          <div>
+            <h3 class="subhead">Hypothesis review</h3>
+            <div id="hypothesis-review-statuses" class="token-row"></div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel spotlight-panel" id="topic-spotlight-section" data-workspace-view="topics">
+      <div class="section-head">
+        <div>
+          <h2>Topic explorer</h2>
+          <p id="spotlight-summary" class="meta"></p>
+        </div>
+        <div class="inline-actions">
+          <label class="field field-inline">
+            <span>Change baseline</span>
+            <select id="diff-baseline">
+              <option value="last_run">Since last completed crawl</option>
+              <option value="24h">Last 24h</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+            </select>
+          </label>
+          <button id="save-topic-focus" class="secondary">Save topic</button>
+          <button id="apply-topic-focus" class="secondary">Apply to filters</button>
+          <button id="clear-topic-focus" class="ghost">Clear topic</button>
+        </div>
+      </div>
+      <div id="spotlight-context" class="token-row"></div>
+      <div id="spotlight-diff-summary" class="token-row"></div>
+      <div id="spotlight-suggestions" class="token-row"></div>
+      <div id="spotlight-panels" class="spotlight-grid"></div>
+      <div id="compare-panels" class="spotlight-grid compare-grid"></div>
+    </section>
+
+    <section class="panel" id="captures-section" data-workspace-view="review">
+      <div class="section-head">
+        <div>
+          <h2>Recent source captures</h2>
+          <p id="result-summary" class="meta"></p>
+        </div>
+      </div>
+      <div class="filters">
+        <input id="search-filter" type="search" placeholder="Search titles, summaries, mechanisms, compounds">
+        <select id="theme-filter">
+          <option value="">All themes</option>
+        </select>
+        <select id="source-filter">
+          <option value="">All sources</option>
+        </select>
+        <select id="review-filter">
+          <option value="">All review states</option>
+        </select>
+        <select id="sort-filter">
+          <option value="newest">Newest</option>
+          <option value="score">Highest score</option>
+          <option value="saved">Saved first</option>
+          <option value="title">Title</option>
+          <option value="source">Source</option>
+        </select>
+        <label class="checkbox">
+          <input id="saved-only-filter" type="checkbox">
+          <span>Saved only</span>
+        </label>
+      </div>
+      <div id="active-filters" class="token-row" role="status" aria-live="polite"></div>
+      <div id="bulk-bar" class="bulk-bar hidden">
+        <div class="bulk-summary" id="bulk-summary"></div>
+        <div class="inline-actions">
+          <button id="bulk-save" class="secondary small">Save selected</button>
+          <button id="bulk-unsave" class="ghost small">Unsave selected</button>
+          <select id="bulk-status" class="status-select">
+            <option value="">Apply status</option>
+          </select>
+          <button id="bulk-apply-status" class="secondary small">Apply</button>
+          <button id="bulk-export" class="ghost small">Export selected</button>
+          <button id="bulk-clear" class="ghost small">Clear</button>
+        </div>
+      </div>
+      <div id="items" class="cards"></div>
+      <div class="section-actions">
+        <button id="load-more-items" class="secondary">Load more items</button>
+      </div>
+    </section>
+
+    <section class="panel" id="images-section" data-workspace-view="media">
+      <div class="section-head">
+        <div>
+          <h2>Image stream</h2>
+          <p id="image-summary" class="meta"></p>
+        </div>
+        <select id="image-filter">
+          <option value="">All image types</option>
+        </select>
+      </div>
+      <div id="images" class="image-grid"></div>
+      <div class="section-actions">
+        <button id="load-more-images" class="secondary">Load more images</button>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="item-dialog" class="modal">
+    <div class="modal-head">
+      <div>
+        <p id="item-dialog-kicker" class="eyebrow compact"></p>
+        <h2 id="item-dialog-title"></h2>
+      </div>
+      <button id="close-item-dialog" class="ghost">Close</button>
+    </div>
+    <div id="item-dialog-body" class="modal-body"></div>
+  </dialog>
+
+  <dialog id="image-dialog" class="modal modal-image">
+    <div class="modal-head">
+      <div>
+        <p id="image-dialog-kicker" class="eyebrow compact"></p>
+        <h2 id="image-dialog-title"></h2>
+      </div>
+      <button id="close-image-dialog" class="ghost">Close</button>
+    </div>
+    <div class="modal-body">
+      <img id="image-dialog-preview" alt="">
+      <p id="image-dialog-meta" class="meta"></p>
+      <p><a id="image-dialog-link" href="#" target="_blank" rel="noreferrer">Open source</a></p>
+    </div>
+  </dialog>
+
+  <dialog id="run-dialog" class="modal">
+    <div class="modal-head">
+      <div>
+        <p id="run-dialog-kicker" class="eyebrow compact"></p>
+        <h2 id="run-dialog-title"></h2>
+      </div>
+      <button id="close-run-dialog" class="ghost">Close</button>
+    </div>
+    <div id="run-dialog-body" class="modal-body"></div>
+  </dialog>
+
+  <dialog id="command-dialog" class="modal command-modal">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow compact">Quick actions</p>
+        <h2>Command palette</h2>
+      </div>
+      <button id="close-command-dialog" class="ghost">Close</button>
+    </div>
+    <div class="modal-body">
+      <label class="field">
+        <span>Search actions, views, topics, compounds, and sources</span>
+        <input id="command-input" type="search" placeholder="Try: overview, saved queue, serotonin, reddit, board">
+      </label>
+      <p id="command-meta" class="meta"></p>
+      <div id="command-results" class="command-results"></div>
+    </div>
+  </dialog>
+
+  <button id="back-to-top" class="back-to-top hidden" aria-label="Back to top">Top</button>
+
+  <script>
+    const initialPayload = {{ payload|tojson }};
+    const ADMIN_TOKEN_KEY = "desire-radar-admin-token";
+    const VIEW_PRESET_KEY = "desire-radar-view-presets";
+    const TOPIC_RECENT_KEY = "desire-radar-recent-topics";
+    const TOPIC_SAVED_KEY = "desire-radar-saved-topics";
+    const TOPIC_NOTE_KEY = "desire-radar-topic-notes";
+    const TOPIC_BOARDS_KEY = "desire-radar-topic-boards";
+    const ACTIVE_BOARD_KEY = "desire-radar-active-board";
+    const WORKSPACE_MODE_KEY = "desire-radar-workspace-mode";
+    const DENSITY_KEY = "desire-radar-density-mode";
+    const state = {
+      payload: initialPayload,
+      itemPageSize: 36,
+      imagePageSize: 24,
+      itemTotal: (initialPayload.items || []).length,
+      imageTotal: (initialPayload.images || []).length,
+      allItems: initialPayload.items || [],
+      allImages: initialPayload.images || [],
+      filteredItems: [],
+      filteredImages: [],
+      activeItem: null,
+      activeRun: null,
+      topicFocus: null,
+      focusItems: [],
+      focusImages: [],
+      focusItemTotal: 0,
+      focusImageTotal: 0,
+      focusLoading: false,
+      focusRequestId: 0,
+      compareFocus: null,
+      compareItems: [],
+      compareImages: [],
+      compareItemTotal: 0,
+      compareImageTotal: 0,
+      compareLoading: false,
+      compareRequestId: 0,
+      activeBoardId: window.localStorage.getItem(ACTIVE_BOARD_KEY) || "",
+      workspaceMode: window.localStorage.getItem(WORKSPACE_MODE_KEY) || "all",
+      densityMode: window.localStorage.getItem(DENSITY_KEY) || "comfortable",
+      selectedItemIds: new Set(),
+      urlHydrated: false,
+      browseRequestId: 0,
+      searchTimer: null,
+      collectionLoading: false,
+      commandPaletteOpen: false,
+      commandQuery: "",
+      commandIndex: 0,
+      commandEntries: [],
+      lastDialogTrigger: null
+    };
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      }[char]));
+    }
+
+    function formatDate(value) {
+      if (!value) return "Unknown";
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return value;
+      return parsed.toLocaleString();
+    }
+
+    function formatRelative(value) {
+      if (!value) return "unknown";
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return value;
+      const diffMs = Date.now() - parsed.getTime();
+      const diffMinutes = Math.round(diffMs / 60000);
+      if (Math.abs(diffMinutes) < 1) return "just now";
+      if (Math.abs(diffMinutes) < 60) return `${diffMinutes}m ago`;
+      const diffHours = Math.round(diffMinutes / 60);
+      if (Math.abs(diffHours) < 24) return `${diffHours}h ago`;
+      const diffDays = Math.round(diffHours / 24);
+      return `${diffDays}d ago`;
+    }
+
+    function truncate(value, limit) {
+      const text = String(value || "").trim();
+      if (text.length <= limit) return text;
+      return `${text.slice(0, limit - 1).trimEnd()}…`;
+    }
+
+    function setRunStatus(message, kind = "") {
+      const node = document.getElementById("run-status");
+      node.textContent = message;
+      node.dataset.kind = kind;
+    }
+
+    function rememberDialogTrigger() {
+      if (document.activeElement instanceof HTMLElement) {
+        state.lastDialogTrigger = document.activeElement;
+      }
+    }
+
+    function restoreDialogTriggerFocus() {
+      if (state.lastDialogTrigger instanceof HTMLElement && document.contains(state.lastDialogTrigger)) {
+        state.lastDialogTrigger.focus();
+      }
+      state.lastDialogTrigger = null;
+    }
+
+    function showDialog(dialogId) {
+      const dialog = document.getElementById(dialogId);
+      if (!(dialog instanceof HTMLDialogElement)) return;
+      rememberDialogTrigger();
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+    }
+
+    function hydrateStoredToken() {
+      document.getElementById("admin-token").value = window.localStorage.getItem(ADMIN_TOKEN_KEY) || "";
+    }
+
+    function selectedIds() {
+      return Array.from(state.selectedItemIds);
+    }
+
+    function readPresetStore() {
+      try {
+        return JSON.parse(window.localStorage.getItem(VIEW_PRESET_KEY) || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function writePresetStore(payload) {
+      window.localStorage.setItem(VIEW_PRESET_KEY, JSON.stringify(payload));
+    }
+
+    function readTopicStore(key) {
+      try {
+        return JSON.parse(window.localStorage.getItem(key) || "[]");
+      } catch (_error) {
+        return [];
+      }
+    }
+
+    function writeTopicStore(key, payload) {
+      window.localStorage.setItem(key, JSON.stringify(payload));
+    }
+
+    function topicKey(focus) {
+      return `${focus?.type || ""}:${focus?.value || ""}`;
+    }
+
+    function normalizeTopic(focus) {
+      if (!focus?.type || !focus?.value) return null;
+      return {
+        type: String(focus.type),
+        value: String(focus.value),
+        label: String(focus.label || focus.value),
+      };
+    }
+
+    function readSavedTopics() {
+      return readTopicStore(TOPIC_SAVED_KEY);
+    }
+
+    function readRecentTopics() {
+      return readTopicStore(TOPIC_RECENT_KEY);
+    }
+
+    function isSavedTopic(focus) {
+      return readSavedTopics().some((entry) => topicKey(entry) === topicKey(focus));
+    }
+
+    function readTopicNotes() {
+      try {
+        return JSON.parse(window.localStorage.getItem(TOPIC_NOTE_KEY) || "{}");
+      } catch (_error) {
+        return {};
+      }
+    }
+
+    function writeTopicNotes(payload) {
+      window.localStorage.setItem(TOPIC_NOTE_KEY, JSON.stringify(payload));
+    }
+
+    function readTopicBoards() {
+      try {
+        return JSON.parse(window.localStorage.getItem(TOPIC_BOARDS_KEY) || "[]");
+      } catch (_error) {
+        return [];
+      }
+    }
+
+    function writeTopicBoards(payload) {
+      window.localStorage.setItem(TOPIC_BOARDS_KEY, JSON.stringify(payload));
+    }
+
+    function setActiveBoardId(boardId) {
+      state.activeBoardId = boardId || "";
+      if (state.activeBoardId) {
+        window.localStorage.setItem(ACTIVE_BOARD_KEY, state.activeBoardId);
+      } else {
+        window.localStorage.removeItem(ACTIVE_BOARD_KEY);
+      }
+    }
+
+    function getActiveBoard() {
+      return readTopicBoards().find((board) => board.id === state.activeBoardId) || null;
+    }
+
+    function createBoard() {
+      const name = window.prompt("Name this topic board:");
+      if (!name || !name.trim()) return;
+      const boards = readTopicBoards();
+      const board = {
+        id: `board-${Date.now()}`,
+        name: name.trim(),
+        note: "",
+        topics: [],
+      };
+      boards.unshift(board);
+      writeTopicBoards(boards.slice(0, 24));
+      setActiveBoardId(board.id);
+      render(state.payload);
+      setRunStatus(`Created board: ${board.name}`, "success");
+    }
+
+    function deleteActiveBoard() {
+      const board = getActiveBoard();
+      if (!board) {
+        setRunStatus("No active board selected.", "error");
+        return;
+      }
+      const nextBoards = readTopicBoards().filter((entry) => entry.id !== board.id);
+      writeTopicBoards(nextBoards);
+      setActiveBoardId(nextBoards[0]?.id || "");
+      render(state.payload);
+      setRunStatus(`Deleted board: ${board.name}`, "success");
+    }
+
+    function addCurrentTopicToBoard() {
+      const board = getActiveBoard();
+      const topic = normalizeTopic(state.topicFocus);
+      if (!board) {
+        setRunStatus("Select or create a board first.", "error");
+        return;
+      }
+      if (!topic) {
+        setRunStatus("Select a topic before adding it to a board.", "error");
+        return;
+      }
+      const boards = readTopicBoards().map((entry) => {
+        if (entry.id !== board.id) return entry;
+        const topics = (entry.topics || []).filter((saved) => topicKey(saved) !== topicKey(topic));
+        topics.unshift(topic);
+        return { ...entry, topics: topics.slice(0, 20) };
+      });
+      writeTopicBoards(boards);
+      render(state.payload);
+      setRunStatus(`Added ${topic.label} to ${board.name}.`, "success");
+    }
+
+    function saveBoardNote() {
+      const board = getActiveBoard();
+      if (!board) {
+        setRunStatus("Select or create a board first.", "error");
+        return;
+      }
+      const note = document.getElementById("board-note").value.trim();
+      const boards = readTopicBoards().map((entry) => entry.id === board.id ? { ...entry, note } : entry);
+      writeTopicBoards(boards);
+      render(state.payload);
+      setRunStatus("Board note saved locally.", "success");
+    }
+
+    function clearBoardNote() {
+      const board = getActiveBoard();
+      if (!board) return;
+      const boards = readTopicBoards().map((entry) => entry.id === board.id ? { ...entry, note: "" } : entry);
+      writeTopicBoards(boards);
+      render(state.payload);
+      setRunStatus("Board note cleared.", "success");
+    }
+
+    function readTopicNote(focus) {
+      if (!focus) return "";
+      return readTopicNotes()[topicKey(focus)] || "";
+    }
+
+    function saveTopicNote() {
+      if (!state.topicFocus) {
+        setRunStatus("Select a topic before saving a note.", "error");
+        return;
+      }
+      const notes = readTopicNotes();
+      notes[topicKey(state.topicFocus)] = document.getElementById("topic-note").value.trim();
+      writeTopicNotes(notes);
+      render(state.payload);
+      setRunStatus("Topic note saved locally.", "success");
+    }
+
+    function clearTopicNote() {
+      if (!state.topicFocus) return;
+      const notes = readTopicNotes();
+      delete notes[topicKey(state.topicFocus)];
+      writeTopicNotes(notes);
+      document.getElementById("topic-note").value = "";
+      render(state.payload);
+      setRunStatus("Topic note cleared.", "success");
+    }
+
+    function rememberTopic(focus) {
+      const normalized = normalizeTopic(focus);
+      if (!normalized) return;
+      const recents = readRecentTopics().filter((entry) => topicKey(entry) !== topicKey(normalized));
+      recents.unshift(normalized);
+      writeTopicStore(TOPIC_RECENT_KEY, recents.slice(0, 10));
+    }
+
+    function toggleSavedTopic() {
+      const normalized = normalizeTopic(state.topicFocus);
+      if (!normalized) return;
+      const saved = readSavedTopics();
+      const exists = saved.some((entry) => topicKey(entry) === topicKey(normalized));
+      const next = exists
+        ? saved.filter((entry) => topicKey(entry) !== topicKey(normalized))
+        : [normalized, ...saved].slice(0, 12);
+      writeTopicStore(TOPIC_SAVED_KEY, next);
+      render(state.payload);
+      setRunStatus(exists ? "Topic removed from saved topics." : "Topic saved to workspace.", "success");
+    }
+
+    function getWorkspaceTopics() {
+      const seen = new Set();
+      const topics = [...readSavedTopics(), ...readRecentTopics()].filter((topic) => {
+        const key = topicKey(topic);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      return topics;
+    }
+
+    function getDiffBaselineDate(payload) {
+      const value = document.getElementById("diff-baseline")?.value || "last_run";
+      const now = new Date();
+      if (value === "24h") return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      if (value === "7d") return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      if (value === "30d") return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const lastCompleted = payload.last_completed_run?.finished_at || payload.last_completed_run?.started_at;
+      return lastCompleted ? new Date(lastCompleted) : new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    }
+
+    function classifyFocusChanges(items, baselineDate) {
+      const baselineMs = baselineDate.getTime();
+      const changes = items.map((item) => {
+        const firstSeen = new Date(item.first_seen_at || 0).getTime();
+        const lastSeen = new Date(item.last_seen_at || 0).getTime();
+        let changeType = "";
+        if (firstSeen >= baselineMs) {
+          changeType = "new";
+        } else if (lastSeen >= baselineMs) {
+          changeType = "updated";
+        }
+        return { ...item, changeType };
+      });
+      const newItems = changes.filter((item) => item.changeType === "new");
+      const updatedItems = changes.filter((item) => item.changeType === "updated");
+      return { changes, newItems, updatedItems };
+    }
+
+    function readFilterState() {
+      return {
+        q: document.getElementById("search-filter").value.trim(),
+        theme: document.getElementById("theme-filter").value,
+        source: document.getElementById("source-filter").value,
+        review: document.getElementById("review-filter").value,
+        sort: document.getElementById("sort-filter").value,
+        image: document.getElementById("image-filter").value,
+        saved: document.getElementById("saved-only-filter").checked ? "1" : ""
+      };
+    }
+
+    function renderPresetOptions() {
+      const presets = readPresetStore();
+      const select = document.getElementById("preset-select");
+      const current = select.value;
+      select.innerHTML = `<option value="">Saved views</option>` + Object.keys(presets).sort().map((name) => `
+        <option value="${escapeHtml(name)}">${escapeHtml(name)}</option>
+      `).join("");
+      select.value = presets[current] ? current : "";
+    }
+
+    function applyFilterStateFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      document.getElementById("search-filter").value = params.get("q") || "";
+      document.getElementById("theme-filter").value = params.get("theme") || "";
+      document.getElementById("source-filter").value = params.get("source") || "";
+      document.getElementById("review-filter").value = params.get("review") || "";
+      document.getElementById("sort-filter").value = params.get("sort") || "newest";
+      document.getElementById("image-filter").value = params.get("image") || "";
+      document.getElementById("saved-only-filter").checked = params.get("saved") === "1";
+      const focusType = params.get("focus_type") || "";
+      const focusValue = params.get("focus") || "";
+      const focusLabel = params.get("focus_label") || focusValue;
+      state.topicFocus = focusType && focusValue ? { type: focusType, value: focusValue, label: focusLabel } : null;
+    }
+
+    function applyFilterState(filters) {
+      document.getElementById("search-filter").value = filters.q || "";
+      document.getElementById("theme-filter").value = filters.theme || "";
+      document.getElementById("source-filter").value = filters.source || "";
+      document.getElementById("review-filter").value = filters.review || "";
+      document.getElementById("sort-filter").value = filters.sort || "newest";
+      document.getElementById("image-filter").value = filters.image || "";
+      document.getElementById("saved-only-filter").checked = filters.saved === "1";
+    }
+
+    function clearFilters() {
+      applyFilterState({ sort: "newest" });
+      refreshFilteredCollections(true).then(() => render(state.payload));
+    }
+
+    function matchesWorkspaceMode(sectionModes, activeMode) {
+      if (!sectionModes || activeMode === "all") return true;
+      return sectionModes.split(/\s+/).includes(activeMode);
+    }
+
+    function updateWorkspaceModeUI() {
+      const activeMode = state.workspaceMode || "all";
+      document.querySelectorAll("[data-workspace-mode]").forEach((button) => {
+        const isActive = button.dataset.workspaceMode === activeMode;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+      document.querySelectorAll("[data-workspace-view]").forEach((section) => {
+        section.classList.toggle("workspace-hidden", !matchesWorkspaceMode(section.dataset.workspaceView, activeMode));
+      });
+      const labels = {
+        all: "Full workspace",
+        overview: "Overview mode",
+        topics: "Topic mode",
+        review: "Review mode",
+        media: "Media mode",
+      };
+      const visibleCount = Array.from(document.querySelectorAll("[data-workspace-view]"))
+        .filter((section) => !section.classList.contains("workspace-hidden")).length;
+      document.getElementById("workspace-summary").textContent = `${labels[activeMode] || "Workspace"} • ${visibleCount} visible sections`;
+    }
+
+    function updateDensityUI() {
+      document.body.classList.toggle("density-compact", state.densityMode === "compact");
+      document.getElementById("density-select").value = state.densityMode;
+    }
+
+    function setWorkspaceMode(mode, { scroll = false } = {}) {
+      state.workspaceMode = mode || "all";
+      window.localStorage.setItem(WORKSPACE_MODE_KEY, state.workspaceMode);
+      updateWorkspaceModeUI();
+      if (scroll) {
+        const firstVisible = Array.from(document.querySelectorAll("[data-workspace-view]"))
+          .find((node) => !node.classList.contains("workspace-hidden"));
+        if (firstVisible?.id) {
+          scrollToSection(firstVisible.id);
+        } else if (firstVisible) {
+          firstVisible.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+    }
+
+    function setDensityMode(mode) {
+      state.densityMode = mode === "compact" ? "compact" : "comfortable";
+      window.localStorage.setItem(DENSITY_KEY, state.densityMode);
+      updateDensityUI();
+    }
+
+    function syncUrlState() {
+      const next = new URLSearchParams();
+      const filters = readFilterState();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) next.set(key, value);
+      });
+      if (state.topicFocus?.type && state.topicFocus?.value) {
+        next.set("focus_type", state.topicFocus.type);
+        next.set("focus", state.topicFocus.value);
+        next.set("focus_label", state.topicFocus.label || state.topicFocus.value);
+      }
+      if (state.activeItem?.id) next.set("item", String(state.activeItem.id));
+      const query = next.toString();
+      const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}`;
+      window.history.replaceState(null, "", nextUrl);
+    }
+
+    function scrollToSection(sectionId) {
+      const node = document.getElementById(sectionId);
+      if (!node) return;
+      node.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function downloadJson(filename, payload) {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function closeDialogIfOpen(dialogId) {
+      const dialog = document.getElementById(dialogId);
+      if (dialog.open) dialog.close();
+      if (dialogId === "item-dialog" && state.activeItem) {
+        state.activeItem = null;
+        if (state.urlHydrated) syncUrlState();
+      }
+      if (dialogId === "run-dialog" && state.activeRun) {
+        state.activeRun = null;
+      }
+      restoreDialogTriggerFocus();
+    }
+
+    async function copyViewLink() {
+      syncUrlState();
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        setRunStatus("View link copied.", "success");
+      } catch (error) {
+        setRunStatus("Could not copy view link.", "error");
+      }
+    }
+
+    function saveCurrentPreset() {
+      const name = window.prompt("Name this saved view:");
+      if (!name) return;
+      const presets = readPresetStore();
+      presets[name.trim()] = readFilterState();
+      writePresetStore(presets);
+      renderPresetOptions();
+      document.getElementById("preset-select").value = name.trim();
+      setRunStatus("Saved current view.", "success");
+    }
+
+    async function loadSelectedPreset() {
+      const name = document.getElementById("preset-select").value;
+      const presets = readPresetStore();
+      if (!name || !presets[name]) {
+        setRunStatus("No saved view selected.", "error");
+        return;
+      }
+      applyFilterState(presets[name]);
+      await refreshFilteredCollections(true);
+      render(state.payload);
+      setRunStatus(`Loaded view: ${name}`, "success");
+    }
+
+    function syncUpdatedItem(updated) {
+      const hasLoadedItem = state.allItems.some((item) => item.id === updated.id);
+      state.allItems = hasLoadedItem
+        ? state.allItems.map((item) => item.id === updated.id ? updated : item)
+        : [updated, ...state.allItems].slice(0, state.itemPageSize);
+      const currentQueue = state.payload.review_queue || [];
+      if (currentQueue.some((item) => item.id === updated.id) || updated.is_saved) {
+        const queue = currentQueue.filter((item) => item.id !== updated.id);
+        if (updated.is_saved) queue.unshift(updated);
+        state.payload.review_queue = queue.slice(0, 8);
+      }
+      state.activeItem = state.activeItem && state.activeItem.id === updated.id ? updated : state.activeItem;
+    }
+
+    function syncUpdatedHypothesis(updated) {
+      state.payload.hypotheses = (state.payload.hypotheses || []).map((hypothesis) => (
+        hypothesis.id === updated.id ? updated : hypothesis
+      ));
+    }
+
+    async function patchItemState(itemId, payload, successMessage = "Item updated.") {
+      const token = document.getElementById("admin-token").value.trim();
+      const response = await fetch(`/api/items/${itemId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "x-admin-token": token } : {})
+        },
+        body: JSON.stringify(payload)
+      });
+      const updated = await response.json();
+      if (!response.ok) {
+        setRunStatus(updated.detail || "Item update failed.", "error");
+        return null;
+      }
+      syncUpdatedItem(updated);
+      render(state.payload);
+      if (state.activeItem && state.activeItem.id === updated.id) {
+        openItemDialog(updated);
+      }
+      setRunStatus(successMessage, "success");
+      return updated;
+    }
+
+    async function patchItemsBulk(payload, successMessage = "Items updated.") {
+      const token = document.getElementById("admin-token").value.trim();
+      const response = await fetch("/api/items/bulk", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "x-admin-token": token } : {})
+        },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setRunStatus(result.detail || "Bulk update failed.", "error");
+        return null;
+      }
+      await refresh();
+      state.selectedItemIds.clear();
+      setRunStatus(successMessage, "success");
+      return result;
+    }
+
+    async function patchHypothesisState(hypothesisId, payload, successMessage = "Hypothesis updated.") {
+      const token = document.getElementById("admin-token").value.trim();
+      const response = await fetch(`/api/hypotheses/${hypothesisId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "x-admin-token": token } : {})
+        },
+        body: JSON.stringify(payload)
+      });
+      const updated = await response.json();
+      if (!response.ok) {
+        setRunStatus(updated.detail || "Hypothesis update failed.", "error");
+        return null;
+      }
+      syncUpdatedHypothesis(updated);
+      render(state.payload);
+      setRunStatus(successMessage, "success");
+      return updated;
+    }
+
+    function buildTopicFocusParams(focus) {
+      const params = new URLSearchParams();
+      if (!focus?.type || !focus?.value) return params;
+      if (focus.type === "theme") {
+        params.set("theme", focus.value);
+      } else if (focus.type === "source_type") {
+        params.set("source_type", focus.value);
+      } else if (focus.type === "review_status") {
+        params.set("review_status", focus.value);
+      } else {
+        params.set("search", focus.value);
+      }
+      return params;
+    }
+
+    function applyTopicFocusToFilters() {
+      if (!state.topicFocus) return;
+      if (state.topicFocus.type === "theme") {
+        document.getElementById("theme-filter").value = state.topicFocus.value;
+      } else if (state.topicFocus.type === "source_type") {
+        document.getElementById("source-filter").value = state.topicFocus.value;
+      } else if (state.topicFocus.type === "review_status") {
+        document.getElementById("review-filter").value = state.topicFocus.value;
+      } else {
+        document.getElementById("search-filter").value = state.topicFocus.value;
+      }
+      handleBrowseFilterChange();
+      scrollToSection("captures-section");
+    }
+
+    function hypothesisMatchesFocus(hypothesis, focus) {
+      if (!focus) return true;
+      const searchText = [
+        hypothesis.title,
+        hypothesis.rationale,
+        hypothesis.evidence,
+        hypothesis.safety_flags,
+        hypothesis.review_status,
+      ].join(" ").toLowerCase();
+      return searchText.includes(String(focus.value || "").toLowerCase());
+    }
+
+    function scoreFocusItem(item, focus) {
+      if (!focus) return 0;
+      const needle = String(focus.value || "").toLowerCase();
+      const haystacks = [
+        item.title || "",
+        item.summary || "",
+        item.content || "",
+        item.theme || "",
+        item.source_type || "",
+        item.domain || "",
+        (item.compounds || []).join(" "),
+        (item.mechanisms || []).join(" "),
+      ].map((value) => String(value).toLowerCase());
+      let score = 0;
+      haystacks.forEach((text, index) => {
+        if (!text || !needle) return;
+        if (text.includes(needle)) {
+          score += index === 0 ? 5 : index === 1 ? 4 : 2;
+        }
+      });
+      if (focus.type === "theme" && item.theme === focus.value) score += 8;
+      if (focus.type === "source_type" && item.source_type === focus.value) score += 8;
+      if (focus.type === "review_status" && item.review_status === focus.value) score += 6;
+      return score + Number(item.score || 0);
+    }
+
+    async function loadTopicFocus() {
+      if (!state.topicFocus) {
+        state.focusItems = [];
+        state.focusImages = [];
+        state.focusItemTotal = 0;
+        state.focusImageTotal = 0;
+        return;
+      }
+      const requestId = ++state.focusRequestId;
+      state.focusLoading = true;
+      render(state.payload);
+      try {
+        const itemParams = buildTopicFocusParams(state.topicFocus);
+        const imageParams = buildTopicFocusParams(state.topicFocus);
+        itemParams.set("limit", "6");
+        imageParams.set("limit", "6");
+        const [itemsResponse, imagesResponse] = await Promise.all([
+          fetch(`/api/browse/items?${itemParams.toString()}`),
+          fetch(`/api/browse/images?${imageParams.toString()}`),
+        ]);
+        if (!itemsResponse.ok || !imagesResponse.ok) {
+          throw new Error("Focus fetch failed");
+        }
+        const itemsPayload = await itemsResponse.json();
+        const imagesPayload = await imagesResponse.json();
+        if (requestId !== state.focusRequestId) return;
+        state.focusItems = (itemsPayload.items || [])
+          .map((item) => ({ ...item, _focusScore: scoreFocusItem(item, state.topicFocus) }))
+          .sort((left, right) => right._focusScore - left._focusScore || String(right.last_seen_at || "").localeCompare(String(left.last_seen_at || "")));
+        state.focusImages = imagesPayload.images || [];
+        state.focusItemTotal = itemsPayload.total || 0;
+        state.focusImageTotal = imagesPayload.total || 0;
+      } catch (_error) {
+        if (requestId === state.focusRequestId) {
+          setRunStatus("Could not load topic explorer results.", "error");
+        }
+      } finally {
+        if (requestId === state.focusRequestId) {
+          state.focusLoading = false;
+          render(state.payload);
+        }
+      }
+    }
+
+    async function loadCompareFocus() {
+      if (!state.compareFocus) {
+        state.compareItems = [];
+        state.compareImages = [];
+        state.compareItemTotal = 0;
+        state.compareImageTotal = 0;
+        return;
+      }
+      const requestId = ++state.compareRequestId;
+      state.compareLoading = true;
+      render(state.payload);
+      try {
+        const itemParams = buildTopicFocusParams(state.compareFocus);
+        const imageParams = buildTopicFocusParams(state.compareFocus);
+        itemParams.set("limit", "4");
+        imageParams.set("limit", "4");
+        const [itemsResponse, imagesResponse] = await Promise.all([
+          fetch(`/api/browse/items?${itemParams.toString()}`),
+          fetch(`/api/browse/images?${imageParams.toString()}`),
+        ]);
+        if (!itemsResponse.ok || !imagesResponse.ok) {
+          throw new Error("Compare fetch failed");
+        }
+        const itemsPayload = await itemsResponse.json();
+        const imagesPayload = await imagesResponse.json();
+        if (requestId !== state.compareRequestId) return;
+        state.compareItems = (itemsPayload.items || [])
+          .map((item) => ({ ...item, _focusScore: scoreFocusItem(item, state.compareFocus) }))
+          .sort((left, right) => right._focusScore - left._focusScore || String(right.last_seen_at || "").localeCompare(String(left.last_seen_at || "")));
+        state.compareImages = imagesPayload.images || [];
+        state.compareItemTotal = itemsPayload.total || 0;
+        state.compareImageTotal = imagesPayload.total || 0;
+      } catch (_error) {
+        if (requestId === state.compareRequestId) {
+          setRunStatus("Could not load compare topic.", "error");
+        }
+      } finally {
+        if (requestId === state.compareRequestId) {
+          state.compareLoading = false;
+          render(state.payload);
+        }
+      }
+    }
+
+    function setTopicFocus(type, value, label = value, { scroll = true } = {}) {
+      state.topicFocus = { type, value, label };
+      rememberTopic(state.topicFocus);
+      if (state.workspaceMode !== "topics" && state.workspaceMode !== "all") {
+        setWorkspaceMode("topics");
+      }
+      if (state.urlHydrated) syncUrlState();
+      loadTopicFocus();
+      if (scroll) scrollToSection("topic-spotlight-section");
+    }
+
+    function clearTopicFocus() {
+      state.topicFocus = null;
+      state.focusItems = [];
+      state.focusImages = [];
+      state.focusItemTotal = 0;
+      state.focusImageTotal = 0;
+      render(state.payload);
+      if (state.urlHydrated) syncUrlState();
+    }
+
+    function loadSelectedCompareTopic() {
+      const raw = document.getElementById("compare-topic-select").value;
+      if (!raw) {
+        setRunStatus("Select a topic to compare.", "error");
+        return;
+      }
+      const [type, ...rest] = raw.split(":");
+      const value = rest.join(":");
+      const topic = getWorkspaceTopics().find((entry) => topicKey(entry) === raw);
+      state.compareFocus = topic || { type, value, label: value };
+      loadCompareFocus();
+    }
+
+    function clearCompareFocus() {
+      state.compareFocus = null;
+      state.compareItems = [];
+      state.compareImages = [];
+      state.compareItemTotal = 0;
+      state.compareImageTotal = 0;
+      document.getElementById("compare-topic-select").value = "";
+      render(state.payload);
+    }
+
+    function buildBrowseItemsUrl(offset = 0) {
+      const filters = readFilterState();
+      const params = new URLSearchParams();
+      if (filters.theme) params.set("theme", filters.theme);
+      if (filters.source) params.set("source_type", filters.source);
+      if (filters.review) params.set("review_status", filters.review);
+      if (filters.saved) params.set("saved_only", "true");
+      if (filters.q) params.set("search", filters.q);
+      if (filters.sort) params.set("sort", filters.sort);
+      params.set("offset", String(offset));
+      params.set("limit", String(state.itemPageSize));
+      return `/api/browse/items?${params.toString()}`;
+    }
+
+    function buildBrowseImagesUrl(offset = 0) {
+      const filters = readFilterState();
+      const params = new URLSearchParams();
+      if (filters.theme) params.set("theme", filters.theme);
+      if (filters.image) params.set("source_type", filters.image);
+      if (filters.q) params.set("search", filters.q);
+      params.set("offset", String(offset));
+      params.set("limit", String(state.imagePageSize));
+      return `/api/browse/images?${params.toString()}`;
+    }
+
+    async function refreshFilteredCollections(reset = true) {
+      const requestId = ++state.browseRequestId;
+      const itemOffset = reset ? 0 : state.allItems.length;
+      const imageOffset = reset ? 0 : state.allImages.length;
+      state.collectionLoading = true;
+      if (state.payload) render(state.payload);
+      try {
+        const [itemsResponse, imagesResponse] = await Promise.all([
+          fetch(buildBrowseItemsUrl(itemOffset)),
+          fetch(buildBrowseImagesUrl(imageOffset))
+        ]);
+        if (!itemsResponse.ok || !imagesResponse.ok) {
+          throw new Error("Browse request failed");
+        }
+        const itemsPayload = await itemsResponse.json();
+        const imagesPayload = await imagesResponse.json();
+        if (requestId !== state.browseRequestId) return;
+        state.allItems = reset ? itemsPayload.items : [...state.allItems, ...itemsPayload.items];
+        state.allImages = reset ? imagesPayload.images : [...state.allImages, ...imagesPayload.images];
+        state.itemTotal = itemsPayload.total;
+        state.imageTotal = imagesPayload.total;
+        const validIds = new Set(state.allItems.map((item) => item.id));
+        state.selectedItemIds = new Set(selectedIds().filter((itemId) => validIds.has(itemId)));
+      } catch (_error) {
+        if (requestId === state.browseRequestId) {
+          setRunStatus("Could not load filtered results.", "error");
+        }
+      } finally {
+        if (requestId === state.browseRequestId) {
+          state.collectionLoading = false;
+        }
+      }
+    }
+
+    function renderHeroStatus(payload) {
+      const lastCompleted = payload.last_completed_run;
+      const lastRun = payload.last_run;
+      const chips = [
+        `<span class="chip subtle">interval ${payload.interval_minutes}m</span>`,
+        `<span class="chip subtle">last refresh ${escapeHtml(formatRelative(payload.generated_at))}</span>`,
+        `<span class="chip subtle">saved ${payload.stats.totals.saved_item_count || 0}</span>`
+      ];
+      if (lastCompleted) {
+        chips.push(`<span class="chip subtle">last completed ${escapeHtml(formatRelative(lastCompleted.finished_at || lastCompleted.started_at))}</span>`);
+      }
+      if (lastRun?.notes?.errors?.length) {
+        chips.push(`<span class="chip subtle warn">${lastRun.notes.errors.length} run errors</span>`);
+      }
+      document.getElementById("hero-status").innerHTML = chips.join("");
+    }
+
+    function renderWorkspaceContext(payload) {
+      const activeMode = state.workspaceMode || "all";
+      const labels = {
+        all: "all sections",
+        overview: "overview",
+        topics: "topics",
+        review: "review",
+        media: "media",
+      };
+      const chips = [
+        `<span class="chip subtle">mode ${escapeHtml(labels[activeMode] || activeMode)}</span>`,
+        `<span class="chip subtle">density ${escapeHtml(state.densityMode)}</span>`,
+      ];
+      if (state.topicFocus) {
+        chips.push(`<span class="chip">focus ${escapeHtml(state.topicFocus.label || state.topicFocus.value)}</span>`);
+      }
+      if (state.compareFocus) {
+        chips.push(`<span class="chip subtle">compare ${escapeHtml(state.compareFocus.label || state.compareFocus.value)}</span>`);
+      }
+      if (state.selectedItemIds.size) {
+        chips.push(`<span class="chip subtle">${state.selectedItemIds.size} selected</span>`);
+      }
+      if (state.collectionLoading || state.focusLoading || state.compareLoading || payload.is_running) {
+        chips.push(`<span class="chip subtle">working</span>`);
+      }
+      document.getElementById("workspace-context").innerHTML = chips.join("");
+    }
+
+    function buildCommandEntries(payload) {
+      const savedCount = payload.stats?.totals?.saved_item_count || 0;
+      const workspaceTopics = getWorkspaceTopics();
+      const boards = readTopicBoards();
+      return [
+        {
+          label: "Show all workspace sections",
+          meta: "View",
+          keywords: "all workspace everything",
+          action: () => setWorkspaceMode("all", { scroll: true }),
+        },
+        {
+          label: "Switch to overview mode",
+          meta: "View",
+          keywords: "overview dashboard hypotheses runs",
+          action: () => setWorkspaceMode("overview", { scroll: true }),
+        },
+        {
+          label: "Switch to topic mode",
+          meta: "View",
+          keywords: "topics explorer boards notebook compare",
+          action: () => setWorkspaceMode("topics", { scroll: true }),
+        },
+        {
+          label: "Switch to review mode",
+          meta: "View",
+          keywords: "review queue captures items triage",
+          action: () => setWorkspaceMode("review", { scroll: true }),
+        },
+        {
+          label: "Switch to media mode",
+          meta: "View",
+          keywords: "media images gallery stream",
+          action: () => setWorkspaceMode("media", { scroll: true }),
+        },
+        {
+          label: "Refresh dashboard",
+          meta: "Action",
+          keywords: "refresh reload sync",
+          action: () => refresh(),
+        },
+        {
+          label: "Run crawl now",
+          meta: "Action",
+          keywords: "run crawl fetch ingest collect",
+          action: () => runNow(),
+        },
+        {
+          label: "Open saved queue",
+          meta: "Action",
+          keywords: `saved queue review ${savedCount}`,
+          action: () => {
+            setWorkspaceMode("overview");
+            scrollToSection("overview-section");
+          },
+        },
+        {
+          label: "Jump to source captures",
+          meta: "Section",
+          keywords: "captures items browse review",
+          action: () => {
+            setWorkspaceMode("review");
+            scrollToSection("captures-section");
+          },
+        },
+        {
+          label: "Jump to image stream",
+          meta: "Section",
+          keywords: "images media gallery",
+          action: () => {
+            setWorkspaceMode("media");
+            scrollToSection("images-section");
+          },
+        },
+        {
+          label: "Copy current view link",
+          meta: "Action",
+          keywords: "share link copy",
+          action: () => copyViewLink(),
+        },
+        {
+          label: "Clear filters",
+          meta: "Action",
+          keywords: "clear reset filters",
+          action: () => clearFilters(),
+        },
+        ...boards.map((board) => ({
+          label: `Open board: ${board.name}`,
+          meta: "Board",
+          keywords: `board ${board.name} ${(board.topics || []).map((topic) => topic.label).join(" ")}`,
+          action: () => {
+            setActiveBoardId(board.id);
+            setWorkspaceMode("topics");
+            render(state.payload);
+            scrollToSection("topic-spotlight-section");
+          },
+        })),
+        ...workspaceTopics.map((topic) => ({
+          label: `Focus topic: ${topic.label}`,
+          meta: "Topic",
+          keywords: `${topic.type} ${topic.value} ${topic.label}`,
+          action: () => setTopicFocus(topic.type, topic.value, topic.label),
+        })),
+        ...(payload.themes || []).map((theme) => ({
+          label: `Theme: ${theme.label}`,
+          meta: "Theme",
+          keywords: `theme ${theme.slug} ${theme.label}`,
+          action: () => setTopicFocus("theme", theme.slug, theme.label),
+        })),
+        ...(payload.source_types || []).map((sourceType) => ({
+          label: `Source: ${sourceType}`,
+          meta: "Source",
+          keywords: `source ${sourceType}`,
+          action: () => setTopicFocus("source_type", sourceType, sourceType),
+        })),
+        ...((payload.stats?.top_compounds || []).slice(0, 10)).map((item) => ({
+          label: `Compound: ${item.name}`,
+          meta: "Signal",
+          keywords: `compound ${item.name}`,
+          action: () => setTopicFocus("search", item.name, item.name),
+        })),
+        ...((payload.stats?.top_mechanisms || []).slice(0, 10)).map((item) => ({
+          label: `Mechanism: ${item.name}`,
+          meta: "Signal",
+          keywords: `mechanism ${item.name}`,
+          action: () => setTopicFocus("search", item.name, item.name),
+        })),
+      ];
+    }
+
+    function scoreCommandEntry(entry, query) {
+      if (!query) return 1;
+      const haystack = `${entry.label} ${entry.meta} ${entry.keywords || ""}`.toLowerCase();
+      const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+      let score = 0;
+      for (const token of tokens) {
+        if (!haystack.includes(token)) return 0;
+        if (entry.label.toLowerCase().startsWith(token)) score += 4;
+        else if (entry.label.toLowerCase().includes(token)) score += 3;
+        else score += 1;
+      }
+      return score;
+    }
+
+    function renderCommandPalette(payload) {
+      const dialog = document.getElementById("command-dialog");
+      const input = document.getElementById("command-input");
+      const query = state.commandQuery.trim();
+      const entries = buildCommandEntries(payload)
+        .map((entry) => ({ ...entry, _score: scoreCommandEntry(entry, query) }))
+        .filter((entry) => entry._score > 0)
+        .sort((left, right) => right._score - left._score || left.label.localeCompare(right.label))
+        .slice(0, 14);
+      state.commandEntries = entries;
+      state.commandIndex = Math.min(state.commandIndex, Math.max(entries.length - 1, 0));
+      document.getElementById("command-meta").textContent = query
+        ? `${entries.length} matching commands`
+        : "Use arrows to move, Enter to run, and Escape to close.";
+      document.getElementById("command-results").innerHTML = entries.length
+        ? entries.map((entry, index) => `
+          <button class="command-result ${index === state.commandIndex ? "active" : ""}" data-command-index="${index}">
+            <strong>${escapeHtml(entry.label)}</strong>
+            <span class="chip subtle command-meta-chip">${escapeHtml(entry.meta)}</span>
+          </button>
+        `).join("")
+        : `<p class="muted">No commands match that search.</p>`;
+      if (state.commandPaletteOpen && !dialog.open) {
+        showDialog("command-dialog");
+      } else if (!state.commandPaletteOpen && dialog.open) {
+        dialog.close();
+      }
+      if (state.commandPaletteOpen && document.activeElement !== input) {
+        input.value = state.commandQuery;
+      }
+    }
+
+    function openCommandPalette(initialQuery = "") {
+      state.commandPaletteOpen = true;
+      state.commandQuery = initialQuery;
+      state.commandIndex = 0;
+      renderCommandPalette(state.payload);
+      window.requestAnimationFrame(() => {
+        const input = document.getElementById("command-input");
+        input.value = initialQuery;
+        input.focus();
+        input.select();
+      });
+    }
+
+    function closeCommandPalette() {
+      state.commandPaletteOpen = false;
+      renderCommandPalette(state.payload);
+    }
+
+    function executeCommand(index = state.commandIndex) {
+      const entry = state.commandEntries[index];
+      if (!entry) return;
+      closeCommandPalette();
+      entry.action();
+    }
+
+    function renderStats(payload) {
+      const totals = payload.stats.totals;
+      const themeCards = payload.stats.themes.map((theme) => `
+        <button class="mini-pill action-pill" data-focus-type="theme" data-focus-value="${escapeHtml(theme.theme)}" data-focus-label="${escapeHtml(theme.theme)}">
+          <strong>${escapeHtml(theme.theme)}</strong>
+          <span>${theme.count}</span>
+        </button>
+      `).join("");
+      const sourceCount = payload.stats.source_mix.length;
+      const lastCompleted = payload.last_completed_run?.finished_at ? formatDate(payload.last_completed_run.finished_at) : "No completed run yet";
+
+      document.getElementById("stats").innerHTML = `
+        <button class="stat-card stat-button" data-nav-target="captures-section">
+          <span class="stat-label">Items</span>
+          <strong>${totals.item_count}</strong>
+        </button>
+        <button class="stat-card stat-button" data-nav-target="images-section">
+          <span class="stat-label">Images</span>
+          <strong>${totals.image_count}</strong>
+        </button>
+        <button class="stat-card stat-button" data-nav-target="overview-section">
+          <span class="stat-label">Hypotheses</span>
+          <strong>${totals.hypothesis_count}</strong>
+        </button>
+        <button class="stat-card stat-button" data-nav-target="captures-section">
+          <span class="stat-label">Saved queue</span>
+          <strong>${totals.saved_item_count || 0}</strong>
+        </button>
+        <div class="stat-card wide">
+          <span class="stat-label">Last completed crawl</span>
+          <strong class="stat-detail">${escapeHtml(lastCompleted)}</strong>
+          <div class="mini-pill-wrap">
+            <span class="mini-pill"><strong>sources</strong><span>${sourceCount}</span></span>
+            ${themeCards}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderHypotheses(payload) {
+      const notes = payload.last_run?.notes || {};
+      document.getElementById("last-run-chip").textContent = payload.last_run
+        ? `Last run: ${payload.last_run.status}`
+        : "No runs yet";
+      document.getElementById("run-meta").innerHTML = payload.last_run ? `
+        <div class="run-row">
+          <span class="chip subtle">provider: ${escapeHtml(notes.hypotheses?.provider || "unknown")}</span>
+          <span class="chip subtle">new: ${notes.collected?.new_items ?? 0}</span>
+          <span class="chip subtle">updated: ${notes.collected?.updated_items ?? 0}</span>
+          <span class="chip subtle">images: ${notes.collected?.images ?? 0}</span>
+          <span class="chip subtle">errors: ${(notes.errors || []).length}</span>
+        </div>
+        ${notes.hypotheses?.error ? `<p class="meta"><strong>Hypothesis fallback:</strong> ${escapeHtml(notes.hypotheses.error)}</p>` : ""}
+      ` : "";
+      document.getElementById("hypotheses").innerHTML = payload.hypotheses.map((item) => `
+        <article class="hypothesis">
+          <div class="row-split">
+            <h3>${escapeHtml(item.title)}</h3>
+            <div class="token-row">
+              <span class="chip subtle">novelty ${Number(item.novelty_score || 0).toFixed(2)}</span>
+              <button class="chip subtle action-pill" data-focus-type="hypothesis_review" data-focus-value="${escapeHtml(item.review_status || "new")}" data-focus-label="hypothesis ${escapeHtml(item.review_status || "new")}">${escapeHtml(item.review_status || "new")}</button>
+              ${item.is_saved ? `<span class="chip subtle">saved</span>` : ""}
+            </div>
+          </div>
+          <p>${escapeHtml(item.rationale)}</p>
+          <p class="meta"><strong>Evidence:</strong> <button class="inline-topic-link" data-focus-type="search" data-focus-value="${escapeHtml(item.title)}" data-focus-label="${escapeHtml(item.title)} evidence">${escapeHtml(item.evidence)}</button></p>
+          <p class="meta"><strong>Safety flags:</strong> ${escapeHtml(item.safety_flags || "None supplied.")}</p>
+          <label class="field">
+            <span>Hypothesis note</span>
+            <textarea rows="3" data-hypothesis-note="${item.id}" placeholder="Record why this lead should be reviewed, promoted, or dismissed.">${escapeHtml(item.user_note || "")}</textarea>
+          </label>
+          <div class="card-toolbar">
+            <button class="secondary small" data-toggle-hypothesis-save="${item.id}">${item.is_saved ? "Saved" : "Save"}</button>
+            <select class="status-select" data-hypothesis-status="${item.id}">
+              ${payload.hypothesis_review_options.map((status) => `
+                <option value="${escapeHtml(status)}" ${item.review_status === status ? "selected" : ""}>${escapeHtml(status)}</option>
+              `).join("")}
+            </select>
+            <button class="ghost small" data-save-hypothesis-note="${item.id}">Save note</button>
+          </div>
+        </article>
+      `).join("") || `<p class="muted">No hypotheses yet.</p>`;
+    }
+
+    function renderSignals(payload) {
+      const compounds = payload.stats.top_compounds.map((item) => `
+        <button class="compound-chip action-pill" data-focus-type="search" data-focus-value="${escapeHtml(item.name)}" data-focus-label="${escapeHtml(item.name)}">
+          <span>${escapeHtml(item.name)}</span><strong>${item.count}</strong>
+        </button>
+      `).join("");
+      const mechanisms = payload.stats.top_mechanisms.map((item) => `
+        <button class="token mechanism action-pill" data-focus-type="search" data-focus-value="${escapeHtml(item.name)}" data-focus-label="${escapeHtml(item.name)}">
+          <span>${escapeHtml(item.name)}</span><strong>${item.count}</strong>
+        </button>
+      `).join("");
+      const reviewStatuses = payload.stats.review_statuses.map((item) => `
+        <button class="token action-pill" data-focus-type="review_status" data-focus-value="${escapeHtml(item.review_status)}" data-focus-label="review ${escapeHtml(item.review_status)}">
+          <span>${escapeHtml(item.review_status)}</span><strong>${item.count}</strong>
+        </button>
+      `).join("");
+      const hypothesisReviewStatuses = (payload.stats.hypothesis_review_statuses || []).map((item) => `
+        <button class="token action-pill" data-focus-type="hypothesis_review" data-focus-value="${escapeHtml(item.review_status)}" data-focus-label="hypothesis ${escapeHtml(item.review_status)}">
+          <span>${escapeHtml(item.review_status)}</span><strong>${item.count}</strong>
+        </button>
+      `).join("");
+      document.getElementById("compounds").innerHTML = compounds || `<p class="muted">No recurring compounds detected yet.</p>`;
+      document.getElementById("mechanisms").innerHTML = mechanisms || `<p class="muted">No recurring mechanisms detected yet.</p>`;
+      document.getElementById("review-statuses").innerHTML = reviewStatuses || `<p class="muted">No review states yet.</p>`;
+      document.getElementById("hypothesis-review-statuses").innerHTML = hypothesisReviewStatuses || `<p class="muted">No hypothesis review states yet.</p>`;
+    }
+
+    function renderSourceMix(payload) {
+      const rows = payload.stats.source_mix.map((item) => `
+        <button class="list-row list-row-button" data-focus-type="source_type" data-focus-value="${escapeHtml(item.source_type)}" data-focus-label="${escapeHtml(item.source_type)}">
+          <span>${escapeHtml(item.source_type)}</span>
+          <strong>${item.count}</strong>
+        </button>
+      `).join("");
+      document.getElementById("source-count-chip").textContent = `${payload.stats.source_mix.length} source classes`;
+      document.getElementById("source-mix").innerHTML = rows || `<p class="muted">No source coverage yet.</p>`;
+    }
+
+    function renderThemeSummaries(payload) {
+      const rows = (payload.stats.theme_summaries || []).map((item) => `
+        <button class="list-row list-row-button" data-focus-type="theme" data-focus-value="${escapeHtml(item.theme)}" data-focus-label="${escapeHtml(item.theme)}">
+          <span>${escapeHtml(item.theme)}</span>
+          <strong>${item.count} items</strong>
+          <span class="meta">avg ${Number(item.avg_score || 0).toFixed(2)} • ${escapeHtml(formatRelative(item.last_seen_at))}</span>
+        </button>
+      `).join("");
+      document.getElementById("theme-summary-chip").textContent = `${(payload.stats.theme_summaries || []).length} active themes`;
+      document.getElementById("theme-summaries").innerHTML = rows || `<p class="muted">No theme summary available yet.</p>`;
+    }
+
+    function renderSourceBreakdown(payload) {
+      const sources = payload.last_run?.notes?.sources || {};
+      const entries = Object.entries(sources).map(([theme, counts]) => `
+        <div class="breakdown-card">
+          <div class="row-split">
+            <button class="chip action-pill" data-focus-type="theme" data-focus-value="${escapeHtml(theme)}" data-focus-label="${escapeHtml(theme)}">${escapeHtml(theme)}</button>
+            <span class="chip subtle">images ${counts.images || 0}</span>
+          </div>
+          <div class="token-row">
+            ${Object.entries(counts).filter(([key]) => key !== "images").map(([key, value]) => {
+              const sourceValue = key === "anecdotes" ? "anecdote" : key;
+              return `<button class="token action-pill" data-focus-type="source_type" data-focus-value="${escapeHtml(sourceValue)}" data-focus-label="${escapeHtml(sourceValue)}">${escapeHtml(key)} ${value}</button>`;
+            }).join("")}
+          </div>
+        </div>
+      `).join("");
+      document.getElementById("source-breakdown-chip").textContent = `${Object.keys(sources).length} themes`;
+      document.getElementById("source-breakdown").innerHTML = entries || `<p class="muted">No source breakdown available yet.</p>`;
+    }
+
+    function renderRuns(payload) {
+      const rows = payload.recent_runs.map((run) => {
+        const notes = run.notes || {};
+        const collected = notes.collected || {};
+        const errors = notes.errors || [];
+        return `
+          <article class="run-card ${escapeHtml(run.status)}">
+            <div class="row-split">
+              <strong>Run #${run.id}</strong>
+              <span class="chip subtle">${escapeHtml(run.status)}</span>
+            </div>
+            <p class="meta">${escapeHtml(formatDate(run.started_at))}</p>
+            <div class="token-row">
+              <span class="token">items ${collected.items ?? 0}</span>
+              <span class="token">new ${collected.new_items ?? 0}</span>
+              <span class="token">updated ${collected.updated_items ?? 0}</span>
+              <span class="token">images ${collected.images ?? 0}</span>
+              <span class="token">hypotheses ${collected.hypotheses ?? 0}</span>
+            </div>
+            ${errors.length ? `<p class="meta"><strong>Errors:</strong> ${escapeHtml(truncate(errors.join(" | "), 220))}</p>` : ""}
+            <div class="card-actions">
+              <button class="secondary small" data-open-run="${run.id}">View details</button>
+            </div>
+          </article>
+        `;
+      }).join("");
+      const completedCount = payload.recent_runs.filter((run) => run.status === "completed").length;
+      document.getElementById("run-history-summary").textContent = `${completedCount}/${payload.recent_runs.length || 0} completed`;
+      document.getElementById("runs").innerHTML = rows || `<p class="muted">No runs yet.</p>`;
+    }
+
+    function renderReviewQueue(payload) {
+      const rows = payload.review_queue.map((item) => `
+        <button class="queue-card" data-open-item="${item.id}">
+          <div class="row-split">
+            <strong>${escapeHtml(truncate(item.title, 72))}</strong>
+            <span class="chip subtle">${escapeHtml(item.review_status || "new")}</span>
+          </div>
+          <p class="meta">${escapeHtml(item.source_type)} • ${escapeHtml(item.theme)}</p>
+          ${item.user_note ? `<p class="meta"><strong>Note:</strong> ${escapeHtml(truncate(item.user_note, 120))}</p>` : ""}
+        </button>
+      `).join("");
+      document.getElementById("queue-summary").textContent = `${payload.review_queue.length} saved`;
+      document.getElementById("review-queue").innerHTML = rows || `<p class="muted">No saved items yet.</p>`;
+    }
+
+    function renderTopicRack() {
+      const savedTopics = readSavedTopics();
+      const recentTopics = readRecentTopics();
+      const workspaceTopics = getWorkspaceTopics();
+      const boards = readTopicBoards();
+      const activeBoard = getActiveBoard();
+      document.getElementById("topic-rack-summary").textContent = `${savedTopics.length} saved topics • ${recentTopics.length} recent pivots`;
+      document.getElementById("saved-topics").innerHTML = savedTopics.length
+        ? savedTopics.map((topic) => `<button class="chip action-pill" data-open-topic="${escapeHtml(topicKey(topic))}" data-topic-type="${escapeHtml(topic.type)}" data-topic-value="${escapeHtml(topic.value)}" data-topic-label="${escapeHtml(topic.label)}">${escapeHtml(topic.label)}</button>`).join("")
+        : `<span class="token">No saved topics yet</span>`;
+      document.getElementById("recent-topics").innerHTML = recentTopics.length
+        ? recentTopics.map((topic) => `<button class="chip action-pill" data-open-topic="${escapeHtml(topicKey(topic))}" data-topic-type="${escapeHtml(topic.type)}" data-topic-value="${escapeHtml(topic.value)}" data-topic-label="${escapeHtml(topic.label)}">${escapeHtml(topic.label)}</button>`).join("")
+        : `<span class="token">No recent pivots yet</span>`;
+      const noteLabel = document.getElementById("topic-note-label");
+      const noteField = document.getElementById("topic-note");
+      noteLabel.textContent = state.topicFocus
+        ? `Local note for ${state.topicFocus.label || state.topicFocus.value}`
+        : "Select a topic to store a local note";
+      if (document.activeElement !== noteField) {
+        noteField.value = state.topicFocus ? readTopicNote(state.topicFocus) : "";
+      }
+      noteField.disabled = !state.topicFocus;
+      document.getElementById("save-topic-note").disabled = !state.topicFocus;
+      document.getElementById("clear-topic-note").disabled = !state.topicFocus;
+      const boardSelect = document.getElementById("board-select");
+      const currentBoardId = boardSelect.value;
+      boardSelect.innerHTML = `<option value="">No board selected</option>` + boards.map((board) => `
+        <option value="${escapeHtml(board.id)}">${escapeHtml(board.name)}</option>
+      `).join("");
+      boardSelect.value = boards.some((board) => board.id === state.activeBoardId)
+        ? state.activeBoardId
+        : (boards.some((board) => board.id === currentBoardId) ? currentBoardId : "");
+      const boardNote = document.getElementById("board-note");
+      const boardLabel = document.getElementById("board-note-label");
+      boardLabel.textContent = activeBoard ? `Board note for ${activeBoard.name}` : "Board note";
+      if (document.activeElement !== boardNote) {
+        boardNote.value = activeBoard?.note || "";
+      }
+      boardNote.disabled = !activeBoard;
+      document.getElementById("save-board-note").disabled = !activeBoard;
+      document.getElementById("clear-board-note").disabled = !activeBoard;
+      document.getElementById("delete-board").disabled = !activeBoard;
+      document.getElementById("add-topic-to-board").disabled = !activeBoard || !state.topicFocus;
+      document.getElementById("board-topics").innerHTML = activeBoard?.topics?.length
+        ? activeBoard.topics.map((topic) => `<button class="chip action-pill" data-topic-type="${escapeHtml(topic.type)}" data-topic-value="${escapeHtml(topic.value)}" data-topic-label="${escapeHtml(topic.label)}">${escapeHtml(topic.label)}</button>`).join("")
+        : `<span class="token">No topics in this board yet</span>`;
+      const compareSelect = document.getElementById("compare-topic-select");
+      const current = compareSelect.value;
+      compareSelect.innerHTML = `<option value="">Choose a saved or recent topic</option>` + workspaceTopics
+        .filter((topic) => !state.topicFocus || topicKey(topic) !== topicKey(state.topicFocus))
+        .map((topic) => `<option value="${escapeHtml(topicKey(topic))}">${escapeHtml(topic.label)}</option>`)
+        .join("");
+      compareSelect.value = Array.from(compareSelect.options).some((option) => option.value === current)
+        ? current
+        : (state.compareFocus ? topicKey(state.compareFocus) : "");
+      document.getElementById("compare-summary").innerHTML = state.compareFocus
+        ? `
+          <span class="chip">${escapeHtml(state.compareFocus.label || state.compareFocus.value)}</span>
+          <span class="chip subtle">items ${state.compareItemTotal}</span>
+          <span class="chip subtle">images ${state.compareImageTotal}</span>
+          ${state.compareLoading ? `<span class="chip subtle">loading</span>` : ""}
+        `
+        : `<span class="token">No compare topic selected</span>`;
+    }
+
+    function renderTopicSpotlight(payload) {
+      const focus = state.topicFocus;
+      const contextNode = document.getElementById("spotlight-context");
+      const diffSummaryNode = document.getElementById("spotlight-diff-summary");
+      const suggestionsNode = document.getElementById("spotlight-suggestions");
+      const panelsNode = document.getElementById("spotlight-panels");
+      const summaryNode = document.getElementById("spotlight-summary");
+      const compareNode = document.getElementById("compare-panels");
+      const saveButton = document.getElementById("save-topic-focus");
+      saveButton.disabled = !focus;
+      saveButton.textContent = focus && isSavedTopic(focus) ? "Unsave topic" : "Save topic";
+      document.getElementById("apply-topic-focus").disabled = !focus;
+      document.getElementById("clear-topic-focus").disabled = !focus;
+
+      if (!focus) {
+        summaryNode.textContent = "Click a theme, source, compound, mechanism, or status to pull together related hypotheses, items, and images.";
+        contextNode.innerHTML = `<span class="token">No topic selected</span>`;
+        diffSummaryNode.innerHTML = `<span class="token">No baseline view yet</span>`;
+        suggestionsNode.innerHTML = [
+          ...payload.themes.map((theme) => `<button class="chip action-pill" data-focus-type="theme" data-focus-value="${escapeHtml(theme.slug)}" data-focus-label="${escapeHtml(theme.label)}">${escapeHtml(theme.label)}</button>`),
+          ...payload.stats.source_mix.slice(0, 5).map((item) => `<button class="chip action-pill" data-focus-type="source_type" data-focus-value="${escapeHtml(item.source_type)}" data-focus-label="${escapeHtml(item.source_type)}">${escapeHtml(item.source_type)}</button>`),
+          ...payload.stats.top_compounds.slice(0, 4).map((item) => `<button class="chip action-pill" data-focus-type="search" data-focus-value="${escapeHtml(item.name)}" data-focus-label="${escapeHtml(item.name)}">${escapeHtml(item.name)}</button>`),
+        ].join("");
+        panelsNode.innerHTML = `
+          <article class="spotlight-card">
+            <h3>Suggested paths</h3>
+            <p class="meta">Use theme cards for domain-level review, source cards for collection quality checks, and compounds or mechanisms for cross-theme discovery.</p>
+          </article>
+        `;
+        compareNode.innerHTML = state.compareFocus ? `
+          <article class="spotlight-card compare-card">
+            <div class="row-split">
+              <h3>Compare topic</h3>
+              <span class="chip subtle">${escapeHtml(state.compareFocus.label || state.compareFocus.value)}</span>
+            </div>
+            <div class="token-row">
+              <span class="token">items ${state.compareItemTotal}</span>
+              <span class="token">images ${state.compareImageTotal}</span>
+              ${state.compareLoading ? `<span class="token">loading</span>` : ""}
+            </div>
+          </article>
+        ` : "";
+        return;
+      }
+
+      const baselineDate = getDiffBaselineDate(payload);
+      const { changes, newItems, updatedItems } = classifyFocusChanges(state.focusItems, baselineDate);
+      const newHypotheses = (payload.hypotheses || []).filter((hypothesis) => {
+        const createdAt = new Date(hypothesis.created_at || 0).getTime();
+        return createdAt >= baselineDate.getTime() && hypothesisMatchesFocus(hypothesis, focus);
+      });
+      const matchingHypotheses = (payload.hypotheses || []).filter((hypothesis) => hypothesisMatchesFocus(hypothesis, focus)).slice(0, 4);
+      summaryNode.textContent = state.focusLoading
+        ? `Loading related material for ${focus.label || focus.value}...`
+        : `${state.focusItemTotal} matching items, ${state.focusImageTotal} matching images, and ${matchingHypotheses.length} matching hypotheses for ${focus.label || focus.value}.`;
+      contextNode.innerHTML = `
+        <span class="chip">${escapeHtml(focus.type.replace(/_/g, " "))}</span>
+        <span class="chip subtle">${escapeHtml(focus.label || focus.value)}</span>
+        <span class="chip subtle">items ${state.focusItemTotal}</span>
+        <span class="chip subtle">images ${state.focusImageTotal}</span>
+        ${isSavedTopic(focus) ? `<span class="chip subtle">saved topic</span>` : ""}
+      `;
+      diffSummaryNode.innerHTML = `
+        <span class="chip">baseline ${escapeHtml(formatDate(baselineDate.toISOString()))}</span>
+        <span class="chip subtle">new items ${newItems.length}</span>
+        <span class="chip subtle">updated items ${updatedItems.length}</span>
+        <span class="chip subtle">new hypotheses ${newHypotheses.length}</span>
+      `;
+      const relatedTerms = [
+        ...new Set(
+          state.focusItems
+            .flatMap((item) => [...(item.compounds || []), ...(item.mechanisms || [])])
+            .filter(Boolean)
+        ),
+      ].slice(0, 8);
+      suggestionsNode.innerHTML = relatedTerms.length
+        ? relatedTerms.map((term) => `<button class="chip action-pill" data-focus-type="search" data-focus-value="${escapeHtml(term)}" data-focus-label="${escapeHtml(term)}">${escapeHtml(term)}</button>`).join("")
+        : `<span class="token">No related signals loaded yet</span>`;
+      panelsNode.innerHTML = `
+        <article class="spotlight-card">
+          <div class="row-split">
+            <h3>Matching items</h3>
+            <span class="chip subtle">${state.focusItemTotal}</span>
+          </div>
+          <div class="stack-list compact">
+            ${state.focusItems.map((item) => `
+              <button class="queue-card compact-card" data-open-item="${item.id}">
+                <strong>${escapeHtml(truncate(item.title, 68))}</strong>
+                <p class="meta">${escapeHtml(item.source_type)} • ${escapeHtml(item.theme)} • match ${Number(item._focusScore || 0).toFixed(1)}</p>
+              </button>
+            `).join("") || `<p class="muted">No matching items loaded.</p>`}
+          </div>
+        </article>
+        <article class="spotlight-card">
+          <div class="row-split">
+            <h3>Matching hypotheses</h3>
+            <span class="chip subtle">${matchingHypotheses.length}</span>
+          </div>
+          <div class="stack-list compact">
+            ${matchingHypotheses.map((item) => `
+              <button class="list-row list-row-button spotlight-hypothesis" data-focus-type="search" data-focus-value="${escapeHtml(item.title)}" data-focus-label="${escapeHtml(item.title)}">
+                <span>${escapeHtml(truncate(item.title, 64))}</span>
+                <strong>${Number(item.novelty_score || 0).toFixed(2)}</strong>
+              </button>
+            `).join("") || `<p class="muted">No current hypotheses match this topic.</p>`}
+          </div>
+        </article>
+        <article class="spotlight-card">
+          <div class="row-split">
+            <h3>Matching images</h3>
+            <span class="chip subtle">${state.focusImageTotal}</span>
+          </div>
+          <div class="spotlight-image-grid">
+            ${state.focusImages.map((image, index) => {
+              const src = image.local_url || image.thumb_url || image.image_url;
+              return `<button class="image-card spotlight-image-card" data-spotlight-image-index="${index}"><img src="${escapeHtml(src)}" alt="${escapeHtml(image.title)}" loading="lazy"><span>${escapeHtml(truncate(image.title, 48))}</span></button>`;
+            }).join("") || `<p class="muted">No matching images loaded.</p>`}
+          </div>
+        </article>
+        <article class="spotlight-card">
+          <div class="row-split">
+            <h3>Change since baseline</h3>
+            <span class="chip subtle">${newItems.length + updatedItems.length}</span>
+          </div>
+          <div class="stack-list compact">
+            ${changes.filter((item) => item.changeType).slice(0, 6).map((item) => `
+              <button class="queue-card compact-card" data-open-item="${item.id}">
+                <strong>${escapeHtml(truncate(item.title, 66))}</strong>
+                <p class="meta">${escapeHtml(item.changeType)} • ${escapeHtml(item.source_type)} • ${escapeHtml(formatRelative(item.last_seen_at))}</p>
+              </button>
+            `).join("") || `<p class="muted">No new or updated items for this baseline.</p>`}
+          </div>
+        </article>
+      `;
+      if (!state.compareFocus) {
+        compareNode.innerHTML = "";
+        return;
+      }
+      compareNode.innerHTML = `
+        <article class="spotlight-card compare-card">
+          <div class="row-split">
+            <h3>Compare topic</h3>
+            <span class="chip subtle">${escapeHtml(state.compareFocus.label || state.compareFocus.value)}</span>
+          </div>
+          <div class="token-row">
+            <span class="token">items ${state.compareItemTotal}</span>
+            <span class="token">images ${state.compareImageTotal}</span>
+            ${state.compareLoading ? `<span class="token">loading</span>` : ""}
+          </div>
+          <div class="stack-list compact">
+            ${state.compareItems.map((item) => `
+              <button class="queue-card compact-card" data-open-item="${item.id}">
+                <strong>${escapeHtml(truncate(item.title, 64))}</strong>
+                <p class="meta">${escapeHtml(item.source_type)} • ${escapeHtml(item.theme)} • match ${Number(item._focusScore || 0).toFixed(1)}</p>
+              </button>
+            `).join("") || `<p class="muted">No compare items loaded.</p>`}
+          </div>
+        </article>
+      `;
+    }
+
+    function renderBulkBar(payload) {
+      const selectedCount = state.selectedItemIds.size;
+      const bar = document.getElementById("bulk-bar");
+      bar.classList.toggle("hidden", selectedCount === 0);
+      document.getElementById("bulk-summary").textContent = selectedCount ? `${selectedCount} selected` : "";
+      const bulkStatus = document.getElementById("bulk-status");
+      const current = bulkStatus.value;
+      bulkStatus.innerHTML = `<option value="">Apply status</option>` + payload.review_status_options.map((status) => `
+        <option value="${escapeHtml(status)}">${escapeHtml(status)}</option>
+      `).join("");
+      bulkStatus.value = payload.review_status_options.includes(current) ? current : "";
+    }
+
+    function renderActiveFilters() {
+      const filters = readFilterState();
+      const labels = [];
+      if (filters.theme) labels.push(`theme ${filters.theme}`);
+      if (filters.source) labels.push(`source ${filters.source}`);
+      if (filters.review) labels.push(`review ${filters.review}`);
+      if (filters.image) labels.push(`image ${filters.image}`);
+      if (filters.saved) labels.push("saved only");
+      if (filters.q) labels.push(`search ${filters.q}`);
+      if (filters.sort && filters.sort !== "newest") labels.push(`sort ${filters.sort}`);
+      if (state.collectionLoading) labels.push("refreshing results");
+      document.getElementById("active-filters").innerHTML = labels.length
+        ? labels.map((label) => `<span class="token">${escapeHtml(label)}</span>`).join("")
+        : `<span class="token">no active filters</span>`;
+    }
+
+    function renderFilters(payload) {
+      const themeFilter = document.getElementById("theme-filter");
+      const sourceFilter = document.getElementById("source-filter");
+      const imageFilter = document.getElementById("image-filter");
+      const reviewFilter = document.getElementById("review-filter");
+      const currentTheme = themeFilter.value;
+      const currentSource = sourceFilter.value;
+      const currentImageSource = imageFilter.value;
+      const currentReview = reviewFilter.value;
+      themeFilter.innerHTML = `<option value="">All themes</option>` + payload.themes.map((theme) => `
+        <option value="${escapeHtml(theme.slug)}">${escapeHtml(theme.label)}</option>
+      `).join("");
+      sourceFilter.innerHTML = `<option value="">All sources</option>` + payload.source_types.map((sourceType) => `
+        <option value="${escapeHtml(sourceType)}">${escapeHtml(sourceType)}</option>
+      `).join("");
+      imageFilter.innerHTML = `<option value="">All image types</option>` + payload.image_source_types.map((sourceType) => `
+        <option value="${escapeHtml(sourceType)}">${escapeHtml(sourceType)}</option>
+      `).join("");
+      reviewFilter.innerHTML = `<option value="">All review states</option>` + payload.review_status_options.map((status) => `
+        <option value="${escapeHtml(status)}">${escapeHtml(status)}</option>
+      `).join("");
+      themeFilter.value = currentTheme;
+      sourceFilter.value = currentSource;
+      imageFilter.value = currentImageSource;
+      reviewFilter.value = currentReview;
+    }
+
+    function getFilteredItems() {
+      return state.allItems;
+    }
+
+    function getFilteredImages() {
+      return state.allImages;
+    }
+
+    function itemCard(item) {
+      const options = state.payload.review_status_options.map((status) => `
+        <option value="${escapeHtml(status)}" ${item.review_status === status ? "selected" : ""}>${escapeHtml(status)}</option>
+      `).join("");
+      return `
+        <article class="card ${state.selectedItemIds.has(item.id) ? "selected" : ""}" data-item-id="${item.id}">
+          <div class="card-head">
+            <div class="select-card">
+              <input type="checkbox" data-select-item="${item.id}" ${state.selectedItemIds.has(item.id) ? "checked" : ""}>
+              <button class="chip action-pill" data-focus-type="theme" data-focus-value="${escapeHtml(item.theme)}" data-focus-label="${escapeHtml(item.theme)}">${escapeHtml(item.theme)}</button>
+            </div>
+            <button class="chip subtle action-pill" data-focus-type="source_type" data-focus-value="${escapeHtml(item.source_type)}" data-focus-label="${escapeHtml(item.source_type)}">${escapeHtml(item.source_type)}</button>
+            <span class="chip subtle">score ${Number(item.score || 0).toFixed(2)}</span>
+          </div>
+          <h3>${escapeHtml(item.title)}</h3>
+          <p>${escapeHtml(truncate(item.summary || item.content, 220))}</p>
+          <p class="meta">${escapeHtml(item.domain)} ${item.published_at ? "• " + escapeHtml(formatDate(item.published_at)) : ""}</p>
+          <div class="token-row">
+            ${(item.compounds || []).slice(0, 4).map((value) => `<button class="token action-pill" data-focus-type="search" data-focus-value="${escapeHtml(value)}" data-focus-label="${escapeHtml(value)}">${escapeHtml(value)}</button>`).join("")}
+            ${(item.mechanisms || []).slice(0, 3).map((value) => `<button class="token mechanism action-pill" data-focus-type="search" data-focus-value="${escapeHtml(value)}" data-focus-label="${escapeHtml(value)}">${escapeHtml(value)}</button>`).join("")}
+          </div>
+          ${item.user_note ? `<p class="meta"><strong>Note:</strong> ${escapeHtml(truncate(item.user_note, 120))}</p>` : ""}
+          <div class="card-toolbar">
+            <button class="secondary small save-toggle" data-toggle-save="${item.id}">${item.is_saved ? "Saved" : "Save"}</button>
+            <select class="status-select" data-status-select="${item.id}">
+              ${options}
+            </select>
+          </div>
+          <div class="card-actions">
+            <button class="secondary small" data-open-item="${item.id}">Details</button>
+            <a class="link-button" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">Open source</a>
+          </div>
+        </article>
+      `;
+    }
+
+    function renderItems() {
+      const items = getFilteredItems();
+      state.filteredItems = items;
+      const itemsNode = document.getElementById("items");
+      itemsNode.setAttribute("aria-busy", state.collectionLoading ? "true" : "false");
+      document.getElementById("result-summary").textContent = `${state.itemTotal} matching items • loaded ${state.allItems.length}${state.collectionLoading ? " • refreshing" : ""}`;
+      itemsNode.innerHTML = items.map(itemCard).join("") || `<p class="muted">No source captures for the current filters.</p>`;
+      const button = document.getElementById("load-more-items");
+      const fullyLoaded = state.allItems.length >= state.itemTotal;
+      button.disabled = fullyLoaded || state.collectionLoading;
+      button.textContent = state.collectionLoading ? "Loading..." : (fullyLoaded ? "All items loaded" : "Load more items");
+      ["theme-filter", "source-filter", "review-filter", "sort-filter", "saved-only-filter"].forEach((id) => {
+        document.getElementById(id).disabled = state.collectionLoading;
+      });
+    }
+
+    function renderImages() {
+      const images = getFilteredImages();
+      state.filteredImages = images;
+      const imagesNode = document.getElementById("images");
+      imagesNode.setAttribute("aria-busy", state.collectionLoading ? "true" : "false");
+      document.getElementById("image-summary").textContent = `${state.imageTotal} matching images • loaded ${state.allImages.length}${state.collectionLoading ? " • refreshing" : ""}`;
+      imagesNode.innerHTML = images.map((image, index) => {
+        const src = image.local_url || image.thumb_url || image.image_url;
+        return `
+          <button class="image-card" data-image-index="${index}">
+            <img src="${escapeHtml(src)}" alt="${escapeHtml(image.title)}" loading="lazy">
+            <div class="image-meta">
+              <span class="chip subtle">${escapeHtml(image.source_type)}</span>
+              ${image.local_url ? `<span class="chip subtle">cached</span>` : ""}
+            </div>
+            <span>${escapeHtml(truncate(image.title, 80))}</span>
+          </button>
+        `;
+      }).join("") || `<p class="muted">No images captured yet.</p>`;
+      const button = document.getElementById("load-more-images");
+      const fullyLoaded = state.allImages.length >= state.imageTotal;
+      button.disabled = fullyLoaded || state.collectionLoading;
+      button.textContent = state.collectionLoading ? "Loading..." : (fullyLoaded ? "All images loaded" : "Load more images");
+      document.getElementById("image-filter").disabled = state.collectionLoading;
+      document.getElementById("search-filter").setAttribute("aria-busy", state.collectionLoading ? "true" : "false");
+    }
+
+    function openRunDialog(run) {
+      state.activeRun = run;
+      const notes = run.notes || {};
+      const collected = notes.collected || {};
+      const sources = notes.sources || {};
+      const errors = notes.errors || [];
+      const hypothesisMeta = notes.hypotheses || {};
+      document.getElementById("run-dialog-kicker").textContent = `Run #${run.id} • ${run.status}`;
+      document.getElementById("run-dialog-title").textContent = `Crawl started ${formatDate(run.started_at)}`;
+      document.getElementById("run-dialog-body").innerHTML = `
+        <div class="detail-meta">
+          <span class="chip subtle">finished ${escapeHtml(formatDate(run.finished_at || run.started_at))}</span>
+          <span class="chip subtle">provider ${escapeHtml(hypothesisMeta.provider || "unknown")}</span>
+          <span class="chip subtle">items ${collected.items ?? 0}</span>
+          <span class="chip subtle">images ${collected.images ?? 0}</span>
+          <span class="chip subtle">hypotheses ${collected.hypotheses ?? 0}</span>
+        </div>
+        <div class="detail-section">
+          <h3 class="subhead">Collected</h3>
+          <div class="token-row">
+            <span class="token">new ${collected.new_items ?? 0}</span>
+            <span class="token">updated ${collected.updated_items ?? 0}</span>
+            <span class="token">errors ${errors.length}</span>
+          </div>
+        </div>
+        <div class="detail-section">
+          <h3 class="subhead">Theme source breakdown</h3>
+          <div class="stack-list compact">
+            ${Object.entries(sources).map(([theme, counts]) => `
+              <div class="breakdown-card">
+                <div class="row-split">
+                  <strong>${escapeHtml(theme)}</strong>
+                  <span class="chip subtle">images ${counts.images || 0}</span>
+                </div>
+                <div class="token-row">
+                  ${Object.entries(counts).filter(([key]) => key !== "images").map(([key, value]) => `<span class="token">${escapeHtml(key)} ${value}</span>`).join("")}
+                </div>
+              </div>
+            `).join("") || `<p class="muted">No source breakdown saved for this run.</p>`}
+          </div>
+        </div>
+        <div class="detail-section">
+          <h3 class="subhead">Errors</h3>
+          ${errors.length ? `<div class="stack-list compact">${errors.map((error) => `<div class="list-row run-error">${escapeHtml(error)}</div>`).join("")}</div>` : `<p class="muted">No run errors were recorded.</p>`}
+        </div>
+        ${notes.traceback ? `<div class="detail-section"><h3 class="subhead">Traceback</h3><pre class="traceback">${escapeHtml(notes.traceback)}</pre></div>` : ""}
+        ${hypothesisMeta.error ? `<div class="detail-section"><h3 class="subhead">Hypothesis fallback</h3><p class="meta">${escapeHtml(hypothesisMeta.error)}</p></div>` : ""}
+      `;
+      showDialog("run-dialog");
+    }
+
+    function openItemDialog(item) {
+      state.activeItem = item;
+      const metadata = Object.entries(item.metadata || {}).map(([key, value]) => `
+        <div class="list-row">
+          <span>${escapeHtml(key)}</span>
+          <strong>${escapeHtml(Array.isArray(value) ? value.join(", ") : value)}</strong>
+        </div>
+      `).join("");
+      const statusOptions = state.payload.review_status_options.map((status) => `
+        <option value="${escapeHtml(status)}" ${item.review_status === status ? "selected" : ""}>${escapeHtml(status)}</option>
+      `).join("");
+      document.getElementById("item-dialog-kicker").textContent = `${item.theme} • ${item.source_type}`;
+      document.getElementById("item-dialog-title").textContent = item.title || "Untitled";
+      document.getElementById("item-dialog-body").innerHTML = `
+        <div class="detail-meta">
+          <span class="chip subtle">score ${Number(item.score || 0).toFixed(2)}</span>
+          <span class="chip subtle">${escapeHtml(item.domain || "unknown domain")}</span>
+          <span class="chip subtle">${escapeHtml(formatDate(item.published_at || item.last_seen_at))}</span>
+          <span class="chip subtle">first seen ${escapeHtml(formatRelative(item.first_seen_at))}</span>
+          <span class="chip subtle">last seen ${escapeHtml(formatRelative(item.last_seen_at))}</span>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary small" data-dialog-save="${item.id}">${item.is_saved ? "Remove from queue" : "Add to queue"}</button>
+          <select class="status-select" id="dialog-review-status">
+            ${statusOptions}
+          </select>
+        </div>
+        <p>${escapeHtml(item.summary || "No summary available.")}</p>
+        <p class="detail-copy">${escapeHtml(item.content || "No extracted content available.")}</p>
+        <div class="token-row">
+          <button class="chip action-pill" data-focus-type="theme" data-focus-value="${escapeHtml(item.theme)}" data-focus-label="${escapeHtml(item.theme)}">${escapeHtml(item.theme)}</button>
+          <button class="chip subtle action-pill" data-focus-type="source_type" data-focus-value="${escapeHtml(item.source_type)}" data-focus-label="${escapeHtml(item.source_type)}">${escapeHtml(item.source_type)}</button>
+          ${(item.compounds || []).map((value) => `<button class="token action-pill" data-focus-type="search" data-focus-value="${escapeHtml(value)}" data-focus-label="${escapeHtml(value)}">${escapeHtml(value)}</button>`).join("")}
+          ${(item.mechanisms || []).map((value) => `<button class="token mechanism action-pill" data-focus-type="search" data-focus-value="${escapeHtml(value)}" data-focus-label="${escapeHtml(value)}">${escapeHtml(value)}</button>`).join("")}
+        </div>
+        <label class="field">
+          <span>Analyst note</span>
+          <textarea id="dialog-note" rows="5" placeholder="Capture why this item matters, open questions, or follow-up actions.">${escapeHtml(item.user_note || "")}</textarea>
+        </label>
+        <div class="modal-actions">
+          <button class="secondary small" data-dialog-save-note="${item.id}">Save note</button>
+          <a class="link-button" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">Open source</a>
+        </div>
+        ${metadata ? `<div class="detail-section"><h3 class="subhead">Metadata</h3><div class="stack-list compact">${metadata}</div></div>` : ""}
+      `;
+      showDialog("item-dialog");
+      if (state.urlHydrated) syncUrlState();
+    }
+
+    async function openItemFromUrlIfPresent() {
+      const params = new URLSearchParams(window.location.search);
+      const rawId = params.get("item");
+      if (!rawId) return;
+      const itemId = Number(rawId);
+      if (!Number.isInteger(itemId)) return;
+      const loaded = state.allItems.find((entry) => entry.id === itemId) || state.payload.review_queue.find((entry) => entry.id === itemId);
+      if (loaded) {
+        openItemDialog(loaded);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/items/${itemId}`);
+        if (!response.ok) return;
+        const item = await response.json();
+        openItemDialog(item);
+      } catch (_error) {
+        // Ignore invalid deep links silently.
+      }
+    }
+
+    function openImageDialog(image) {
+      const src = image.local_url || image.image_url || image.thumb_url;
+      document.getElementById("image-dialog-kicker").textContent = `${image.theme} • ${image.source_type}`;
+      document.getElementById("image-dialog-title").textContent = image.title || "Image";
+      document.getElementById("image-dialog-preview").src = src;
+      document.getElementById("image-dialog-preview").alt = image.title || "Image";
+      document.getElementById("image-dialog-meta").textContent = `${image.local_url ? "cached locally" : "remote image"} • ${image.page_url || image.image_url || ""}`;
+      document.getElementById("image-dialog-link").href = image.page_url || image.image_url || "#";
+      showDialog("image-dialog");
+    }
+
+    function render(payload) {
+      state.payload = payload;
+      updateWorkspaceModeUI();
+      updateDensityUI();
+      renderHeroStatus(payload);
+      renderWorkspaceContext(payload);
+      renderCommandPalette(payload);
+      renderTopicRack();
+      renderStats(payload);
+      renderHypotheses(payload);
+      renderSignals(payload);
+      renderSourceMix(payload);
+      renderThemeSummaries(payload);
+      renderSourceBreakdown(payload);
+      renderRuns(payload);
+      renderReviewQueue(payload);
+      renderTopicSpotlight(payload);
+      renderFilters(payload);
+      renderActiveFilters();
+      renderBulkBar(payload);
+      renderPresetOptions();
+      renderItems();
+      renderImages();
+      const runButton = document.getElementById("run-now");
+      runButton.disabled = payload.is_running;
+      runButton.textContent = payload.is_running ? "Running..." : "Run crawl now";
+      setRunStatus(payload.is_running ? "Crawler is currently running." : `Scheduler interval: every ${payload.interval_minutes} minutes`, payload.is_running ? "running" : "");
+      if (state.urlHydrated) syncUrlState();
+    }
+
+    async function refresh() {
+      try {
+        const response = await fetch("/api/dashboard");
+        const payload = await response.json();
+        state.payload = payload;
+        await refreshFilteredCollections(true);
+        render(payload);
+        if (state.topicFocus) {
+          await loadTopicFocus();
+        }
+      } catch (error) {
+        setRunStatus("Dashboard refresh failed.", "error");
+      }
+    }
+
+    async function runNow() {
+      const token = document.getElementById("admin-token").value.trim();
+      setRunStatus("Queueing crawl...", "running");
+      try {
+        const response = await fetch("/api/run", {
+          method: "POST",
+          headers: token ? { "x-admin-token": token } : {}
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          setRunStatus(payload.detail || "Manual run failed.", "error");
+          return;
+        }
+        if (payload.status === "busy") {
+          setRunStatus("Crawler is already running.", "running");
+          return;
+        }
+        setRunStatus("Crawl queued.", "success");
+        window.setTimeout(refresh, 1800);
+      } catch (error) {
+        setRunStatus("Manual run failed.", "error");
+      }
+    }
+
+    document.getElementById("run-now").addEventListener("click", runNow);
+    document.getElementById("refresh-now").addEventListener("click", refresh);
+    document.getElementById("open-command").addEventListener("click", () => openCommandPalette());
+    document.getElementById("density-select").addEventListener("change", (event) => {
+      setDensityMode(event.target.value);
+    });
+    document.getElementById("save-token").addEventListener("click", () => {
+      window.localStorage.setItem(ADMIN_TOKEN_KEY, document.getElementById("admin-token").value.trim());
+      setRunStatus("Admin token saved locally in this browser.", "success");
+    });
+    document.getElementById("clear-token").addEventListener("click", () => {
+      window.localStorage.removeItem(ADMIN_TOKEN_KEY);
+      document.getElementById("admin-token").value = "";
+      setRunStatus("Saved admin token cleared.", "");
+    });
+    document.getElementById("save-preset").addEventListener("click", saveCurrentPreset);
+    document.getElementById("load-preset").addEventListener("click", loadSelectedPreset);
+    document.getElementById("clear-filters").addEventListener("click", clearFilters);
+    document.getElementById("copy-view-link").addEventListener("click", copyViewLink);
+    document.getElementById("create-board").addEventListener("click", createBoard);
+    document.getElementById("delete-board").addEventListener("click", deleteActiveBoard);
+    document.getElementById("add-topic-to-board").addEventListener("click", addCurrentTopicToBoard);
+    document.getElementById("save-board-note").addEventListener("click", saveBoardNote);
+    document.getElementById("clear-board-note").addEventListener("click", clearBoardNote);
+    document.getElementById("board-select").addEventListener("change", (event) => {
+      setActiveBoardId(event.target.value);
+      render(state.payload);
+    });
+    document.getElementById("save-topic-note").addEventListener("click", saveTopicNote);
+    document.getElementById("clear-topic-note").addEventListener("click", clearTopicNote);
+    document.getElementById("save-topic-focus").addEventListener("click", toggleSavedTopic);
+    document.getElementById("apply-topic-focus").addEventListener("click", applyTopicFocusToFilters);
+    document.getElementById("clear-topic-focus").addEventListener("click", clearTopicFocus);
+    document.getElementById("load-compare-topic").addEventListener("click", loadSelectedCompareTopic);
+    document.getElementById("clear-compare-topic").addEventListener("click", clearCompareFocus);
+    document.getElementById("diff-baseline").addEventListener("change", () => render(state.payload));
+    document.getElementById("export-items").addEventListener("click", () => {
+      downloadJson("desire-radar-items.json", state.filteredItems);
+    });
+    document.getElementById("export-hypotheses").addEventListener("click", () => {
+      downloadJson("desire-radar-hypotheses.json", state.payload.hypotheses || []);
+    });
+    document.getElementById("load-more-items").addEventListener("click", async () => {
+      await refreshFilteredCollections(false);
+      render(state.payload);
+    });
+    document.getElementById("load-more-images").addEventListener("click", async () => {
+      await refreshFilteredCollections(false);
+      render(state.payload);
+    });
+    document.getElementById("bulk-save").addEventListener("click", async () => {
+      if (!state.selectedItemIds.size) return;
+      await patchItemsBulk({ item_ids: selectedIds(), is_saved: true }, "Selected items saved.");
+    });
+    document.getElementById("bulk-unsave").addEventListener("click", async () => {
+      if (!state.selectedItemIds.size) return;
+      await patchItemsBulk({ item_ids: selectedIds(), is_saved: false }, "Selected items unsaved.");
+    });
+    document.getElementById("bulk-apply-status").addEventListener("click", async () => {
+      const nextStatus = document.getElementById("bulk-status").value;
+      if (!state.selectedItemIds.size || !nextStatus) return;
+      await patchItemsBulk({ item_ids: selectedIds(), review_status: nextStatus }, "Selected review states updated.");
+    });
+    document.getElementById("bulk-export").addEventListener("click", () => {
+      const selected = state.filteredItems.filter((item) => state.selectedItemIds.has(item.id));
+      downloadJson("desire-radar-selected-items.json", selected);
+    });
+    document.getElementById("bulk-clear").addEventListener("click", () => {
+      state.selectedItemIds.clear();
+      render(state.payload);
+    });
+    async function handleBrowseFilterChange() {
+      await refreshFilteredCollections(true);
+      render(state.payload);
+    }
+
+    document.getElementById("theme-filter").addEventListener("change", handleBrowseFilterChange);
+    document.getElementById("source-filter").addEventListener("change", handleBrowseFilterChange);
+    document.getElementById("image-filter").addEventListener("change", handleBrowseFilterChange);
+    document.getElementById("review-filter").addEventListener("change", handleBrowseFilterChange);
+    document.getElementById("sort-filter").addEventListener("change", handleBrowseFilterChange);
+    document.getElementById("saved-only-filter").addEventListener("change", handleBrowseFilterChange);
+    document.getElementById("search-filter").addEventListener("input", () => {
+      window.clearTimeout(state.searchTimer);
+      state.searchTimer = window.setTimeout(handleBrowseFilterChange, 180);
+    });
+    document.getElementById("close-item-dialog").addEventListener("click", () => closeDialogIfOpen("item-dialog"));
+    document.getElementById("close-image-dialog").addEventListener("click", () => closeDialogIfOpen("image-dialog"));
+    document.getElementById("close-run-dialog").addEventListener("click", () => closeDialogIfOpen("run-dialog"));
+    document.getElementById("close-command-dialog").addEventListener("click", closeCommandPalette);
+    ["item-dialog", "image-dialog", "run-dialog", "command-dialog"].forEach((id) => {
+      const dialog = document.getElementById(id);
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) {
+          dialog.close();
+        }
+      });
+      dialog.addEventListener("close", () => {
+        if (id !== "command-dialog") {
+          restoreDialogTriggerFocus();
+        }
+      });
+    });
+    document.getElementById("command-dialog").addEventListener("close", () => {
+      state.commandPaletteOpen = false;
+      restoreDialogTriggerFocus();
+    });
+    document.getElementById("command-input").addEventListener("input", (event) => {
+      state.commandQuery = event.target.value;
+      state.commandIndex = 0;
+      renderCommandPalette(state.payload);
+    });
+    document.getElementById("command-results").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-command-index]");
+      if (!button) return;
+      executeCommand(Number(button.dataset.commandIndex));
+    });
+
+    document.getElementById("hypotheses").addEventListener("click", async (event) => {
+      const focusTrigger = event.target.closest("[data-focus-type]");
+      if (focusTrigger) {
+        setTopicFocus(focusTrigger.dataset.focusType, focusTrigger.dataset.focusValue, focusTrigger.dataset.focusLabel || focusTrigger.dataset.focusValue);
+        return;
+      }
+      const saveButton = event.target.closest("[data-toggle-hypothesis-save]");
+      if (saveButton) {
+        const hypothesisId = Number(saveButton.dataset.toggleHypothesisSave);
+        const hypothesis = (state.payload.hypotheses || []).find((entry) => entry.id === hypothesisId);
+        if (hypothesis) {
+          await patchHypothesisState(
+            hypothesisId,
+            { is_saved: !hypothesis.is_saved },
+            hypothesis.is_saved ? "Removed hypothesis from saved set." : "Saved hypothesis for follow-up."
+          );
+        }
+        return;
+      }
+      const noteButton = event.target.closest("[data-save-hypothesis-note]");
+      if (!noteButton) return;
+      const hypothesisId = Number(noteButton.dataset.saveHypothesisNote);
+      const noteField = document.querySelector(`[data-hypothesis-note="${hypothesisId}"]`);
+      if (!(noteField instanceof HTMLTextAreaElement)) return;
+      const statusSelect = document.querySelector(`[data-hypothesis-status="${hypothesisId}"]`);
+      await patchHypothesisState(
+        hypothesisId,
+        {
+          user_note: noteField.value,
+          review_status: statusSelect instanceof HTMLSelectElement ? statusSelect.value : undefined,
+        },
+        "Hypothesis note saved."
+      );
+    });
+
+    document.getElementById("hypotheses").addEventListener("change", async (event) => {
+      const statusSelect = event.target.closest("[data-hypothesis-status]");
+      if (!statusSelect) return;
+      const hypothesisId = Number(statusSelect.dataset.hypothesisStatus);
+      await patchHypothesisState(hypothesisId, { review_status: statusSelect.value }, "Hypothesis review state updated.");
+    });
+
+    document.getElementById("items").addEventListener("click", async (event) => {
+      const focusTrigger = event.target.closest("[data-focus-type]");
+      if (focusTrigger) {
+        setTopicFocus(focusTrigger.dataset.focusType, focusTrigger.dataset.focusValue, focusTrigger.dataset.focusLabel || focusTrigger.dataset.focusValue);
+        return;
+      }
+      const saveButton = event.target.closest("[data-toggle-save]");
+      if (saveButton) {
+        const itemId = Number(saveButton.dataset.toggleSave);
+        const item = state.allItems.find((entry) => entry.id === itemId);
+        if (item) {
+          await patchItemState(itemId, { is_saved: !item.is_saved }, item.is_saved ? "Removed from saved queue." : "Added to saved queue.");
+        }
+        return;
+      }
+      const openButton = event.target.closest("[data-open-item]");
+      if (openButton) {
+        const itemId = Number(openButton.dataset.openItem);
+        const item = state.allItems.find((entry) => entry.id === itemId);
+        if (item) openItemDialog(item);
+      }
+    });
+
+    document.getElementById("items").addEventListener("change", async (event) => {
+      const selectionToggle = event.target.closest("[data-select-item]");
+      if (selectionToggle) {
+        const itemId = Number(selectionToggle.dataset.selectItem);
+        if (selectionToggle.checked) {
+          state.selectedItemIds.add(itemId);
+        } else {
+          state.selectedItemIds.delete(itemId);
+        }
+        render(state.payload);
+        return;
+      }
+      const statusSelect = event.target.closest("[data-status-select]");
+      if (!statusSelect) return;
+      const itemId = Number(statusSelect.dataset.statusSelect);
+      await patchItemState(itemId, { review_status: statusSelect.value }, "Review state updated.");
+    });
+
+    document.getElementById("review-queue").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-open-item]");
+      if (!button) return;
+      const itemId = Number(button.dataset.openItem);
+      const item = state.allItems.find((entry) => entry.id === itemId) || state.payload.review_queue.find((entry) => entry.id === itemId);
+      if (item) openItemDialog(item);
+    });
+
+    ["saved-topics", "recent-topics"].forEach((id) => {
+      document.getElementById(id).addEventListener("click", (event) => {
+        const button = event.target.closest("[data-topic-type]");
+        if (!button) return;
+        setTopicFocus(button.dataset.topicType, button.dataset.topicValue, button.dataset.topicLabel || button.dataset.topicValue);
+      });
+    });
+    document.getElementById("board-topics").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-topic-type]");
+      if (!button) return;
+      setTopicFocus(button.dataset.topicType, button.dataset.topicValue, button.dataset.topicLabel || button.dataset.topicValue);
+    });
+
+    document.getElementById("stats").addEventListener("click", (event) => {
+      const navTrigger = event.target.closest("[data-nav-target]");
+      if (navTrigger) {
+        scrollToSection(navTrigger.dataset.navTarget);
+        return;
+      }
+      const focusTrigger = event.target.closest("[data-focus-type]");
+      if (!focusTrigger) return;
+      setTopicFocus(focusTrigger.dataset.focusType, focusTrigger.dataset.focusValue, focusTrigger.dataset.focusLabel || focusTrigger.dataset.focusValue);
+    });
+
+    ["source-mix", "theme-summaries", "source-breakdown", "compounds", "mechanisms", "review-statuses", "hypothesis-review-statuses", "spotlight-suggestions", "spotlight-context"].forEach((id) => {
+      document.getElementById(id).addEventListener("click", (event) => {
+        const trigger = event.target.closest("[data-focus-type]");
+        if (!trigger) return;
+        setTopicFocus(trigger.dataset.focusType, trigger.dataset.focusValue, trigger.dataset.focusLabel || trigger.dataset.focusValue);
+      });
+    });
+
+    document.getElementById("spotlight-panels").addEventListener("click", (event) => {
+      const focusTrigger = event.target.closest("[data-focus-type]");
+      if (focusTrigger) {
+        setTopicFocus(focusTrigger.dataset.focusType, focusTrigger.dataset.focusValue, focusTrigger.dataset.focusLabel || focusTrigger.dataset.focusValue);
+        return;
+      }
+      const itemButton = event.target.closest("[data-open-item]");
+      if (itemButton) {
+        const itemId = Number(itemButton.dataset.openItem);
+        const item = state.focusItems.find((entry) => entry.id === itemId) || state.allItems.find((entry) => entry.id === itemId);
+        if (item) openItemDialog(item);
+        return;
+      }
+      const imageButton = event.target.closest("[data-spotlight-image-index]");
+      if (!imageButton) return;
+      const imageIndex = Number(imageButton.dataset.spotlightImageIndex);
+      if (Number.isInteger(imageIndex) && state.focusImages[imageIndex]) {
+        openImageDialog(state.focusImages[imageIndex]);
+      }
+    });
+
+    document.getElementById("compare-panels").addEventListener("click", (event) => {
+      const itemButton = event.target.closest("[data-open-item]");
+      if (!itemButton) return;
+      const itemId = Number(itemButton.dataset.openItem);
+      const item = state.compareItems.find((entry) => entry.id === itemId) || state.allItems.find((entry) => entry.id === itemId);
+      if (item) openItemDialog(item);
+    });
+
+    document.getElementById("runs").addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-open-run]");
+      if (!button) return;
+      const runId = Number(button.dataset.openRun);
+      const loaded = (state.payload.recent_runs || []).find((entry) => entry.id === runId);
+      if (loaded) {
+        openRunDialog(loaded);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/runs/${runId}`);
+        if (!response.ok) return;
+        const run = await response.json();
+        openRunDialog(run);
+      } catch (_error) {
+        setRunStatus("Could not load run details.", "error");
+      }
+    });
+
+    document.getElementById("item-dialog-body").addEventListener("click", async (event) => {
+      const focusTrigger = event.target.closest("[data-focus-type]");
+      if (focusTrigger) {
+        setTopicFocus(focusTrigger.dataset.focusType, focusTrigger.dataset.focusValue, focusTrigger.dataset.focusLabel || focusTrigger.dataset.focusValue);
+        return;
+      }
+      const saveButton = event.target.closest("[data-dialog-save]");
+      if (saveButton) {
+        const itemId = Number(saveButton.dataset.dialogSave);
+        const item = state.allItems.find((entry) => entry.id === itemId);
+        if (item) {
+          await patchItemState(itemId, { is_saved: !item.is_saved }, item.is_saved ? "Removed from saved queue." : "Added to saved queue.");
+        }
+        return;
+      }
+      const noteButton = event.target.closest("[data-dialog-save-note]");
+      if (noteButton) {
+        const itemId = Number(noteButton.dataset.dialogSaveNote);
+        const noteValue = document.getElementById("dialog-note").value;
+        const reviewStatus = document.getElementById("dialog-review-status").value;
+        await patchItemState(itemId, { user_note: noteValue, review_status: reviewStatus }, "Note saved.");
+      }
+    });
+
+    document.getElementById("item-dialog-body").addEventListener("change", async (event) => {
+      if (event.target.id !== "dialog-review-status" || !state.activeItem) return;
+      await patchItemState(state.activeItem.id, { review_status: event.target.value }, "Review state updated.");
+    });
+
+    document.getElementById("images").addEventListener("click", (event) => {
+      const card = event.target.closest("[data-image-index]");
+      if (!card) return;
+      const index = Number(card.dataset.imageIndex);
+      if (Number.isInteger(index) && state.filteredImages[index]) {
+        openImageDialog(state.filteredImages[index]);
+      }
+    });
+
+    document.querySelector(".workspace-nav").addEventListener("click", (event) => {
+      const modeButton = event.target.closest("[data-workspace-mode]");
+      if (modeButton) {
+        setWorkspaceMode(modeButton.dataset.workspaceMode, { scroll: true });
+        return;
+      }
+      const button = event.target.closest("[data-nav-target]");
+      if (!button) return;
+      scrollToSection(button.dataset.navTarget);
+    });
+
+    window.addEventListener("scroll", () => {
+      document.getElementById("back-to-top").classList.toggle("hidden", window.scrollY < 500);
+    });
+    document.getElementById("back-to-top").addEventListener("click", () => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    window.addEventListener("keydown", (event) => {
+      const isFormTarget = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName);
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (state.commandPaletteOpen) closeCommandPalette();
+        else openCommandPalette();
+        return;
+      }
+      if (state.commandPaletteOpen) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          state.commandIndex = Math.min(state.commandIndex + 1, Math.max(state.commandEntries.length - 1, 0));
+          renderCommandPalette(state.payload);
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          state.commandIndex = Math.max(state.commandIndex - 1, 0);
+          renderCommandPalette(state.payload);
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          executeCommand();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          closeCommandPalette();
+        }
+        return;
+      }
+      if (event.key === "/" && !isFormTarget) {
+        event.preventDefault();
+        document.getElementById("search-filter").focus();
+      }
+      if (event.key.toLowerCase() === "r" && !isFormTarget) {
+        event.preventDefault();
+        refresh();
+      }
+      if (event.key === "Escape") {
+        closeDialogIfOpen("item-dialog");
+        closeDialogIfOpen("image-dialog");
+        closeDialogIfOpen("run-dialog");
+      }
+      if (event.key.toLowerCase() === "t" && !isFormTarget) {
+        event.preventDefault();
+        scrollToSection("topic-spotlight-section");
+      }
+    });
+
+    hydrateStoredToken();
+    render(initialPayload);
+    applyFilterStateFromUrl();
+    state.urlHydrated = true;
+    refreshFilteredCollections(true).then(() => {
+      render(state.payload);
+      if (state.topicFocus) loadTopicFocus();
+      if (state.compareFocus) loadCompareFocus();
+      openItemFromUrlIfPresent();
+    });
+    window.setInterval(refresh, 30000);
+  </script>
+</body>
+</html>
