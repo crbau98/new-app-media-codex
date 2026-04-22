@@ -61,8 +61,9 @@ function Toggle({ checked, onChange, label, id }: ToggleProps) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="mb-8">
-      <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-4">
+    <section className="mb-8 animate-fade-in">
+      <h2 className="mb-4 flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+        <span className="h-px w-8 bg-gradient-to-r from-accent to-transparent" />
         {title}
       </h2>
       {children}
@@ -1041,14 +1042,36 @@ export function SettingsPage() {
   return (
     <div className="mx-auto min-h-screen max-w-5xl px-6 py-8">
       {/* Page header */}
-      <header className="mb-10">
-        <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.12em] text-text-muted">Preferences</p>
-        <h1 className="hero-title text-[28px] font-semibold leading-[1.08] tracking-[-0.045em] text-text-primary sm:text-[34px]">
-          Settings
-        </h1>
-        <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-text-secondary">
-          Sources, appearance, notifications, and your data—everything stays on your terms.
-        </p>
+      <header className="relative mb-10 overflow-hidden rounded-[28px] border border-border bg-bg-surface p-8 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.4)] sm:p-10">
+        <div
+          aria-hidden="true"
+          className="orb-float pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full opacity-70"
+          style={{
+            background: "radial-gradient(circle, rgba(168,85,247,0.22), transparent 70%)",
+            filter: "blur(20px)",
+          }}
+        />
+        <div
+          aria-hidden="true"
+          className="orb-float pointer-events-none absolute -left-16 -bottom-16 h-64 w-64 rounded-full opacity-55"
+          style={{
+            background: "radial-gradient(circle, rgba(236,72,153,0.18), transparent 70%)",
+            filter: "blur(24px)",
+            animationDelay: "-8s",
+          }}
+        />
+        <div className="relative">
+          <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-bg-elevated/60 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-text-muted">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+            Preferences
+          </p>
+          <h1 className="hero-title text-[28px] font-semibold leading-[1.08] tracking-[-0.045em] text-text-primary sm:text-[36px]">
+            <span className="text-gradient-brand">Settings</span>
+          </h1>
+          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-text-secondary">
+            Sources, appearance, notifications, and your data—everything stays on your terms.
+          </p>
+        </div>
       </header>
 
       <AboutSection />

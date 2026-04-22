@@ -79,7 +79,7 @@ export function AppShell({ children }: AppShellProps) {
           className="min-h-screen overflow-x-hidden px-4 pb-20 pt-[3.5rem] sm:px-6 md:pb-8 md:pt-16 lg:px-10"
           style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
         >
-          <div className="min-h-full">
+          <div key={activeView} className="animate-page-enter min-h-full">
             {children}
           </div>
         </main>

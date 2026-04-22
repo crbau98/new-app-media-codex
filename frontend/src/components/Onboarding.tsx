@@ -137,26 +137,62 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const slideClass = animating ? (direction === "next" ? "translate-x-4 opacity-0" : "-translate-x-4 opacity-0") : "translate-x-0 opacity-100"
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-[2px]">
-      <div className="relative mx-4 w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-bg-surface shadow-2xl">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-md animate-fade-in">
+      <div
+        className="relative mx-4 w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-bg-surface shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7),0_0_0_1px_rgba(168,85,247,0.08)] animate-slide-up"
+      >
+        <div
+          aria-hidden="true"
+          className="orb-float pointer-events-none absolute -top-16 -left-12 h-56 w-56 rounded-full opacity-60"
+          style={{
+            background: "radial-gradient(circle, rgba(168,85,247,0.28), transparent 68%)",
+            filter: "blur(22px)",
+          }}
+        />
+        <div
+          aria-hidden="true"
+          className="orb-float pointer-events-none absolute -bottom-12 -right-10 h-52 w-52 rounded-full opacity-55"
+          style={{
+            background: "radial-gradient(circle, rgba(236,72,153,0.22), transparent 70%)",
+            filter: "blur(26px)",
+            animationDelay: "-6s",
+          }}
+        />
+
         {!isLast && (
-          <button onClick={complete} className="absolute right-4 top-4 z-10 text-xs text-text-muted transition-colors hover:text-text-primary">
+          <button
+            onClick={complete}
+            className="absolute right-4 top-4 z-10 rounded-full px-2.5 py-1 text-[11px] font-medium text-text-muted transition-colors hover:bg-white/5 hover:text-text-primary"
+          >
             Skip
           </button>
         )}
 
-        <div className={`px-8 pb-6 pt-10 transition-[transform,opacity] duration-200 ease-out ${slideClass}`}>
+        <div className={`relative px-8 pb-6 pt-12 transition-[transform,opacity] duration-200 ease-out ${slideClass}`}>
           <div className="mb-6 flex justify-center text-text-muted">{current.icon}</div>
-          <h2 className="mb-2 text-center text-lg font-semibold text-text-primary">{current.title}</h2>
-          <p className="text-center text-sm leading-relaxed text-text-muted">{current.description}</p>
+          <p className="eyebrow mb-3 text-center">
+            Step {step + 1} of {STEPS.length}
+          </p>
+          <h2 className="hero-title mb-2 text-center text-xl font-semibold tracking-[-0.02em] text-text-primary">
+            {current.title}
+          </h2>
+          <p className="mx-auto max-w-sm text-center text-sm leading-relaxed text-text-muted">
+            {current.description}
+          </p>
         </div>
 
-        <div className="px-8 pb-4">
-          <div className="mb-5 flex items-center justify-center gap-2">
+        <div className="relative px-8 pb-6">
+          <div className="mb-5 flex items-center justify-center gap-1.5">
             {STEPS.map((_, i) => (
               <span
                 key={i}
-                className={`h-1.5 rounded-full transition-[width,background-color] duration-200 ${i === step ? "w-6 bg-accent" : "w-1.5 bg-white/15"}`}
+                className={`h-1.5 rounded-full transition-[width,background-color] duration-300 ${
+                  i === step
+                    ? "w-7 bg-gradient-to-r from-accent to-accent-secondary"
+                    : i < step
+                    ? "w-1.5 bg-accent/40"
+                    : "w-1.5 bg-white/15"
+                }`}
               />
             ))}
           </div>
@@ -165,13 +201,13 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             <button
               onClick={goBack}
               disabled={isFirst}
-              className="rounded-xl border border-white/10 px-4 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-xl border border-white/10 px-4 py-2 text-sm text-text-secondary transition-colors hover:border-white/20 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
             >
               Back
             </button>
             <button
               onClick={goNext}
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90"
+              className="btn-primary rounded-xl px-5 py-2 text-sm font-semibold"
             >
               {isLast ? "Start browsing" : "Next"}
             </button>
