@@ -387,6 +387,7 @@ class ResearchService:
             collect_images,
             collect_kemono,
             collect_lpsg,
+            collect_male_video_archiver,
             collect_reddit,
             collect_x,
         )
@@ -425,6 +426,7 @@ class ResearchService:
                     ("lpsg", collect_lpsg),
                     ("coomer", collect_coomer),
                     ("kemono", collect_kemono),
+                    ("male_video_archiver", collect_male_video_archiver),
                 ):
                     self._emit({"type": "source_start", "source": source_key, "theme": theme.slug})
                     try:
@@ -464,7 +466,7 @@ class ResearchService:
                         # /api/screenshots/cache-status endpoint exposes them
                         # and scripts/precache_coomer.py can stream them into
                         # the server video cache from a residential IP.
-                        if source_key in ("coomer", "kemono"):
+                        if source_key in ("coomer", "kemono", "male_video_archiver"):
                             videos = item.metadata.get("videos") if isinstance(item.metadata, dict) else None
                             for video in videos or []:
                                 video_url = (video or {}).get("source_url")
@@ -634,7 +636,7 @@ class ResearchService:
             "images": self.serialize_images(self.db.get_recent_images(limit=24)),
             "hypotheses": self.db.get_recent_hypotheses(limit=8),
             "themes": [{"slug": theme.slug, "label": theme.label} for theme in self.settings.themes],
-            "source_types": ["literature", "anecdote", "reddit", "x", "lpsg", "coomer", "kemono", "pubmed", "biorxiv", "arxiv", "firecrawl"],
+            "source_types": ["literature", "anecdote", "reddit", "x", "lpsg", "coomer", "kemono", "male_video_archiver", "pubmed", "biorxiv", "arxiv", "firecrawl"],
             "review_status_options": ["new", "reviewing", "shortlisted", "archived"],
             "hypothesis_review_options": ["new", "reviewing", "promoted", "dismissed"],
             "image_source_types": [

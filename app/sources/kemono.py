@@ -26,15 +26,23 @@ KEMONO_VIDEO_HOST = "https://kemono.cr"
 VIDEO_EXTS = (".mp4", ".webm", ".mov")
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif")
 
+# Hard-reject posts that mention female/straight content.
+_FEMALE_KEYWORDS = {
+    "female", "woman", "women", "girl", "girls", "lesbian", "straight",
+    "pussy", "vagina", "vulva", "trans", "shemale", "ladyboy", "femboy",
+    "hetero", "heterosexual", "couple", "bisex", "bisexual", "wife",
+    "girlfriend", "bikini", "transgender",
+}
+
 KEMONO_QUERIES = {
-    "onlyfans_creators": ["gay onlyfans", "male onlyfans", "gay creator"],
-    "fansly_creators": ["gay fansly", "male fansly", "gay creator fansly"],
-    "reddit_gay": ["gay nude", "gay amateur", "gay porn"],
+    "onlyfans_creators": ["gay onlyfans", "male onlyfans", "gay creator", "onlyfans gay male"],
+    "fansly_creators": ["gay fansly", "male fansly", "gay creator fansly", "fansly gay male"],
+    "reddit_gay": ["gay nude", "gay amateur", "gay porn", "gay male nsfw"],
     "x_gay_creators": ["gay twitter creator", "gay x creator", "gay male nude"],
-    "lpsg_threads": ["gay hung", "gay bareback", "male nude"],
-    "twinks": ["twink", "gay twink nude", "young gay"],
-    "muscle_bears": ["gay muscle", "gay bear", "gay daddy"],
-    "fetish_kink": ["gay fetish", "gay bdsm", "gay leather"],
+    "lpsg_threads": ["gay hung", "gay bareback", "male nude", "lpsg gay"],
+    "twinks": ["twink", "gay twink nude", "young gay", "twink nude"],
+    "muscle_bears": ["gay muscle", "gay bear", "gay daddy", "muscle bear gay"],
+    "fetish_kink": ["gay fetish", "gay bdsm", "gay leather", "gay kink"],
 }
 
 
@@ -147,10 +155,19 @@ def collect_kemono(
             body_text = clean_text(post.get("content", "") or post.get("substring", "") or "")
             summary = body_text[:320] or title or "No summary available."
             combined = "\n".join([title, body_text, query, post.get("service", "") or ""])
+
+            # Filter out female-oriented content.
+            if any(kw in combined.lower() for kw in _FEMALE_KEYWORDS):
+                continue
+
             compounds, mechanisms = extract_terms(combined)
             image_urls, video_entries = _split_post_media(post)
             primary_image = image_urls[0] if image_urls else ""
             published = post.get("published") or post.get("added") or ""
+
+            score = score_item(theme, combined, compounds, mechanisms)
+            if video_entries:
+                score += 1.0
 
             item = ResearchItem(
                 source_type="kemono",
@@ -164,7 +181,7 @@ def collect_kemono(
                 published_at=str(published),
                 domain=urlparse(page_url).netloc,
                 image_url=primary_image,
-                score=score_item(theme, combined, compounds, mechanisms),
+                score=round(score, 2),
                 compounds=compounds,
                 mechanisms=mechanisms,
                 metadata={
@@ -172,6 +189,7 @@ def collect_kemono(
                     "service": post.get("service", ""),
                     "post_id": post.get("id", ""),
                     "videos": video_entries,
+                    "has_videos": bool(video_entries),
                 },
             )
             items.append(item)

@@ -69,6 +69,7 @@ class Settings:
     lpsg_results: int = field(default_factory=lambda: _int_env("LPSG_RESULTS", 4))
     coomer_results: int = field(default_factory=lambda: _int_env("COOMER_RESULTS", 4))
     kemono_results: int = field(default_factory=lambda: _int_env("KEMONO_RESULTS", 4))
+    male_video_archiver_results: int = field(default_factory=lambda: _int_env("MALE_VIDEO_ARCHIVER_RESULTS", 6))
     pubmed_api_key: str = field(default_factory=lambda: os.getenv("PUBMED_API_KEY", "").strip())
     pubmed_results: int = field(default_factory=lambda: _int_env("PUBMED_RESULTS", 6))
     biorxiv_results: int = field(default_factory=lambda: _int_env("BIORXIV_RESULTS", 4))
