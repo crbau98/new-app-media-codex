@@ -275,28 +275,24 @@ export const useAppStore = create<AppState>()(
       // Notifications
       notifications: [],
       unreadCount: 0,
-      addNotification: (message, type) =>
+      notificationPanelOpen: false,
+      setNotificationPanelOpen: (notificationPanelOpen) => set({ notificationPanelOpen }),
+      setNotifications: (notifications, unreadCount) => set({ notifications, unreadCount }),
+      addLocalNotification: (n) =>
         set((s) => {
-          const n: AppNotification = {
-            id: uniqueId(),
-            message,
-            type,
-            timestamp: Date.now(),
-            read: false,
-          }
           const next = [n, ...s.notifications].slice(0, MAX_NOTIFICATIONS)
-          return { notifications: next, unreadCount: next.filter((x) => !x.read).length }
+          return { notifications: next, unreadCount: s.unreadCount + (n.read ? 0 : 1) }
         }),
       markNotificationRead: (id) =>
         set((s) => {
           const next = s.notifications.map((n) =>
-            n.id === id ? { ...n, read: true } : n
+            n.id === id ? { ...n, read: 1 } : n
           )
           return { notifications: next, unreadCount: next.filter((x) => !x.read).length }
         }),
       markAllRead: () =>
         set((s) => {
-          const next = s.notifications.map((n) => ({ ...n, read: true }))
+          const next = s.notifications.map((n) => ({ ...n, read: 1 }))
           return { notifications: next, unreadCount: 0 }
         }),
       clearNotifications: () => {

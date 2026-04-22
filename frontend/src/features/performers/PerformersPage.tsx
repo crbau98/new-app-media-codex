@@ -1518,7 +1518,7 @@ export default function PerformersPage() {
   const [dueOnly, setDueOnly] = useState(false)
   const [renewingOnly, setRenewingOnly] = useState(false)
   const [selectedPerformerId, setSelectedPerformerId] = useState<number | null>(null)
-  const [watchlistCapturing, setWatchlistCapturing] = useState(false)
+  const [watchlistCapturing] = useState(false)
   const [captureAllRunning, setCaptureAllRunning] = useState(false)
   const [subscribedOnly, setSubscribedOnly] = useState(false)
   const [selectMode, setSelectMode] = useState(false)

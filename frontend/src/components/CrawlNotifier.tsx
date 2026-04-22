@@ -26,18 +26,18 @@ export function CrawlNotifier(): null {
   const setCrawlRunning = useAppStore((s) => s.setCrawlRunning)
   const setScreenshotRunning = useAppStore((s) => s.setScreenshotRunning)
   const addToast = useAppStore((s) => s.addToast)
-  const addLocalNotification = useAppStore((s) => s.addLocalNotification)
+  const addNotification = useAppStore((s) => s.addNotification)
 
   // Keep stable refs so the effect doesn't re-run on every render
   const setCrawlRunningRef = useRef(setCrawlRunning)
   const setScreenshotRunningRef = useRef(setScreenshotRunning)
   const addToastRef = useRef(addToast)
-  const addLocalNotificationRef = useRef(addLocalNotification)
+  const addNotificationRef = useRef(addNotification)
   const activeViewRef = useRef(activeView)
   setCrawlRunningRef.current = setCrawlRunning
   setScreenshotRunningRef.current = setScreenshotRunning
   addToastRef.current = addToast
-  addLocalNotificationRef.current = addLocalNotification
+  addNotificationRef.current = addNotification
   activeViewRef.current = activeView
 
   const pendingInvalidationsRef = useRef(new Map<string, readonly unknown[]>())
@@ -121,14 +121,14 @@ export function CrawlNotifier(): null {
             case "crawl_start":
               setCrawlRunningRef.current(true)
               addToastRef.current("Crawl started", "info")
-              addLocalNotificationRef.current({ id: Date.now(), type: "crawl", message: "Crawl started", read: 1, created_at: new Date().toISOString() })
+              addNotificationRef.current("Crawl started", "crawl")
               break
 
             case "crawl_done": {
               setCrawlRunningRef.current(false)
               const doneMsg = `Crawl complete: ${msg.items_added ?? 0} new images`
               addToastRef.current(doneMsg, "success")
-              addLocalNotificationRef.current({ id: Date.now(), type: "crawl", message: doneMsg, read: 1, created_at: new Date().toISOString() })
+              addNotificationRef.current(doneMsg, "crawl")
               invalidateAfterCrawl()
               break
             }
@@ -137,21 +137,21 @@ export function CrawlNotifier(): null {
               setCrawlRunningRef.current(false)
               const errMsg = `Crawl error: ${msg.message ?? "unknown error"}`
               addToastRef.current(errMsg, "error")
-              addLocalNotificationRef.current({ id: Date.now(), type: "system", message: errMsg, read: 1, created_at: new Date().toISOString() })
+              addNotificationRef.current(errMsg, "system")
               break
             }
 
             case "screenshot_start":
               setScreenshotRunningRef.current(true)
               addToastRef.current("Screenshot capture started", "info")
-              addLocalNotificationRef.current({ id: Date.now(), type: "capture", message: "Screenshot capture started", read: 1, created_at: new Date().toISOString() })
+              addNotificationRef.current("Screenshot capture started", "capture")
               break
 
             case "screenshot_done": {
               setScreenshotRunningRef.current(false)
               const capMsg = `Captured ${msg.count ?? 0} screenshots`
               addToastRef.current(capMsg, "success")
-              addLocalNotificationRef.current({ id: Date.now(), type: "capture", message: capMsg, read: 1, created_at: new Date().toISOString() })
+              addNotificationRef.current(capMsg, "capture")
               invalidateAfterCapture()
               break
             }

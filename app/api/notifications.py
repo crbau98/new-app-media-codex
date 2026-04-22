@@ -6,7 +6,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 
-router = APIRouter(prefix="/api", tags=["notifications"])
+router = APIRouter(tags=["notifications"])
 _logger = logging.getLogger(__name__)
 
 _DEFAULT_USER = "default"
@@ -69,7 +69,7 @@ async def ws_notifications(websocket: WebSocket) -> None:
         await notification_manager.disconnect(websocket, user_id)
 
 
-@router.get("/notifications")
+@router.get("/api/notifications")
 def list_notifications(
     request: Request,
     limit: int = Query(20, ge=1, le=100),
@@ -79,7 +79,7 @@ def list_notifications(
     return db.get_notifications(_DEFAULT_USER, limit=limit, offset=offset)
 
 
-@router.post("/notifications/{notification_id}/read")
+@router.post("/api/notifications/{notification_id}/read")
 def mark_read(notification_id: int, request: Request) -> dict:
     db = request.app.state.db
     ok = db.mark_notification_read(notification_id)
@@ -88,20 +88,20 @@ def mark_read(notification_id: int, request: Request) -> dict:
     return {"ok": True}
 
 
-@router.post("/notifications/read-all")
+@router.post("/api/notifications/read-all")
 def mark_all_read(request: Request) -> dict:
     db = request.app.state.db
     marked = db.mark_all_notifications_read(_DEFAULT_USER)
     return {"ok": True, "marked": marked}
 
 
-@router.get("/notifications/unread-count")
+@router.get("/api/notifications/unread-count")
 def unread_count(request: Request) -> dict:
     db = request.app.state.db
     return {"count": db.get_unread_notification_count(_DEFAULT_USER)}
 
 
-@router.delete("/notifications/{notification_id}")
+@router.delete("/api/notifications/{notification_id}")
 def delete_notification(notification_id: int, request: Request) -> dict:
     db = request.app.state.db
     ok = db.delete_notification(notification_id)

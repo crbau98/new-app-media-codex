@@ -1,85 +1,286 @@
-import { X, Heart, MessageCircle, UserPlus, TrendingUp, AtSign } from 'lucide-react'
-import { cn } from '@/lib/cn'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback, useState } from "react"
+import { motion } from "framer-motion"
+import { useAppStore } from "../store"
+import { cn } from "@/lib/cn"
+import { api } from "@/lib/api"
+import type { AppNotification } from "../store"
 
-interface Notification {
-  id: number
-  type: 'like' | 'comment' | 'follow' | 'trending' | 'mention'
-  message: string
-  read: boolean
-  created_at: string
+function relativeTime(ts: string): string {
+  const diff = Date.now() - new Date(ts).getTime()
+  const seconds = Math.floor(diff / 1000)
+  if (seconds < 60) return "just now"
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
 }
 
-const ICONS: Record<string, React.FC<{ size?: number }>> = {
-  like: Heart,
-  comment: MessageCircle,
-  follow: UserPlus,
-  trending: TrendingUp,
-  mention: AtSign,
+function NotificationIcon({ type }: { type: AppNotification["type"] }) {
+  const base = "shrink-0 w-4 h-4"
+  switch (type) {
+    case "new_media_from_followed":
+      return (
+        <svg className={cn(base, "text-pink")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <polyline points="21 15 16 10 5 21" />
+        </svg>
+      )
+    case "comment_reply":
+      return (
+        <svg className={cn(base, "text-blue")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      )
+    case "like_on_comment":
+      return (
+        <svg className={cn(base, "text-red")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+        </svg>
+      )
+    case "mention":
+      return (
+        <svg className={cn(base, "text-purple")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
+        </svg>
+      )
+    case "trending_alert":
+      return (
+        <svg className={cn(base, "text-orange")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+          <polyline points="17 6 23 6 23 12" />
+        </svg>
+      )
+    default:
+      return (
+        <svg className={cn(base, "text-text-muted")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="16" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12.01" y2="8" />
+        </svg>
+      )
+  }
+}
+
+function notificationMessage(n: AppNotification): string {
+  if (n.message) return n.message
+  switch (n.type) {
+    case "new_media_from_followed":
+      return "New media from a creator you follow"
+    case "comment_reply":
+      return "New comment on a screenshot you follow"
+    case "like_on_comment":
+      return "Someone liked your comment"
+    case "mention":
+      return "You were mentioned in a comment"
+    case "trending_alert":
+      return "Trending alert"
+    default:
+      return "New notification"
+  }
+}
+
+function navigateToNotification(n: AppNotification) {
+  const data = n.data || {}
+  if (data.screenshot_id) {
+    window.dispatchEvent(
+      new CustomEvent("codex:open-screenshot", {
+        detail: { screenshotId: data.screenshot_id },
+      })
+    )
+  } else if (data.performer_id) {
+    window.dispatchEvent(
+      new CustomEvent("codex:open-performer", {
+        detail: { performerId: data.performer_id },
+      })
+    )
+  }
 }
 
 export function NotificationPanel({ onClose }: { onClose: () => void }) {
+  const notifications = useAppStore((s) => s.notifications)
+  const unreadCount = useAppStore((s) => s.unreadCount)
+  const setNotifications = useAppStore((s) => s.setNotifications)
+  const markNotificationReadLocal = useAppStore((s) => s.markNotificationRead)
+  const markAllReadLocal = useAppStore((s) => s.markAllRead)
   const panelRef = useRef<HTMLDivElement>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const touchStartY = useRef(0)
 
-  // Close on click outside
   useEffect(() => {
-    function onClick(e: MouseEvent) {
+    function handleClick(e: MouseEvent) {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         onClose()
       }
     }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
   }, [onClose])
 
-  // Mock notifications for now
-  const notifications: Notification[] = [
-    { id: 1, type: 'follow', message: 'New creator added to your followed list', read: false, created_at: '2024-01-15T10:00:00Z' },
-    { id: 2, type: 'trending', message: 'New trending media from creators you follow', read: false, created_at: '2024-01-15T09:30:00Z' },
-  ]
+  const handleMarkRead = useCallback(
+    async (id: number) => {
+      try {
+        await api.markNotificationRead(id)
+        markNotificationReadLocal(id)
+      } catch {
+        // ignore
+      }
+    },
+    [markNotificationReadLocal]
+  )
+
+  const handleMarkAllRead = useCallback(async () => {
+    try {
+      await api.markAllNotificationsRead()
+      markAllReadLocal()
+    } catch {
+      // ignore
+    }
+  }, [markAllReadLocal])
+
+  const handleDelete = useCallback(
+    async (id: number) => {
+      try {
+        await api.deleteNotification(id)
+        const data = await api.notifications()
+        setNotifications(data.notifications, data.unread_count)
+      } catch {
+        // ignore
+      }
+    },
+    [setNotifications]
+  )
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      const data = await api.notifications()
+      setNotifications(data.notifications, data.unread_count)
+    } catch {
+      // ignore
+    } finally {
+      setTimeout(() => setRefreshing(false), 400)
+    }
+  }, [setNotifications])
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY
+  }
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const diff = e.changedTouches[0].clientY - touchStartY.current
+    if (diff > 80 && panelRef.current) {
+      const scrollTop = panelRef.current.querySelector("[data-scroll]")?.scrollTop || 0
+      if (scrollTop <= 0) {
+        handleRefresh()
+      }
+    }
+  }
 
   return (
-    <div
+    <motion.div
+      initial={{ x: "100%" }}
+      animate={{ x: 0 }}
+      exit={{ x: "100%" }}
+      transition={{ type: "spring", damping: 25, stiffness: 200 }}
+      className="fixed inset-y-0 right-0 z-[60] w-full max-w-sm border-l border-border bg-bg-base shadow-2xl"
       ref={panelRef}
-      className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-white/10 bg-[#0d1a30] shadow-2xl"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
     >
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-        <h3 className="text-sm font-semibold text-text-primary">Notifications</h3>
-        <button onClick={onClose} className="rounded p-1 text-text-muted hover:text-text-primary">
-          <X size={16} />
-        </button>
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <span className="text-sm font-semibold text-text-primary">Notifications</span>
+        <div className="flex items-center gap-2">
+          {unreadCount > 0 && (
+            <button
+              onClick={handleMarkAllRead}
+              className="text-[11px] text-accent hover:text-accent/80 transition-colors"
+            >
+              Mark all read
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-white/[0.06] transition-colors"
+            aria-label="Close notifications"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
       </div>
-      <div className="max-h-80 overflow-y-auto">
+
+      {/* Pull-to-refresh indicator */}
+      {refreshing && (
+        <div className="flex items-center justify-center py-2">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+        </div>
+      )}
+
+      {/* List */}
+      <div data-scroll className="h-[calc(100%-3.5rem)] overflow-y-auto">
         {notifications.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-text-muted">
-            No notifications yet
+          <div className="flex flex-col items-center justify-center py-16 text-text-muted">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-3 opacity-40" aria-hidden="true">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span className="text-sm">No notifications yet</span>
+            <span className="mt-1 text-xs opacity-60">Pull down to refresh</span>
           </div>
         ) : (
-          notifications.map((n) => {
-            const Icon = ICONS[n.type] || Heart
-            return (
-              <div
-                key={n.id}
-                className={cn(
-                  'flex items-start gap-3 px-4 py-3 transition-colors hover:bg-white/[0.03]',
-                  !n.read && 'bg-accent/5'
-                )}
-              >
-                <div className="mt-0.5 shrink-0 text-accent">
-                  <Icon size={16} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-text-secondary">{n.message}</p>
-                  <p className="mt-0.5 text-[11px] text-text-muted">
-                    {new Date(n.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-                {!n.read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />}
-              </div>
-            )
-          })
+          <ul className="divide-y divide-border/50">
+            {notifications.map((n) => (
+              <li key={n.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!n.read) handleMarkRead(n.id)
+                    navigateToNotification(n)
+                    onClose()
+                  }}
+                  className={cn(
+                    "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors",
+                    !n.read ? "bg-accent/[0.04]" : "hover:bg-bg-subtle/50"
+                  )}
+                >
+                  <div className="mt-0.5">
+                    <NotificationIcon type={n.type} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className={cn(
+                      "text-xs leading-snug",
+                      n.read ? "text-text-secondary" : "text-text-primary font-medium"
+                    )}>
+                      {notificationMessage(n)}
+                    </p>
+                    <span className="mt-0.5 block text-[10px] text-text-muted">
+                      {relativeTime(n.created_at)}
+                    </span>
+                  </div>
+                  {!n.read && (
+                    <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-accent" aria-label="Unread" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDelete(n.id)
+                  }}
+                  className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-red p-1"
+                  aria-label="Delete notification"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
-    </div>
+    </motion.div>
   )
 }
