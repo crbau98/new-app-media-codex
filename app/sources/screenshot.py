@@ -230,7 +230,7 @@ _DDG_EXCLUDE = (
 # Max results per term per pass
 MAX_RESULTS_PER_TERM = 30       # per DDG page; fetched across 2 pages = up to 60 images
 MAX_GIFS_PER_TERM = 15          # per DDG page; fetched across 2 pages = up to 30 GIFs
-MAX_VIDEOS_PER_TERM = 20        # Redgifs clips per term
+MAX_VIDEOS_PER_TERM = 30        # Redgifs clips per term
 MAX_VIDEO_DURATION_S = 600.0    # keep clips ≤ 10 minutes
 MIN_IMAGE_PX = 300              # skip images smaller than this on either dimension
 
@@ -1006,7 +1006,7 @@ def capture_screenshots(
         # ── Pass 3: yt-dlp full-length videos from tube sites ────────────────
         ytdlp_results = _search_ytdlp_videos(
             video_query,
-            image_dir, slug_base, db, max_count=5, settings=settings
+            image_dir, slug_base, db, max_count=8, settings=settings
         )
         for result in ytdlp_results:
             if progress_cb:

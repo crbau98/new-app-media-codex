@@ -382,12 +382,9 @@ class ResearchService:
     def run_crawl(self) -> dict[str, Any]:
         from app.sources import (
             build_session,
-            collect_coomer,
             collect_firecrawl_images,
             collect_images,
-            collect_kemono,
             collect_lpsg,
-            collect_male_video_archiver,
             collect_reddit,
             collect_x,
         )
@@ -413,20 +410,15 @@ class ResearchService:
                         "reddit": 0,
                         "x": 0,
                         "lpsg": 0,
-                        "coomer": 0,
-                        "kemono": 0,
                         "images": 0,
                     },
                 )
 
-                # ── Reddit / X / LPSG / Coomer / Kemono — images from social sources ─
+                # ── Reddit / X / LPSG — images from social sources ─
                 for source_key, collector in (
                     ("reddit", collect_reddit),
                     ("x", collect_x),
                     ("lpsg", collect_lpsg),
-                    ("coomer", collect_coomer),
-                    ("kemono", collect_kemono),
-                    ("male_video_archiver", collect_male_video_archiver),
                 ):
                     self._emit({"type": "source_start", "source": source_key, "theme": theme.slug})
                     try:
@@ -461,31 +453,6 @@ class ResearchService:
                                     },
                                 ),
                             )
-                        # Coomer/Kemono post attachments that are videos must
-                        # land in the `screenshots` table (not images) so the
-                        # /api/screenshots/cache-status endpoint exposes them
-                        # and scripts/precache_coomer.py can stream them into
-                        # the server video cache from a residential IP.
-                        if source_key in ("coomer", "kemono", "male_video_archiver"):
-                            videos = item.metadata.get("videos") if isinstance(item.metadata, dict) else None
-                            for video in videos or []:
-                                video_url = (video or {}).get("source_url")
-                                if not video_url:
-                                    continue
-                                try:
-                                    self.db.insert_screenshot(
-                                        term=item.title or source_key,
-                                        source=source_key,
-                                        page_url=item.url,
-                                        local_path=None,
-                                        source_url=video_url,
-                                        thumbnail_url=item.image_url or None,
-                                    )
-                                except Exception as exc:
-                                    notes["errors"].append(
-                                        f"{theme.slug}:{source_key}_video_insert:{exc}"
-                                    )
-
                 # ── DDG image search ─────────────────────────────────────────
                 try:
                     query_images = collect_images(session, self.settings, theme, theme.label)
@@ -636,7 +603,7 @@ class ResearchService:
             "images": self.serialize_images(self.db.get_recent_images(limit=24)),
             "hypotheses": self.db.get_recent_hypotheses(limit=8),
             "themes": [{"slug": theme.slug, "label": theme.label} for theme in self.settings.themes],
-            "source_types": ["literature", "anecdote", "reddit", "x", "lpsg", "coomer", "kemono", "male_video_archiver", "pubmed", "biorxiv", "arxiv", "firecrawl"],
+            "source_types": ["literature", "anecdote", "reddit", "x", "lpsg", "pubmed", "biorxiv", "arxiv", "firecrawl"],
             "review_status_options": ["new", "reviewing", "shortlisted", "archived"],
             "hypothesis_review_options": ["new", "reviewing", "promoted", "dismissed"],
             "image_source_types": [
@@ -646,8 +613,6 @@ class ResearchService:
                 "reddit_image",
                 "x_image",
                 "lpsg_image",
-                "coomer_image",
-                "kemono_image",
                 "item_image",
             ],
             "is_running": self.lock.locked(),
