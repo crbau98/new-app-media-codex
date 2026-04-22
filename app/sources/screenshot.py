@@ -83,6 +83,10 @@ TERM_QUERIES: dict[str, str] = {
     "gay massage":       "gay massage male erotic",
     # Intimacy
     "gay kissing":       "gay kissing male nude",
+    # OnlyFans creators
+    "onlyfans gay":      "onlyfans gay male creator leaked nude",
+    "onlyfans twink":    "onlyfans twink gay male nude",
+    "onlyfans muscle":   "onlyfans muscle gay male nude",
 }
 
 # Maps display term → Redgifs search query for short video clips
@@ -144,6 +148,10 @@ TERM_VIDEO_QUERIES: dict[str, str] = {
     "gay bondage":       "gay bondage bdsm",
     "gay massage":       "gay massage erotic",
     "gay kissing":       "gay kissing nude",
+    # OnlyFans creators
+    "onlyfans gay":      "onlyfans gay male creator",
+    "onlyfans twink":    "onlyfans twink gay",
+    "onlyfans muscle":   "onlyfans muscle gay",
 }
 
 # Maps display term → Redgifs usernames to search (known performers/uploaders)
@@ -729,6 +737,12 @@ def _ytdlp_search_urls(query: str) -> list[str]:
         f"https://www.redtube.com/?search={encoded_plus}+gay&amp;category=gay",
         # xvideos with gay tag
         f"https://www.xvideos.com/tags/gay?k={encoded_plus}",
+        # thisvid amateur gay
+        f"https://www.thisvid.com/search/?q={encoded_plus}+gay",
+        # boyfriendtv gay
+        f"https://www.boyfriendtv.com/search/?query={encoded_plus}",
+        # spankbang gay
+        f"https://spankbang.com/s/{encoded_dash}/?o=all",
     ]
 
 

@@ -95,6 +95,43 @@ def extract_reddit_post_image_urls(post: dict[str, Any]) -> list[str]:
     return dedupe_image_urls(image_urls)
 
 
+def extract_reddit_post_video_urls(post: dict[str, Any]) -> list[dict[str, str]]:
+    """Extract Reddit-hosted video URLs from a post's media metadata.
+
+    Returns a list of dicts shaped like:
+        [{"source_url": "https://v.redd.it/.../DASH_720.mp4", "page_url": permalink}]
+    """
+    videos: list[dict[str, str]] = []
+    if not post.get("is_video"):
+        return videos
+
+    permalink = post.get("permalink") or ""
+    page_url = f"https://www.reddit.com{permalink}" if permalink.startswith("/") else permalink
+
+    # Reddit stores video info in media → reddit_video
+    for media_key in ("secure_media", "media"):
+        media = post.get(media_key) or {}
+        rv = media.get("reddit_video") if isinstance(media, dict) else None
+        if not rv:
+            continue
+        fallback = rv.get("fallback_url")
+        hls = rv.get("hls_url")
+        # Prefer direct MP4 fallback, fall back to HLS
+        url = fallback or hls
+        if url:
+            videos.append({"source_url": url, "page_url": page_url})
+            break  # secure_media and media are duplicates; stop after first hit
+
+    # Some posts link to external video hosts (e.g. redgifs) via url_overridden_by_dest
+    direct = post.get("url_overridden_by_dest", "")
+    if direct and ".redd.it" not in direct and "/comments/" not in direct:
+        # External video link — keep it so yt-dlp can resolve on playback
+        if direct not in {v["source_url"] for v in videos}:
+            videos.append({"source_url": direct, "page_url": page_url})
+
+    return videos
+
+
 def scrape_reddit_thread(session: requests.Session, settings: Settings, url: str) -> dict[str, Any]:
     canonical = canonicalize_url(url)
     json_url = canonical + ".json?raw_json=1&limit=8"
@@ -111,6 +148,7 @@ def scrape_reddit_thread(session: requests.Session, settings: Settings, url: str
         if body:
             comment_snippets.append(body)
     image_urls = extract_reddit_post_image_urls(post)
+    video_urls = extract_reddit_post_video_urls(post)
     text_parts = [clean_text(post.get("selftext", ""))] + comment_snippets
     content = "\n".join(part for part in text_parts if part)
     return {
@@ -122,6 +160,7 @@ def scrape_reddit_thread(session: requests.Session, settings: Settings, url: str
         "domain": f"reddit.com/r/{post.get('subreddit', '')}",
         "image_url": image_urls[0] if image_urls else "",
         "image_urls": image_urls,
+        "video_urls": video_urls,
         "metadata": {
             "subreddit": post.get("subreddit", ""),
             "num_comments": post.get("num_comments", 0),
@@ -150,6 +189,9 @@ def collect_reddit(session: requests.Session, settings: Settings, theme: Theme) 
                 continue
             combined = "\n".join([scraped["title"], snippet, scraped["content"]])
             compounds, mechanisms = extract_terms(combined)
+            metadata = dict(scraped["metadata"])
+            metadata["videos"] = scraped.get("video_urls", [])
+            metadata["has_videos"] = bool(scraped.get("video_urls"))
             item = ResearchItem(
                 source_type="reddit",
                 theme=theme.slug,
@@ -165,7 +207,7 @@ def collect_reddit(session: requests.Session, settings: Settings, theme: Theme) 
                 score=score_item(theme, combined, compounds, mechanisms),
                 compounds=compounds,
                 mechanisms=mechanisms,
-                metadata=scraped["metadata"],
+                metadata=metadata,
             )
             items.append(item)
             images.extend(build_image_records("reddit_image", theme.slug, item.title, url, scraped.get("image_urls", [])))

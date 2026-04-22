@@ -1127,7 +1127,7 @@ async def evict_cached_video(
 
 # Coomer/Kemono archiver rows — same resolve-stream + client waterfall as legacy `source="coomer"`.
 _ARCHIVER_RESOLVE_SOURCES = frozenset({"coomer", "coomer_video", "kemono", "kemono_video"})
-_RESOLVABLE_STREAM_SOURCES = frozenset({"ytdlp"}).union(_ARCHIVER_RESOLVE_SOURCES)
+_RESOLVABLE_STREAM_SOURCES = frozenset({"ytdlp", "reddit"}).union(_ARCHIVER_RESOLVE_SOURCES)
 
 
 @router.post("/{shot_id}/resolve-stream")

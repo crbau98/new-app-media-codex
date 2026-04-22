@@ -453,6 +453,28 @@ class ResearchService:
                                     },
                                 ),
                             )
+                        # Reddit posts may contain v.redd.it videos — insert them
+                        # into screenshots so the video player can resolve them.
+                        if source_key == "reddit":
+                            videos = item.metadata.get("videos") if isinstance(item.metadata, dict) else None
+                            for video in videos or []:
+                                video_url = (video or {}).get("source_url")
+                                video_page = (video or {}).get("page_url") or item.url
+                                if not video_url:
+                                    continue
+                                try:
+                                    self.db.insert_screenshot(
+                                        term=item.title or source_key,
+                                        source=source_key,
+                                        page_url=video_page,
+                                        local_path=None,
+                                        source_url=video_url,
+                                        thumbnail_url=item.image_url or None,
+                                    )
+                                except Exception as exc:
+                                    notes["errors"].append(
+                                        f"{theme.slug}:{source_key}_video_insert:{exc}"
+                                    )
                 # ── DDG image search ─────────────────────────────────────────
                 try:
                     query_images = collect_images(session, self.settings, theme, theme.label)
