@@ -504,7 +504,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
       if (destroyed) return
       if (pollTimer) return
       let pollCount = 0
-      const maxPolls = 30
+      const maxPolls = 10
       pollTimer = setInterval(async () => {
         if (destroyed) { if (pollTimer) clearInterval(pollTimer); return }
         pollCount++
@@ -560,7 +560,7 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
           if (destroyed) return
           if (pollTimer) return
           let pollCount = 0
-          const maxPolls = 30
+          const maxPolls = 10
           pollTimer = setInterval(async () => {
             if (destroyed) { if (pollTimer) clearInterval(pollTimer); return }
             pollCount++

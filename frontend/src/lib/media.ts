@@ -217,6 +217,15 @@ export function getScreenshotPreviewSrc(s: Screenshot): string {
     }
     return resolvePublicUrl(preview)
   }
+  // For video shots with no preview_url, try thumbnail_url (e.g. archiver post
+  // primary image) before falling back to video-poster or empty.
+  const thumb = normalizeMediaUrl(s.thumbnail_url)
+  if (isVideoShot(s) && thumb && isRenderableRemoteUrl(thumb) && !isVideoProxyUrl(thumb) && !isVideoUrl(thumb)) {
+    if (isArchiverDirectMediaUrl(thumb)) {
+      return pickUsableMediaUrl(flattenArchiverPlaybackChoices([thumb]))
+    }
+    return resolvePublicUrl(thumb)
+  }
   // For non-video items, fall back to the media src
   const mediaSrc = getScreenshotMediaSrc(s)
   return isVideoShot(s) ? "" : mediaSrc
@@ -239,6 +248,15 @@ export function getScreenshotPosterSrc(s: Screenshot): string {
       return pickUsableMediaUrl(flattenArchiverPlaybackChoices([preview]))
     }
     return resolvePublicUrl(preview)
+  }
+  // For video shots with no preview_url, try thumbnail_url (e.g. archiver post
+  // primary image) before falling back to video-poster or empty.
+  const thumb = normalizeMediaUrl(s.thumbnail_url)
+  if (isVideoShot(s) && thumb && isRenderableRemoteUrl(thumb) && !isVideoProxyUrl(thumb) && !isVideoUrl(thumb)) {
+    if (isArchiverDirectMediaUrl(thumb)) {
+      return pickUsableMediaUrl(flattenArchiverPlaybackChoices([thumb]))
+    }
+    return resolvePublicUrl(thumb)
   }
   const mediaSrc = getScreenshotMediaSrc(s)
   return isVideoShot(s) ? "" : mediaSrc
@@ -385,7 +403,7 @@ export function getMediaDebugLabel(s: Screenshot): string {
 }
 
 const _VIDEO_RE = /\.(mp4|webm|mov|avi|mkv|m3u8)/i
-const _VIDEO_SOURCES = new Set(["redgifs", "ytdlp", "coomer_video", "kemono_video"])
+const _VIDEO_SOURCES = new Set(["redgifs", "ytdlp", "coomer", "coomer_video", "kemono", "kemono_video"])
 
 /** Detect if a screenshot is a video based on URL patterns and source field. */
 export function isVideoShot(s: Screenshot): boolean {

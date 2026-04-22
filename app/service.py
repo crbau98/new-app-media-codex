@@ -476,7 +476,7 @@ class ResearchService:
                                     self.db.insert_screenshot(
                                         term=item.title or source_key,
                                         source=source_key,
-                                        page_url=video_url,
+                                        page_url=item.url,
                                         local_path=None,
                                         source_url=video_url,
                                         thumbnail_url=item.image_url or None,

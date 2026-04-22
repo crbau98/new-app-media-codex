@@ -79,7 +79,7 @@ function VideoUnavailableCard({
         </div>
         <p className="text-sm text-amber-100/80">
           {isArchiver
-            ? "Our server often cannot reach this CDN from a datacenter. Try “Play in browser” below — if your ISP can reach the file host directly, playback works natively."
+            ? "DDoS-Guard blocks this CDN from datacenter IPs. If your residential connection can reach it, try “Play in browser” below. For reliable playback, set ARCHIVER_PROXY_URL or run scripts/precache_coomer.py from a residential IP."
             : "This video could not be loaded. The source may be offline or blocked by your network."}
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
@@ -213,12 +213,6 @@ export function InlineVideoPlayer({ shot, onClose, onDelete, favorite, onToggleF
       tryAutoplay: true,
       onFatalError: () => {
         setBuffering(false)
-        // For coomer/kemono archiver URLs, skip the "unavailable" card and auto-switch to the
-        // inline <video src={source_url}> fallback. Native playback can reach n* CDN from the user's IP.
-        if (isArchiver && shot.source_url?.startsWith("http")) {
-          setInlineFallback(true)
-          return
-        }
         setPlaybackFailed(true)
         markMediaBroken()
       },
