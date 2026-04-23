@@ -23,6 +23,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.middleware.safe_gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.routing import APIRoute
+
+# Patch APIRoute so GET routes also handle HEAD (required for video Range
+# probes, CDN health checks, and browser preload). FastAPI's APIRoute does
+# not auto-add HEAD the way Starlette's Route does.
+_original_api_route_init = APIRoute.__init__
+
+def _api_route_init_with_head(self, *args, **kwargs):
+    _original_api_route_init(self, *args, **kwargs)
+    if "GET" in self.methods:
+        self.methods.add("HEAD")
+
+APIRoute.__init__ = _api_route_init_with_head
 
 from app.config import settings
 from app.db import Database, check_disk_space
@@ -458,7 +471,6 @@ if (_FRONTEND_DIST / "assets").exists():
         name="frontend-assets",
     )
 @app.get("/", response_class=HTMLResponse)
-@app.head("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     dist_index_html = _get_frontend_index_html()
     if dist_index_html is not None:
@@ -650,14 +662,6 @@ app.include_router(assistant_router)
 # SPA fallback — must be the last route
 @app.get("/{full_path:path}", response_class=HTMLResponse)
 def spa_fallback(full_path: str) -> HTMLResponse:
-    dist_index_html = _get_frontend_index_html()
-    if dist_index_html is not None:
-        return HTMLResponse(dist_index_html, headers={"Cache-Control": "no-cache"})
-    raise HTTPException(status_code=404, detail="Not found")
-
-
-@app.head("/{full_path:path}", response_class=HTMLResponse)
-def spa_fallback_head(full_path: str) -> HTMLResponse:
     dist_index_html = _get_frontend_index_html()
     if dist_index_html is not None:
         return HTMLResponse(dist_index_html, headers={"Cache-Control": "no-cache"})
