@@ -193,7 +193,8 @@ export const MediaCard = memo(function MediaCard({
                 const img = e.target as HTMLImageElement
                 img.style.opacity = '0'
                 setImgLoaded(true)
-                startPosterPoll()
+                markPreviewBroken()
+                stopPosterPoll()
               }}
               className="relative z-[2] h-full w-full object-cover transition-[filter,opacity] duration-200 group-hover:brightness-110"
               alt=""

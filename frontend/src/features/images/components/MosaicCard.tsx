@@ -103,7 +103,11 @@ export const MosaicCard = memo(function MosaicCard({
                   return
                 }
               }
-              if (vid) { img.style.opacity = '0'; return }
+              if (vid) {
+                img.style.opacity = '0'
+                markPreviewBroken()
+                return
+              }
               markPreviewBroken()
             }}
             className="relative z-[1] w-full transition-[filter,opacity] duration-200 group-hover:brightness-110"
