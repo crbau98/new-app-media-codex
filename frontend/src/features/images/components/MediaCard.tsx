@@ -164,10 +164,17 @@ export const MediaCard = memo(function MediaCard({
               fetchPriority={isAboveFold ? "high" : "low"}
               onLoad={(e) => {
                 const img = e.target as HTMLImageElement
-                const isReal = img.naturalWidth >= 320 || img.naturalHeight >= 180
+                const w = img.naturalWidth
+                const h = img.naturalHeight
+                const isPlaceholder = w === 320 && h === 180
+                const isReal = w >= 320 || h >= 180
                 if (isReal) {
                   setImgLoaded(true)
                   stopPosterPoll()
+                  // Dim placeholder so the gradient shows through; show real posters fully
+                  if (isPlaceholder) {
+                    img.style.opacity = '0.35'
+                  }
                 } else {
                   img.style.opacity = '0'
                   setImgLoaded(true)
