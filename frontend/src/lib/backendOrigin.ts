@@ -22,10 +22,14 @@ export function getBackendOrigin(): string {
     }
   }
 
-  // Runtime fallback: auto-detect Vercel deployments and point to the Render backend.
+  // Runtime fallback: auto-detect split deployments (e.g. Vercel frontend + Render backend).
+  // Any non-Render, non-localhost host gets pointed to the Render API.
+  // Override by setting VITE_BACKEND_ORIGIN at build time.
   if (typeof window !== "undefined") {
     const host = window.location.hostname
-    if (host.endsWith(".vercel.app") || host.includes("-vercel-")) {
+    const isRender = host.endsWith(".onrender.com")
+    const isLocalhost = host === "localhost" || host === "127.0.0.1"
+    if (!isRender && !isLocalhost) {
       return "https://codex-research-radar.onrender.com"
     }
   }
