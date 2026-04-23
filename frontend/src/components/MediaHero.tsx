@@ -19,28 +19,23 @@ export function MediaHero({ shots, onClick }: MediaHeroProps) {
     .filter((s) => s.preview_url || s.local_url || s.thumbnail_url)
   const working = featured.filter((s) => !failedIds.has(s.id))
 
-  if (working.length === 0) return null
-
   // Clamp index if it went out of bounds after image failures
-  const safeIndex = currentIndex % working.length
-  const current = working[safeIndex]
-  const isVideo = isVideoShot(current)
-  const bgImage =
-    resolvePublicUrl(current.preview_url || current.local_url || current.thumbnail_url || "")
+  const safeIndex = working.length ? currentIndex % working.length : 0
+  const currentId = working[safeIndex]?.id
 
   const nextSlide = useCallback(() => {
-    setCurrentIndex((prev) => (prev + 1) % working.length)
+    setCurrentIndex((prev) => (working.length ? (prev + 1) % working.length : 0))
   }, [working.length])
 
   const handleImageError = useCallback(() => {
     setFailedIds((prev) => {
       const next = new Set(prev)
-      next.add(current.id)
+      if (currentId != null) next.add(currentId)
       return next
     })
     // Auto-advance to next slide if this image fails
-    setCurrentIndex((prev) => (prev + 1) % Math.max(working.length - 1, 1))
-  }, [current?.id, working.length])
+    setCurrentIndex((prev) => (working.length > 1 ? (prev + 1) % Math.max(working.length - 1, 1) : 0))
+  }, [currentId, working.length])
 
   // Auto-advance every 6 seconds unless hovering
   useEffect(() => {
@@ -48,6 +43,13 @@ export function MediaHero({ shots, onClick }: MediaHeroProps) {
     const id = setInterval(nextSlide, 6000)
     return () => clearInterval(id)
   }, [isHovering, working.length, nextSlide])
+
+  if (working.length === 0) return null
+
+  const current = working[safeIndex]
+  const isVideo = isVideoShot(current)
+  const bgImage =
+    resolvePublicUrl(current.preview_url || current.local_url || current.thumbnail_url || "")
 
   return (
     <motion.div
