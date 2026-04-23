@@ -23,6 +23,13 @@ const QUERY_DEFAULTS = {
   MAX_RETRY_DELAY_503: 30_000,
 }
 
+// ââ Service worker cleanup (prevent stale caches from blocking updates) ââ
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    regs.forEach((reg) => reg.unregister())
+  })
+}
+
 // ââ Hash sync (back/forward navigation) ââââââââââââââââââââââââââââââ
 window.addEventListener('hashchange', () => {
   const view = getViewFromHash()
