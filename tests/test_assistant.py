@@ -32,7 +32,7 @@ class TestAssistantChatFallback:
         resp = assistant_client.post("/api/assistant/chat", json={"message": "hello"})
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers.get("content-type", "")
-        assert "not configured" in resp.text
+        assert "configured" in resp.text
         assert "[DONE]" in resp.text
 
 

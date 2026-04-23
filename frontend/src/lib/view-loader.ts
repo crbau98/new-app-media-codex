@@ -11,6 +11,8 @@ const loaders: ModuleMap = {
   performers: () => import("../features/performers/PerformersPage"),
   settings: () => import("../features/settings/SettingsPage"),
   profile: () => import("../features/profile/ProfilePage"),
+  search: () => import("../features/search/SearchResultsPage"),
+  explore: () => import("../features/discovery/ExplorePage"),
 }
 
 const cache = new Map<string, Promise<unknown>>()

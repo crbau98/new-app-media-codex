@@ -631,6 +631,9 @@ app.include_router(notifications_router)
 from app.api.analytics import router as analytics_router
 app.include_router(analytics_router)
 
+from app.api.assistant import router as assistant_router
+app.include_router(assistant_router)
+
 # SPA fallback — must be the last route
 @app.get("/{full_path:path}", response_class=HTMLResponse)
 def spa_fallback(full_path: str) -> HTMLResponse:

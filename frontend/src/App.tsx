@@ -5,6 +5,7 @@ import { AppShell } from "./components/AppShell"
 import { useAppStore, type ActiveView } from "./store"
 import { useCommandPalette } from "./hooks"
 import { CrawlNotifier } from "./components/CrawlNotifier"
+import { AIAssistant } from "./components/AIAssistant"
 import { loadViewModule, prefetchViewModule } from "./lib/view-loader"
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -32,6 +33,18 @@ const SettingsPage = lazy(() =>
 const PerformersPage = lazy(() =>
   loadViewModule("performers").then(m => ({
     default: (m as typeof import("./features/performers/PerformersPage")).default,
+  }))
+)
+
+const SearchResultsPage = lazy(() =>
+  loadViewModule("search").then(m => ({
+    default: (m as typeof import("./features/search/SearchResultsPage")).SearchResultsPage,
+  }))
+)
+
+const ExplorePage = lazy(() =>
+  loadViewModule("explore").then(m => ({
+    default: (m as typeof import("./features/discovery/ExplorePage")).ExplorePage,
   }))
 )
 
@@ -139,6 +152,8 @@ function App() {
       images: 'Media · Codex',
       performers: 'Creators · Codex',
       settings: 'Settings · Codex',
+      search: 'Search · Codex',
+      explore: 'Explore · Codex',
     }
     document.title = titles[deferredActiveView] ?? 'Codex'
   }, [deferredActiveView])
@@ -188,6 +203,8 @@ function App() {
     switch (deferredActiveView) {
       case 'performers': return <PerformersPage />
       case 'settings': return <SettingsPage />
+      case 'search': return <SearchResultsPage />
+      case 'explore': return <ExplorePage />
       default: return <MediaPage />
     }
   }, [deferredActiveView])
@@ -223,6 +240,7 @@ function App() {
       <Suspense fallback={null}>
         {showOnboarding && <Onboarding onComplete={closeOnboarding} />}
       </Suspense>
+      <AIAssistant />
     </>
   )
 }

@@ -652,6 +652,7 @@ const PerformerCard = memo(function PerformerCard({
   onToggleSelect,
   selectMode,
   isInQueue,
+  isCapturing,
   isFocused,
   cardRef,
 }: {
@@ -662,6 +663,7 @@ const PerformerCard = memo(function PerformerCard({
   onToggleSelect?: (id: number) => void
   selectMode?: boolean
   isInQueue?: boolean
+  isCapturing?: boolean
   isFocused?: boolean
   cardRef?: React.Ref<HTMLDivElement>
 }) {
@@ -748,7 +750,10 @@ const PerformerCard = memo(function PerformerCard({
             {performer.status === "active" && (
               <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-[#0a1628] bg-emerald-400 shadow-sm shadow-emerald-400/40" title="Active" />
             )}
-            {isInQueue && !selectMode && (
+            {isCapturing && !selectMode && (
+              <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-[#0a1628] bg-green-400 shadow-sm shadow-green-400/40 animate-pulse" title="Capturing now" />
+            )}
+            {isInQueue && !isCapturing && !selectMode && (
               <div className="absolute inset-0 flex items-center justify-center rounded-full bg-[#0a1628]/60">
                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
               </div>

@@ -54,6 +54,27 @@ function NotificationIcon({ type }: { type: AppNotification["type"] }) {
           <polyline points="17 6 23 6 23 12" />
         </svg>
       )
+    case "crawl":
+      return (
+        <svg className={cn(base, "text-blue")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+      )
+    case "capture":
+      return (
+        <svg className={cn(base, "text-green")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <polyline points="21 15 16 10 5 21" />
+        </svg>
+      )
+    case "system":
+      return (
+        <svg className={cn(base, "text-purple")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+        </svg>
+      )
     default:
       return (
         <svg className={cn(base, "text-text-muted")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -78,6 +99,12 @@ function notificationMessage(n: AppNotification): string {
       return "You were mentioned in a comment"
     case "trending_alert":
       return "Trending alert"
+    case "crawl":
+      return "Crawl update"
+    case "capture":
+      return "Capture update"
+    case "system":
+      return "System notification"
     default:
       return "New notification"
   }

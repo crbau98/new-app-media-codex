@@ -5,6 +5,7 @@ import { useWindowVirtualizer } from "@tanstack/react-virtual"
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api, type Screenshot, type Performer, type Playlist, type MediaStatsPayload, type UserTagCount, type DiscoveredCreator } from "@/lib/api"
 import { MediaHero } from "@/components/MediaHero"
+import { StoriesRail } from "@/components/StoriesRail"
 
 import { useAppStore, type GridDensity } from "@/store"
 import { Spinner } from "@/components/Spinner"
@@ -13,7 +14,16 @@ import { EmptyState } from "@/components/EmptyState"
 import { cn } from "@/lib/cn"
 import { getPerformerAvatarSrc } from "@/lib/performer"
 import { getBestAvailablePreviewSrc, getScreenshotMediaSrc, isVideoShot } from "@/lib/media"
-import { consumeNavigationIntent } from "@/components/TopBar"
+// Simple navigation-intent helpers (moved from TopBar to avoid circular dep)
+let _pendingNavIntent: { query?: string; term?: string; tag?: string } | null = null
+export function consumeNavigationIntent() {
+  const v = _pendingNavIntent
+  _pendingNavIntent = null
+  return v
+}
+export function clearNavigationIntent() {
+  _pendingNavIntent = null
+}
 import {
   sharedQueryKeys,
   useMediaStatsQuery,
@@ -1179,6 +1189,18 @@ export function MediaPage() {
     refetchOnMount: false,
   })
 
+  // Rail performers — lightweight query for the stories rail
+  const { data: railPerformers } = useQuery({
+    queryKey: ["performers-rail"],
+    queryFn: () => api.browsePerformers({ limit: 12, sort: "screenshots_count", compact: true }),
+    staleTime: 5 * 60_000,
+    gcTime: 15 * 60_000,
+    enabled: tab !== "creators",
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  })
+
   const { data: similarCreators = [] } = useQuery<Performer[]>({
     queryKey: ["similar-performers", mediaCreatorId],
     queryFn: () => api.similarPerformers(mediaCreatorId!, 3),
@@ -2237,6 +2259,19 @@ export function MediaPage() {
       {!search && !activePlaylistId && tab === "all" && visibleShots.length > 0 && (
         <div className="px-3 sm:px-4">
           <MediaHero shots={visibleShots} onClick={openMedia} />
+        </div>
+      )}
+
+      {/* ── Creator Stories Rail ─────────────────────────────────────────── */}
+      {!search && !activePlaylistId && tab === "all" && (railPerformers?.performers ?? []).length > 0 && (
+        <div className="px-3 sm:px-4 mb-2">
+          <StoriesRail
+            performers={railPerformers!.performers}
+            onNavigate={(performerId, _username) => {
+              setPendingPerformer(performerId)
+              setActiveView("performers")
+            }}
+          />
         </div>
       )}
 

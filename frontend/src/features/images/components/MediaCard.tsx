@@ -9,6 +9,7 @@ import { getMediaDebugLabel, useResolvedScreenshotMedia } from "@/lib/media"
 import { resolvePublicUrl } from "@/lib/backendOrigin"
 import { isHlsUrl } from "@/lib/hlsAttach"
 import { sourceLabel, isNewShot, MediaUnavailableTile } from "../mediaHelpers"
+import { useAppStore } from "@/store"
 
 export const MediaCard = memo(function MediaCard({
   shot,
@@ -44,6 +45,9 @@ export const MediaCard = memo(function MediaCard({
   const { mediaSrc: src, previewSrc, posterSrc, isVideo: vid, isGif: gif, markMediaBroken: _markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const mediaLabel = getMediaDebugLabel(shot)
   const [imgLoaded, setImgLoaded] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const addToast = useAppStore((s) => s.addToast)
   const isAboveFold = index <= 3
   const legacyVideoPoster =
     resolvePublicUrl(
@@ -56,6 +60,17 @@ export const MediaCard = memo(function MediaCard({
   const prevSrcRef = useRef("")
   const imgRef = useRef<HTMLImageElement | null>(null)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [menuOpen])
 
   useEffect(() => {
     return () => {
@@ -294,7 +309,7 @@ export const MediaCard = memo(function MediaCard({
               )}
             </div>
 
-            {/* Right side: like + view count */}
+            {/* Right side: like + view count + more actions */}
             <div className="flex items-center gap-1.5 shrink-0">
               {(shot.likes_count ?? 0) > 0 && (
                 <span className="flex items-center gap-0.5 text-[10px] text-white/60">
@@ -306,6 +321,67 @@ export const MediaCard = memo(function MediaCard({
                 <span className="text-[10px] text-white/50">
                   <ViewCounter screenshotId={shot.id} count={shot.views_count} className="text-white/50" />
                 </span>
+              )}
+              {!batchMode && (
+                <div ref={menuRef} className="relative">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setMenuOpen((v) => !v)
+                    }}
+                    className="flex h-5 w-5 items-center justify-center rounded-full text-white/40 hover:text-white/80 transition-colors"
+                    aria-label="More actions"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                      <circle cx="12" cy="6" r="2" />
+                      <circle cx="12" cy="12" r="2" />
+                      <circle cx="12" cy="18" r="2" />
+                    </svg>
+                  </button>
+                  {menuOpen && (
+                    <div className="absolute bottom-full right-0 mb-1.5 w-32 rounded-lg border border-white/10 bg-black/80 backdrop-blur-md shadow-xl overflow-hidden z-10">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const url = shot.page_url || `${window.location.origin}${window.location.pathname}#/media?shot=${shot.id}`
+                          if (typeof navigator.share === "function") {
+                            void navigator.share({ title: shot.term, url })
+                          } else {
+                            void navigator.clipboard.writeText(url).then(() => addToast("Link copied", "success"), () => addToast("Copy failed", "error"))
+                          }
+                          setMenuOpen(false)
+                        }}
+                        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                        Share
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const url = shot.page_url || `${window.location.origin}${window.location.pathname}#/media?shot=${shot.id}`
+                          void navigator.clipboard.writeText(url).then(() => addToast("Link copied", "success"), () => addToast("Copy failed", "error"))
+                          setMenuOpen(false)
+                        }}
+                        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        Copy Link
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          addToast("Reported — thanks for the feedback", "success")
+                          setMenuOpen(false)
+                        }}
+                        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] text-white/70 hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                        Report
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>

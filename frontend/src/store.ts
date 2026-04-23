@@ -90,11 +90,12 @@ export type ThemeMode = 'dark' | 'light'
 export type GridDensity = 'compact' | 'normal' | 'spacious'
 
 export interface AppNotification {
-  id: string
-  message: string
-  type: 'crawl' | 'capture' | 'system'
-  timestamp: number
-  read: boolean
+  id: number
+  type: 'new_media_from_followed' | 'comment_reply' | 'like_on_comment' | 'mention' | 'trending_alert' | 'crawl' | 'capture' | 'system'
+  message?: string
+  data?: Record<string, unknown>
+  read: number
+  created_at: string
 }
 
 // ── App State Interface ──────────────────────────────────────────────
@@ -139,8 +140,11 @@ interface AppState {
   // Notifications
   notifications: AppNotification[]
   unreadCount: number
-  addNotification: (msg: string, type: AppNotification['type']) => void
-  markNotificationRead: (id: string) => void
+  notificationPanelOpen: boolean
+  setNotificationPanelOpen: (open: boolean) => void
+  setNotifications: (notifications: AppNotification[], unreadCount: number) => void
+  addLocalNotification: (n: AppNotification) => void
+  markNotificationRead: (id: number) => void
   markAllRead: () => void
   clearNotifications: () => void
 
@@ -276,14 +280,14 @@ export const useAppStore = create<AppState>()(
       notifications: [],
       unreadCount: 0,
       notificationPanelOpen: false,
-      setNotificationPanelOpen: (notificationPanelOpen) => set({ notificationPanelOpen }),
-      setNotifications: (notifications, unreadCount) => set({ notifications, unreadCount }),
-      addLocalNotification: (n) =>
+      setNotificationPanelOpen: (notificationPanelOpen: boolean) => set({ notificationPanelOpen }),
+      setNotifications: (notifications: AppNotification[], unreadCount: number) => set({ notifications, unreadCount }),
+      addLocalNotification: (n: AppNotification) =>
         set((s) => {
           const next = [n, ...s.notifications].slice(0, MAX_NOTIFICATIONS)
           return { notifications: next, unreadCount: s.unreadCount + (n.read ? 0 : 1) }
         }),
-      markNotificationRead: (id) =>
+      markNotificationRead: (id: number) =>
         set((s) => {
           const next = s.notifications.map((n) =>
             n.id === id ? { ...n, read: 1 } : n
