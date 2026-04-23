@@ -164,7 +164,7 @@ export const MediaCard = memo(function MediaCard({
               fetchPriority={isAboveFold ? "high" : "low"}
               onLoad={(e) => {
                 const img = e.target as HTMLImageElement
-                const isReal = img.naturalWidth > 320 || img.naturalHeight > 180
+                const isReal = img.naturalWidth >= 320 || img.naturalHeight >= 180
                 if (isReal) {
                   setImgLoaded(true)
                   stopPosterPoll()

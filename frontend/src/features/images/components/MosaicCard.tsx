@@ -82,8 +82,8 @@ export const MosaicCard = memo(function MosaicCard({
             fetchPriority="low"
             onLoad={(e) => {
               const img = e.target as HTMLImageElement
-              // Placeholder posters are 320×180; hide them so gradient fallback shows
-              if (vid && img.naturalWidth <= 320 && img.naturalHeight <= 180) {
+              // Hide tiny placeholders; show 320×180 posters (and larger)
+              if (vid && img.naturalWidth < 320 && img.naturalHeight < 180) {
                 img.style.opacity = '0'
               }
             }}
