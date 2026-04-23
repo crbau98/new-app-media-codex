@@ -45,6 +45,7 @@ export const MediaCard = memo(function MediaCard({
   const { mediaSrc: src, previewSrc, posterSrc, isVideo: vid, isGif: gif, markMediaBroken: _markMediaBroken, markPreviewBroken } = useResolvedScreenshotMedia(shot)
   const mediaLabel = getMediaDebugLabel(shot)
   const [imgLoaded, setImgLoaded] = useState(false)
+  const [isPlaceholderPoster, setIsPlaceholderPoster] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const addToast = useAppStore((s) => s.addToast)
@@ -85,6 +86,7 @@ export const MediaCard = memo(function MediaCard({
     if (src && src !== prevSrcRef.current) {
       prevSrcRef.current = src
       setImgLoaded(false)
+      setIsPlaceholderPoster(false)
       if (pollTimerRef.current) {
         clearInterval(pollTimerRef.current)
         pollTimerRef.current = null
@@ -140,7 +142,7 @@ export const MediaCard = memo(function MediaCard({
       transition={index <= 20 ? { duration: 0.4, delay: index * 0.03, ease: [0.16, 1, 0.3, 1] } : undefined}
     >
       <div className="relative h-full w-full" style={{ contentVisibility: "auto", containIntrinsicSize: "160px 160px" }}>
-        {!imgLoaded && (previewSrc || vid) && (
+        {(!imgLoaded || isPlaceholderPoster) && (previewSrc || vid) && (
           <div className="absolute inset-0 shimmer z-[1]" aria-hidden="true" />
         )}
         {vid && (
@@ -173,13 +175,17 @@ export const MediaCard = memo(function MediaCard({
                   // Dim placeholder so the gradient shows through; show real posters fully
                   if (isPlaceholder) {
                     img.style.opacity = '0.35'
+                    setIsPlaceholderPoster(true)
                     startPosterPoll()
                   } else {
+                    img.style.opacity = ''
+                    setIsPlaceholderPoster(false)
                     stopPosterPoll()
                   }
                 } else {
                   img.style.opacity = '0'
                   setImgLoaded(true)
+                  setIsPlaceholderPoster(false)
                   startPosterPoll()
                 }
               }}
