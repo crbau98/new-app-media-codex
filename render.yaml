@@ -27,9 +27,10 @@ services:
       - key: SKIP_MEDIA_DOWNLOADS
         value: "true"
       # Comma-separated origins for the Vercel UI (required for browser API/WebSocket/SSE from another host).
-      # Example: https://your-app.vercel.app,https://your-app-git-main-xxx.vercel.app
+      # Defaults to * (allow all) so split Vercel+Render deployments work immediately.
+      # Restrict to your specific Vercel domain in production if desired.
       - key: CORS_ALLOW_ORIGINS
-        sync: false
+        value: "*"
       # Outbound proxy for coomer/kemono fetches (blocked from datacenter IPs).
       # Set in Render dashboard: http://user:pass@host:port
       # (Webshare/IPRoyal/Smartproxy/etc.) See /api/screenshots/proxy-status to verify.

@@ -21,6 +21,15 @@ export function getBackendOrigin(): string {
       }
     }
   }
+
+  // Runtime fallback: auto-detect Vercel deployments and point to the Render backend.
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname
+    if (host.endsWith(".vercel.app") || host.includes("-vercel-")) {
+      return "https://codex-research-radar.onrender.com"
+    }
+  }
+
   return ""
 }
 
