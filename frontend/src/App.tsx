@@ -6,6 +6,7 @@ import { useAppStore, type ActiveView } from "./store"
 import { useCommandPalette } from "./hooks"
 import { CrawlNotifier } from "./components/CrawlNotifier"
 import { AIAssistant } from "./components/AIAssistant"
+import { BottomTabBar } from "./components/BottomTabBar"
 import { loadViewModule, prefetchViewModule } from "./lib/view-loader"
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -241,6 +242,7 @@ function App() {
         {showOnboarding && <Onboarding onComplete={closeOnboarding} />}
       </Suspense>
       <AIAssistant />
+      <BottomTabBar />
     </>
   )
 }

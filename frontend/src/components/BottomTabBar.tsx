@@ -22,6 +22,16 @@ const TABS: TabItem[] = [
     ),
   },
   {
+    id: "explore",
+    label: "Explore",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+      </svg>
+    ),
+  },
+  {
     id: "performers",
     label: "Creators",
     icon: (
@@ -55,7 +65,7 @@ export function BottomTabBar() {
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       aria-label="Mobile navigation"
     >
-      <div className="grid grid-cols-3 items-center gap-1 p-1.5">
+      <div className="grid grid-cols-4 items-center gap-1 p-1.5">
         {TABS.map((tab) => {
           const isActive = activeView === tab.id
           return (
