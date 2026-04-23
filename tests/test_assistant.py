@@ -1,6 +1,8 @@
 """Tests for the AI assistant endpoint."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -66,7 +68,10 @@ class TestAssistantChatWithMockOpenAI:
         class FakeClient:
             chat = type("Chat", (), {"completions": FakeCompletions()})()
 
-        monkeypatch.setattr("openai.OpenAI", lambda **kwargs: FakeClient())
+        monkeypatch.setattr(
+            "app.api.assistant._load_openai_module",
+            lambda: SimpleNamespace(OpenAI=lambda **kwargs: FakeClient()),
+        )
 
         resp = assistant_client.post("/api/assistant/chat", json={"message": "hi"})
         assert resp.status_code == 200
@@ -79,9 +84,34 @@ class TestAssistantChatWithMockOpenAI:
         def _raise(*args, **kwargs):
             raise RuntimeError("model down")
 
-        monkeypatch.setattr("openai.OpenAI", _raise)
+        monkeypatch.setattr(
+            "app.api.assistant._load_openai_module",
+            lambda: SimpleNamespace(OpenAI=_raise),
+        )
 
         resp = assistant_client.post("/api/assistant/chat", json={"message": "hi"})
         assert resp.status_code == 200
         assert "model down" in resp.text
         assert "[DONE]" in resp.text
+
+    def test_chat_handles_missing_openai_dependency(self, assistant_client, monkeypatch):
+        monkeypatch.setattr("app.api.assistant.settings", _FakeSettingsWithKey())
+        monkeypatch.setattr("app.api.assistant._load_openai_module", lambda: None)
+
+        resp = assistant_client.post("/api/assistant/chat", json={"message": "hi"})
+        assert resp.status_code == 200
+        assert "openai package is not installed" in resp.text
+        assert "[DONE]" in resp.text
+
+
+def test_load_openai_module_reraises_non_openai_module_errors(monkeypatch):
+    from app.api import assistant as assistant_module
+
+    assistant_module._load_openai_module.cache_clear()
+
+    def _raise(_name: str):
+        raise ModuleNotFoundError("boom", name="httpx")
+
+    monkeypatch.setattr("app.api.assistant.import_module", _raise)
+    with pytest.raises(ModuleNotFoundError, match="boom"):
+        assistant_module._load_openai_module()

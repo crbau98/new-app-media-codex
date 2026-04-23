@@ -973,7 +973,7 @@ def _video_source_kind(source_url: str, source: str) -> str:
 @router.get("/cache-status")
 async def cache_status(
     request: Request,
-    source: str = Query(default="coomer", regex=r"^[a-z0-9_-]{1,32}$"),
+    source: str = Query(default="coomer", pattern=r"^[a-z0-9_-]{1,32}$"),
     missing_only: bool = Query(default=False),
     limit: int = Query(default=500, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),

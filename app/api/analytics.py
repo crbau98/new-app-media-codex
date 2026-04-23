@@ -169,7 +169,7 @@ def get_creator_analytics(performer_id: int, request: Request) -> dict[str, Any]
 @router.get("/analytics/engagement")
 def get_engagement_analytics(
     request: Request,
-    period: str = Query("week", regex=r"^(day|week|month|all)$"),
+    period: str = Query("week", pattern=r"^(day|week|month|all)$"),
 ) -> dict[str, Any]:
     """Engagement analytics over time."""
     db = request.app.state.db
