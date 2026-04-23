@@ -170,10 +170,12 @@ export const MediaCard = memo(function MediaCard({
                 const isReal = w >= 320 || h >= 180
                 if (isReal) {
                   setImgLoaded(true)
-                  stopPosterPoll()
                   // Dim placeholder so the gradient shows through; show real posters fully
                   if (isPlaceholder) {
                     img.style.opacity = '0.35'
+                    startPosterPoll()
+                  } else {
+                    stopPosterPoll()
                   }
                 } else {
                   img.style.opacity = '0'
