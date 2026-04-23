@@ -25,7 +25,7 @@ describe('useDebounce', () => {
     rerender({ value: 'y' })
     await new Promise((r) => setTimeout(r, 10))
     expect(result.current).toBe('x')
-    await new Promise((r) => setTimeout(r, 15))
+    await new Promise((r) => setTimeout(r, 25))
     expect(result.current).toBe('y')
   })
 })

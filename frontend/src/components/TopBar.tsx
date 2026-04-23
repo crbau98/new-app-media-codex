@@ -4,6 +4,8 @@ import { useAppStore } from "../store"
 import { cn } from "@/lib/cn"
 import { UniversalSearchBar } from "./UniversalSearchBar"
 import { NotificationBell } from "./NotificationBell"
+import { NotificationPanel } from "./NotificationPanel"
+import { AnimatePresence } from "framer-motion"
 
 const ShortcutModal = lazy(() => import("./ShortcutModal").then((m) => ({ default: m.ShortcutModal })))
 
@@ -27,6 +29,7 @@ export function TopBar() {
   const leftOffset = collapsed ? "lg:left-[72px]" : "lg:left-[240px]"
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [topBarEnhancementsReady, setTopBarEnhancementsReady] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
 
   useEffect(() => {
     function openFromShortcut() {
@@ -101,7 +104,16 @@ export function TopBar() {
               )}
             </button>
 
-            {topBarEnhancementsReady && <NotificationBell />}
+            {topBarEnhancementsReady && (
+              <>
+                <NotificationBell onClick={() => setNotificationsOpen((v) => !v)} />
+                <AnimatePresence>
+                  {notificationsOpen && (
+                    <NotificationPanel onClose={() => setNotificationsOpen(false)} />
+                  )}
+                </AnimatePresence>
+              </>
+            )}
           </div>
         </div>
       </header>
