@@ -1,8 +1,11 @@
 import { getBackendOrigin } from "./backendOrigin"
 
 // Empty = same-origin. Set VITE_BACKEND_ORIGIN when the UI is hosted separately (e.g. Vercel).
-const BASE = getBackendOrigin()
 const API_TIMEOUT_MS = 20_000
+
+function base(): string {
+  return getBackendOrigin()
+}
 
 export type ApiError = Error & {
   status?: number
@@ -66,7 +69,7 @@ async function fetchWithTimeout(path: string, init?: RequestInit, timeoutMs = AP
     controller.abort()
   }, timeoutMs)
   try {
-    return await fetch(`${BASE}${path}`, {
+    return await fetch(`${base()}${path}`, {
       ...init,
       signal,
     })
@@ -711,7 +714,7 @@ export const api = {
     ),
   browseTelegramMedia: (params?: Record<string, string | number>) =>
     apiFetch<BrowseTelegramMediaPayload>(`/api/telegram/media${buildQuery(params)}`),
-  telegramStreamUrl: (mediaId: number) => `${BASE}/api/telegram/media/${mediaId}/stream`,
+  telegramStreamUrl: (mediaId: number) => `${base()}/api/telegram/media/${mediaId}/stream`,
   queueCount: () => apiFetch<{ count: number }>("/api/items/queue/count"),
   suggest: (q: string, field: "compound" | "mechanism") =>
     apiFetch<{ suggestions: string[] }>(`/api/items/suggest${buildQuery({ q, field })}`),
