@@ -602,7 +602,24 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
           }, 3000)
         }
 
-        startCachePoll()
+        // IP-bound CDN token: try browser-direct playback immediately (the user's
+        // residential ISP can usually reach the CDN even when the datacenter proxy
+        // cannot).  While direct playback runs, poll for server-side cache in the
+        // background — if caching succeeds we can seamlessly switch later.
+        const directUrl = result.direct_url || unwrapProxyMediaUrl(src)
+        if (directUrl && directUrl.startsWith("http")) {
+          const prevOnFatal = onFatalErrorRef
+          onFatalErrorRef = () => {
+            onFatalErrorRef = prevOnFatal
+            if (destroyed) return
+            // Direct playback failed — start cache polling as last resort
+            startCachePoll()
+          }
+          playDirect(directUrl)
+        } else {
+          // No direct URL available — jump straight to cache polling
+          startCachePoll()
+        }
       } else if (result?.local_url && isHlsUrl(result.local_url)) {
         // Non-IP-bound HLS — use hls.js
         startHls(result.local_url)
