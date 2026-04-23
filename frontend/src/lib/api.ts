@@ -61,6 +61,7 @@ function createApiError(status: number, message: string): ApiError {
 }
 
 async function fetchWithTimeout(path: string, init?: RequestInit, timeoutMs = API_TIMEOUT_MS): Promise<Response> {
+  const url = `${base()}${path}`
   const controller = new AbortController()
   const signal = mergeAbortSignals(init?.signal, controller)
   let timedOut = false
@@ -69,11 +70,20 @@ async function fetchWithTimeout(path: string, init?: RequestInit, timeoutMs = AP
     controller.abort()
   }, timeoutMs)
   try {
-    return await fetch(`${base()}${path}`, {
+    const res = await fetch(url, {
       ...init,
       signal,
     })
+    if (!res.ok && typeof console !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.warn(`[codex-diag] API ${init?.method || "GET"} ${url} → ${res.status}`)
+    }
+    return res
   } catch (error) {
+    if (typeof console !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.error(`[codex-diag] API fetch failed: ${init?.method || "GET"} ${url}`, error)
+    }
     if (error instanceof DOMException && error.name === "AbortError") {
       if (timedOut) {
         const timeoutError = new Error(`Request timed out after ${timeoutMs}ms`) as ApiError

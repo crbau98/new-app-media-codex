@@ -328,6 +328,9 @@ export function getBestAvailablePosterSrc(s: Screenshot): string {
   )
 }
 
+let _mediaDiagLogged = 0
+const MAX_MEDIA_DIAG = 5
+
 export function useResolvedScreenshotMedia(s: Screenshot) {
   const [, setVersion] = useState(0)
   const [retryCount, setRetryCount] = useState(0)
@@ -336,6 +339,12 @@ export function useResolvedScreenshotMedia(s: Screenshot) {
   const previewSrc = getBestAvailablePreviewSrc(s)
   const posterSrc = getBestAvailablePosterSrc(s)
   const displaySrc = previewSrc || mediaSrc
+
+  if (_mediaDiagLogged < MAX_MEDIA_DIAG && typeof console !== "undefined") {
+    _mediaDiagLogged++
+    // eslint-disable-next-line no-console
+    console.log(`[codex-diag] shot #${s.id} mediaSrc=${mediaSrc.slice(0, 120)} previewSrc=${previewSrc.slice(0, 120)}`)
+  }
 
   const markPreviewBroken = useCallback(() => {
     const target = previewSrc || displaySrc

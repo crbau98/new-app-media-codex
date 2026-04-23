@@ -68,6 +68,21 @@ export function getPublicOrigin(): string {
   return window.location.origin
 }
 
+// ── Diagnostics (run once on first import) ──────────────────────────
+let _diagLogged = false
+function _logBackendDiag() {
+  if (_diagLogged || typeof window === "undefined") return
+  _diagLogged = true
+  const origin = getBackendOrigin()
+  // eslint-disable-next-line no-console
+  console.log("[codex-diag] backendOrigin:", origin || "(same-origin)")
+  // eslint-disable-next-line no-console
+  console.log("[codex-diag] window.location:", window.location.href)
+  // eslint-disable-next-line no-console
+  console.log("[codex-diag] VITE_BACKEND_ORIGIN:", (import.meta.env.VITE_BACKEND_ORIGIN as string | undefined) || "(unset)")
+}
+_logBackendDiag()
+
 /** WebSocket URL for crawl notifications (`/ws/crawl`). */
 export function crawlWebSocketUrl(): string {
   const path = "/ws/crawl"

@@ -218,11 +218,21 @@ async function resolveStreamUrl(shotId: number): Promise<ResolveResult | null> {
  * resolve is retried once and the player reloads.
  */
 export function attachMediaSource(video: HTMLVideoElement, src: string, options?: AttachMediaOptions): () => void {
+  if (typeof console !== "undefined") {
+    // eslint-disable-next-line no-console
+    console.log(`[codex-diag] attachMediaSource shotId=${options?.shotId} source=${options?.shotSource} src=${src.slice(0, 140)}`)
+  }
   const tryAutoplay = options?.tryAutoplay ?? false
   // Indirection so the coomer branch can intercept the "all URLs exhausted"
   // signal and start cache-status polling instead of giving up.
   let onFatalErrorRef: (() => void) | undefined = options?.onFatalError
-  const onFatalError = () => onFatalErrorRef?.()
+  const onFatalError = () => {
+    if (typeof console !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.error(`[codex-diag] onFatalError shotId=${shotId} source=${shotSource}`)
+    }
+    onFatalErrorRef?.()
+  }
   const shotId = options?.shotId
   const shotSource = (options?.shotSource ?? "").toLowerCase().trim()
   // Some sources need a backend pre-flight before playback:
@@ -260,12 +270,24 @@ export function attachMediaSource(video: HTMLVideoElement, src: string, options?
   /** Play a plain MP4/video URL directly (no HLS). */
   function playDirect(url: string) {
     if (destroyed) return
-    video.src = absoluteMediaRequestUrl(url)
+    const resolved = absoluteMediaRequestUrl(url)
+    if (typeof console !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.log(`[codex-diag] playDirect resolved=${resolved.slice(0, 140)}`)
+    }
+    video.src = resolved
     const onMeta = () => {
       video.removeEventListener("loadedmetadata", onMeta)
       tryPlay()
     }
+    const onErr = () => {
+      if (typeof console !== "undefined") {
+        // eslint-disable-next-line no-console
+        console.error(`[codex-diag] video error for ${resolved.slice(0, 140)}`, video.error)
+      }
+    }
     video.addEventListener("loadedmetadata", onMeta)
+    video.addEventListener("error", onErr, { once: true })
   }
 
   /**
