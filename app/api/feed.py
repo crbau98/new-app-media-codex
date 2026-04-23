@@ -107,7 +107,7 @@ def get_popular_feed(
     request: Request,
     limit: int = Query(48, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    period: str = Query("all", regex=r"^(all|day|week|month)$"),
+    period: str = Query("all", pattern=r"^(all|day|week|month)$"),
 ) -> dict[str, Any]:
     """Return most popular media by total engagement (likes + views + comments)."""
     db = request.app.state.db
@@ -293,7 +293,7 @@ def get_for_you_feed(
 @router.get("/trending")
 def get_trending(
     request: Request,
-    type: str = Query("media", regex=r"^(media|creators)$"),
+    type: str = Query("media", pattern=r"^(media|creators)$"),
     limit: int = Query(20, ge=1, le=100),
 ) -> dict[str, Any]:
     """Return trending items — either media or creators."""

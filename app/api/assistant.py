@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+from functools import lru_cache
+from importlib import import_module
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -21,6 +23,15 @@ class ChatRequest(BaseModel):
 SYSTEM_PROMPT = (
     "You are a helpful media assistant. Help users find content, creators, and answer questions."
 )
+
+@lru_cache(maxsize=1)
+def _load_openai_module():
+    try:
+        return import_module("openai")
+    except ModuleNotFoundError as exc:
+        if exc.name != "openai":
+            raise
+        return None
 
 
 def _fallback_stream(message: str):
@@ -44,9 +55,13 @@ def assistant_chat(req: ChatRequest) -> StreamingResponse:
 
     def event_stream():
         try:
-            import openai
+            openai_module = _load_openai_module()
+            if openai_module is None:
+                raise RuntimeError(
+                    "OPENAI_API_KEY is set but the openai package is not installed"
+                )
 
-            client = openai.OpenAI(
+            client = openai_module.OpenAI(
                 api_key=settings.openai_api_key,
                 base_url=settings.openai_base_url,
             )
