@@ -1,23 +1,28 @@
-.DS_Store
-.env
-.venv
-.git
-.gitignore
-__pycache__/
-*.pyc
-*.pyo
-*.log
-
-data/research.db
-data/images/*
-!data/images/.gitkeep
-data/screenshots/
-
+# Frontend backups & build artifacts
+frontend-v1-backup/
 frontend/node_modules/
 frontend/dist/
-app/static/dist/
 
-firebase-debug.log
-docs/
-design/
-SPRINT_SUMMARY.md
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Data (mounted as disk on Render)
+data/
+
+# Git & IDE
+.git/
+.github/
+.gitignore
+.cursor/
+.claude/
+.husky/
+
+# Logs & misc
+*.log
+.DS_Store
+.env.local
+.env.*.local
