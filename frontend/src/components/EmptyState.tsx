@@ -1,63 +1,110 @@
+import { motion } from 'framer-motion'
+import { cn } from '@/lib/utils'
+import {
+  Heart,
+  Search,
+  FolderOpen,
+  CloudOff,
+  AlertCircle,
+} from 'lucide-react'
+
+type EmptyVariant = 'favorites' | 'search' | 'category' | 'offline' | 'error'
+
 interface EmptyStateProps {
-  icon: string
-  title: string
-  description: string
-  eyebrow?: string
-  action?: {
-    label: string
-    onClick: () => void
-  }
+  variant: EmptyVariant
+  title?: string
+  description?: string
+  actionLabel?: string
+  onAction?: () => void
 }
 
-export function EmptyState({ icon, title, description, eyebrow = "Nothing here yet", action }: EmptyStateProps) {
+const config: Record<EmptyVariant, { icon: typeof Heart; defaultTitle: string; defaultDesc: string; defaultAction: string }> = {
+  favorites: {
+    icon: Heart,
+    defaultTitle: 'Nothing here yet',
+    defaultDesc: 'Start building your collection by favoriting media you love.',
+    defaultAction: 'Browse media',
+  },
+  search: {
+    icon: Search,
+    defaultTitle: 'No results found',
+    defaultDesc: 'Try different keywords or filters to find what you are looking for.',
+    defaultAction: 'Clear filters',
+  },
+  category: {
+    icon: FolderOpen,
+    defaultTitle: 'This category is waiting for content',
+    defaultDesc: 'Check back later for new additions.',
+    defaultAction: 'Browse all',
+  },
+  offline: {
+    icon: CloudOff,
+    defaultTitle: 'You are offline',
+    defaultDesc: 'Some content may not be available. Reconnect to browse the full library.',
+    defaultAction: 'Retry connection',
+  },
+  error: {
+    icon: AlertCircle,
+    defaultTitle: 'Something went wrong',
+    defaultDesc: 'We could not load this content. Please try again.',
+    defaultAction: 'Reload',
+  },
+}
+
+export default function EmptyState({
+  variant,
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: EmptyStateProps) {
+  const c = config[variant]
+  const Icon = c.icon
+
   return (
-    <div className="empty-state-panel animate-fade-in relative flex flex-col items-center justify-center overflow-hidden px-8 py-16 text-center sm:px-10 sm:py-20">
-      <div
-        aria-hidden="true"
-        className="orb-float pointer-events-none absolute -top-24 -left-20 h-64 w-64 rounded-full opacity-70"
-        style={{
-          background: "radial-gradient(circle, rgba(168,85,247,0.22), transparent 70%)",
-          filter: "blur(18px)",
+    <div className="empty-state-panel">
+      <motion.div
+        initial={{ scale: 0.5, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{
+          type: 'spring',
+          stiffness: 300,
+          damping: 15,
+          duration: 0.5,
         }}
-      />
-      <div
-        aria-hidden="true"
-        className="orb-float pointer-events-none absolute -bottom-20 -right-16 h-72 w-72 rounded-full opacity-60"
-        style={{
-          background: "radial-gradient(circle, rgba(236,72,153,0.18), transparent 70%)",
-          filter: "blur(22px)",
-          animationDelay: "-7s",
-        }}
-      />
-      <div className="relative mb-6 flex h-20 w-20 select-none items-center justify-center rounded-3xl border border-border bg-bg-elevated text-4xl text-text-secondary shadow-[0_10px_32px_-10px_rgba(0,0,0,0.5),0_0_0_1px_rgba(168,85,247,0.06)]">
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 rounded-3xl"
-          style={{
-            background:
-              "linear-gradient(135deg, rgba(168,85,247,0.12), transparent 55%)",
-          }}
-        />
-        <span className="relative">{icon}</span>
-      </div>
-      <p className="eyebrow relative mb-2">{eyebrow}</p>
-      <h3 className="relative text-balance text-xl font-semibold tracking-tight text-text-primary sm:text-2xl">
-        {title}
-      </h3>
-      <p className="relative mt-3 max-w-md text-sm leading-relaxed text-text-muted sm:text-[15px]">
-        {description}
-      </p>
-      {action && (
-        <button
-          onClick={action.onClick}
-          className="btn-primary relative mt-7 inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold"
+        className="w-20 h-20 rounded-full bg-[var(--accent-dim)] flex items-center justify-center"
+      >
+        <Icon size={32} className="text-[var(--accent)]" />
+      </motion.div>
+
+      <motion.h3
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1, duration: 0.3 }}
+        className="text-lg font-semibold text-[var(--text-primary)]"
+      >
+        {title ?? c.defaultTitle}
+      </motion.h3>
+
+      <motion.p
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.3 }}
+        className="text-sm text-[var(--text-secondary)] max-w-xs"
+      >
+        {description ?? c.defaultDesc}
+      </motion.p>
+
+      {onAction && (
+        <motion.button
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.3 }}
+          onClick={onAction}
+          className={cn('btn-primary mt-1')}
         >
-          {action.label}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 12h14" />
-            <path d="m12 5 7 7-7 7" />
-          </svg>
-        </button>
+          {actionLabel ?? c.defaultAction}
+        </motion.button>
       )}
     </div>
   )

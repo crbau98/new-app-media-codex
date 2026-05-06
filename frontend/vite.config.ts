@@ -1,4 +1,18 @@
-// @ts-ignore - shared Vite config is authored in JS to stay canonical across JS/TS entrypoints.
-import config from "./vite.config.shared.js"
+import path from "path"
+import react from "@vitejs/plugin-react"
+import { defineConfig } from "vite"
+import { inspectAttr } from 'plugin-inspect-react-code'
 
-export default config
+// https://vite.dev/config/
+export default defineConfig({
+  base: './',
+  plugins: [inspectAttr(), react()],
+  server: {
+    port: 3000,
+  },
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+});

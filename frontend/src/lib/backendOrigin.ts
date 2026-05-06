@@ -1,102 +1,92 @@
 /**
- * When the UI is hosted separately from FastAPI (e.g. Vercel + Render), set
- * `VITE_BACKEND_ORIGIN` to the API origin, e.g. `https://your-service.onrender.com`
- * (no trailing slash). Omit for same-origin (FastAPI serving the built SPA).
+ * Backend origin detection and URL helpers.
+ *
+ * Priority:
+ *  1. VITE_BACKEND_ORIGIN env var
+ *  2. Same-origin (if UI is served from the same domain as the API)
+ *  3. Default Render deployment origin
+ */
+
+const DEFAULT_ORIGIN = 'https://codex-research-radar.onrender.com'
+
+/**
+ * Number of seconds to wait before aborting a fetch request.
+ */
+export const FETCH_TIMEOUT_MS = 10000
+
+/**
+ * Returns the detected backend origin URL (no trailing slash).
  */
 export function getBackendOrigin(): string {
-  const raw = import.meta.env.VITE_BACKEND_ORIGIN as string | undefined
-  if (raw?.trim()) return raw.trim().replace(/\/$/, "")
-
-  // Production split UI: some deployments set `VITE_BACKEND_URL` (remote https) but not `VITE_BACKEND_ORIGIN`.
-  if (import.meta.env.PROD) {
-    const alt = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim()
-    if (alt && /^https:\/\//i.test(alt)) {
-      try {
-        const u = new URL(alt)
-        if (u.hostname !== "localhost" && u.hostname !== "127.0.0.1") {
-          return u.origin.replace(/\/$/, "")
-        }
-      } catch {
-        /* ignore */
-      }
-    }
+  // 1. explicit env override
+  const env = import.meta.env.VITE_BACKEND_ORIGIN as string | undefined
+  if (env && env.trim()) {
+    return env.trim().replace(/\/$/, '')
   }
 
-  // Runtime fallback: auto-detect split deployments (e.g. Vercel frontend + Render backend).
-  // Any non-Render, non-localhost host gets pointed to the Render API.
-  // Override by setting VITE_BACKEND_ORIGIN at build time.
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname
-    const isRender = host.endsWith(".onrender.com")
-    const isLocalhost = host === "localhost" || host === "127.0.0.1"
-    if (!isRender && !isLocalhost) {
-      return "https://codex-research-radar.onrender.com"
-    }
+  // 2. same-origin detection
+  // If the UI is hosted on Render (same domain as backend), use same-origin
+  const host = window.location.host
+  if (
+    host.includes('render.com') ||
+    host.includes('localhost') ||
+    host.includes('127.0.0.1') ||
+    host === 'codex-research-radar.onrender.com'
+  ) {
+    // Use same-origin (empty string prefix means same origin in fetch)
+    return ''
   }
 
-  return ""
+  // 3. split deployment — UI hosted elsewhere (Vercel, Netlify, etc.)
+  return DEFAULT_ORIGIN
 }
 
-/** Absolute URL for API paths like `/api/items`. */
+/**
+ * Build a full API URL given a path like `/api/screenshots`.
+ * If running same-origin, the origin is omitted.
+ */
 export function apiUrl(path: string): string {
-  const base = getBackendOrigin()
-  const p = path.startsWith("/") ? path : `/${path}`
-  return base ? `${base}${p}` : p
-}
-
-/** Prefix relative `/api/...` and `/cached-...` URLs for `<img>` / `<video>` when the UI is on another host. */
-export function resolvePublicUrl(url: string): string {
-  if (!url) return url
-  if (url.startsWith("http://") || url.startsWith("https://")) return url
   const origin = getBackendOrigin()
-  if (!origin) return url
-  if (url.startsWith("/")) return `${origin}${url}`
-  return url
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+  return origin ? `${origin}${cleanPath}` : cleanPath
 }
 
-/** Origin used to resolve relative URLs in the browser (backend or current page). */
-export function getPublicOrigin(): string {
-  if (typeof window === "undefined") return ""
-  const o = getBackendOrigin()
-  if (o) {
-    try {
-      return new URL(o.startsWith("http") ? o : `https://${o}`).origin
-    } catch {
-      return window.location.origin
-    }
+/**
+ * Resolve a public URL (e.g. local_path or avatar_local) into a fully-qualified URL.
+ * Backend may return relative paths; this prepends the backend origin when needed.
+ */
+export function resolvePublicUrl(path: string | null | undefined): string {
+  if (!path) return ''
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
   }
-  return window.location.origin
-}
-
-// ── Diagnostics (run once on first import) ──────────────────────────
-let _diagLogged = false
-function _logBackendDiag() {
-  if (_diagLogged || typeof window === "undefined") return
-  _diagLogged = true
   const origin = getBackendOrigin()
-  // eslint-disable-next-line no-console
-  console.log("[codex-diag] backendOrigin:", origin || "(same-origin)")
-  // eslint-disable-next-line no-console
-  console.log("[codex-diag] window.location:", window.location.href)
-  // eslint-disable-next-line no-console
-  console.log("[codex-diag] VITE_BACKEND_ORIGIN:", (import.meta.env.VITE_BACKEND_ORIGIN as string | undefined) || "(unset)")
+  if (!origin) {
+    // same-origin — prepend current origin
+    return `${window.location.origin}${path.startsWith('/') ? '' : '/'}${path}`
+  }
+  return `${origin}${path.startsWith('/') ? '' : '/'}${path}`
 }
-_logBackendDiag()
 
-/** WebSocket URL for crawl notifications (`/ws/crawl`). */
+/**
+ * Get the public origin (for things like OG meta tags, direct links).
+ * Returns the backend origin when available, otherwise current page origin.
+ */
+export function getPublicOrigin(): string {
+  const backend = getBackendOrigin()
+  return backend || window.location.origin
+}
+
+/**
+ * Build the WebSocket URL for the real-time crawl status feed.
+ */
 export function crawlWebSocketUrl(): string {
-  const path = "/ws/crawl"
   const origin = getBackendOrigin()
   if (origin) {
-    try {
-      const u = new URL(origin.startsWith("http") ? origin : `https://${origin}`)
-      const wsProto = u.protocol === "https:" ? "wss:" : "ws:"
-      return `${wsProto}//${u.host}${path}`
-    } catch {
-      /* fall through */
-    }
+    const wsOrigin = origin.replace(/^http/, 'ws')
+    return `${wsOrigin}/ws/crawl`
   }
-  if (typeof window === "undefined") return `ws://127.0.0.1${path}`
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-  return `${protocol}//${window.location.host}${path}`
+  // same-origin
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}/ws/crawl`
 }

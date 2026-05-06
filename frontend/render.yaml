@@ -1,0 +1,22 @@
+services:
+  # Frontend static site (if deploying separately)
+  - type: web
+    name: media-codex-frontend
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_BACKEND_ORIGIN
+        value: https://codex-research-radar.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # Backend web service (your existing FastAPI app)
+  # This section should be merged with your existing render.yaml
+  # - type: web
+  #   name: codex-research-radar
+  #   runtime: python
+  #   buildCommand: pip install -r requirements.txt
+  #   startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
