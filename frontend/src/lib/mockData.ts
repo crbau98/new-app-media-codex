@@ -2,11 +2,6 @@ export interface MediaItem {
   id: string
   title: string
   thumbnail: string
-<<<<<<< HEAD
-  mediaUrl?: string
-  pageUrl?: string
-=======
->>>>>>> origin/main
   source: 'Tube' | 'Redgifs' | 'Imgur' | 'Local' | 'Xtube'
   duration: string
   isVideo: boolean

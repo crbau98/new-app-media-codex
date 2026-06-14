@@ -1,14 +1,7 @@
-<<<<<<< HEAD
-import { useState, useCallback, useMemo, useRef } from 'react'
-import { cn } from '@/lib/utils'
-import type { MediaItem } from '@/lib/mockData'
-import { ExternalLink, Play, RefreshCw } from 'lucide-react'
-=======
 import { useState, useCallback, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import type { MediaItem } from '@/lib/mockData'
 import { Play, RefreshCw } from 'lucide-react'
->>>>>>> origin/main
 import { motion } from 'framer-motion'
 
 interface MediaCardProps {
@@ -19,19 +12,6 @@ interface MediaCardProps {
   onSelect?: (id: string) => void
 }
 
-<<<<<<< HEAD
-function withRetryBust(url: string, retryKey: number): string {
-  if (!retryKey || !url || url.startsWith('data:') || url.startsWith('blob:')) return url
-  const joiner = url.includes('?') ? '&' : '?'
-  return `${url}${joiner}retry=${retryKey}`
-}
-
-function canPreviewVideo(url: string | undefined): boolean {
-  return !!url && /\.(mp4|m4v|webm|mov)(\?|#|$)/i.test(url)
-}
-
-=======
->>>>>>> origin/main
 export default function MediaCard({
   item,
   aspectRatio = '4/5',
@@ -40,28 +20,6 @@ export default function MediaCard({
   onSelect,
 }: MediaCardProps) {
   const [loaded, setLoaded] = useState(false)
-<<<<<<< HEAD
-  const [posterError, setPosterError] = useState(false)
-  const [videoError, setVideoError] = useState(false)
-  const [hovered, setHovered] = useState(false)
-  const [retryKey, setRetryKey] = useState(0)
-  const imgRef = useRef<HTMLImageElement>(null)
-
-  const handleLoad = useCallback(() => setLoaded(true), [])
-  const handlePosterError = useCallback(() => setPosterError(true), [])
-  const handleRetry = useCallback(() => {
-    setPosterError(false)
-    setVideoError(false)
-    setLoaded(false)
-    setRetryKey((key) => key + 1)
-  }, [])
-
-  const posterSrc = useMemo(() => withRetryBust(item.thumbnail, retryKey), [item.thumbnail, retryKey])
-  const mediaSrc = useMemo(() => withRetryBust(item.mediaUrl ?? '', retryKey), [item.mediaUrl, retryKey])
-  const isVideo = item.isVideo
-  const showInlineVideo = hovered && isVideo && canPreviewVideo(item.mediaUrl) && !videoError
-  const openHref = item.mediaUrl || item.pageUrl
-=======
   const [error, setError] = useState(false)
   const [hovered, setHovered] = useState(false)
   const imgRef = useRef<HTMLImageElement>(null)
@@ -78,21 +36,14 @@ export default function MediaCard({
 
   const isNew = item.isNew
   const isVideo = item.isVideo
->>>>>>> origin/main
 
   return (
     <motion.div
       layout
       className={cn(
-<<<<<<< HEAD
-        'group relative rounded-[var(--radius-md)] overflow-hidden cursor-pointer bg-[var(--bg-elevated)]',
-        'border border-[var(--border-subtle)] shadow-sm',
-        'card-lift tile-zoom focus-within:ring-2 focus-within:ring-[var(--accent)]',
-=======
         'group relative rounded-[var(--radius-md)] overflow-hidden cursor-pointer',
         'border border-[var(--border-subtle)] shadow-sm',
         'card-lift tile-zoom',
->>>>>>> origin/main
         selected && 'ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-[var(--bg-base)]',
         className
       )}
@@ -105,60 +56,27 @@ export default function MediaCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
     >
-<<<<<<< HEAD
-      {showInlineVideo && mediaSrc ? (
-        <video
-          key={mediaSrc}
-          src={mediaSrc}
-          poster={posterSrc}
-          className="absolute inset-0 w-full h-full object-cover"
-          muted
-          playsInline
-          loop
-          autoPlay
-          preload="metadata"
-          onLoadedData={handleLoad}
-          onError={() => setVideoError(true)}
-        />
-      ) : !posterError ? (
-        <>
-          <img
-            ref={imgRef}
-            src={posterSrc}
-=======
       {/* Image */}
       {!error ? (
         <>
           <img
             ref={imgRef}
             src={item.thumbnail}
->>>>>>> origin/main
             alt={item.title}
             className={cn(
               'absolute inset-0 w-full h-full object-cover transition-opacity duration-500',
               loaded ? 'opacity-100' : 'opacity-0'
             )}
             onLoad={handleLoad}
-<<<<<<< HEAD
-            onError={handlePosterError}
-            loading="lazy"
-            decoding="async"
-          />
-=======
             onError={handleError}
             loading="lazy"
           />
           {/* Blur-up placeholder */}
->>>>>>> origin/main
           {!loaded && (
             <div
               className="absolute inset-0 bg-[var(--bg-elevated)]"
               style={{
-<<<<<<< HEAD
-                backgroundImage: `url(${posterSrc})`,
-=======
                 backgroundImage: `url(${item.thumbnail})`,
->>>>>>> origin/main
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
                 filter: 'blur(20px)',
@@ -168,15 +86,9 @@ export default function MediaCard({
           )}
         </>
       ) : (
-<<<<<<< HEAD
-        <div className="absolute inset-0 bg-[var(--bg-elevated)] flex flex-col items-center justify-center gap-2 text-[var(--text-tertiary)] px-4 text-center">
-          <RefreshCw size={20} />
-          <p className="text-xs">Media preview could not load.</p>
-=======
         /* Error fallback */
         <div className="absolute inset-0 bg-[var(--bg-elevated)] flex flex-col items-center justify-center gap-2 text-[var(--text-tertiary)]">
           <RefreshCw size={20} />
->>>>>>> origin/main
           <button
             onClick={(e) => {
               e.stopPropagation()
@@ -189,18 +101,6 @@ export default function MediaCard({
         </div>
       )}
 
-<<<<<<< HEAD
-      {item.isNew && (
-        <span className="absolute top-2 left-2 w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-live-pulse" />
-      )}
-
-      {isVideo && (
-        <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-sm bg-[var(--bg-overlay)] text-[var(--text-primary)] text-[11px] font-mono">
-          {item.duration || 'Video'}
-        </div>
-      )}
-
-=======
       {/* NEW dot */}
       {isNew && (
         <span className="absolute top-2 left-2 w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-live-pulse" />
@@ -214,21 +114,12 @@ export default function MediaCard({
       )}
 
       {/* Trending dot */}
->>>>>>> origin/main
       {item.isTrending && (
         <div className="absolute top-2 right-2 translate-x-0" style={{ right: isVideo ? '58px' : '8px' }}>
           <span className="live-dot" title="Trending now" />
         </div>
       )}
 
-<<<<<<< HEAD
-      <div
-        className={cn(
-          'absolute inset-x-0 bottom-0 p-3 flex flex-col gap-1',
-          'bg-gradient-to-t from-[rgba(3,3,5,0.82)] via-[rgba(3,3,5,0.38)] to-transparent',
-          'transition-opacity duration-300',
-          hovered ? 'opacity-100' : 'opacity-100 md:opacity-0'
-=======
       {/* Bottom gradient overlay + info */}
       <div
         className={cn(
@@ -236,43 +127,28 @@ export default function MediaCard({
           'bg-gradient-to-t from-[rgba(3,3,5,0.7)] via-[rgba(3,3,5,0.35)] to-transparent',
           'transition-opacity duration-300',
           hovered ? 'opacity-100' : 'opacity-0 md:opacity-0'
->>>>>>> origin/main
         )}
       >
         <h4 className="text-sm font-semibold text-[var(--text-primary)] line-clamp-2 leading-snug">
           {item.title}
         </h4>
         <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
-<<<<<<< HEAD
-          <span className="truncate">{item.creator}</span>
-=======
           <span>{item.creator}</span>
->>>>>>> origin/main
           <span>•</span>
           <span>{item.source}</span>
         </div>
       </div>
 
-<<<<<<< HEAD
-=======
       {/* Source badge (bottom-left, always visible but subtle) */}
->>>>>>> origin/main
       <div className="absolute bottom-2 left-2 flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] bg-[var(--bg-overlay)] px-1.5 py-0.5 rounded-sm opacity-70 group-hover:opacity-100 transition-opacity">
         {item.source}
       </div>
 
-<<<<<<< HEAD
-      {isVideo && (
-        <div
-          className={cn(
-            'absolute inset-0 flex items-center justify-center transition-all duration-300 pointer-events-none',
-=======
       {/* Play overlay */}
       {isVideo && (
         <div
           className={cn(
             'absolute inset-0 flex items-center justify-center transition-all duration-300',
->>>>>>> origin/main
             hovered ? 'opacity-100' : 'opacity-0'
           )}
         >
@@ -282,23 +158,7 @@ export default function MediaCard({
         </div>
       )}
 
-<<<<<<< HEAD
-      {openHref && (
-        <a
-          href={openHref}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="absolute top-2 left-2 translate-y-5 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all rounded-full bg-[var(--bg-overlay)] p-1.5 text-white"
-          aria-label={`Open ${item.title}`}
-        >
-          <ExternalLink size={14} />
-        </a>
-      )}
-
-=======
       {/* Selected checkmark */}
->>>>>>> origin/main
       {selected && (
         <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-[var(--accent)] flex items-center justify-center">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
