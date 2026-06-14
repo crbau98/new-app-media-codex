@@ -12,9 +12,13 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint . --ext .ts,.tsx",
-    "lint:fix": "eslint . --ext .ts,.tsx --fix"
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "mobile:sync": "npm run build && npx cap sync",
+    "mobile:ios": "npm run mobile:sync && npx cap open ios",
+    "mobile:android": "npm run mobile:sync && npx cap open android"
   },
   "dependencies": {
+    "@capacitor/core": "^7.4.4",
     "@tanstack/react-query": "^5.90.0",
     "@tanstack/react-virtual": "^3.13.0",
     "@types/dompurify": "^3.2.0",
@@ -33,6 +37,9 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/cli": "^7.4.4",
+    "@capacitor/ios": "^7.4.4",
     "@eslint/js": "^9.39.4",
     "@tailwindcss/vite": "^4.2.0",
     "@testing-library/dom": "^10.4.1",
