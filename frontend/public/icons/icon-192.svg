@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" role="img" aria-label="Media Codex icon">
+  <defs>
+    <linearGradient id="g" x1="20" y1="12" x2="172" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff5fd7" />
+      <stop offset="0.45" stop-color="#8b5cf6" />
+      <stop offset="1" stop-color="#06b6d4" />
+    </linearGradient>
+    <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-opacity="0.35" />
+    </filter>
+  </defs>
+  <rect width="192" height="192" rx="48" fill="#0b0b12" />
+  <path d="M52 56c0-10 8-18 18-18h52c10 0 18 8 18 18v80c0 10-8 18-18 18H70c-10 0-18-8-18-18V56Z" fill="url(#g)" filter="url(#s)" />
+  <path d="M76 78c0-6 7-10 12-7l38 22c5 3 5 11 0 14l-38 22c-5 3-12-1-12-7V78Z" fill="white" opacity="0.95" />
+</svg>
