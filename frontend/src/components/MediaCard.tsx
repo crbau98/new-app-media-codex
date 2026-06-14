@@ -54,10 +54,14 @@ export default function MediaCard({
   return (
     <motion.div
       layout
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
       className={cn(
         'group relative rounded-[var(--radius-md)] overflow-hidden cursor-pointer bg-[var(--bg-elevated)]',
         'border border-[var(--border-subtle)] shadow-sm',
-        'card-lift tile-zoom focus-within:ring-2 focus-within:ring-[var(--accent)]',
+        'card-lift tile-zoom',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)]',
         selected && 'ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-[var(--bg-base)]',
         className
       )}
@@ -65,6 +69,12 @@ export default function MediaCard({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={() => onSelect?.(item.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect?.(item.id)
+        }
+      }}
       whileTap={{ scale: 0.98 }}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
@@ -187,6 +197,7 @@ export default function MediaCard({
           onClick={(e) => e.stopPropagation()}
           className="absolute top-2 left-2 translate-y-5 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all rounded-full bg-[var(--bg-overlay)] p-1.5 text-white"
           aria-label={`Open ${item.title}`}
+          tabIndex={-1}
         >
           <ExternalLink size={14} />
         </a>

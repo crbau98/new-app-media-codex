@@ -244,7 +244,7 @@ export function adaptScreenshot(s: BackendScreenshot): MediaItem {
     thumbnailUrl ||
     previewUrl ||
     (looksLikeImage(directMediaUrl) ? directMediaUrl : '') ||
-    '/placeholder.jpg'
+    ''
 
   const creator = s.performer_username || 'Unknown'
   const tags = parseTags(s.ai_tags || s.user_tags)
@@ -275,7 +275,7 @@ export function adaptPerformer(p: BackendPerformer): Creator {
   const avatar =
     resolvePublicUrl(p.avatar_url) ||
     resolvePublicUrl(p.avatar_local) ||
-    '/placeholder-avatar.jpg'
+    ''
 
   return {
     id: String(p.id),

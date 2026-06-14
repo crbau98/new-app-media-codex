@@ -1,14 +1,11 @@
 {
   "name": "Media Codex",
-  "short_name": "Codex",
+  "short_name": "MediaCodex",
   "description": "A private, mobile-ready media library for browsing, organizing, and playing your saved media.",
-  "start_url": "/#/media",
-  "scope": "/",
+  "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait",
   "background_color": "#0b0b12",
   "theme_color": "#0b0b12",
-  "categories": ["entertainment", "photo", "video"],
   "icons": [
     {
       "src": "/icons/icon-192.svg",

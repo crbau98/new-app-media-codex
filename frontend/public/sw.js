@@ -1,47 +1,54 @@
-const CACHE_NAME = 'media-codex-shell-v1'
-const SHELL_ASSETS = ['/', '/manifest.webmanifest']
+/* Media Codex Service Worker — cache-first strategy */
+
+const CACHE_NAME = 'media-codex-v1'
+const PRECACHE_URLS = [
+  '/',
+  '/manifest.webmanifest',
+  '/icons/icon-192.svg',
+  '/icons/icon-512.svg',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(SHELL_ASSETS))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
   )
+  self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim())
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
   )
+  self.clients.claim()
 })
 
 self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
 
-  if (request.method !== 'GET') return
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws/')) return
-  if (request.destination === 'video' || request.headers.has('range')) return
-
-  if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).catch(() => caches.match('/')))
+  // Skip cross-origin, non-GET, API routes, and range requests
+  if (
+    url.origin !== location.origin ||
+    request.method !== 'GET' ||
+    url.pathname.startsWith('/api/') ||
+    request.headers.get('range')
+  ) {
     return
   }
 
-  if (url.origin === self.location.origin) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        const network = fetch(request).then((response) => {
-          if (response && response.ok) {
-            const clone = response.clone()
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone))
-          }
-          return response
-        })
-        return cached || network
-      })
-    )
-  }
+  event.respondWith(
+    caches.open(CACHE_NAME).then(async (cache) => {
+      const cached = await cache.match(request)
+      // Cache-first: return immediately if cached
+      if (cached) return cached
+
+      const response = await fetch(request)
+      if (response.ok && response.status < 400) {
+        cache.put(request, response.clone())
+      }
+      return response
+    })
+  )
 })

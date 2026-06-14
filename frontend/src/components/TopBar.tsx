@@ -1,127 +1,125 @@
-import { useState, useEffect, lazy, Suspense } from "react"
-import { useIsFetching } from "@tanstack/react-query"
-import { useAppStore } from "../store"
-import { cn } from "@/lib/cn"
-import { UniversalSearchBar } from "./UniversalSearchBar"
-import { NotificationBell } from "./NotificationBell"
-import { NotificationPanel } from "./NotificationPanel"
-import { AnimatePresence } from "framer-motion"
+import { useState, useEffect, useRef } from 'react'
+import { useAppStore } from '@/store'
+import { cn } from '@/lib/utils'
+import {
+  Search,
+  Bell,
+  Sun,
+  Moon,
+  Menu,
+  Command,
+} from 'lucide-react'
 
-const ShortcutModal = lazy(() => import("./ShortcutModal").then((m) => ({ default: m.ShortcutModal })))
-
-const VIEW_LABELS: Record<string, string> = {
-  images: "Media",
-  performers: "Creators",
-  settings: "Settings",
-  search: "Search",
-  explore: "Explore",
-}
-
-export function TopBar() {
-  const isFetching = useIsFetching()
-  const activeView = useAppStore((s) => s.activeView)
-  const theme = useAppStore((s) => s.theme)
+export default function TopBar() {
+  const [scrolled, setScrolled] = useState(false)
+  const [searchFocused, setSearchFocused] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
   const toggleTheme = useAppStore((s) => s.toggleTheme)
-  const collapsed = useAppStore((s) => s.sidebarCollapsed)
-  const mobileNavOpen = useAppStore((s) => s.mobileNavOpen)
-  const setMobileNavOpen = useAppStore((s) => s.setMobileNavOpen)
-
-  const leftOffset = collapsed ? "lg:left-[72px]" : "lg:left-[240px]"
-  const [shortcutsOpen, setShortcutsOpen] = useState(false)
-  const [topBarEnhancementsReady, setTopBarEnhancementsReady] = useState(false)
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const theme = useAppStore((s) => s.theme)
+  const toggleCommandPalette = useAppStore((s) => s.toggleCommandPalette)
+  const unreadCount = useAppStore((s) => s.unreadCount)
+  const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
 
   useEffect(() => {
-    function openFromShortcut() {
-      setShortcutsOpen(true)
-    }
-    window.addEventListener("open-shortcuts-overlay", openFromShortcut as EventListener)
-    return () => window.removeEventListener("open-shortcuts-overlay", openFromShortcut as EventListener)
+    const onScroll = () => setScrolled(window.scrollY > 8)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  // Keyboard shortcut: Cmd/Ctrl+K for command palette, / for search focus
   useEffect(() => {
-    let cancelled = false
-
-    const enableEnhancements = () => {
-      if (!cancelled) setTopBarEnhancementsReady(true)
-    }
-
-    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      const idleId = window.requestIdleCallback(enableEnhancements, { timeout: 1200 })
-      return () => {
-        cancelled = true
-        window.cancelIdleCallback(idleId)
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        toggleCommandPalette()
+      }
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey) {
+        const target = e.target as HTMLElement
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
+        e.preventDefault()
+        searchRef.current?.focus()
+      }
+      if (e.key === 'Escape') {
+        setCommandPaletteOpen(false)
+        searchRef.current?.blur()
       }
     }
-
-    const timeoutId = setTimeout(enableEnhancements, 400)
-    return () => {
-      cancelled = true
-      clearTimeout(timeoutId)
-    }
-  }, [])
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [toggleCommandPalette, setCommandPaletteOpen])
 
   return (
-    <>
-      {isFetching > 0 && (
-        <div className="fixed inset-x-0 top-0 z-[55] h-0.5 overflow-hidden" aria-hidden="true">
-          <div className="topbar-loading-bar h-full" />
-        </div>
+    <header
+      className={cn(
+        'topbar-shell fixed top-0 right-0 z-40 flex items-center justify-between px-4',
+        scrolled && 'scrolled'
       )}
-      <header
+      style={{
+        left: 'auto',
+      }}
+    >
+      {/* Mobile hamburger */}
+      <button
+        className="md:hidden p-2 -ml-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50"
+        aria-label="Open menu"
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Search */}
+      <div
         className={cn(
-          "fixed inset-x-0 top-0 z-20 px-3 pt-3 transition-[left] duration-200 sm:px-5 lg:px-6",
-          leftOffset,
+          'hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-200',
+          searchFocused
+            ? 'border-[var(--border-medium)] bg-[var(--bg-surface)] w-80'
+            : 'border-[var(--border-subtle)] bg-transparent w-52'
         )}
       >
-        <div className="topbar-shell mx-auto flex max-w-[1680px] items-center gap-4 rounded-[20px] px-4 py-2.5 sm:gap-5 sm:px-5">
-          <button
-            onClick={() => setMobileNavOpen(!mobileNavOpen)}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text-primary md:hidden"
-            aria-label="Open navigation"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
-          </button>
+        <Search size={16} className="text-[var(--text-tertiary)] shrink-0" />
+        <input
+          ref={searchRef}
+          type="text"
+          placeholder="Search media, creators, categories..."
+          className="bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none w-full"
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+        />
+        <span className="hidden lg:flex items-center gap-0.5 kbd shrink-0">
+          <Command size={10} />K
+        </span>
+      </div>
 
-          <h2 className="hero-title min-w-0 shrink-0 text-[17px] font-semibold tracking-[-0.035em] text-text-primary sm:text-[19px]">
-            <span className="text-gradient-brand">{VIEW_LABELS[activeView] ?? activeView}</span>
-          </h2>
+      {/* Mobile search icon */}
+      <button
+        className="md:hidden p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50"
+        aria-label="Search"
+        onClick={() => setCommandPaletteOpen(true)}
+      >
+        <Search size={20} />
+      </button>
 
-          <UniversalSearchBar />
-
-          <div className="flex-1" />
-
-          <div className="flex items-center gap-2 sm:gap-2.5">
-            <button
-              onClick={toggleTheme}
-              className="hidden h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-white/[0.06] hover:text-text-primary sm:flex"
-              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {theme === "dark" ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              )}
-            </button>
-
-            {topBarEnhancementsReady && (
-              <>
-                <NotificationBell onClick={() => setNotificationsOpen((v) => !v)} />
-                <AnimatePresence>
-                  {notificationsOpen && (
-                    <NotificationPanel onClose={() => setNotificationsOpen(false)} />
-                  )}
-                </AnimatePresence>
-              </>
-            )}
-          </div>
+      {/* Right actions */}
+      <div className="flex items-center gap-1">
+        <button
+          className="relative p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50 transition-colors"
+          aria-label="Notifications"
+        >
+          <Bell size={18} />
+          {unreadCount > 0 && (
+            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-[var(--live-pulse)] animate-live-pulse" />
+          )}
+        </button>
+        <button
+          onClick={toggleTheme}
+          className="hidden md:flex p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50 transition-colors"
+          aria-label="Toggle theme"
+        >
+          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+        <div className="w-8 h-8 rounded-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center text-xs font-semibold text-[var(--text-secondary)] ml-1">
+          U
         </div>
-      </header>
-      {(topBarEnhancementsReady || shortcutsOpen) && (
-        <Suspense fallback={null}>
-          <ShortcutModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-        </Suspense>
-      )}
-    </>
+      </div>
+    </header>
   )
 }
