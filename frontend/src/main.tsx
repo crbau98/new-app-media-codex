@@ -8,10 +8,10 @@ import { useAppStore, getViewFromHash } from './store'
 import type { ApiError } from './lib/api'
 import { sharedQueryKeys } from './features/sharedQueries'
 
-// ── Theme initialization (default 'dark') ───────────────────────────
+// Theme initialization (default 'dark')
 document.documentElement.dataset.theme = 'dark'
 
-// ── Query client defaults ───────────────────────────────────────────
+// Query client defaults
 const QUERY_DEFAULTS = {
   STALE_TIME: 30_000,
   GC_TIME: 5 * 60_000,
@@ -23,14 +23,7 @@ const QUERY_DEFAULTS = {
   MAX_RETRY_DELAY_503: 30_000,
 }
 
-// ââ Service worker cleanup (prevent stale caches from blocking updates) ââ
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((regs) => {
-    regs.forEach((reg) => reg.unregister())
-  })
-}
-
-// ââ Hash sync (back/forward navigation) ââââââââââââââââââââââââââââââ
+// Hash sync (back/forward navigation)
 window.addEventListener('hashchange', () => {
   const view = getViewFromHash()
   if (useAppStore.getState().activeView !== view) {
@@ -38,7 +31,7 @@ window.addEventListener('hashchange', () => {
   }
 })
 
-// ââ Retry logic ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// Retry logic
 const NON_RETRYABLE_ERRORS = new Set(['AbortError', 'CancelledError'])
 const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504])
 const RETRYABLE_MESSAGE_RE = /Failed to fetch|NetworkError|timed out|ECONNRESET/i
@@ -68,7 +61,7 @@ function retryDelay(attempt: number, error: unknown): number {
   return base + jitter
 }
 
-// ââ Error Boundary âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// Error Boundary
 interface ErrorBoundaryState { hasError: boolean; error: Error | null }
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
@@ -101,7 +94,7 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryS
   }
 }
 
-// ââ Query Client âââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// Query Client
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -114,7 +107,7 @@ const queryClient = new QueryClient({
       },
       retryDelay,
       refetchOnWindowFocus: false,
-      placeholderData: (prev: unknown) => prev, // show stale data while retrying
+      placeholderData: (prev: unknown) => prev,
       refetchOnReconnect: 'always',
       refetchOnMount: false,
       refetchIntervalInBackground: false,
@@ -122,12 +115,12 @@ const queryClient = new QueryClient({
   },
 })
 
-
 // Seed TanStack Query cache from server-injected __INITIAL_DATA__ to avoid first-paint flicker
-const _idata = typeof window !== "undefined" && (window as any).__INITIAL_DATA__
+const _idata = typeof window !== 'undefined' && (window as any).__INITIAL_DATA__
 if (_idata?.media_stats) queryClient.setQueryData(sharedQueryKeys.mediaStats(), _idata.media_stats)
 if (_idata?.performer_stats) queryClient.setQueryData(sharedQueryKeys.performerStats(), _idata.performer_stats)
-// ââ Render ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+// Render
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('Root element #root not found')
 
@@ -139,3 +132,11 @@ createRoot(rootEl).render(
     </QueryClientProvider>
   </AppErrorBoundary>
 )
+
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((error) => {
+      console.warn('[PWA] Service worker registration failed', error)
+    })
+  })
+}
