@@ -89,8 +89,6 @@ function makeItem(
     id: `m${id}`,
     title,
     thumbnail: seedUrl(seed, 400, isVideo ? 500 : 600),
-    mediaUrl: opts.mediaUrl,
-    pageUrl: opts.pageUrl,
     source: (['Tube', 'Redgifs', 'Imgur', 'Local', 'Xtube'] as const)[
       Math.floor(Math.random() * 5)
     ],
@@ -122,6 +120,78 @@ export const mediaItems: MediaItem[] = [
   makeItem(8, 'Hot Bench Encounter', 'gay sauna', { isVideo: true, tags: ['sauna', 'bench'] }),
   makeItem(9, 'After Hours Sauna', 'gay sauna', { isVideo: true, tags: ['sauna', 'night'] }),
   makeItem(10, 'Finnish Steam Ritual', 'gay sauna', { isVideo: false, tags: ['sauna', 'ritual'] }),
+  makeItem(11, 'Towel Drop Moment', 'gay sauna', { isVideo: true, tags: ['sauna', 'tease'] }),
+  makeItem(12, 'Wet Wood Benches', 'gay sauna', { isVideo: true, tags: ['sauna', 'wet'] }),
+  makeItem(13, 'Steam and Shadows', 'gay sauna', { isVideo: false, tags: ['sauna', 'artistic'] }),
+  makeItem(14, 'Heat Exchange', 'gay sauna', { isVideo: true, tags: ['sauna', 'passion'] }),
+
+  // cum eating gay
+  makeItem(15, 'Dripping Chin Closeup', 'cum eating gay', { isVideo: true, tags: ['cum', 'closeup'] }),
+  makeItem(16, 'Swallow Session', 'cum eating gay', { isVideo: true, tags: ['cum', 'swallow'] }),
+  makeItem(17, 'Tongue Collection', 'cum eating gay', { isVideo: false, tags: ['cum', 'tongue'] }),
+  makeItem(18, 'Feeding Frenzy', 'cum eating gay', { isVideo: true, tags: ['cum', 'group'] }),
+  makeItem(19, 'Drizzle and Lick', 'cum eating gay', { isVideo: true, tags: ['cum', 'lick'] }),
+  makeItem(20, 'Messy Finale', 'cum eating gay', { isVideo: true, tags: ['cum', 'messy'] }),
+  makeItem(21, 'Drop by Drop', 'cum eating gay', { isVideo: false, tags: ['cum', 'artistic'] }),
+  makeItem(22, 'Clean Up Duty', 'cum eating gay', { isVideo: true, tags: ['cum', 'clean'] }),
+
+  // ejaculate
+  makeItem(23, 'High Pressure Release', 'ejaculate', { isVideo: true, tags: ['cum', 'pressure'] }),
+  makeItem(24, 'Fountain Shot', 'ejaculate', { isVideo: true, tags: ['cum', 'fountain'] }),
+  makeItem(25, 'Slow Motion Burst', 'ejaculate', { isVideo: true, tags: ['cum', 'slowmo'] }),
+  makeItem(26, 'Double Stream', 'ejaculate', { isVideo: false, tags: ['cum', 'double'] }),
+  makeItem(27, 'Arc Shot', 'ejaculate', { isVideo: true, tags: ['cum', 'arc'] }),
+  makeItem(28, 'Power Load', 'ejaculate', { isVideo: true, tags: ['cum', 'power'] }),
+  makeItem(29, 'Drip Trail', 'ejaculate', { isVideo: false, tags: ['cum', 'trail'] }),
+  makeItem(30, 'Volcano Eruption', 'ejaculate', { isVideo: true, tags: ['cum', 'eruption'] }),
+
+  // gay threesome
+  makeItem(31, 'Triangle of Pleasure', 'gay threesome', { isVideo: true, tags: ['threesome', 'triangle'] }),
+  makeItem(32, 'Tag Team Massage', 'gay threesome', { isVideo: true, tags: ['threesome', 'massage'] }),
+  makeItem(33, 'Three-Way Kiss', 'gay threesome', { isVideo: false, tags: ['threesome', 'kiss'] }),
+  makeItem(34, 'Spin the Bottom', 'gay threesome', { isVideo: true, tags: ['threesome', 'spin'] }),
+  makeItem(35, 'Oil Slick Trio', 'gay threesome', { isVideo: true, tags: ['threesome', 'oil'] }),
+  makeItem(36, 'Mirror Reflections', 'gay threesome', { isVideo: true, tags: ['threesome', 'mirror'] }),
+  makeItem(37, 'Chain Reaction', 'gay threesome', { isVideo: true, tags: ['threesome', 'chain'] }),
+  makeItem(38, 'Midnight Train', 'gay threesome', { isVideo: true, tags: ['threesome', 'train'] }),
+
+  // hyperspermia
+  makeItem(39, 'Overflow Bowl', 'hyperspermia', { isVideo: true, tags: ['hyper', 'volume'] }),
+  makeItem(40, 'Endless Stream', 'hyperspermia', { isVideo: true, tags: ['hyper', 'stream'] }),
+  makeItem(41, 'Soaked Sheets', 'hyperspermia', { isVideo: true, tags: ['hyper', 'wet'] }),
+  makeItem(42, 'Fill the Cup', 'hyperspermia', { isVideo: false, tags: ['hyper', 'cup'] }),
+  makeItem(43, 'Milking Machine', 'hyperspermia', { isVideo: true, tags: ['hyper', 'machine'] }),
+  makeItem(44, 'Gush and Flow', 'hyperspermia', { isVideo: true, tags: ['hyper', 'flow'] }),
+
+  // penis
+  makeItem(45, 'Morning Glory', 'penis', { isVideo: false, tags: ['cock', 'morning'] }),
+  makeItem(46, 'Vein Mapping', 'penis', { isVideo: false, tags: ['cock', 'veins'] }),
+  makeItem(47, 'Growth Timelapse', 'penis', { isVideo: true, tags: ['cock', 'grow'] }),
+  makeItem(48, 'Head Closeup', 'penis', { isVideo: false, tags: ['cock', 'closeup'] }),
+  makeItem(49, 'Shaft Study', 'penis', { isVideo: true, tags: ['cock', 'study'] }),
+  makeItem(50, 'Uncut Reveal', 'penis', { isVideo: true, tags: ['cock', 'uncut'] }),
+  makeItem(51, 'Shadow Play', 'penis', { isVideo: false, tags: ['cock', 'shadow'] }),
+  makeItem(52, 'Drip at the Tip', 'penis', { isVideo: true, tags: ['cock', 'precum'] }),
+
+  // gay solo
+  makeItem(53, 'Bedroom Mirror', 'gay solo', { isVideo: true, tags: ['solo', 'mirror'] }),
+  makeItem(54, 'Shower Steam', 'gay solo', { isVideo: true, tags: ['solo', 'shower'] }),
+  makeItem(55, 'Window Light', 'gay solo', { isVideo: false, tags: ['solo', 'light'] }),
+  makeItem(56, 'Edging Session', 'gay solo', { isVideo: true, tags: ['solo', 'edge'] }),
+  makeItem(57, 'Couch Spread', 'gay solo', { isVideo: true, tags: ['solo', 'couch'] }),
+  makeItem(58, 'Late Night Stroke', 'gay solo', { isVideo: true, tags: ['solo', 'night'] }),
+  makeItem(59, 'Outdoor Streak', 'gay solo', { isVideo: false, tags: ['solo', 'outdoor'] }),
+  makeItem(60, 'Oil and Skin', 'gay solo', { isVideo: true, tags: ['solo', 'oil'] }),
+
+  // gay massage
+  makeItem(61, 'Warm Oil Rub', 'gay massage', { isVideo: true, tags: ['massage', 'oil'] }),
+  makeItem(62, 'Deep Tissue Touch', 'gay massage', { isVideo: true, tags: ['massage', 'deep'] }),
+  makeItem(63, 'Table Tension', 'gay massage', { isVideo: true, tags: ['massage', 'table'] }),
+  makeItem(64, 'Four Hands Flow', 'gay massage', { isVideo: true, tags: ['massage', 'fourhands'] }),
+  makeItem(65, 'Hot Stone Trail', 'gay massage', { isVideo: false, tags: ['massage', 'stones'] }),
+  makeItem(66, 'Sensory Release', 'gay massage', { isVideo: true, tags: ['massage', 'sensory'] }),
+  makeItem(67, 'Back Arch', 'gay massage', { isVideo: true, tags: ['massage', 'back'] }),
+  makeItem(68, 'Happy Ending', 'gay massage', { isVideo: true, tags: ['massage', 'finish'] }),
 ]
 
 export const categories: CategoryDef[] = categoryNames.map((name) => ({
@@ -134,6 +204,13 @@ export function getMediaByCategory(category: string): MediaItem[] {
   return mediaItems.filter((m) => m.category === category)
 }
 
+export function getTrendingItems(count = 6): MediaItem[] {
+  return mediaItems
+    .filter((m) => m.isTrending)
+    .sort(() => Math.random() - 0.5)
+    .slice(0, count)
+}
+
 export function getFeaturedItems(count = 3): MediaItem[] {
-  return mediaItems.filter((m) => m.category === 'Featured').slice(0, count)
+  return getMediaByCategory('Featured').slice(0, count)
 }
