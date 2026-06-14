@@ -1,13 +1,10 @@
-import { Component, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { HashRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { SpeedInsights } from '@vercel/speed-insights/react'
 import './index.css'
-import App from './App'
-import { useAppStore, getViewFromHash } from './store'
-import type { ApiError } from './lib/api'
-import { sharedQueryKeys } from './features/sharedQueries'
+import App from './App.tsx'
 
+<<<<<<< HEAD
 // Theme initialization (default 'dark')
 document.documentElement.dataset.theme = 'dark'
 
@@ -95,26 +92,25 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryS
 }
 
 // Query Client
+=======
+>>>>>>> origin/main
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: QUERY_DEFAULTS.STALE_TIME,
-      gcTime: QUERY_DEFAULTS.GC_TIME,
-      retry: (failureCount, error) => {
-        if (!isRetryableQueryError(error)) return false
-        const maxRetries = is503(error) ? QUERY_DEFAULTS.MAX_RETRIES_503 : QUERY_DEFAULTS.MAX_RETRIES
-        return failureCount < maxRetries
-      },
-      retryDelay,
+      staleTime: 1000 * 60 * 5,
       refetchOnWindowFocus: false,
+<<<<<<< HEAD
       placeholderData: (prev: unknown) => prev,
       refetchOnReconnect: 'always',
       refetchOnMount: false,
       refetchIntervalInBackground: false,
+=======
+>>>>>>> origin/main
     },
   },
 })
 
+<<<<<<< HEAD
 // Seed TanStack Query cache from server-injected __INITIAL_DATA__ to avoid first-paint flicker
 const _idata = typeof window !== 'undefined' && (window as any).__INITIAL_DATA__
 if (_idata?.media_stats) queryClient.setQueryData(sharedQueryKeys.mediaStats(), _idata.media_stats)
@@ -127,10 +123,14 @@ if (!rootEl) throw new Error('Root element #root not found')
 createRoot(rootEl).render(
   <AppErrorBoundary>
     <QueryClientProvider client={queryClient}>
+=======
+createRoot(document.getElementById('root')!).render(
+  <QueryClientProvider client={queryClient}>
+    <HashRouter>
+>>>>>>> origin/main
       <App />
-      <SpeedInsights />
-    </QueryClientProvider>
-  </AppErrorBoundary>
+    </HashRouter>
+  </QueryClientProvider>,
 )
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

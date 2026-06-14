@@ -2,7 +2,11 @@
  * API Adapter layer: transforms backend DTOs into frontend-friendly types.
  *
  * The frontend types (MediaItem, Creator, CategoryDef) live in mockData.ts
+<<<<<<< HEAD
  * and remain backwards-compatible with existing components.
+=======
+ * and MUST NOT be changed — components depend on them.
+>>>>>>> origin/main
  */
 
 import type { MediaItem, Creator, CategoryDef } from './mockData'
@@ -160,11 +164,18 @@ export interface DashboardPayload {
    ────────────────────────────────────────────── */
 
 const VALID_SOURCES = new Set(['Tube', 'Redgifs', 'Imgur', 'Local', 'Xtube'])
+<<<<<<< HEAD
 const VIDEO_EXTENSION_RE = /\.(mp4|m4v|webm|mov|mkv|avi|gifv)(\?|#|$)/i
 const IMAGE_EXTENSION_RE = /\.(jpg|jpeg|png|webp|gif|avif)(\?|#|$)/i
 
 function normalizeSource(src: string): MediaItem['source'] {
   if (VALID_SOURCES.has(src)) return src as MediaItem['source']
+=======
+
+function normalizeSource(src: string): MediaItem['source'] {
+  if (VALID_SOURCES.has(src)) return src as MediaItem['source']
+  // Try common aliases
+>>>>>>> origin/main
   const lower = src.toLowerCase()
   if (lower.includes('tube')) return 'Tube'
   if (lower.includes('redgifs')) return 'Redgifs'
@@ -188,6 +199,7 @@ function parseTags(tagField: string | null | undefined): string[] {
     .filter(Boolean)
 }
 
+<<<<<<< HEAD
 function firstResolvedUrl(...paths: Array<string | null | undefined>): string {
   for (const path of paths) {
     const resolved = resolvePublicUrl(path)
@@ -216,12 +228,28 @@ function generateDuration(mediaUrl: string, source: MediaItem['source']): string
     return 'Video'
   }
   return ''
+=======
+function generateDuration(sourceUrl: string | null | undefined, source: string): string {
+  const isVideoLike =
+    !!sourceUrl &&
+    /\.(mp4|webm|mov|mkv|avi|m4v|gifv)(\?|$)/i.test(sourceUrl)
+  if (!isVideoLike && source !== 'Redgifs' && source !== 'Tube' && source !== 'Xtube') {
+    return ''
+  }
+  const mins = Math.floor(Math.random() * 15) + 1
+  const secs = Math.floor(Math.random() * 59)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+>>>>>>> origin/main
 }
 
 function isNewlyCaptured(capturedAt: string): boolean {
   const then = new Date(capturedAt).getTime()
   const now = Date.now()
+<<<<<<< HEAD
   return Number.isFinite(then) && now - then < 24 * 60 * 60 * 1000
+=======
+  return now - then < 24 * 60 * 60 * 1000
+>>>>>>> origin/main
 }
 
 function capitalizeFirst(str: string): string {
@@ -234,6 +262,7 @@ function capitalizeFirst(str: string): string {
    ────────────────────────────────────────────── */
 
 export function adaptScreenshot(s: BackendScreenshot): MediaItem {
+<<<<<<< HEAD
   const source = normalizeSource(s.source)
   const pageUrl = firstResolvedUrl(s.page_url)
   const directMediaUrl = firstResolvedUrl(s.local_url, s.source_url)
@@ -250,16 +279,34 @@ export function adaptScreenshot(s: BackendScreenshot): MediaItem {
   const tags = parseTags(s.ai_tags || s.user_tags)
   const isVideo = isVideoLike(source, mediaUrl, pageUrl)
   const duration = isVideo ? generateDuration(mediaUrl, source) || 'Video' : ''
+=======
+  const thumbnail =
+    resolvePublicUrl(s.thumbnail_url) ||
+    resolvePublicUrl(s.local_url) ||
+    resolvePublicUrl(s.preview_url) ||
+    '/placeholder.jpg'
+
+  const source = normalizeSource(s.source)
+  const creator = s.performer_username || 'Unknown'
+  const tags = parseTags(s.ai_tags || s.user_tags)
+  const duration = generateDuration(s.source_url, source)
+>>>>>>> origin/main
 
   return {
     id: String(s.id),
     title: capitalizeFirst(s.term),
     thumbnail,
+<<<<<<< HEAD
     mediaUrl,
     pageUrl,
     source,
     duration,
     isVideo,
+=======
+    source,
+    duration,
+    isVideo: duration !== '',
+>>>>>>> origin/main
     category: s.term,
     creator,
     tags,
