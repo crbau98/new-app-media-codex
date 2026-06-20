@@ -54,8 +54,23 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(days / 7)}w ago`
 }
 
+const unsplashMalePhotos = [
+  'photo-1506794778202-cad84cf45f1d',
+  'photo-1566492031773-4f4e44671857',
+  'photo-1500648767791-00dcc994a43e',
+  'photo-1675557009285-b55f562641b9',
+  'photo-1583454110551-21f2fa2afe61',
+  'photo-1534438327276-14e5300c3a48',
+  'photo-1517836357463-d25dfeac3438',
+  'photo-1526506118085-60ce8714f8c5',
+  'photo-1581009146145-b5ef050c2e1e',
+  'photo-1530822847156-5df684ec5ee1',
+  'photo-1599058945522-28d584b6f0ff',
+]
+
 function seedUrl(seed: number, width = 400, height = 300): string {
-  return `https://picsum.photos/seed/${seed}/${width}/${height}`
+  const photoId = unsplashMalePhotos[seed % unsplashMalePhotos.length]
+  return `https://images.unsplash.com/${photoId}?w=${width}&h=${height}&fit=crop&q=80`
 }
 
 /* ────────────────────────────────────────────────

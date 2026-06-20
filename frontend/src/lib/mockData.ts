@@ -30,8 +30,37 @@ export interface CategoryDef {
   count: number
 }
 
-function seedUrl(seed: number, width = 400, height = 500): string {
-  return `https://picsum.photos/seed/${seed}/${width}/${height}`
+/* ────────────────────────────────────────────────
+   Image sources: actual male content imagery
+   ────────────────────────────────────────────── */
+
+// Unsplash photo IDs for male/fitness imagery (verified working)
+const unsplashMalePhotos = [
+  'photo-1506794778202-cad84cf45f1d',
+  'photo-1566492031773-4f4e44671857',
+  'photo-1500648767791-00dcc994a43e',
+  'photo-1675557009285-b55f562641b9',
+  'photo-1583454110551-21f2fa2afe61',
+  'photo-1534438327276-14e5300c3a48',
+  'photo-1517836357463-d25dfeac3438',
+  'photo-1526506118085-60ce8714f8c5',
+  'photo-1581009146145-b5ef050c2e1e',
+  'photo-1530822847156-5df684ec5ee1',
+  'photo-1599058945522-28d584b6f0ff',
+]
+
+function unsplashUrl(photoId: string, width: number, height: number): string {
+  return `https://images.unsplash.com/${photoId}?w=${width}&h=${height}&fit=crop&q=80`
+}
+
+function creatorAvatarUrl(seed: number): string {
+  // placebeard.it shows actual bearded men — reliable, fast, male-focused
+  return `https://placebeard.it/128/128/${seed}?grayscale=false`
+}
+
+function thumbnailUrl(seed: number, width: number, height: number): string {
+  const photoId = unsplashMalePhotos[seed % unsplashMalePhotos.length]
+  return unsplashUrl(photoId, width, height)
 }
 
 function videoDuration(): string {
@@ -47,18 +76,18 @@ function recentDate(daysAgo = 0): string {
 }
 
 export const creators: Creator[] = [
-  { id: 'c1', name: 'Alex Stone', avatar: seedUrl(901, 128, 128), followers: 12400, hasStory: true, storySeen: false },
-  { id: 'c2', name: 'Jordan Riley', avatar: seedUrl(902, 128, 128), followers: 8300, hasStory: true, storySeen: true },
-  { id: 'c3', name: 'Drew Kane', avatar: seedUrl(903, 128, 128), followers: 5600, hasStory: true, storySeen: false },
-  { id: 'c4', name: 'Sam Cruz', avatar: seedUrl(904, 128, 128), followers: 22100, hasStory: true, storySeen: false },
-  { id: 'c5', name: 'Mason Fox', avatar: seedUrl(905, 128, 128), followers: 9400, hasStory: false, storySeen: false },
-  { id: 'c6', name: 'Logan Blaze', avatar: seedUrl(906, 128, 128), followers: 15700, hasStory: true, storySeen: true },
-  { id: 'c7', name: 'Ryan Cole', avatar: seedUrl(907, 128, 128), followers: 7200, hasStory: true, storySeen: false },
-  { id: 'c8', name: 'Tyler Nash', avatar: seedUrl(908, 128, 128), followers: 18900, hasStory: false, storySeen: false },
-  { id: 'c9', name: 'Ethan Drake', avatar: seedUrl(909, 128, 128), followers: 4500, hasStory: true, storySeen: true },
-  { id: 'c10', name: 'Noah Reed', avatar: seedUrl(910, 128, 128), followers: 31200, hasStory: true, storySeen: false },
-  { id: 'c11', name: 'Liam Voss', avatar: seedUrl(911, 128, 128), followers: 6700, hasStory: false, storySeen: false },
-  { id: 'c12', name: 'Caleb West', avatar: seedUrl(912, 128, 128), followers: 11300, hasStory: true, storySeen: true },
+  { id: 'c1', name: 'Alex Stone', avatar: creatorAvatarUrl(1), followers: 12400, hasStory: true, storySeen: false },
+  { id: 'c2', name: 'Jordan Riley', avatar: creatorAvatarUrl(2), followers: 8300, hasStory: true, storySeen: true },
+  { id: 'c3', name: 'Drew Kane', avatar: creatorAvatarUrl(3), followers: 5600, hasStory: true, storySeen: false },
+  { id: 'c4', name: 'Sam Cruz', avatar: creatorAvatarUrl(4), followers: 22100, hasStory: true, storySeen: false },
+  { id: 'c5', name: 'Mason Fox', avatar: creatorAvatarUrl(5), followers: 9400, hasStory: false, storySeen: false },
+  { id: 'c6', name: 'Logan Blaze', avatar: creatorAvatarUrl(6), followers: 15700, hasStory: true, storySeen: true },
+  { id: 'c7', name: 'Ryan Cole', avatar: creatorAvatarUrl(7), followers: 7200, hasStory: true, storySeen: false },
+  { id: 'c8', name: 'Tyler Nash', avatar: creatorAvatarUrl(8), followers: 18900, hasStory: false, storySeen: false },
+  { id: 'c9', name: 'Ethan Drake', avatar: creatorAvatarUrl(9), followers: 4500, hasStory: true, storySeen: true },
+  { id: 'c10', name: 'Noah Reed', avatar: creatorAvatarUrl(10), followers: 31200, hasStory: true, storySeen: false },
+  { id: 'c11', name: 'Liam Voss', avatar: creatorAvatarUrl(11), followers: 6700, hasStory: false, storySeen: false },
+  { id: 'c12', name: 'Caleb West', avatar: creatorAvatarUrl(12), followers: 11300, hasStory: true, storySeen: true },
 ]
 
 const creatorNames = creators.map((c) => c.name)
@@ -83,10 +112,13 @@ function makeItem(
 ): MediaItem {
   const isVideo = opts.isVideo ?? Math.random() > 0.3
   const seed = 1000 + id
+  const width = 400
+  const height = isVideo ? 500 : 600
+
   return {
     id: `m${id}`,
     title,
-    thumbnail: seedUrl(seed, 400, isVideo ? 500 : 600),
+    thumbnail: thumbnailUrl(seed, width, height),
     source: (['Tube', 'Redgifs', 'Imgur', 'Local', 'Xtube'] as const)[
       Math.floor(Math.random() * 5)
     ],

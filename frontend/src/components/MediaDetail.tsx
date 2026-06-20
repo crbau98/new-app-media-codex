@@ -64,7 +64,7 @@ const mockComments = [
   {
     id: 'c1',
     name: 'Alex Stone',
-    avatar: 'https://picsum.photos/seed/901/64/64',
+    avatar: 'https://placebeard.it/64/64/1?grayscale=false',
     time: '2h ago',
     text: 'This is absolutely incredible. The cinematography is next level!',
     likes: 24,
@@ -72,7 +72,7 @@ const mockComments = [
   {
     id: 'c2',
     name: 'Jordan Riley',
-    avatar: 'https://picsum.photos/seed/902/64/64',
+    avatar: 'https://placebeard.it/64/64/2?grayscale=false',
     time: '5h ago',
     text: 'Been waiting for something like this. Quality content right here.',
     likes: 18,
@@ -80,7 +80,7 @@ const mockComments = [
   {
     id: 'c3',
     name: 'Drew Kane',
-    avatar: 'https://picsum.photos/seed/903/64/64',
+    avatar: 'https://placebeard.it/64/64/3?grayscale=false',
     time: '1d ago',
     text: 'The lighting in this one is perfect. Great work!',
     likes: 12,
@@ -88,7 +88,7 @@ const mockComments = [
   {
     id: 'c4',
     name: 'Sam Cruz',
-    avatar: 'https://picsum.photos/seed/904/64/64',
+    avatar: 'https://placebeard.it/64/64/4?grayscale=false',
     time: '1d ago',
     text: 'One of my favorites from this creator. Always delivers.',
     likes: 9,
@@ -96,7 +96,7 @@ const mockComments = [
   {
     id: 'c5',
     name: 'Mason Fox',
-    avatar: 'https://picsum.photos/seed/905/64/64',
+    avatar: 'https://placebeard.it/64/64/5?grayscale=false',
     time: '2d ago',
     text: 'Worth every second. Bookmarked for sure.',
     likes: 7,
