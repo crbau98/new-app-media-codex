@@ -161,7 +161,11 @@ export const useAppStore = create<AppState>()(
           return { theme: next }
         }),
       setTheme: (theme) => {
-        document.documentElement.setAttribute('data-theme', theme)
+        let resolved = theme
+        if (theme === 'auto') {
+          resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        }
+        document.documentElement.setAttribute('data-theme', resolved)
         set({ theme })
       },
 

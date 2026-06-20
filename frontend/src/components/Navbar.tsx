@@ -1,4 +1,5 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback } from 'react'
+import { useNavigate, useLocation } from 'react-router'
 import { useAppStore } from '@/store'
 import {
   Library,
@@ -16,6 +17,7 @@ import {
   Sun,
   ChevronLeft,
   ChevronRight,
+  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -23,32 +25,32 @@ const navSections = [
   {
     title: 'Library',
     items: [
-      { label: 'Media', icon: Library, href: '#/media' },
-      { label: 'Videos', icon: Video, href: '#/media' },
-      { label: 'Images', icon: Image, href: '#/media' },
-      { label: 'Favorites', icon: Heart, href: '#/media' },
+      { label: 'Media', icon: Library, href: '/media' },
+      { label: 'Videos', icon: Video, href: '/media' },
+      { label: 'Images', icon: Image, href: '/media' },
+      { label: 'Favorites', icon: Heart, href: '/media' },
     ],
   },
   {
     title: 'Discover',
     items: [
-      { label: 'Explore', icon: Compass, href: '#/explore' },
-      { label: 'Search', icon: Search, href: '#/search' },
-      { label: 'Creators', icon: Users, href: '#/creators' },
+      { label: 'Explore', icon: Compass, href: '/explore' },
+      { label: 'Search', icon: Search, href: '/search' },
+      { label: 'Creators', icon: Users, href: '/creators' },
     ],
   },
   {
     title: 'System',
     items: [
-      { label: 'Settings', icon: Settings, href: '#/settings' },
-      { label: 'Analytics', icon: BarChart3, href: '#/analytics' },
+      { label: 'Settings', icon: Settings, href: '/settings' },
+      { label: 'Analytics', icon: BarChart3, href: '/analytics' },
     ],
   },
   {
     title: 'Automation',
     items: [
-      { label: 'Crawl', icon: Bot, href: '#/settings' },
-      { label: 'Capture', icon: Camera, href: '#/settings' },
+      { label: 'Crawl', icon: Bot, href: '/settings' },
+      { label: 'Capture', icon: Camera, href: '/settings' },
     ],
   },
 ]
@@ -79,16 +81,23 @@ function LogoMark({ className }: { className?: string }) {
   )
 }
 
-export default function Navbar() {
+interface NavbarProps {
+  onClose?: () => void
+}
+
+export default function Navbar({ onClose }: NavbarProps) {
   const collapsed = useAppStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const toggleTheme = useAppStore((s) => s.toggleTheme)
   const theme = useAppStore((s) => s.theme)
-  const activeView = useAppStore((s) => s.activeView)
+  const setActiveView = useAppStore((s) => s.setActiveView)
 
-  const setActive = useCallback(
-    (label: string) => {
-      const map: Record<string, string> = {
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  const handleNav = useCallback(
+    (label: string, href: string) => {
+      const viewMap: Record<string, ReturnType<typeof useAppStore.getState>['activeView']> = {
         Media: 'images',
         Videos: 'images',
         Images: 'images',
@@ -101,34 +110,33 @@ export default function Navbar() {
         Crawl: 'settings',
         Capture: 'settings',
       }
-      const view = map[label] as ReturnType<typeof useAppStore.getState>['activeView']
-      if (view) useAppStore.getState().setActiveView(view)
+      const view = viewMap[label]
+      if (view) setActiveView(view)
+      navigate(href)
+      onClose?.()
     },
-    []
+    [navigate, setActiveView, onClose]
   )
 
   const isActive = useCallback(
     (label: string) => {
       const map: Record<string, string> = {
-        Media: 'images',
-        Videos: 'images',
-        Images: 'images',
-        Favorites: 'images',
-        Explore: 'explore',
-        Search: 'search',
-        Creators: 'creators',
-        Settings: 'settings',
-        Analytics: 'analytics',
+        Media: '/media',
+        Videos: '/media',
+        Images: '/media',
+        Favorites: '/media',
+        Explore: '/explore',
+        Search: '/search',
+        Creators: '/creators',
+        Settings: '/settings',
+        Analytics: '/analytics',
+        Crawl: '/settings',
+        Capture: '/settings',
       }
-      return activeView === map[label]
+      return location.pathname === map[label]
     },
-    [activeView]
+    [location.pathname]
   )
-
-  useEffect(() => {
-    // Ensure theme attribute is set on mount
-    document.documentElement.setAttribute('data-theme', theme)
-  }, [theme])
 
   return (
     <nav
@@ -138,7 +146,7 @@ export default function Navbar() {
       )}
       aria-label="Main navigation"
     >
-      {/* Logo */}
+      {/* Logo + mobile close */}
       <div className="h-14 flex items-center px-4 gap-3 shrink-0">
         <LogoMark className="w-8 h-8 text-[var(--accent)]" />
         {!collapsed && (
@@ -146,13 +154,22 @@ export default function Navbar() {
             Media Codex
           </span>
         )}
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="md:hidden ml-auto p-1 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]"
+            aria-label="Close menu"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       {/* Divider */}
       <div className="divider-fade mx-3 shrink-0" />
 
       {/* Nav Sections */}
-      <div className="flex-1 overflow-y-auto hide-scrollbar py-2 px-2 space-y-1 stagger-in">
+      <div className="flex-1 overflow-y-auto hide-scrollbar py-2 px-2 space-y-1">
         {navSections.map((section) => (
           <div key={section.title} className="mb-3">
             {!collapsed && (
@@ -164,12 +181,11 @@ export default function Navbar() {
               const active = isActive(item.label)
               const Icon = item.icon
               return (
-                <a
+                <button
                   key={item.label}
-                  href={item.href}
-                  onClick={() => setActive(item.label)}
+                  onClick={() => handleNav(item.label, item.href)}
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-md transition-colors relative group',
+                    'w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors relative group text-left',
                     active
                       ? 'bg-[var(--bg-surface)] text-[var(--text-primary)]'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50'
@@ -188,7 +204,7 @@ export default function Navbar() {
                       {item.label}
                     </span>
                   )}
-                </a>
+                </button>
               )
             })}
           </div>

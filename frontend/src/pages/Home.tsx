@@ -12,6 +12,7 @@ import {
 import { fetchMedia } from '@/lib/api'
 import { useQuery } from '@tanstack/react-query'
 import MediaCard from '@/components/MediaCard'
+import MediaDetail from '@/components/MediaDetail'
 import CategoryHeader from '@/components/CategoryHeader'
 import EmptyState from '@/components/EmptyState'
 import SkeletonGrid from '@/components/SkeletonGrid'
@@ -27,12 +28,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Shuffle,
+  X,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────
    Cinematic Hero
    ─────────────────────────────────────────────── */
-function CinematicHero() {
+function CinematicHero({ onWatch }: { onWatch: (item: MediaItem) => void }) {
   const featured = useMemo(() => getFeaturedItems(3), [])
   const [index, setIndex] = useState(0)
   const [_direction, setDirection] = useState(1)
@@ -52,7 +54,7 @@ function CinematicHero() {
   }
 
   return (
-    <div className="relative w-full h-[280px] md:h-[420px] rounded-[var(--radius-lg)] overflow-hidden mb-6">
+    <div className="relative w-full h-[200px] sm:h-[280px] md:h-[420px] rounded-[var(--radius-lg)] overflow-hidden mb-6">
       {/* Background layers with crossfade */}
       <AnimatePresence initial={false} mode="popLayout">
         <motion.div
@@ -77,7 +79,7 @@ function CinematicHero() {
       </AnimatePresence>
 
       {/* Content */}
-      <div className="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
+      <div className="absolute inset-0 flex flex-col justify-end p-4 sm:p-6 md:p-8">
         <AnimatePresence mode="wait">
           <motion.div
             key={current.id}
@@ -85,22 +87,25 @@ function CinematicHero() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-            className="flex flex-col gap-3 max-w-xl"
+            className="flex flex-col gap-2 sm:gap-3 max-w-xl"
           >
-            <span className="eyebrow text-[var(--accent)] bg-[var(--accent-dim)] px-3 py-1 rounded-full w-fit">
+            <span className="eyebrow text-[var(--accent)] bg-[var(--accent-dim)] px-3 py-1 rounded-full w-fit text-[11px] sm:text-sm">
               FEATURED
             </span>
-            <h1 className="hero-title text-[var(--text-primary)] line-clamp-2">
+            <h1 className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-[var(--text-primary)] line-clamp-2 leading-tight">
               {current.title}
             </h1>
-            <p className="text-sm text-[var(--text-secondary)]">
+            <p className="text-xs sm:text-sm text-[var(--text-secondary)]">
               {current.creator} • {current.duration || 'Photo'} • {current.source}
             </p>
             <div className="flex items-center gap-3 mt-1">
-              <button className="btn-primary">
+              <button
+                className="btn-primary tap-highlight-none"
+                onClick={() => onWatch(current)}
+              >
                 <Play size={16} fill="white" /> Watch Now
               </button>
-              <button className="px-4 py-2 rounded-md border border-[var(--border-medium)] text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] transition-colors">
+              <button className="px-3 sm:px-4 py-2 rounded-md border border-[var(--border-medium)] text-xs sm:text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none">
                 Add to Collection
               </button>
             </div>
@@ -126,13 +131,13 @@ function CinematicHero() {
         <div className="hidden md:flex absolute inset-y-0 left-0 right-0 items-center justify-between px-4 opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
           <button
             onClick={() => goTo((index - 1 + featured.length) % featured.length)}
-            className="pointer-events-auto w-10 h-10 rounded-full bg-[var(--bg-overlay)] flex items-center justify-center text-white hover:bg-[var(--bg-surface)] transition-colors"
+            className="pointer-events-auto w-10 h-10 rounded-full bg-[var(--bg-overlay)] flex items-center justify-center text-white hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none"
           >
             <ChevronLeft size={20} />
           </button>
           <button
             onClick={() => goTo((index + 1) % featured.length)}
-            className="pointer-events-auto w-10 h-10 rounded-full bg-[var(--bg-overlay)] flex items-center justify-center text-white hover:bg-[var(--bg-surface)] transition-colors"
+            className="pointer-events-auto w-10 h-10 rounded-full bg-[var(--bg-overlay)] flex items-center justify-center text-white hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none"
           >
             <ChevronRight size={20} />
           </button>
@@ -157,10 +162,10 @@ function StoriesRail() {
       <div className="flex gap-4 overflow-x-auto hide-scrollbar px-2 py-2 scroll-snap-x mandatory">
         {/* Add Story */}
         <div className="flex flex-col items-center gap-1.5 shrink-0 scroll-snap-align-start">
-          <button className="w-16 h-16 rounded-full border-2 border-dashed border-[var(--border-medium)] flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--text-secondary)] transition-colors">
+          <button className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-dashed border-[var(--border-medium)] flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--text-secondary)] transition-colors tap-highlight-none">
             <Plus size={20} />
           </button>
-          <span className="text-[11px] text-[var(--text-secondary)]">Add</span>
+          <span className="text-[10px] sm:text-[11px] text-[var(--text-secondary)]">Add</span>
         </div>
 
         {storyCreators.map((creator, i) => (
@@ -171,15 +176,15 @@ function StoriesRail() {
             transition={{ delay: i * 0.05, duration: 0.4, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
             className="flex flex-col items-center gap-1.5 shrink-0 scroll-snap-align-start"
           >
-            <div className={cn('p-[3px] rounded-full', creator.storySeen ? 'story-ring-seen' : 'story-ring')}>
+            <div className={cn('p-[2px] sm:p-[3px] rounded-full', creator.storySeen ? 'story-ring-seen' : 'story-ring')}>
               <img
                 src={creator.avatar}
                 alt={creator.name}
-                className="w-[58px] h-[58px] rounded-full object-cover border-2 border-[var(--bg-base)]"
+                className="w-[50px] h-[50px] sm:w-[58px] sm:h-[58px] rounded-full object-cover border-2 border-[var(--bg-base)]"
                 loading="lazy"
               />
             </div>
-            <span className="text-[11px] text-[var(--text-secondary)] max-w-[64px] truncate">
+            <span className="text-[10px] sm:text-[11px] text-[var(--text-secondary)] max-w-[56px] sm:max-w-[64px] truncate">
               {creator.name}
             </span>
           </motion.div>
@@ -235,7 +240,7 @@ function DiscoverabilityToolbar({
             key={chip.label}
             onClick={() => setFilters({ sourceType: chip.value })}
             className={cn(
-              'ui-chip whitespace-nowrap',
+              'ui-chip whitespace-nowrap tap-highlight-none',
               filters.sourceType === chip.value && 'ui-chip-active'
             )}
           >
@@ -251,7 +256,7 @@ function DiscoverabilityToolbar({
 
       {/* Sort */}
       <div className="relative shrink-0 group">
-        <button className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
+        <button className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors tap-highlight-none">
           {sort} <ChevronDown size={14} />
         </button>
         <div className="absolute top-full left-0 mt-1 w-40 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity z-50 py-1">
@@ -260,7 +265,7 @@ function DiscoverabilityToolbar({
               key={opt}
               onClick={() => onSortChange(opt)}
               className={cn(
-                'w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--bg-surface)] transition-colors',
+                'w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none',
                 sort === opt ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'
               )}
             >
@@ -284,7 +289,7 @@ function DiscoverabilityToolbar({
             key={key}
             onClick={() => onViewModeChange(key)}
             className={cn(
-              'p-1.5 rounded-md transition-colors',
+              'p-1.5 rounded-md transition-colors tap-highlight-none',
               viewMode === key ? 'text-[var(--accent)] bg-[var(--accent-dim)]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'
             )}
             aria-label={`${key} view`}
@@ -300,10 +305,10 @@ function DiscoverabilityToolbar({
       <motion.button
         onClick={onSurprise}
         whileTap={{ scale: 0.95 }}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--accent)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors shrink-0"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--accent)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors shrink-0 tap-highlight-none"
       >
         <Sparkles size={14} />
-        Surprise Me
+        <span className="hidden sm:inline">Surprise Me</span>
       </motion.button>
     </div>
   )
@@ -331,12 +336,12 @@ function FloatingNavigator({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 20 }}
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-          className="fixed bottom-8 right-8 z-[50] hidden md:block"
+          className="fixed bottom-8 right-4 sm:right-8 z-[50] hidden md:block"
         >
           <div className="relative">
             <button
               onClick={() => setOpen(!open)}
-              className="flex items-center gap-2 px-4 h-11 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] shadow-md text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors"
+              className="flex items-center gap-2 px-4 h-11 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] shadow-md text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none"
             >
               {activeCategory}
               <ChevronDown size={14} className={cn('transition-transform', open && 'rotate-180')} />
@@ -359,7 +364,7 @@ function FloatingNavigator({
                         setOpen(false)
                       }}
                       className={cn(
-                        'w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-[var(--bg-surface)] transition-colors',
+                        'w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none',
                         activeCategory === cat.name
                           ? 'bg-[var(--accent-dim)] text-[var(--accent)]'
                           : 'text-[var(--text-secondary)]'
@@ -390,6 +395,8 @@ export default function HomePage() {
   const [surpriseItem, setSurpriseItem] = useState<MediaItem | null>(null)
   const [scrollY, setScrollY] = useState(0)
   const [activeCategory, setActiveCategory] = useState('Featured')
+  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
   const mainRef = useRef<HTMLDivElement>(null)
 
   const { data, isLoading } = useQuery({
@@ -411,7 +418,6 @@ export default function HomePage() {
 
   const handleSurprise = useCallback(() => {
     setShowSurprise(true)
-    // Shuffle animation: pick random item after brief delay
     const candidates = allItems.length > 0 ? allItems : getMediaByCategory('Featured')
     const random = candidates[Math.floor(Math.random() * candidates.length)]
     setTimeout(() => {
@@ -423,6 +429,23 @@ export default function HomePage() {
     setShowSurprise(false)
     setSurpriseItem(null)
   }, [])
+
+  const handleOpenDetail = useCallback((item: MediaItem) => {
+    setSelectedItem(item)
+    setDetailOpen(true)
+  }, [])
+
+  const handleCloseDetail = useCallback(() => {
+    setDetailOpen(false)
+    setTimeout(() => setSelectedItem(null), 400)
+  }, [])
+
+  const handleSurprisePlay = useCallback(() => {
+    if (surpriseItem) {
+      handleOpenDetail(surpriseItem)
+      setShowSurprise(false)
+    }
+  }, [surpriseItem, handleOpenDetail])
 
   const scrollToCategory = useCallback((name: string) => {
     const el = document.getElementById(`cat-${name}`)
@@ -454,7 +477,7 @@ export default function HomePage() {
     <div ref={mainRef} className="space-y-6">
       {/* Hero */}
       <section className="animate-page-enter">
-        <CinematicHero />
+        <CinematicHero onWatch={handleOpenDetail} />
       </section>
 
       {/* Stories */}
@@ -505,6 +528,7 @@ export default function HomePage() {
                             key={item.id}
                             item={item}
                             aspectRatio={i % 3 === 0 ? '3/4' : i % 3 === 1 ? '4/5' : '1/1'}
+                            onSelect={() => handleOpenDetail(item)}
                           />
                         ))}
                       </div>
@@ -513,7 +537,8 @@ export default function HomePage() {
                         {items.map((item) => (
                           <div
                             key={item.id}
-                            className="flex items-center gap-3 p-2 rounded-[var(--radius-md)] hover:bg-[var(--bg-surface)] transition-colors cursor-pointer"
+                            onClick={() => handleOpenDetail(item)}
+                            className="flex items-center gap-3 p-2 rounded-[var(--radius-md)] hover:bg-[var(--bg-surface)] transition-colors cursor-pointer tap-highlight-none"
                           >
                             <img
                               src={item.thumbnail}
@@ -538,6 +563,7 @@ export default function HomePage() {
                             item={item}
                             aspectRatio={i % 5 === 0 ? '16/9' : '4/5'}
                             className={i % 5 === 0 ? 'sm:col-span-2 sm:row-span-2' : ''}
+                            onSelect={() => handleOpenDetail(item)}
                           />
                         ))}
                       </div>
@@ -547,7 +573,8 @@ export default function HomePage() {
                         {items.map((item) => (
                           <div
                             key={item.id}
-                            className="flex items-center gap-3 p-2 rounded-[var(--radius-md)] hover:bg-[var(--bg-surface)] transition-colors cursor-pointer"
+                            onClick={() => handleOpenDetail(item)}
+                            className="flex items-center gap-3 p-2 rounded-[var(--radius-md)] hover:bg-[var(--bg-surface)] transition-colors cursor-pointer tap-highlight-none"
                           >
                             <span className="text-[11px] font-mono text-[var(--text-muted)] w-16 shrink-0">
                               {new Date(item.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
@@ -608,12 +635,15 @@ export default function HomePage() {
                         {surpriseItem.creator} • {surpriseItem.category}
                       </p>
                       <div className="flex items-center gap-2">
-                        <button className="btn-primary flex-1">
+                        <button
+                          className="btn-primary flex-1 tap-highlight-none"
+                          onClick={handleSurprisePlay}
+                        >
                           <Play size={16} fill="white" /> Play
                         </button>
                         <button
                           onClick={handleSurprise}
-                          className="px-4 py-2 rounded-md border border-[var(--border-medium)] text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] transition-colors"
+                          className="px-4 py-2 rounded-md border border-[var(--border-medium)] text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none"
                         >
                           <Shuffle size={16} />
                         </button>
@@ -650,6 +680,13 @@ export default function HomePage() {
           scrollToCategory(name)
         }}
         visible={showFloatingNav}
+      />
+
+      {/* Media Detail Drawer */}
+      <MediaDetail
+        item={selectedItem}
+        open={detailOpen}
+        onClose={handleCloseDetail}
       />
     </div>
   )

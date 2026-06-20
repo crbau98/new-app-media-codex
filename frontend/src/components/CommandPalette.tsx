@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/store'
@@ -52,22 +53,24 @@ export default function CommandPalette() {
     return () => window.removeEventListener('keydown', handler)
   }, [open, setOpen])
 
-  const navigate = useCallback(
+  const navigate = useNavigate()
+
+  const handleNavigate = useCallback(
     (path: string, view: ReturnType<typeof useAppStore.getState>['activeView']) => {
       setActiveView(view)
-      window.location.hash = path
+      navigate(path)
       setOpen(false)
     },
-    [setActiveView, setOpen]
+    [setActiveView, setOpen, navigate]
   )
 
   const items: CommandItem[] = [
-    { id: 'media', label: 'Go to Media Library', icon: MonitorPlay, category: 'Navigate', action: () => navigate('#/media', 'images') },
-    { id: 'explore', label: 'Go to Explore', icon: Compass, category: 'Navigate', action: () => navigate('#/explore', 'explore') },
-    { id: 'creators', label: 'Go to Creators', icon: Users, category: 'Navigate', action: () => navigate('#/creators', 'creators') },
-    { id: 'search', label: 'Go to Search', icon: Search, category: 'Navigate', action: () => navigate('#/search', 'search') },
-    { id: 'settings', label: 'Go to Settings', icon: Settings, category: 'Navigate', action: () => navigate('#/settings', 'settings') },
-    { id: 'analytics', label: 'Go to Analytics', icon: BarChart3, category: 'Navigate', action: () => navigate('#/analytics', 'analytics') },
+    { id: 'media', label: 'Go to Media Library', icon: MonitorPlay, category: 'Navigate', action: () => handleNavigate('/media', 'images') },
+    { id: 'explore', label: 'Go to Explore', icon: Compass, category: 'Navigate', action: () => handleNavigate('/explore', 'explore') },
+    { id: 'creators', label: 'Go to Creators', icon: Users, category: 'Navigate', action: () => handleNavigate('/creators', 'creators') },
+    { id: 'search', label: 'Go to Search', icon: Search, category: 'Navigate', action: () => handleNavigate('/search', 'search') },
+    { id: 'settings', label: 'Go to Settings', icon: Settings, category: 'Navigate', action: () => handleNavigate('/settings', 'settings') },
+    { id: 'analytics', label: 'Go to Analytics', icon: BarChart3, category: 'Navigate', action: () => handleNavigate('/analytics', 'analytics') },
     { id: 'theme', label: 'Toggle Theme', icon: Command, category: 'Actions', action: () => { useAppStore.getState().toggleTheme(); setOpen(false) } },
     { id: 'recent1', label: 'Recently viewed: Midnight Steam', icon: Clock, category: 'Recent', action: () => setOpen(false) },
     { id: 'trend1', label: 'Trending: Three in the Locker Room', icon: TrendingUp, category: 'Trending', action: () => setOpen(false) },

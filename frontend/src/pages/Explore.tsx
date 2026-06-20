@@ -653,11 +653,13 @@ function SurpriseOverlay({
   item,
   onClose,
   onShuffle,
+  onPlay,
 }: {
   open: boolean
   item: MediaItem | null
   onClose: () => void
   onShuffle: () => void
+  onPlay: () => void
 }) {
   return (
     <AnimatePresence>
@@ -693,12 +695,15 @@ function SurpriseOverlay({
                       {item.creator} • {item.category}
                     </p>
                     <div className="flex items-center gap-2">
-                      <button className="btn-primary flex-1">
+                      <button
+                        className="btn-primary flex-1 tap-highlight-none"
+                        onClick={onPlay}
+                      >
                         <Play size={16} fill="white" /> Play
                       </button>
                       <button
                         onClick={onShuffle}
-                        className="px-4 py-2 rounded-md border border-[var(--border-medium)] text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] transition-colors"
+                        className="px-4 py-2 rounded-md border border-[var(--border-medium)] text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none"
                       >
                         <Shuffle size={16} />
                       </button>
@@ -819,6 +824,7 @@ export default function ExplorePage() {
         item={surpriseItem}
         onClose={handleSurpriseClose}
         onShuffle={handleShuffle}
+        onPlay={handleSurprisePlay}
       />
 
       {/* Media Detail Drawer */}

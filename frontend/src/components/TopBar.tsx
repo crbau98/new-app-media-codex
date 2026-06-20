@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate } from 'react-router'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import {
@@ -8,17 +9,26 @@ import {
   Moon,
   Menu,
   Command,
+  X,
 } from 'lucide-react'
 
-export default function TopBar() {
+interface TopBarProps {
+  onMenuClick?: () => void
+}
+
+export default function TopBar({ onMenuClick }: TopBarProps) {
   const [scrolled, setScrolled] = useState(false)
   const [searchFocused, setSearchFocused] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   const toggleTheme = useAppStore((s) => s.toggleTheme)
   const theme = useAppStore((s) => s.theme)
   const toggleCommandPalette = useAppStore((s) => s.toggleCommandPalette)
   const unreadCount = useAppStore((s) => s.unreadCount)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
+  const setAppSearchQuery = useAppStore((s) => s.setSearchQuery)
+
+  const navigate = useNavigate()
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8)
@@ -48,20 +58,37 @@ export default function TopBar() {
     return () => window.removeEventListener('keydown', handler)
   }, [toggleCommandPalette, setCommandPaletteOpen])
 
+  const handleSearchSubmit = useCallback(() => {
+    if (searchQuery.trim()) {
+      setAppSearchQuery(searchQuery.trim())
+      navigate('/search')
+    }
+  }, [searchQuery, setAppSearchQuery, navigate])
+
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearchSubmit()
+    }
+  }, [handleSearchSubmit])
+
   return (
     <header
       className={cn(
-        'topbar-shell fixed top-0 right-0 z-40 flex items-center justify-between px-4',
-        scrolled && 'scrolled'
+        'fixed top-0 right-0 z-40 flex items-center justify-between px-4 h-14',
+        'transition-all duration-200',
+        scrolled
+          ? 'bg-[var(--bg-base)]/80 backdrop-blur-xl border-b border-[var(--border-subtle)]'
+          : 'bg-transparent'
       )}
       style={{
-        left: 'auto',
+        left: 'var(--sidebar-width, 0px)',
       }}
     >
       {/* Mobile hamburger */}
       <button
-        className="md:hidden p-2 -ml-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50"
+        className="md:hidden p-2 -ml-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50 tap-highlight-none"
         aria-label="Open menu"
+        onClick={onMenuClick}
       >
         <Menu size={20} />
       </button>
@@ -79,19 +106,34 @@ export default function TopBar() {
         <input
           ref={searchRef}
           type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search media, creators, categories..."
           className="bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none w-full"
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
+          onKeyDown={handleSearchKeyDown}
         />
-        <span className="hidden lg:flex items-center gap-0.5 kbd shrink-0">
-          <Command size={10} />K
-        </span>
+        {searchQuery ? (
+          <button
+            onClick={() => {
+              setSearchQuery('')
+              searchRef.current?.focus()
+            }}
+            className="text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] shrink-0"
+          >
+            <X size={14} />
+          </button>
+        ) : (
+          <span className="hidden lg:flex items-center gap-0.5 kbd shrink-0">
+            <Command size={10} />K
+          </span>
+        )}
       </div>
 
       {/* Mobile search icon */}
       <button
-        className="md:hidden p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50"
+        className="md:hidden p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50 tap-highlight-none"
         aria-label="Search"
         onClick={() => setCommandPaletteOpen(true)}
       >
@@ -101,7 +143,7 @@ export default function TopBar() {
       {/* Right actions */}
       <div className="flex items-center gap-1">
         <button
-          className="relative p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50 transition-colors"
+          className="relative p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50 transition-colors tap-highlight-none"
           aria-label="Notifications"
         >
           <Bell size={18} />
@@ -111,12 +153,12 @@ export default function TopBar() {
         </button>
         <button
           onClick={toggleTheme}
-          className="hidden md:flex p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50 transition-colors"
+          className="hidden md:flex p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50 transition-colors tap-highlight-none"
           aria-label="Toggle theme"
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
-        <div className="w-8 h-8 rounded-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center text-xs font-semibold text-[var(--text-secondary)] ml-1">
+        <div className="w-8 h-8 rounded-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center text-xs font-semibold text-[var(--text-secondary)] ml-1 select-none">
           U
         </div>
       </div>

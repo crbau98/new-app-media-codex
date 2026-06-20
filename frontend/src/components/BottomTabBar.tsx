@@ -1,3 +1,4 @@
+import { useNavigate, useLocation } from 'react-router'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
 import {
@@ -9,16 +10,23 @@ import {
 } from 'lucide-react'
 
 const tabs = [
-  { label: 'Library', icon: Grid3X3, href: '#/media' },
-  { label: 'Explore', icon: Compass, href: '#/explore' },
-  { label: 'Reels', icon: PlayCircle, href: '#/explore' },
-  { label: 'Creators', icon: Users, href: '#/creators' },
-  { label: 'Profile', icon: User, href: '#/settings' },
+  { label: 'Library', icon: Grid3X3, href: '/media', view: 'images' as const },
+  { label: 'Explore', icon: Compass, href: '/explore', view: 'explore' as const },
+  { label: 'Reels', icon: PlayCircle, href: '/explore', view: 'explore' as const },
+  { label: 'Creators', icon: Users, href: '/creators', view: 'creators' as const },
+  { label: 'Profile', icon: User, href: '/settings', view: 'settings' as const },
 ]
 
 export default function BottomTabBar() {
   const activeView = useAppStore((s) => s.activeView)
   const setActiveView = useAppStore((s) => s.setActiveView)
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  const handleTabClick = (href: string, view: typeof tabs[number]['view'], label: string) => {
+    setActiveView(view)
+    navigate(href)
+  }
 
   const isActive = (label: string) => {
     const map: Record<string, string> = {
@@ -28,7 +36,11 @@ export default function BottomTabBar() {
       Creators: 'creators',
       Profile: 'settings',
     }
-    return activeView === map[label]
+    const view = map[label]
+    if (view === 'explore') {
+      return location.pathname === '/explore'
+    }
+    return activeView === view
   }
 
   return (
@@ -46,28 +58,18 @@ export default function BottomTabBar() {
           const active = isActive(tab.label)
           const Icon = tab.icon
           return (
-            <a
+            <button
               key={tab.label}
-              href={tab.href}
-              onClick={() => {
-                const map: Record<string, ReturnType<typeof useAppStore.getState>['activeView']> = {
-                  Library: 'images',
-                  Explore: 'explore',
-                  Reels: 'explore',
-                  Creators: 'creators',
-                  Profile: 'settings',
-                }
-                setActiveView(map[tab.label])
-              }}
+              onClick={() => handleTabClick(tab.href, tab.view, tab.label)}
               className={cn(
-                'flex flex-col items-center justify-center gap-0.5 w-14 py-1 rounded-lg transition-colors',
+                'flex flex-col items-center justify-center gap-0.5 w-14 py-1 rounded-lg transition-colors tap-highlight-none',
                 active ? 'text-[var(--accent)]' : 'text-[var(--text-tertiary)]'
               )}
               aria-current={active ? 'page' : undefined}
             >
               <Icon size={22} strokeWidth={active ? 2.5 : 2} />
               <span className="text-[10px] font-medium">{tab.label}</span>
-            </a>
+            </button>
           )
         })}
       </div>

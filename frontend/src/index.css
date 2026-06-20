@@ -314,6 +314,26 @@
      ──────────────────────────────────────────────── */
   .shell-bg {
     background-color: var(--bg-base);
+    --sidebar-width: 0px;
+  }
+
+  @media (min-width: 768px) {
+    .shell-bg {
+      --sidebar-width: 72px;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .shell-bg {
+      --sidebar-width: 240px;
+    }
+  }
+
+  /* When sidebar is collapsed on desktop, adjust variable */
+  @media (min-width: 1024px) {
+    .shell-bg:has(.sidebar-shell.collapsed) {
+      --sidebar-width: 72px;
+    }
   }
   .panel-surface {
     background-color: var(--bg-elevated);
@@ -418,6 +438,29 @@
      ──────────────────────────────────────────────── */
   .tap-highlight-none {
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* ────────────────────────────────────────────────
+     Mobile UX Helpers
+     ──────────────────────────────────────────────── */
+  .no-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Ensure smooth scrolling on mobile */
+  .scroll-smooth-touch {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Snap scrolling for carousels */
+  .scroll-snap-x {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .scroll-snap-align-start {
+    scroll-snap-align: start;
   }
 
   /* ────────────────────────────────────────────────
@@ -779,6 +822,10 @@
   /* ────────────────────────────────────────────────
      Stagger In (for children)
      ──────────────────────────────────────────────── */
+  @keyframes stagger-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
   .stagger-in > * {
     opacity: 0;
     animation: stagger-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
