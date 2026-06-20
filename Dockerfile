@@ -39,7 +39,7 @@ ENV PATH=/root/.local/bin:$PATH
 
 # Copy application code
 COPY app /app/app
-COPY --from=frontend-build /app/static/dist /app/app/static/dist
+COPY --from=frontend-build /frontend/dist /app/app/static/dist
 
 EXPOSE 8080
 
