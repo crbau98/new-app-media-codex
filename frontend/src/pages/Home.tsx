@@ -4,7 +4,6 @@ import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import {
   getMediaByCategory,
-  getFeaturedItems,
   creators,
   categories,
   type MediaItem,
@@ -35,11 +34,12 @@ import {
    Cinematic Hero
    ─────────────────────────────────────────────── */
 function CinematicHero({ items, onWatch }: { items: MediaItem[]; onWatch: (item: MediaItem) => void }) {
-  const featured = items.length ? items.slice(0, 3) : getFeaturedItems(3)
+  const featured = items.slice(0, 3)
   const [index, setIndex] = useState(0)
   const [_direction, setDirection] = useState(1)
 
   useEffect(() => {
+    if (!featured.length) return
     const timer = setInterval(() => {
       setDirection(1)
       setIndex((i) => (i + 1) % featured.length)
@@ -51,6 +51,17 @@ function CinematicHero({ items, onWatch }: { items: MediaItem[]; onWatch: (item:
   const goTo = (i: number) => {
     setDirection(i > index ? 1 : -1)
     setIndex(i)
+  }
+
+  if (!current) {
+    return (
+      <div className="mb-6 grid min-h-[200px] place-items-center rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-6 text-center">
+        <div>
+          <p className="text-base font-semibold text-[var(--text-primary)]">Connecting to live media…</p>
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">Only verified source results appear here—design placeholders are hidden.</p>
+        </div>
+      </div>
+    )
   }
 
   return (

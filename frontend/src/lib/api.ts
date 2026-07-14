@@ -97,6 +97,23 @@ function warnFallback(error: unknown, label: string): void {
   console.warn('[API Fallback]', label, error)
 }
 
+async function fetchLiveMediaFallback(
+  filters: MediaFilters,
+  page: number,
+  perPage: number
+): Promise<PaginatedResult<MediaItem>> {
+  const params = new URLSearchParams({ count: '60' })
+  if (filters.search) params.set('q', filters.search)
+  else if (filters.category) params.set('q', `gay ${filters.category}`)
+  const response = await fetchWithTimeout(`/api/live-media?${params.toString()}`, undefined, 15000)
+  if (!response.ok) throw new Error(`Live media fallback returned ${response.status}`)
+  const payload = await response.json() as { items?: MediaItem[] }
+  // Category/search terms were already applied by the live source query.
+  const filtered = applyClientFilters(payload.items || [], { ...filters, category: null, search: undefined })
+  const sorted = applyClientSort(filtered, filters.sort || 'newest')
+  return buildPaginatedResult(sorted, page, perPage)
+}
+
 /* ───────────────────────────────────────────────
    Sort helpers for client-side fallback
    ────────────────────────────────────────────── */
@@ -139,7 +156,10 @@ function applyClientFilters(
     result = result.filter((m) => m.category === filters.category)
   }
   if (filters.sourceType) {
-    result = result.filter((m) => m.source === filters.sourceType)
+    if (filters.sourceType === 'video') result = result.filter((m) => m.isVideo)
+    else if (filters.sourceType === 'image') result = result.filter((m) => !m.isVideo)
+    else if (filters.sourceType === 'favorites') result = result.filter((m) => m.isLiked)
+    else result = result.filter((m) => m.source.toLowerCase() === filters.sourceType!.toLowerCase())
   }
   if (filters.tag) {
     result = result.filter((m) => m.tags.includes(filters.tag!))
@@ -207,10 +227,13 @@ export async function fetchMedia(
     }
   } catch (err) {
     warnFallback(err, 'fetchMedia')
-    // Fallback to mock data with client-side filtering/sorting
-    const filtered = applyClientFilters(mediaItems, filters)
-    const sorted = applyClientSort(filtered, sort)
-    return buildPaginatedResult(sorted, page, perPage)
+    try {
+      return await fetchLiveMediaFallback(filters, page, perPage)
+    } catch (liveError) {
+      warnFallback(liveError, 'fetchLiveMediaFallback')
+      // Never present design fixtures as if they were real captured media.
+      return buildPaginatedResult([], page, perPage)
+    }
   }
 }
 
@@ -271,10 +294,12 @@ export async function searchMedia(
     warnFallback(err, 'searchMedia (screenshots/search)')
   }
 
-  // Fallback: client-side mock search
-  const filtered = applyClientFilters(mediaItems, { ...filters, search: query })
-  const sorted = applyClientSort(filtered, filters.sort)
-  return buildPaginatedResult(sorted, 1, 24)
+  try {
+    return await fetchLiveMediaFallback({ ...filters, search: query }, 1, 24)
+  } catch (liveError) {
+    warnFallback(liveError, 'searchMedia live fallback')
+    return buildPaginatedResult([], 1, 24)
+  }
 }
 
 export async function fetchMediaById(id: string): Promise<MediaItem | null> {
