@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
-import { Check, ExternalLink, Eye, Heart, Search, Sparkles, Users, X } from 'lucide-react'
+import { Check, ExternalLink, Eye, Heart, Plus, Radar, Search, Sparkles, Users, X } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import { fetchLiveCreatorDirectory } from '@/lib/api'
@@ -166,15 +166,19 @@ function CreatorDrawer({ creator, onClose }: { creator: Creator | null; onClose:
 
 export default function CreatorsPage() {
   const [query, setQuery] = useState('')
+  const [watchInput, setWatchInput] = useState('')
   const [sort, setSort] = useState<CreatorSort>('Smart picks')
   const [filter, setFilter] = useState<CreatorFilter>('all')
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null)
   const followCache = useAppStore((state) => state.followCache)
   const toggleFollow = useAppStore((state) => state.toggleFollow)
   const addToast = useAppStore((state) => state.addToast)
-  const { data: creators = [], isLoading, isError, refetch } = useQuery({
-    queryKey: ['live-creators', 'directory'],
-    queryFn: fetchLiveCreatorDirectory,
+  const creatorWatchlist = useAppStore((state) => state.creatorWatchlist)
+  const addCreatorToWatchlist = useAppStore((state) => state.addCreatorToWatchlist)
+  const removeCreatorFromWatchlist = useAppStore((state) => state.removeCreatorFromWatchlist)
+  const { data: creators = [], isLoading, isError, isFetching, refetch, dataUpdatedAt } = useQuery({
+    queryKey: ['live-creators', 'directory', creatorWatchlist],
+    queryFn: () => fetchLiveCreatorDirectory(creatorWatchlist),
     staleTime: 60_000,
     refetchInterval: 120_000,
     refetchOnWindowFocus: true,
@@ -199,6 +203,24 @@ export default function CreatorsPage() {
     if (isFollowing) addToast({ type: 'success', title: `Following @${creator.username || creator.name}` })
   }, [addToast, followCache, toggleFollow])
 
+  const addWatch = useCallback((event: FormEvent) => {
+    event.preventDefault()
+    const candidate = watchInput.trim().replace(/^@/, '')
+    if (candidate.length < 2) return
+    const key = candidate.toLowerCase().replace(/[^a-z0-9]+/g, '')
+    if (creatorWatchlist.some((item) => item.toLowerCase().replace(/[^a-z0-9]+/g, '') === key)) {
+      addToast({ type: 'info', title: 'Creator is already on your radar' })
+      return
+    }
+    if (creatorWatchlist.length >= 8) {
+      addToast({ type: 'error', title: 'Creator radar is limited to 8 active searches' })
+      return
+    }
+    addCreatorToWatchlist(candidate)
+    setWatchInput('')
+    addToast({ type: 'success', title: `Scanning public sources for @${candidate}` })
+  }, [addCreatorToWatchlist, addToast, creatorWatchlist, watchInput])
+
   return (
     <div className="space-y-6">
       <header className="rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 sm:p-7">
@@ -211,6 +233,33 @@ export default function CreatorsPage() {
           <div className="flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-secondary)]"><Users size={14} /> {creators.length} observed creators</div>
         </div>
       </header>
+
+      <section className="rounded-[var(--radius-lg)] border border-[var(--accent)]/30 bg-[linear-gradient(135deg,var(--accent-dim),var(--bg-elevated)_55%)] p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-2xl">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Radar size={17} className="text-[var(--accent)]" /> Automatic creator radar</div>
+            <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">Add a public handle or creator name. The app searches again every two minutes, merges newly available posts, and keeps source attribution. A watchlist entry is a search lead—not an identity label.</p>
+          </div>
+          <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[11px] text-[var(--text-secondary)]">
+            {isFetching ? 'Scanning sources…' : `${creators.filter((creator) => creator.isWatched).length} matched`} · {dataUpdatedAt ? `updated ${new Date(dataUpdatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'waiting'}
+          </span>
+        </div>
+        <form onSubmit={addWatch} className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <label className="flex min-h-11 flex-1 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 focus-within:border-[var(--accent)]">
+            <Search size={15} className="text-[var(--text-tertiary)]" />
+            <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="Public handle or creator name" maxLength={50} className="w-full bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
+          </label>
+          <button type="submit" className="btn-primary flex min-h-11 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-4 text-sm font-medium"><Plus size={15} /> Add to radar</button>
+        </form>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {creatorWatchlist.map((creator) => (
+            <span key={creator} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)]/75 py-1 pl-3 pr-1.5 text-xs text-[var(--text-primary)]">
+              @{creator}
+              <button onClick={() => removeCreatorFromWatchlist(creator)} className="grid h-6 w-6 place-items-center rounded-full text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]" aria-label={`Stop watching ${creator}`}><X size={12} /></button>
+            </span>
+          ))}
+        </div>
+      </section>
 
       <div className="sticky top-14 z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 py-3 backdrop-blur-md">
         <label className="flex min-w-[220px] flex-1 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-secondary)]">

@@ -47,6 +47,7 @@ export interface Creator {
   curationScore?: number
   sourceAttribution?: string
   observedAt?: string
+  isWatched?: boolean
   media?: MediaItem[]
 }
 

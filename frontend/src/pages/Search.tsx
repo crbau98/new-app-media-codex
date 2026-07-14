@@ -9,6 +9,7 @@ import SkeletonGrid from '@/components/SkeletonGrid'
 import { fetchLiveCreatorDirectory, fetchMedia, searchMedia, type MediaFilters } from '@/lib/api'
 import type { Creator, MediaItem } from '@/lib/mockData'
 import { cn } from '@/lib/utils'
+import { useAppStore } from '@/store'
 
 type ResultTab = 'all' | 'videos' | 'creators'
 type SearchSort = 'smart' | 'mostViewed' | 'mostLiked' | 'newest'
@@ -42,17 +43,18 @@ export default function SearchPage() {
   const [creator, setCreator] = useState<Creator | null>(null)
   const [selected, setSelected] = useState<MediaItem | null>(null)
   const deferredQuery = useDeferredValue(query.trim())
+  const creatorWatchlist = useAppStore((state) => state.creatorWatchlist)
 
   const apiSort: MediaFilters['sort'] = sort === 'mostViewed' ? 'mostViewed' : sort === 'mostLiked' ? 'topRated' : 'newest'
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
-    queryKey: ['search', deferredQuery, sort],
-    queryFn: () => deferredQuery ? searchMedia(deferredQuery, { sort: apiSort }) : fetchMedia({ sort: apiSort }, 1, 100),
+    queryKey: ['search', deferredQuery, sort, creatorWatchlist],
+    queryFn: () => deferredQuery ? searchMedia(deferredQuery, { sort: apiSort, watchlist: creatorWatchlist }) : fetchMedia({ sort: apiSort, watchlist: creatorWatchlist }, 1, 100),
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   })
   const { data: creators = [], isLoading: creatorsLoading } = useQuery({
-    queryKey: ['live-creators', 'search'],
-    queryFn: fetchLiveCreatorDirectory,
+    queryKey: ['live-creators', 'search', creatorWatchlist],
+    queryFn: () => fetchLiveCreatorDirectory(creatorWatchlist),
     staleTime: 60_000,
   })
 

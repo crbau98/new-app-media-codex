@@ -48,6 +48,7 @@ export interface MediaFilters {
   creator?: string | null
   minViews?: number
   minLikes?: number
+  watchlist?: string[]
 }
 
 export interface PaginatedResult<T> {
@@ -111,6 +112,7 @@ async function fetchLiveMediaFallback(
   else if (filters.category) params.set('q', filters.category)
   if (filters.minViews) params.set('minViews', String(filters.minViews))
   if (filters.minLikes) params.set('minLikes', String(filters.minLikes))
+  for (const creator of (filters.watchlist || []).slice(0, 8)) params.append('watch', creator)
   if (filters.sort === 'mostViewed') params.set('sort', 'views')
   else if (filters.sort === 'newest') params.set('sort', 'newest')
   else if (filters.sort === 'topRated') params.set('sort', 'likes')
@@ -124,8 +126,10 @@ async function fetchLiveMediaFallback(
   return buildPaginatedResult(sorted, page, perPage)
 }
 
-export async function fetchLiveCreatorDirectory(): Promise<Creator[]> {
-  const response = await fetchWithTimeout('/api/live-media?count=100&pages=3&sort=smart', undefined, 20000)
+export async function fetchLiveCreatorDirectory(watchlist: string[] = []): Promise<Creator[]> {
+  const params = new URLSearchParams({ count: '100', pages: '3', sort: 'smart' })
+  for (const creator of watchlist.slice(0, 8)) params.append('watch', creator)
+  const response = await fetchWithTimeout(`/api/live-media?${params.toString()}`, undefined, 25000)
   if (!response.ok) throw new Error(`Live creator directory returned ${response.status}`)
   const payload = await response.json() as { performers?: Creator[] }
   return Array.isArray(payload.performers) ? payload.performers : []

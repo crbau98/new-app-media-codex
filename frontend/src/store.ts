@@ -19,6 +19,12 @@ export interface DiscoverySignalItem {
   tags: string[]
 }
 
+export const DEFAULT_CREATOR_WATCHLIST = ['Jakipz', 'Christian Hogue', 'Michael Yerger', 'SebastianCoxxx']
+
+function creatorKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
 export interface Toast {
   id: string
   type: ToastType
@@ -93,6 +99,11 @@ interface AppState {
   // Follow cache
   followCache: Record<string, boolean>
   toggleFollow: (id: string) => void
+
+  // Creator radar: user-curated public-source lookups
+  creatorWatchlist: string[]
+  addCreatorToWatchlist: (creator: string) => void
+  removeCreatorFromWatchlist: (creator: string) => void
 
   // Private, on-device discovery profile
   tagPreferences: Record<string, number>
@@ -263,6 +274,17 @@ export const useAppStore = create<AppState>()(
           followCache: { ...s.followCache, [id]: !s.followCache[id] },
         })),
 
+      creatorWatchlist: DEFAULT_CREATOR_WATCHLIST,
+      addCreatorToWatchlist: (creator) => set((state) => {
+        const display = creator.trim().replace(/^@/, '').replace(/\s+/g, ' ').slice(0, 50)
+        const key = creatorKey(display)
+        if (key.length < 2 || state.creatorWatchlist.some((item) => creatorKey(item) === key) || state.creatorWatchlist.length >= 8) return state
+        return { creatorWatchlist: [...state.creatorWatchlist, display] }
+      }),
+      removeCreatorFromWatchlist: (creator) => set((state) => ({
+        creatorWatchlist: state.creatorWatchlist.filter((item) => creatorKey(item) !== creatorKey(creator)),
+      })),
+
       tagPreferences: {},
       creatorPreferences: {},
       hiddenMedia: [],
@@ -346,6 +368,7 @@ export const useAppStore = create<AppState>()(
         recentlyViewed: state.recentlyViewed,
         likeCache: state.likeCache,
         followCache: state.followCache,
+        creatorWatchlist: state.creatorWatchlist,
         tagPreferences: state.tagPreferences,
         creatorPreferences: state.creatorPreferences,
         hiddenMedia: state.hiddenMedia,
