@@ -1,50 +1,17 @@
 /**
- * Vercel Edge: stream allowlisted archive/media URLs when clients or the
- * primary API host cannot reach those CDNs directly.
- *
- * Must live under `frontend/api/` when the Vercel project root is `frontend/`.
- *
- * For coomer/kemono image URLs we rewrite to the `img.*` thumbnail host, which is
- * reachable from datacenter IPs (including Vercel/Render) unlike `n*.coomer.st`
- * which frequently blocks datacenter ranges and causes `Connection reset by peer`.
+ * Vercel Edge: stream a narrowly allowlisted public-source media URL when a
+ * browser cannot reach the provider CDN directly. This is a transient proxy:
+ * it does not persist, archive, or expose subscription-creator libraries.
  */
 export const config = { runtime: "edge" }
 
-const ALLOWED = new Set([
-  "coomer.st",
-  "coomer.su",
-  "kemono.su",
-  "kemono.party",
-  "kemono.cr",
-  "media.redgifs.com",
-])
-
-const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|avif)(?:$|\?)/i
+const ALLOWED = new Set(["media.redgifs.com"])
 
 function allowedArchiverHost(hostname: string): boolean {
   const h = hostname.toLowerCase()
   if (ALLOWED.has(h)) return true
-  if (/^(?:img|n\d+)\.coomer\.(st|su)$/i.test(h)) return true
-  if (/^(?:img|n\d+)\.kemono\.(su|party|cr)$/i.test(h)) return true
   if (/^(?:media|thumbs\d*)\.redgifs\.com$/i.test(h)) return true
   return false
-}
-
-function rewriteArchiverUrlToThumbnail(target: URL): URL {
-  const host = target.hostname.toLowerCase()
-  if (!target.pathname.startsWith("/data/")) return target
-  if (!IMAGE_EXT_RE.test(target.pathname)) return target
-
-  let nextHost: string | null = null
-  if (/coomer\.su$/i.test(host)) nextHost = "img.coomer.su"
-  else if (/coomer\.st$/i.test(host)) nextHost = "img.coomer.st"
-  else if (/kemono\.su$/i.test(host)) nextHost = "img.kemono.su"
-  else if (/kemono\.party$/i.test(host)) nextHost = "img.kemono.party"
-  else if (/kemono\.cr$/i.test(host)) nextHost = "img.kemono.cr"
-
-  if (!nextHost) return target
-  const next = new URL(`https://${nextHost}/thumbnail${target.pathname}${target.search}`)
-  return next
 }
 
 function buildUpstreamHeaders(target: URL, range: string | null): Headers {
@@ -100,8 +67,6 @@ export default async function handler(req: Request): Promise<Response> {
   if (!allowedArchiverHost(target.hostname)) {
     return new Response(JSON.stringify({ error: "host_not_allowed" }), { status: 403, headers: { "Content-Type": "application/json" } })
   }
-
-  target = rewriteArchiverUrlToThumbnail(target)
 
   const range = req.headers.get("range")
   let upstream: Response

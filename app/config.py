@@ -57,6 +57,10 @@ class Settings:
     sqlite_timeout_seconds: int = field(default_factory=lambda: _int_env("SQLITE_TIMEOUT_SECONDS", 10))
     sqlite_busy_timeout_ms: int = field(default_factory=lambda: _int_env("SQLITE_BUSY_TIMEOUT_MS", 10000))
     run_startup_crawl: bool = field(default_factory=lambda: _flag("RUN_STARTUP_CRAWL", False))
+    # External scraping is disabled by default. A creator directory should be
+    # built from public provider APIs or direct, rights-authorized submissions,
+    # not from subscription archives.
+    enable_external_crawls: bool = field(default_factory=lambda: _flag("ENABLE_EXTERNAL_CRAWLS", False))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", "").strip())
     openai_base_url: str = field(default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"))
     openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip())

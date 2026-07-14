@@ -373,6 +373,13 @@ class ResearchService:
         return asyncio.run(self._run_crawl_async())
 
     async def _run_crawl_async(self) -> dict[str, Any]:
+        if not self.settings.enable_external_crawls:
+            logger.info("crawl: external collection disabled; serving public-source and authorized media only")
+            return {
+                "status": "disabled",
+                "reason": "ENABLE_EXTERNAL_CRAWLS is not enabled",
+            }
+
         from app.sources import (
             build_session,
             collect_boyfriendtv_theme,

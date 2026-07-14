@@ -150,9 +150,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         cookies=httpx.Cookies(),  # Persist cookies across requests (DDoS-Guard)
     )
 
-    # Warm up DDoS-Guard cookies for proxied sources so the first real media request
-    # already has valid session cookies (avoids initial 403/redirect loop).
+    # The legacy subscription-archive warmup is intentionally inert unless an
+    # operator has explicitly enabled external crawls for a rights-authorized
+    # integration. The default product uses public provider APIs instead.
     async def _warmup_cookies():
+        if not settings.enable_external_crawls:
+            return
         _warmup_targets = ["https://coomer.st/", "https://kemono.su/"]
         for _url in _warmup_targets:
             try:

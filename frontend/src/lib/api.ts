@@ -45,6 +45,9 @@ export interface MediaFilters {
   sort?: 'newest' | 'oldest' | 'topRated' | 'az' | 'random' | 'mostViewed'
   tag?: string | null
   search?: string
+  creator?: string | null
+  minViews?: number
+  minLikes?: number
 }
 
 export interface PaginatedResult<T> {
@@ -102,16 +105,30 @@ async function fetchLiveMediaFallback(
   page: number,
   perPage: number
 ): Promise<PaginatedResult<MediaItem>> {
-  const params = new URLSearchParams({ count: '60' })
+  const params = new URLSearchParams({ count: '80' })
   if (filters.search) params.set('q', filters.search)
-  else if (filters.category) params.set('q', `gay ${filters.category}`)
+  else if (filters.creator) params.set('creator', filters.creator)
+  else if (filters.category) params.set('q', filters.category)
+  if (filters.minViews) params.set('minViews', String(filters.minViews))
+  if (filters.minLikes) params.set('minLikes', String(filters.minLikes))
+  if (filters.sort === 'mostViewed') params.set('sort', 'views')
+  else if (filters.sort === 'newest') params.set('sort', 'newest')
+  else if (filters.sort === 'topRated') params.set('sort', 'likes')
   const response = await fetchWithTimeout(`/api/live-media?${params.toString()}`, undefined, 15000)
   if (!response.ok) throw new Error(`Live media fallback returned ${response.status}`)
   const payload = await response.json() as { items?: MediaItem[] }
-  // Category/search terms were already applied by the live source query.
-  const filtered = applyClientFilters(payload.items || [], { ...filters, category: null, search: undefined })
+  // Query terms were applied upstream. Category remains a tag-level client
+  // filter because one item may belong to several source tags.
+  const filtered = applyClientFilters(payload.items || [], { ...filters, search: undefined, creator: null })
   const sorted = applyClientSort(filtered, filters.sort || 'newest')
   return buildPaginatedResult(sorted, page, perPage)
+}
+
+export async function fetchLiveCreatorDirectory(): Promise<Creator[]> {
+  const response = await fetchWithTimeout('/api/live-media?count=80&sort=smart', undefined, 15000)
+  if (!response.ok) throw new Error(`Live creator directory returned ${response.status}`)
+  const payload = await response.json() as { performers?: Creator[] }
+  return Array.isArray(payload.performers) ? payload.performers : []
 }
 
 /* ───────────────────────────────────────────────
@@ -153,7 +170,7 @@ function applyClientFilters(
 ): MediaItem[] {
   let result = [...items]
   if (filters.category) {
-    result = result.filter((m) => m.category === filters.category)
+    result = result.filter((m) => m.category === filters.category || m.tags.includes(filters.category!))
   }
   if (filters.sourceType) {
     if (filters.sourceType === 'video') result = result.filter((m) => m.isVideo)
@@ -173,6 +190,11 @@ function applyClientFilters(
         m.tags.some((t) => t.toLowerCase().includes(q))
     )
   }
+  if (filters.creator) {
+    result = result.filter((m) => m.creator.toLowerCase() === filters.creator!.toLowerCase())
+  }
+  if (filters.minViews) result = result.filter((m) => m.views >= filters.minViews!)
+  if (filters.minLikes) result = result.filter((m) => (m.likes || 0) >= filters.minLikes!)
   return result
 }
 
@@ -201,66 +223,46 @@ export async function fetchMedia(
   page = 1,
   perPage = 12
 ): Promise<PaginatedResult<MediaItem>> {
-  const offset = (page - 1) * perPage
-  const sort = filters.sort ?? 'newest'
-
-  // Build query params
-  const params = new URLSearchParams()
-  params.set('offset', String(offset))
-  params.set('limit', String(perPage))
-  if (filters.category) params.set('term', filters.category)
-  if (filters.sourceType) params.set('source', filters.sourceType)
-  params.set('sort', sort)
-
   try {
-    const payload = await getJson<BrowseScreenshotsPayload>(
-      `/api/screenshots?${params.toString()}`
-    )
-
-    const items = payload.screenshots.map(adaptScreenshot)
-    return {
-      items,
-      page,
-      perPage,
-      total: payload.total,
-      hasMore: payload.has_more,
-    }
-  } catch (err) {
-    warnFallback(err, 'fetchMedia')
-    try {
-      return await fetchLiveMediaFallback(filters, page, perPage)
-    } catch (liveError) {
-      warnFallback(liveError, 'fetchLiveMediaFallback')
-      // Never present design fixtures as if they were real captured media.
-      return buildPaginatedResult([], page, perPage)
-    }
+    // The browse experience intentionally begins with the source-attributed
+    // public feed. Private archive rows are not a substitute for creator
+    // permission or provenance.
+    return await fetchLiveMediaFallback(filters, page, perPage)
+  } catch (liveError) {
+    warnFallback(liveError, 'fetchLiveMedia')
+    return buildPaginatedResult([], page, perPage)
   }
 }
 
 export async function fetchCategories(): Promise<CategoryDef[]> {
   try {
-    const payload = await getJson<{ terms: Array<{ term: string; count: number }> }>(
-      '/api/screenshots/terms'
-    )
-    return payload.terms.map(adaptScreenshotTerm)
+    const response = await fetchWithTimeout('/api/live-media?count=80&sort=smart', undefined, 15000)
+    if (!response.ok) throw new Error(`Live categories returned ${response.status}`)
+    const payload = await response.json() as { items?: MediaItem[] }
+    const counts = new Map<string, number>()
+    for (const item of payload.items || []) {
+      for (const tag of item.tags.slice(0, 5)) {
+        const normalized = tag.trim()
+        if (normalized) counts.set(normalized, (counts.get(normalized) || 0) + 1)
+      }
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 12)
+      .map(([name, count]) => ({ id: name.toLowerCase().replace(/\s+/g, '-'), name, count }))
   } catch (err) {
-    warnFallback(err, 'fetchCategories')
-    return [...categories]
+    warnFallback(err, 'fetchLiveCategories')
+    return []
   }
 }
 
 export async function fetchTrending(): Promise<MediaItem[]> {
   try {
-    const payload = await getJson<BrowseScreenshotsPayload>(
-      '/api/screenshots?sort=views&limit=8'
-    )
-    return payload.screenshots.map(adaptScreenshot)
+    const result = await fetchLiveMediaFallback({ sort: 'mostViewed' }, 1, 8)
+    return result.items
   } catch (err) {
     warnFallback(err, 'fetchTrending')
-    return mediaItems
-      .filter((m) => m.isTrending)
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 8)
+    return []
   }
 }
 
@@ -268,32 +270,6 @@ export async function searchMedia(
   query: string,
   filters: MediaFilters = {}
 ): Promise<PaginatedResult<MediaItem>> {
-  try {
-    // Primary: dedicated screenshots search endpoint
-    const screenshots = await getJson<BackendScreenshot[]>(
-      `/api/screenshots/search?q=${encodeURIComponent(query)}&limit=24`
-    )
-
-    // If backend returns results, adapt them
-    if (Array.isArray(screenshots) && screenshots.length > 0) {
-      const items = screenshots.map(adaptScreenshot)
-      return {
-        items,
-        page: 1,
-        perPage: 24,
-        total: items.length,
-        hasMore: false,
-      }
-    }
-
-    // Empty array from backend = no results, return empty (valid, not fallback)
-    if (Array.isArray(screenshots)) {
-      return { items: [], page: 1, perPage: 24, total: 0, hasMore: false }
-    }
-  } catch (err) {
-    warnFallback(err, 'searchMedia (screenshots/search)')
-  }
-
   try {
     return await fetchLiveMediaFallback({ ...filters, search: query }, 1, 24)
   } catch (liveError) {
@@ -318,13 +294,10 @@ export async function fetchMediaById(id: string): Promise<MediaItem | null> {
 
 export async function fetchCreators(): Promise<Creator[]> {
   try {
-    const payload = await getJson<BrowsePerformersPayload>(
-      '/api/performers?limit=50'
-    )
-    return payload.performers.map(adaptPerformer)
+    return await fetchLiveCreatorDirectory()
   } catch (err) {
-    warnFallback(err, 'fetchCreators')
-    return [...creators]
+    warnFallback(err, 'fetchLiveCreatorDirectory')
+    return []
   }
 }
 

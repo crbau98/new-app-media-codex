@@ -48,29 +48,24 @@ Required:
 - `DATABASE_PATH`: persistent SQLite path.
 - `IMAGE_DIR`: persistent image-cache path.
 
-Optional integrations include `OPENAI_API_KEY`, `X_BEARER_TOKEN`, Telegram credentials, source-specific proxy settings, and ingestion result limits. Never commit secrets or place an OpenAI key in frontend code.
+Optional integrations include `OPENAI_API_KEY`, `X_BEARER_TOKEN`, and Telegram credentials. Never commit secrets or place an OpenAI key in frontend code.
 
-### Live archiver operation
+### Public discovery operation
 
-The production blueprint starts a crawl after each deploy and refreshes every 30 minutes. The deep male-performer collector is controlled by:
+The Vercel live endpoint refreshes public, source-attributed discovery media on demand with a short edge cache. It groups observed public posts into searchable performer cards and ranks them with an explainable combination of public engagement and freshness.
 
-- `MALE_VIDEO_ARCHIVER_RESULTS` (default `24` per theme)
-- `CRAWL_INTERVAL_MINUTES` (default `30`)
-- `RUN_STARTUP_CRAWL=true` for an immediate post-deploy refresh
-- `ARCHIVER_PROXY_URL` for a residential or clean egress proxy when Coomer/Kemono reject datacenter traffic
+The Render crawler is disabled by default (`ENABLE_EXTERNAL_CRAWLS=false`). It must only be enabled for creator-authorized integrations with a documented rights basis; it is not required for the live public discovery experience.
 
-Images and video are exposed to the UI through the same-origin `/api/screenshots/proxy-media` endpoint. Uploaded video cache files take precedence and `/api/screenshots/cached-video/{id}` supports browser byte-range requests. Playback then falls back through refreshed proxy and direct-source URLs.
+Media playback is source-attributed and linked back to the originating public post. The edge proxy supports range requests but does not persist media.
 
 Operational checks:
 
 ```text
 GET /healthz
-GET /api/screenshots/proxy-status
-GET /api/screenshots/cache-status?source=coomer&missing_only=true
-GET /api/screenshots?source=coomer&media_type=video
+GET /api/live-media
 ```
 
-The server must remain attached to persistent storage for SQLite and cached video. Source availability, consent, rights, and takedown obligations remain the operator's responsibility.
+Source availability, creator permission, rights, and takedown obligations remain the operator's responsibility.
 
 ## Verification
 

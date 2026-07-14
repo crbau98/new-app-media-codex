@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import {
-  creators,
   categories,
   type MediaItem,
   type Creator,
@@ -13,7 +12,7 @@ import MediaCard from '@/components/MediaCard'
 import EmptyState from '@/components/EmptyState'
 import SkeletonGrid from '@/components/SkeletonGrid'
 import MediaDetail from '@/components/MediaDetail'
-import { fetchMedia, searchMedia } from '@/lib/api'
+import { fetchLiveCreatorDirectory, fetchMedia, searchMedia } from '@/lib/api'
 import {
   Search,
   X,
@@ -37,7 +36,8 @@ interface SearchFilters {
   quality: 'any' | 'hd' | '4k'
   date: 'all' | 'today' | 'week' | 'month'
   rating: 'any' | '4plus' | '5'
-  source: 'all' | 'Tube' | 'Redgifs'
+  source: 'all' | 'Redgifs'
+  demand: 'all' | 'popular' | 'highDemand'
   creator: string | null
 }
 
@@ -48,6 +48,7 @@ const defaultFilters: SearchFilters = {
   date: 'all',
   rating: 'any',
   source: 'all',
+  demand: 'all',
   creator: null,
 }
 
@@ -121,6 +122,7 @@ function SearchHero({
   recentSearches,
   onRecentSelect,
   onRecentRemove,
+  creators,
 }: {
   query: string
   onQueryChange: (q: string) => void
@@ -128,6 +130,7 @@ function SearchHero({
   recentSearches: string[]
   onRecentSelect: (q: string) => void
   onRecentRemove: (q: string) => void
+  creators: Creator[]
 }) {
   const [focused, setFocused] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
@@ -191,7 +194,7 @@ function SearchHero({
       })
     }
     return list
-  }, [query, recentSearches, onRecentSelect])
+  }, [query, recentSearches, onRecentSelect, creators])
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -443,10 +446,12 @@ function AdvancedFilterPanel({
   filters,
   onChange,
   open,
+  creators,
 }: {
   filters: SearchFilters
   onChange: (f: Partial<SearchFilters>) => void
   open: boolean
+  creators: Creator[]
 }) {
   return (
     <AnimatePresence>
@@ -594,7 +599,7 @@ function AdvancedFilterPanel({
                 Source
               </label>
               <div className="flex gap-2">
-                {(['all', 'Tube', 'Redgifs'] as const).map((s) => (
+                {(['all', 'Redgifs'] as const).map((s) => (
                   <button
                     key={s}
                     onClick={() => onChange({ source: s })}
@@ -606,6 +611,33 @@ function AdvancedFilterPanel({
                     )}
                   >
                     {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Discovery signal */}
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2 block">
+                Discovery signal
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  { key: 'all' as const, label: 'All' },
+                  { key: 'popular' as const, label: 'Popular now' },
+                  { key: 'highDemand' as const, label: 'High demand' },
+                ]).map((option) => (
+                  <button
+                    key={option.key}
+                    onClick={() => onChange({ demand: option.key })}
+                    className={cn(
+                      'px-3 py-1.5 rounded-md text-sm transition-colors',
+                      filters.demand === option.key
+                        ? 'bg-[var(--accent-dim)] text-[var(--accent)]'
+                        : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/80'
+                    )}
+                  >
+                    {option.label}
                   </button>
                 ))}
               </div>
@@ -666,6 +698,11 @@ export default function SearchPage() {
 
   const searchQuery = useAppStore((s) => s.searchQuery)
   const setAppSearchQuery = useAppStore((s) => s.setSearchQuery)
+  const { data: creators = [] } = useQuery({
+    queryKey: ['live-creators', 'search'],
+    queryFn: fetchLiveCreatorDirectory,
+    staleTime: 60_000,
+  })
 
   // Load from URL on mount
   useEffect(() => {
@@ -680,6 +717,7 @@ export default function SearchPage() {
     if (params.date) setFilters((f) => ({ ...f, date: params.date as SearchFilters['date'] }))
     if (params.rating) setFilters((f) => ({ ...f, rating: params.rating as SearchFilters['rating'] }))
     if (params.source) setFilters((f) => ({ ...f, source: params.source as SearchFilters['source'] }))
+    if (params.demand) setFilters((f) => ({ ...f, demand: params.demand as SearchFilters['demand'] }))
     if (params.creator) setFilters((f) => ({ ...f, creator: params.creator }))
     if (params.sort) setSort(params.sort)
   }, [])
@@ -702,6 +740,7 @@ export default function SearchPage() {
       date: filters.date === 'all' ? null : filters.date,
       rating: filters.rating === 'any' ? null : filters.rating,
       source: filters.source === 'all' ? null : filters.source,
+      demand: filters.demand === 'all' ? null : filters.demand,
       creator: filters.creator,
       sort: sort === 'Relevance' ? null : sort,
     })
@@ -744,6 +783,8 @@ export default function SearchPage() {
     }
     if (filters.source !== 'all') result = result.filter((m) => m.source === filters.source)
     if (filters.creator) result = result.filter((m) => m.creator === filters.creator)
+    if (filters.demand === 'popular') result = result.filter((m) => (m.curationScore || 0) >= 50)
+    if (filters.demand === 'highDemand') result = result.filter((m) => (m.curationScore || 0) >= 65)
 
     // Sort
     switch (sort) {
@@ -803,6 +844,7 @@ export default function SearchPage() {
     if (filters.date !== 'all') chips.push({ label: `Date: ${filters.date}`, key: 'date' })
     if (filters.rating !== 'any') chips.push({ label: `Rating: ${filters.rating}`, key: 'rating' })
     if (filters.source !== 'all') chips.push({ label: `Source: ${filters.source}`, key: 'source' })
+    if (filters.demand !== 'all') chips.push({ label: `Signal: ${filters.demand === 'highDemand' ? 'high demand' : 'popular now'}`, key: 'demand' })
     if (filters.creator) chips.push({ label: `Creator: ${filters.creator}`, key: 'creator' })
     return chips
   }, [filters])
@@ -810,7 +852,7 @@ export default function SearchPage() {
   const removeFilter = useCallback((key: string) => {
     setFilters((f) => ({
       ...f,
-      [key]: key === 'creator' ? null : key === 'type' || key === 'source' ? 'all' : 'any',
+      [key]: key === 'creator' ? null : key === 'type' || key === 'source' || key === 'demand' ? 'all' : 'any',
     }))
   }, [])
 
@@ -824,8 +866,9 @@ export default function SearchPage() {
         onQueryChange={setQuery}
         onSubmit={handleSearchSubmit}
         recentSearches={recentSearches}
-        onRecentSelect={handleRecentSelect}
-        onRecentRemove={handleRecentRemove}
+      onRecentSelect={handleRecentSelect}
+      onRecentRemove={handleRecentRemove}
+        creators={creators}
       />
 
       {/* Filter toggle + sort */}
@@ -858,7 +901,7 @@ export default function SearchPage() {
       </div>
 
       {/* Advanced Filter Panel */}
-      <AdvancedFilterPanel filters={filters} onChange={(f) => setFilters((prev) => ({ ...prev, ...f }))} open={filtersOpen} />
+      <AdvancedFilterPanel filters={filters} onChange={(f) => setFilters((prev) => ({ ...prev, ...f }))} open={filtersOpen} creators={creators} />
 
       {/* Active Filter Chips */}
       <AnimatePresence>
