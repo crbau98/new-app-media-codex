@@ -12,7 +12,7 @@ import EmptyState from '@/components/EmptyState'
 import SkeletonGrid from '@/components/SkeletonGrid'
 
 type CreatorSort = 'Smart picks' | 'Most watched' | 'Most liked' | 'A–Z'
-type CreatorFilter = 'all' | 'high-demand'
+type CreatorFilter = 'all' | 'ai-matches' | 'high-demand'
 
 function formatMetric(value = 0): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}m`
@@ -74,7 +74,7 @@ function CreatorCard({
             loading="lazy"
           />
           <span className="mb-1 flex items-center gap-1 rounded-full bg-[var(--accent-dim)] px-2 py-1 text-[10px] font-semibold text-[var(--accent)]">
-            <Sparkles size={11} /> {creator.curationScore || 0} public signal
+            {creator.isWatched ? <><Radar size={11} /> On radar</> : creator.isSimilar ? <><Sparkles size={11} /> {creator.similarityScore}% AI match</> : <><Sparkles size={11} /> {creator.curationScore || 0} public signal</>}
           </span>
         </div>
 
@@ -141,6 +141,13 @@ function CreatorDrawer({ creator, onClose }: { creator: Creator | null; onClose:
               <div><p className="font-semibold text-[var(--text-primary)]">{formatMetric(creator.likeCount)}</p><p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Public likes</p></div>
             </div>
 
+            {creator.isSimilar && creator.discoveryReasons?.length ? (
+              <section className="mb-5 rounded-[var(--radius-md)] border border-[var(--accent)]/30 bg-[var(--accent-dim)] p-4">
+                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--accent)]"><Sparkles size={14} /> Why AI suggested this creator</p>
+                <div className="mt-3 flex flex-wrap gap-2">{creator.discoveryReasons.map((reason) => <span key={reason} className="rounded-full bg-[var(--bg-base)]/70 px-2.5 py-1 text-xs text-[var(--text-secondary)]">{reason}</span>)}</div>
+              </section>
+            ) : null}
+
             <div className="mb-5 flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-semibold text-[var(--text-primary)]">Latest public posts</h3>
@@ -189,11 +196,12 @@ export default function CreatorsPage() {
     const result = creators
       .filter((creator) => !normalized || [creator.name, creator.username || '', creator.platform || ''].join(' ').toLowerCase().includes(normalized))
       .filter((creator) => filter !== 'high-demand' || (creator.curationScore || 0) >= 65)
+      .filter((creator) => filter !== 'ai-matches' || creator.isSimilar)
     return [...result].sort((a, b) => {
       if (sort === 'Most watched') return (b.viewCount || 0) - (a.viewCount || 0)
       if (sort === 'Most liked') return (b.likeCount || 0) - (a.likeCount || 0)
       if (sort === 'A–Z') return a.name.localeCompare(b.name)
-      return (b.curationScore || 0) - (a.curationScore || 0) || (b.viewCount || 0) - (a.viewCount || 0)
+      return Number(b.isWatched) - Number(a.isWatched) || (b.similarityScore || 0) - (a.similarityScore || 0) || (b.curationScore || 0) - (a.curationScore || 0) || (b.viewCount || 0) - (a.viewCount || 0)
     })
   }, [creators, filter, query, sort])
 
@@ -207,6 +215,10 @@ export default function CreatorsPage() {
     event.preventDefault()
     const candidate = watchInput.trim().replace(/^@/, '')
     if (candidate.length < 2) return
+    if (/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(candidate)) {
+      addToast({ type: 'error', title: 'Use a public handle or creator name—not an email' })
+      return
+    }
     const key = candidate.toLowerCase().replace(/[^a-z0-9]+/g, '')
     if (creatorWatchlist.some((item) => item.toLowerCase().replace(/[^a-z0-9]+/g, '') === key)) {
       addToast({ type: 'info', title: 'Creator is already on your radar' })
@@ -238,7 +250,7 @@ export default function CreatorsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Radar size={17} className="text-[var(--accent)]" /> Automatic creator radar</div>
-            <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">Add a public handle or creator name. The app searches again every two minutes, merges newly available posts, and keeps source attribution. A watchlist entry is a search lead—not an identity label.</p>
+            <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">Add a public handle or creator name. AI compares source tags to find adjacent creators, while the live app refreshes every two minutes and a background scan keeps the seeded radar warm. Emails are removed before anything is displayed.</p>
           </div>
           <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[11px] text-[var(--text-secondary)]">
             {isFetching ? 'Scanning sources…' : `${creators.filter((creator) => creator.isWatched).length} matched`} · {dataUpdatedAt ? `updated ${new Date(dataUpdatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'waiting'}
@@ -268,6 +280,7 @@ export default function CreatorsPage() {
         </label>
         <div className="flex items-center gap-1 rounded-full bg-[var(--bg-surface)] p-1">
           <button onClick={() => setFilter('all')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'all' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>All</button>
+          <button onClick={() => setFilter('ai-matches')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'ai-matches' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>AI matches</button>
           <button onClick={() => setFilter('high-demand')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'high-demand' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>High demand</button>
         </div>
         <select value={sort} onChange={(event) => setSort(event.target.value as CreatorSort)} className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none">

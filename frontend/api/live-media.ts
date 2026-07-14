@@ -9,6 +9,9 @@
 export const config = { runtime: 'edge' }
 
 const REDGIFS_API = 'https://api.redgifs.com/v2'
+const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
+const EMAIL_TEST = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
+const GENERIC_SIMILARITY_TAGS = new Set(['gay', 'male', 'men', 'man', 'video', 'verified'])
 const FEMALE_MARKERS = [
   'female', 'woman', 'women', 'girl', 'lesbian', 'straight', 'pussy',
   'vagina', 'shemale', 'ladyboy', 'hetero',
@@ -59,6 +62,33 @@ type LiveMediaItem = {
   curationScore: number
   curationReasons: string[]
   isWatchedCreator: boolean
+}
+
+type CreatorSimilarity = {
+  score: number
+  reasons: string[]
+}
+
+function redactEmails(value = ''): string {
+  return value
+    .replace(EMAIL_PATTERN, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .trim()
+}
+
+function sanitizeProviderItem(item: RedgifsItem): RedgifsItem {
+  const creator = redactEmails(item.userName || '') || 'Public creator'
+  return {
+    ...item,
+    userName: creator,
+    description: redactEmails(item.description || '') || undefined,
+    tags: (item.tags || []).map(redactEmails).filter(Boolean),
+    niches: (item.niches || []).map((niche) => {
+      if (typeof niche === 'string') return redactEmails(niche)
+      return { ...niche, name: redactEmails(niche.name || '') }
+    }).filter((niche) => typeof niche === 'string' ? Boolean(niche) : Boolean(niche.name)),
+  }
 }
 
 function textFor(item: RedgifsItem): string {
@@ -128,7 +158,7 @@ function parseBoundedInt(value: string | null, fallback: number, maximum: number
 }
 
 function boundedQuery(value: string): string {
-  return value.trim().replace(/\s+/g, ' ').slice(0, 80)
+  return redactEmails(value).replace(/\s+/g, ' ').slice(0, 80)
 }
 
 function canonicalCreator(value: string): string {
@@ -142,6 +172,7 @@ function parseWatchlist(url: URL): string[] {
   ]
   const unique = new Map<string, string>()
   for (const raw of candidates) {
+    if (EMAIL_TEST.test(raw)) continue
     const display = raw.trim().replace(/^@/, '').replace(/\s+/g, ' ').slice(0, 50)
     const key = canonicalCreator(display)
     if (key.length < 2 || unique.has(key)) continue
@@ -174,7 +205,67 @@ function sortItems(items: LiveMediaItem[], sort: string): LiveMediaItem[] {
   return sorted.sort((a, b) => b.curationScore - a.curationScore || b.views - a.views)
 }
 
-function buildCreators(items: LiveMediaItem[]) {
+function creatorSimilarities(items: LiveMediaItem[]): Map<string, CreatorSimilarity> {
+  const byCreator = new Map<string, LiveMediaItem[]>()
+  for (const item of items) {
+    const creator = canonicalCreator(item.creator)
+    if (!creator) continue
+    byCreator.set(creator, [...(byCreator.get(creator) || []), item])
+  }
+  const watched = new Set(items.filter((item) => item.isWatchedCreator).map((item) => canonicalCreator(item.creator)))
+  if (!watched.size) return new Map()
+
+  const documentFrequency = new Map<string, number>()
+  const vectors = new Map<string, Map<string, number>>()
+  for (const [creator, creatorItems] of byCreator) {
+    const counts = new Map<string, number>()
+    for (const item of creatorItems) {
+      for (const rawTag of item.tags) {
+        const tag = rawTag.trim().toLowerCase()
+        if (!tag || GENERIC_SIMILARITY_TAGS.has(tag)) continue
+        counts.set(tag, (counts.get(tag) || 0) + 1)
+      }
+    }
+    vectors.set(creator, counts)
+    for (const tag of counts.keys()) documentFrequency.set(tag, (documentFrequency.get(tag) || 0) + 1)
+  }
+
+  const weighted = (counts: Map<string, number>): Map<string, number> => {
+    const result = new Map<string, number>()
+    for (const [tag, count] of counts) {
+      const idf = Math.log((byCreator.size + 1) / ((documentFrequency.get(tag) || 0) + 1)) + 1
+      result.set(tag, (1 + Math.log(count)) * idf)
+    }
+    return result
+  }
+  const seedCounts = new Map<string, number>()
+  for (const creator of watched) {
+    for (const [tag, count] of vectors.get(creator) || []) seedCounts.set(tag, (seedCounts.get(tag) || 0) + count)
+  }
+  const seed = weighted(seedCounts)
+  const seedNorm = Math.sqrt([...seed.values()].reduce((sum, value) => sum + value * value, 0)) || 1
+  const scored: Array<[string, CreatorSimilarity]> = []
+  for (const [creator, counts] of vectors) {
+    if (watched.has(creator) || !counts.size) continue
+    const candidate = weighted(counts)
+    const norm = Math.sqrt([...candidate.values()].reduce((sum, value) => sum + value * value, 0)) || 1
+    let dot = 0
+    for (const [tag, value] of candidate) dot += value * (seed.get(tag) || 0)
+    const similarity = dot / (seedNorm * norm)
+    if (similarity < 0.08) continue
+    const overlaps = [...candidate.keys()]
+      .filter((tag) => seed.has(tag))
+      .sort((a, b) => (seed.get(b) || 0) * (candidate.get(b) || 0) - (seed.get(a) || 0) * (candidate.get(a) || 0))
+      .slice(0, 3)
+    scored.push([creator, {
+      score: Math.min(99, Math.max(1, Math.round(similarity * 100))),
+      reasons: overlaps.length ? overlaps.map((tag) => `shares #${tag} with your radar`) : ['similar public content signals'],
+    }])
+  }
+  return new Map(scored.sort((a, b) => b[1].score - a[1].score).slice(0, 12))
+}
+
+function buildCreators(items: LiveMediaItem[], similarities: Map<string, CreatorSimilarity>) {
   const grouped = new Map<string, LiveMediaItem[]>()
   for (const item of items) {
     const key = canonicalCreator(item.creator)
@@ -190,6 +281,7 @@ function buildCreators(items: LiveMediaItem[]) {
       const first = ranked[0]
       const views = creatorItems.reduce((sum, item) => sum + item.views, 0)
       const likes = creatorItems.reduce((sum, item) => sum + item.likes, 0)
+      const similarity = similarities.get(key)
       return {
         id: `redgifs-${key}`,
         name: first.creator,
@@ -207,10 +299,13 @@ function buildCreators(items: LiveMediaItem[]) {
         sourceAttribution: 'Public Redgifs source',
         observedAt: first.createdAt,
         isWatched: creatorItems.some((item) => item.isWatchedCreator),
+        isSimilar: Boolean(similarity),
+        similarityScore: similarity?.score || 0,
+        discoveryReasons: similarity?.reasons || [],
         media: ranked.slice(0, 12),
       }
     })
-    .sort((a, b) => (b.curationScore - a.curationScore) || (b.viewCount - a.viewCount))
+    .sort((a, b) => Number(b.isWatched) - Number(a.isWatched) || (b.similarityScore - a.similarityScore) || (b.curationScore - a.curationScore) || (b.viewCount - a.viewCount))
 }
 
 function corsHeaders(): Record<string, string> {
@@ -301,7 +396,8 @@ export default async function handler(req: Request): Promise<Response> {
     if (!successfulPages.length) throw new Error('Public provider search is temporarily unavailable')
     const deduplicated = new Map<string, RedgifsItem>()
     for (const item of successfulPages.flatMap((result) => result.value)) {
-      if (item.id) deduplicated.set(item.id, item)
+      const sanitized = sanitizeProviderItem(item)
+      if (sanitized.id) deduplicated.set(sanitized.id, sanitized)
     }
     const received = [...deduplicated.values()]
     const eligible = received.filter(isEligibleMaleItem)
@@ -350,10 +446,13 @@ export default async function handler(req: Request): Promise<Response> {
       }, query))
       .filter((item) => item.views >= minViews && item.likes >= minLikes)
 
-    const items = sortItems(rankCohort(mapped).map((item) => ({ ...item, isTrending: item.curationScore >= 65 })), sort).slice(0, count)
+    const ranked = sortItems(rankCohort(mapped).map((item) => ({ ...item, isTrending: item.curationScore >= 65 })), sort)
+    const items = ranked.slice(0, count)
+    const similarities = creatorSimilarities(ranked)
+    const performers = buildCreators(items, similarities)
     return new Response(JSON.stringify({
       items,
-      performers: buildCreators(items),
+      performers,
       source: 'public-redgifs-api',
       updatedAt: new Date().toISOString(),
       counts: { received: received.length, eligible: eligible.length, playable: items.length, pagesScanned: successfulPages.length },
@@ -361,6 +460,13 @@ export default async function handler(req: Request): Promise<Response> {
         requested: watchlist,
         matched: [...new Set(items.filter((item) => item.isWatchedCreator).map((item) => item.creator))],
       },
+      aiDiscovery: {
+        model: 'tf-idf-cosine-v1',
+        explainable: true,
+        suggestedCreators: performers.filter((creator) => creator.isSimilar).length,
+        sensitiveAttributeInference: false,
+      },
+      privacy: { emailsRedacted: true },
       ranking: 'cohort-normalized public engagement and freshness; no appearance scoring',
     }), { status: 200, headers: corsHeaders() })
   } catch (error) {

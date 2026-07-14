@@ -59,6 +59,19 @@ export interface PaginatedResult<T> {
   hasMore: boolean
 }
 
+const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
+
+function redactEmailsDeep<T>(value: T): T {
+  if (typeof value === 'string') {
+    return value.replace(EMAIL_PATTERN, '').replace(/\s{2,}/g, ' ').trim() as T
+  }
+  if (Array.isArray(value)) return value.map((item) => redactEmailsDeep(item)) as T
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactEmailsDeep(item)])) as T
+  }
+  return value
+}
+
 /* ───────────────────────────────────────────────
    Low-level fetch helper with timeout
    ────────────────────────────────────────────── */
@@ -83,7 +96,7 @@ async function getJson<T>(path: string): Promise<T> {
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${res.statusText}`)
   }
-  return res.json() as Promise<T>
+  return redactEmailsDeep(await res.json() as T)
 }
 
 async function putJson(path: string, body: unknown): Promise<void> {
@@ -118,7 +131,7 @@ async function fetchLiveMediaFallback(
   else if (filters.sort === 'topRated') params.set('sort', 'likes')
   const response = await fetchWithTimeout(`/api/live-media?${params.toString()}`, undefined, 20000)
   if (!response.ok) throw new Error(`Live media fallback returned ${response.status}`)
-  const payload = await response.json() as { items?: MediaItem[] }
+  const payload = redactEmailsDeep(await response.json() as { items?: MediaItem[] })
   // Query terms were applied upstream. Category remains a tag-level client
   // filter because one item may belong to several source tags.
   const filtered = applyClientFilters(payload.items || [], { ...filters, search: undefined, creator: null })
@@ -131,7 +144,7 @@ export async function fetchLiveCreatorDirectory(watchlist: string[] = []): Promi
   for (const creator of watchlist.slice(0, 8)) params.append('watch', creator)
   const response = await fetchWithTimeout(`/api/live-media?${params.toString()}`, undefined, 25000)
   if (!response.ok) throw new Error(`Live creator directory returned ${response.status}`)
-  const payload = await response.json() as { performers?: Creator[] }
+  const payload = redactEmailsDeep(await response.json() as { performers?: Creator[] })
   return Array.isArray(payload.performers) ? payload.performers : []
 }
 
@@ -242,7 +255,7 @@ export async function fetchCategories(): Promise<CategoryDef[]> {
   try {
     const response = await fetchWithTimeout('/api/live-media?count=100&pages=3&sort=smart', undefined, 20000)
     if (!response.ok) throw new Error(`Live categories returned ${response.status}`)
-    const payload = await response.json() as { items?: MediaItem[] }
+    const payload = redactEmailsDeep(await response.json() as { items?: MediaItem[] })
     const counts = new Map<string, number>()
     for (const item of payload.items || []) {
       for (const tag of item.tags.slice(0, 5)) {
