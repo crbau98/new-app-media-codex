@@ -80,10 +80,10 @@ export default async function handler(req: Request): Promise<Response> {
     const requestUrl = new URL(req.url)
     const count = Math.min(60, Math.max(12, Number(requestUrl.searchParams.get('count')) || 36))
     const params = new URLSearchParams({
-      // Redgifs search accepts one tag. A phrase such as `gay male` can fall
-      // back to unscoped trending results, which is why the old feed mixed in
-      // unrelated performers. Use the canonical tag and filter again below.
-      search_text: 'Gay',
+      // Redgifs v2 filters GIF search with `tags` (not `search_text`). Sending
+      // the latter silently returns general trending media.
+      type: 'g',
+      tags: 'Gay',
       count: String(count),
       page: '1',
       order: 'trending',
