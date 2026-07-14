@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
+import { apiUrl, resolvePublicUrl } from '@/lib/backendOrigin'
 import {
   mediaItems,
   creators,
@@ -99,8 +100,45 @@ const mockComments = [
    ──────────────────────────────────────────────── */
 function VideoPlayer({ item }: { item: MediaItem }) {
   const [failed, setFailed] = useState(false)
+  const [streamUrl, setStreamUrl] = useState(item.mediaUrl)
+  const [recovering, setRecovering] = useState(false)
+  const attemptedRef = useRef<Set<string>>(new Set(item.mediaUrl ? [item.mediaUrl] : []))
 
-  if (!item.mediaUrl || failed) {
+  useEffect(() => {
+    setFailed(false)
+    setRecovering(false)
+    setStreamUrl(item.mediaUrl)
+    attemptedRef.current = new Set(item.mediaUrl ? [item.mediaUrl] : [])
+  }, [item.id, item.mediaUrl])
+
+  const recoverStream = useCallback(async () => {
+    if (recovering) return
+    setRecovering(true)
+    try {
+      const response = await fetch(apiUrl(`/api/screenshots/${item.id}/resolve-stream`), {
+        method: 'POST',
+      })
+      if (!response.ok) throw new Error(`Stream recovery failed (${response.status})`)
+      const data = await response.json() as {
+        cached_url?: string | null
+        local_url?: string | null
+        direct_url?: string | null
+      }
+      const candidates = [data.cached_url, data.local_url, data.direct_url]
+        .map(resolvePublicUrl)
+        .filter(Boolean)
+      const next = candidates.find((candidate) => !attemptedRef.current.has(candidate))
+      if (!next) throw new Error('No alternate stream available')
+      attemptedRef.current.add(next)
+      setStreamUrl(next)
+    } catch {
+      setFailed(true)
+    } finally {
+      setRecovering(false)
+    }
+  }, [item.id, recovering])
+
+  if (!streamUrl || failed) {
     return (
       <div className="relative grid aspect-video w-full place-items-center overflow-hidden rounded-[var(--radius-lg)] bg-[var(--bg-darkest)]">
         <img src={item.thumbnail} alt="" className="absolute inset-0 h-full w-full object-cover opacity-35 blur-sm" />
@@ -118,17 +156,25 @@ function VideoPlayer({ item }: { item: MediaItem }) {
   }
 
   return (
-    <video
-      src={item.mediaUrl}
-      poster={item.thumbnail}
-      controls
-      playsInline
-      preload="metadata"
-      onError={() => setFailed(true)}
-      className="aspect-video w-full rounded-[var(--radius-lg)] bg-black object-contain"
-    >
-      Your browser does not support video playback.
-    </video>
+    <div className="relative">
+      <video
+        key={streamUrl}
+        src={streamUrl}
+        poster={item.thumbnail}
+        controls
+        playsInline
+        preload="metadata"
+        onError={recoverStream}
+        className="aspect-video w-full rounded-[var(--radius-lg)] bg-black object-contain"
+      >
+        Your browser does not support video playback.
+      </video>
+      {recovering && (
+        <div className="absolute inset-0 grid place-items-center rounded-[var(--radius-lg)] bg-black/70 text-sm font-medium text-white">
+          Connecting to an alternate stream…
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -18,7 +18,7 @@ from app.sources.base import (
     score_item,
 )
 
-COOMER_HOSTS = ("coomer.su", "coomer.st")
+COOMER_HOSTS = ("coomer.st", "coomer.su")
 COOMER_IMG_HOST = "https://img.coomer.st"
 COOMER_VIDEO_HOST = "https://coomer.st"
 

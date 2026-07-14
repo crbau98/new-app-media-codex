@@ -22,6 +22,10 @@ export interface BackendScreenshot {
   preview_url?: string | null
   source_url?: string | null
   thumbnail_url?: string | null
+  stream_url?: string | null
+  poster_url?: string | null
+  media_type?: 'image' | 'video'
+  is_video?: boolean
   captured_at: string
   ai_summary?: string | null
   ai_tags?: string | null
@@ -203,17 +207,28 @@ function capitalizeFirst(str: string): string {
 
 export function adaptScreenshot(s: BackendScreenshot): MediaItem {
   const thumbnail =
-    resolvePublicUrl(s.thumbnail_url) ||
-    resolvePublicUrl(s.local_url) ||
+    resolvePublicUrl(s.poster_url) ||
     resolvePublicUrl(s.preview_url) ||
+    resolvePublicUrl(s.thumbnail_url) ||
+    (s.is_video || s.media_type === 'video' ? '' : resolvePublicUrl(s.local_url)) ||
     '/placeholder.jpg'
 
   const source = normalizeSource(s.source)
   const creator = s.performer_username || 'Unknown'
   const tags = parseTags(s.ai_tags || s.user_tags)
+  const streamMediaUrl = resolvePublicUrl(s.stream_url)
   const localMediaUrl = resolvePublicUrl(s.local_url)
   const sourceMediaUrl = resolvePublicUrl(s.source_url)
-  const mediaUrl = isVideoUrl(localMediaUrl) ? localMediaUrl : isVideoUrl(sourceMediaUrl) ? sourceMediaUrl : undefined
+  const explicitlyVideo = s.is_video === true || s.media_type === 'video'
+  const mediaUrl = explicitlyVideo
+    ? streamMediaUrl || localMediaUrl || sourceMediaUrl || undefined
+    : isVideoUrl(streamMediaUrl)
+      ? streamMediaUrl
+      : isVideoUrl(localMediaUrl)
+        ? localMediaUrl
+        : isVideoUrl(sourceMediaUrl)
+          ? sourceMediaUrl
+          : undefined
 
   return {
     id: String(s.id),
@@ -221,7 +236,7 @@ export function adaptScreenshot(s: BackendScreenshot): MediaItem {
     thumbnail,
     source,
     duration: '',
-    isVideo: Boolean(mediaUrl),
+    isVideo: explicitlyVideo || Boolean(mediaUrl),
     category: s.term,
     creator,
     tags,

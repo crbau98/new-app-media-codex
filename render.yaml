@@ -23,16 +23,18 @@ services:
       - key: SQLITE_BUSY_TIMEOUT_MS
         value: 10000
       - key: RUN_STARTUP_CRAWL
-        value: false
+        value: "true"
+      - key: CRAWL_INTERVAL_MINUTES
+        value: "30"
+      - key: MALE_VIDEO_ARCHIVER_RESULTS
+        value: "24"
       - key: ADMIN_TOKEN
         generateValue: true
       - key: SKIP_MEDIA_DOWNLOADS
         value: "true"
-      # Comma-separated origins for the Vercel UI (required for browser API/WebSocket/SSE from another host).
-      # Defaults to * (allow all) so split Vercel+Render deployments work immediately.
-      # Restrict to your specific Vercel domain in production if desired.
+      # Explicit public UI origins for browser API/WebSocket/SSE access.
       - key: CORS_ALLOW_ORIGINS
-        value: "*"
+        value: "https://new-app-media-codex.vercel.app,https://new-app-media-codex-chases-projects-cec7ce2c.vercel.app"
       # Outbound proxy for coomer/kemono fetches (blocked from datacenter IPs).
       # Set in Render dashboard: http://user:pass@host:port
       # (Webshare/IPRoyal/Smartproxy/etc.) See /api/screenshots/proxy-status to verify.

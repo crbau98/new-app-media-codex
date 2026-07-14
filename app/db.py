@@ -2636,8 +2636,9 @@ class Database:
         require_media_url: bool = False,
     ) -> dict:
         where, params = [], []
-        # Permanently exclude dead sources (coomer/kemono blocked by DDoS-Guard)
-        where.append("source NOT IN ('coomer', 'coomer_video', 'kemono', 'kemono_video')")
+        # Archiver media is intentionally included. Browser clients receive a
+        # same-origin proxy URL from the screenshots API, so upstream CORS and
+        # DDoS-Guard restrictions do not leak into the UI.
         if term:
             where.append("term = ?")
             params.append(term)

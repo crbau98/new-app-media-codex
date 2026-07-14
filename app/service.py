@@ -147,131 +147,13 @@ class ResearchService:
             self._dashboard_cache_payload = None
             self._dashboard_cache_expires_at = 0.0
 
-    # ── Default creator seeds ─────────────────────────────────────────────────
-
-    _DEFAULT_PERFORMERS = [
-        # Explicitly mentioned by user — seeded automatically
-        {"username": "jakipz",             "platform": "OnlyFans",  "display_name": "Jakipz",
-         "tags": ["twink", "latino", "onlyfans"], "bio": "Gay OnlyFans creator @jakipz"},
-        {"username": "hoguesdirtylaundry", "platform": "Twitter/X", "display_name": "Hogue",
-         "tags": ["hairy", "bear", "twitter"], "bio": "Gay creator on Twitter/X"},
-        {"username": "michaelyerger",      "platform": "OnlyFans",  "display_name": "Michael Yerger",
-         "tags": ["fitness", "reality_tv", "muscle", "onlyfans"], "bio": "Survivor contestant turned OnlyFans creator"},
-        {"username": "sebastiancox",       "platform": "OnlyFans",  "display_name": "Sebastian Cox",
-         "tags": ["muscle", "gay", "onlyfans"], "bio": "Gay muscle content creator"},
-        # Popular gay male creators
-        {"username": "ryanbones",          "platform": "OnlyFans",  "display_name": "Ryan Bones",
-         "tags": ["muscle", "gay", "onlyfans"]},
-        {"username": "drewvalentino",      "platform": "OnlyFans",  "display_name": "Drew Valentino",
-         "tags": ["twink", "gay", "onlyfans"]},
-        {"username": "blakemitchell",      "platform": "OnlyFans",  "display_name": "Blake Mitchell",
-         "tags": ["twink", "gay", "onlyfans"]},
-        {"username": "austinwolf",         "platform": "OnlyFans",  "display_name": "Austin Wolf",
-         "tags": ["muscle", "daddy", "onlyfans", "gay"]},
-        {"username": "cademaddox",         "platform": "OnlyFans",  "display_name": "Cade Maddox",
-         "tags": ["muscle", "gay", "onlyfans"]},
-        {"username": "levicharming",       "platform": "OnlyFans",  "display_name": "Levi Charming",
-         "tags": ["twink", "gay", "onlyfans"]},
-        {"username": "jjknight",           "platform": "OnlyFans",  "display_name": "JJ Knight",
-         "tags": ["hung", "muscle", "gay", "onlyfans"]},
-        {"username": "colbykeller",        "platform": "OnlyFans",  "display_name": "Colby Keller",
-         "tags": ["muscle", "artist", "gay", "onlyfans"]},
-        {"username": "alexmecum",          "platform": "OnlyFans",  "display_name": "Alex Mecum",
-         "tags": ["muscle", "bear", "gay", "onlyfans"]},
-        {"username": "brenteverett",       "platform": "OnlyFans",  "display_name": "Brent Everett",
-         "tags": ["muscle", "gay", "onlyfans"]},
-        {"username": "pierrefitch",        "platform": "OnlyFans",  "display_name": "Pierre Fitch",
-         "tags": ["athletic", "gay", "onlyfans"]},
-        {"username": "nickfitt",           "platform": "OnlyFans",  "display_name": "Nick Fitt",
-         "tags": ["muscle", "gay", "onlyfans"]},
-        {"username": "troyedean",          "platform": "OnlyFans",  "display_name": "Troye Dean",
-         "tags": ["twink", "gay", "onlyfans"]},
-        {"username": "devinfrancoxx",      "platform": "OnlyFans",  "display_name": "Devin Franco",
-         "tags": ["muscle", "gay", "onlyfans"]},
-        {"username": "manuelskye",         "platform": "OnlyFans",  "display_name": "Manuel Skye",
-         "tags": ["muscle", "hung", "gay", "onlyfans"]},
-        {"username": "joshmoorexxx",       "platform": "OnlyFans",  "display_name": "Josh Moore",
-         "tags": ["muscle", "gay", "onlyfans"]},
-        {"username": "boonerbanks",        "platform": "OnlyFans",  "display_name": "Boomer Banks",
-         "tags": ["hung", "latino", "gay", "onlyfans"]},
-        {"username": "skyyknox",           "platform": "OnlyFans",  "display_name": "Skyy Knox",
-         "tags": ["muscle", "gay", "onlyfans"]},
-        {"username": "rafaelalencar",      "platform": "OnlyFans",  "display_name": "Rafael Alencar",
-         "tags": ["hung", "muscle", "gay", "onlyfans"]},
-        {"username": "adamramzi",          "platform": "OnlyFans",  "display_name": "Adam Ramzi",
-         "tags": ["muscle", "hairy", "gay", "onlyfans"]},
-        # Fansly creators
-        {"username": "jakipz",             "platform": "Fansly",    "display_name": "Jakipz Fansly",
-         "tags": ["twink", "latino", "fansly"]},
-        {"username": "austinwolf",         "platform": "Fansly",    "display_name": "Austin Wolf Fansly",
-         "tags": ["muscle", "daddy", "fansly"]},
-        {"username": "scottdemarco",       "platform": "Fansly",    "display_name": "Scott DeMarco",
-         "tags": ["muscle", "bear", "hairy", "fansly", "gay"]},
-        {"username": "maxcarter",          "platform": "Fansly",    "display_name": "Max Carter",
-         "tags": ["muscle", "gay", "fansly"]},
-        {"username": "vincenzoortiz",      "platform": "Fansly",    "display_name": "Vincenzo Ortiz",
-         "tags": ["twink", "latino", "fansly", "gay"]},
-        {"username": "tannermyers",        "platform": "Fansly",    "display_name": "Tanner Myers",
-         "tags": ["twink", "athletic", "fansly", "gay"]},
-        # Twitter/X creators
-        {"username": "colbykeller",        "platform": "Twitter/X", "display_name": "Colby Keller X",
-         "tags": ["muscle", "artist", "twitter", "gay"]},
-        {"username": "austinwolfnyc",      "platform": "Twitter/X", "display_name": "Austin Wolf X",
-         "tags": ["muscle", "daddy", "twitter", "gay"]},
-        {"username": "jjknight_official",  "platform": "Twitter/X", "display_name": "JJ Knight X",
-         "tags": ["hung", "muscle", "twitter", "gay"]},
-        {"username": "devinfrancoxx",      "platform": "Twitter/X", "display_name": "Devin Franco X",
-         "tags": ["muscle", "twitter", "gay"]},
-        {"username": "manuelskye",         "platform": "Twitter/X", "display_name": "Manuel Skye X",
-         "tags": ["muscle", "hung", "twitter", "gay"]},
-        {"username": "boonerbanks",        "platform": "Twitter/X", "display_name": "Boomer Banks X",
-         "tags": ["hung", "latino", "twitter", "gay"]},
-        # Additional well-known performers
-        {"username": "johnnyrapid",        "platform": "OnlyFans",  "display_name": "Johnny Rapid",
-         "tags": ["twink", "versatile", "gay", "onlyfans"]},
-        {"username": "marcusorelias",      "platform": "OnlyFans",  "display_name": "Marcus Orelias",
-         "tags": ["muscle", "latino", "gay", "onlyfans"]},
-        {"username": "bareback_bastian",   "platform": "OnlyFans",  "display_name": "Bareback Bastian",
-         "tags": ["twink", "bareback", "gay", "onlyfans"]},
-        {"username": "phenixsaint",        "platform": "OnlyFans",  "display_name": "Phenix Saint",
-         "tags": ["muscle", "hairy", "gay", "onlyfans"]},
-        {"username": "landonmycles",       "platform": "OnlyFans",  "display_name": "Landon Mycles",
-         "tags": ["hung", "muscle", "gay", "onlyfans"]},
-        {"username": "vincentocock",       "platform": "OnlyFans",  "display_name": "Vincent O'Cock",
-         "tags": ["hung", "gay", "onlyfans"]},
-        {"username": "theorbrady",         "platform": "OnlyFans",  "display_name": "Theo Brady",
-         "tags": ["twink", "gay", "onlyfans"]},
-        {"username": "rickyroman",         "platform": "OnlyFans",  "display_name": "Ricky Roman",
-         "tags": ["latino", "muscle", "gay", "onlyfans"]},
-        {"username": "graysondlange",      "platform": "OnlyFans",  "display_name": "Grayson Lange",
-         "tags": ["muscle", "gay", "onlyfans"]},
-        {"username": "jacobblackxxx",      "platform": "OnlyFans",  "display_name": "Jacob Black",
-         "tags": ["muscle", "bear", "gay", "onlyfans"]},
-        {"username": "tannerofmiami",      "platform": "OnlyFans",  "display_name": "Tanner of Miami",
-         "tags": ["muscle", "daddy", "gay", "onlyfans"]},
-    ]
-
     def _seed_default_performers(self) -> None:
-        """Pre-populate the DB with a curated set of gay male content creators."""
-        seeded = 0
-        for p in self._DEFAULT_PERFORMERS:
-            try:
-                existing = self.db.get_performer_by_username(p["username"])
-                if not existing:
-                    performer = self.db.add_performer(
-                        username=p["username"],
-                        platform=p["platform"],
-                        display_name=p.get("display_name"),
-                        bio=p.get("bio"),
-                        tags=p.get("tags"),
-                        discovered_via="seed",
-                    )
-                    self.db.enqueue_capture(performer["id"])
-                    seeded += 1
-            except Exception as exc:
-                logger.warning("seed: error adding %s: %s", p['username'], exc)
-        if seeded:
-            logger.info("seed: added %d default performers, queued for capture", seeded)
+        """Compatibility hook; performers are now discovered from live results.
+
+        Keeping identities out of source avoids publishing a sensitive static
+        roster and prevents stale seeds from outranking current source data.
+        """
+        logger.info("seed: static performer roster disabled; using live discovery")
 
     def start(self) -> None:
         # Clean up stale WAL/SHM files that cause disk I/O errors on network storage.
@@ -451,6 +333,42 @@ class ResearchService:
                 return future.result()
         return self._run_crawl_sync()
 
+    def _ensure_archiver_performer(self, item: Any | None) -> int | None:
+        """Resolve a scraped creator to a durable performer row.
+
+        Archiver post authors are the strongest identity signal available and
+        should be attached during ingestion, not left for a fuzzy backfill.
+        """
+        if item is None:
+            return None
+        username = str(getattr(item, "author", "") or "").strip().lstrip("@")
+        if not username:
+            return None
+        existing = self.db.get_performer_by_username(username)
+        if existing:
+            return int(existing["id"])
+
+        metadata = item.metadata if isinstance(getattr(item, "metadata", None), dict) else {}
+        platform = str(metadata.get("service") or "onlyfans").strip().lower() or "onlyfans"
+        domain = str(getattr(item, "domain", "") or "").strip()
+        profile_url = f"https://{domain}/{platform}/user/{username}" if domain else None
+        try:
+            performer = self.db.add_performer(
+                username=username,
+                platform=platform,
+                display_name=username,
+                profile_url=profile_url,
+                avatar_url=(getattr(item, "image_url", "") or None),
+                tags=[str(getattr(item, "theme", "") or "male creator")],
+                discovered_via=f"{getattr(item, 'source_type', 'archiver')}_api",
+            )
+            return int(performer["id"])
+        except Exception:
+            # Another worker or an earlier alias may have inserted it between
+            # lookup and insert. Re-read before giving up attribution.
+            existing = self.db.get_performer_by_username(username)
+            return int(existing["id"]) if existing else None
+
     def _run_crawl_sync(self) -> dict[str, Any]:
         return asyncio.run(self._run_crawl_async())
 
@@ -464,6 +382,7 @@ class ResearchService:
             collect_instagram_theme,
             collect_justforfans_theme,
             collect_lpsg,
+            collect_male_video_archiver,
             collect_reddit,
             collect_spankbang_theme,
             collect_x,
@@ -496,6 +415,7 @@ class ResearchService:
                         "instagram": 0,
                         "fansly": 0,
                         "justforfans": 0,
+                        "male_archiver": 0,
                     },
                 )
 
@@ -506,12 +426,13 @@ class ResearchService:
                     ("reddit", collect_reddit),
                     ("x", collect_x),
                     ("lpsg", collect_lpsg),
+                    ("male_archiver", collect_male_video_archiver),
                 ):
                     self._emit({"type": "source_start", "source": source_key, "theme": theme.slug})
                     social_tasks.append(
                         asyncio.wait_for(
                             asyncio.to_thread(collector, session, self.settings, theme),
-                            timeout=30.0,
+                            timeout=90.0 if source_key == "male_archiver" else 30.0,
                         )
                     )
                     social_keys.append(source_key)
@@ -543,10 +464,29 @@ class ResearchService:
                         continue
                     source_items, source_images = result
                     self._record_source_metric(source_key, success=True, items=len(source_items) + len(source_images), duration=time.monotonic() - start_time)
+                    item_by_page = {item.url: item for item in source_items}
                     for image in source_images:
                         self.db.insert_image(cache_image_record(session, self.settings, image.__dict__))
                         notes["collected"]["images"] += 1
                         theme_notes["images"] += 1
+                        if source_key == "male_archiver" and image.image_url:
+                            owner = item_by_page.get(image.page_url)
+                            performer_id = self._ensure_archiver_performer(owner) if owner else None
+                            source_name = image.source_type.removesuffix("_image")
+                            try:
+                                self.db.insert_screenshot(
+                                    term=(owner.author if owner and owner.author else image.title),
+                                    source=source_name,
+                                    page_url=image.image_url,
+                                    local_path=None,
+                                    performer_id=performer_id,
+                                    source_url=image.image_url,
+                                    thumbnail_url=image.thumb_url or image.image_url,
+                                )
+                            except Exception as exc:
+                                notes["errors"].append(
+                                    f"{theme.slug}:{source_name}_image_insert:{exc}"
+                                )
                     for item in source_items:
                         record = item.to_record()
                         _, created = self.db.upsert_item(record, run_id)
@@ -568,19 +508,23 @@ class ResearchService:
                                     },
                                 ),
                             )
-                        if source_key == "reddit":
+                        if source_key in {"reddit", "male_archiver"}:
                             videos = item.metadata.get("videos") if isinstance(item.metadata, dict) else None
+                            performer_id = self._ensure_archiver_performer(item) if source_key == "male_archiver" else None
                             for video in videos or []:
                                 video_url = (video or {}).get("source_url")
-                                video_page = (video or {}).get("page_url") or item.url
                                 if not video_url:
                                     continue
                                 try:
                                     self.db.insert_screenshot(
-                                        term=item.title or source_key,
-                                        source=source_key,
-                                        page_url=video_page,
+                                        term=item.author or item.title or source_key,
+                                        source=item.source_type or source_key,
+                                        # One post can contain many attachments. The
+                                        # media URL is the stable unique identity;
+                                        # using the post URL collapsed them into one.
+                                        page_url=video_url,
                                         local_path=None,
+                                        performer_id=performer_id,
                                         source_url=video_url,
                                         thumbnail_url=item.image_url or None,
                                     )
