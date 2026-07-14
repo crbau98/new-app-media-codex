@@ -68,7 +68,10 @@ _PROXY_MEDIA_ALLOWED_NETLOCS: frozenset[str] = frozenset({
     "i.imgur.com",
     "redgifs.com", "www.redgifs.com", "thumbs.redgifs.com",
     "coomer.st", "www.coomer.st", "img.coomer.st",
+    "coomer.su", "www.coomer.su", "img.coomer.su",
     "kemono.su", "www.kemono.su", "img.kemono.su",
+    "kemono.cr", "www.kemono.cr", "img.kemono.cr",
+    "kemono.party", "www.kemono.party", "img.kemono.party",
     "twitter.com", "x.com", "pbs.twimg.com",
     "instagram.com", "www.instagram.com",
     "thisvid.com", "www.thisvid.com",
@@ -737,6 +740,21 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
     source_url = str(shot.get("source_url") or "")
     thumbnail_url = str(shot.get("thumbnail_url") or "")
     existing_local = str(shot.get("local_url") or "")
+    is_video = _screenshot_is_video(shot)
+    shot["media_type"] = "video" if is_video else "image"
+    shot["is_video"] = is_video
+
+    # Uploaded/pre-cached archiver videos are the most reliable playback path
+    # and must win even in stream-only mode.
+    shot_id = int(shot["id"]) if shot.get("id") else None
+    if is_video and shot_id and _is_video_cached(shot_id):
+        shot["local_url"] = f"/api/screenshots/cached-video/{shot_id}"
+        shot["preview_url"] = f"/api/screenshots/video-poster/{shot_id}"
+        shot["stream_url"] = shot["local_url"]
+        shot["poster_url"] = shot["preview_url"]
+        shot["cached"] = True
+        return shot
+    shot["cached"] = False
 
     # Guard: never treat a video URL as the preview image source.  DB columns can
     # store source_url in preview_url; browse-loop mutations also leave proxy video
@@ -751,13 +769,15 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
         if preview_url is None:
             preview_url = _warm_preview_generation(app_state, local_path)
         shot["preview_url"] = preview_url
+        shot["stream_url"] = shot["local_url"]
+        shot["poster_url"] = preview_url
         return shot
 
     if _is_remote_media_url(source_url):
         raw_local = existing_local if _is_remote_media_url(existing_local) else source_url
         source_field = str(shot.get("source") or "").lower()
         use_proxy = _should_proxy_media(source_field, raw_local)
-        proxy_shot_id = int(shot["id"]) if source_field == "ytdlp" and shot.get("id") else None
+        proxy_shot_id = shot_id if is_video else None
         shot["local_url"] = proxy_media_url(raw_local, shot_id=proxy_shot_id) if use_proxy else raw_local
         shot["source_url"] = source_url
         # For videos with no stored thumbnail: use our server-side video-poster endpoint
@@ -767,6 +787,8 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
             shot_id_val = shot.get("id")
             if shot_id_val:
                 shot["preview_url"] = f"/api/screenshots/video-poster/{shot_id_val}"
+                shot["stream_url"] = shot["local_url"]
+                shot["poster_url"] = shot["preview_url"]
                 return shot
         if existing_preview:
             if _is_remote_media_url(existing_preview):
@@ -779,6 +801,8 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
             shot["preview_url"] = proxy_media_url(thumbnail_url) if _should_proxy_media(source_field, thumbnail_url) else thumbnail_url
         else:
             shot["preview_url"] = None if _screenshot_is_video(shot) else shot["local_url"]
+        shot["stream_url"] = shot["local_url"]
+        shot["poster_url"] = shot.get("preview_url")
         return shot
 
     if not stream_only and local_path.name and local_path.exists():
@@ -787,11 +811,15 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
         if preview_url is None:
             preview_url = _warm_preview_generation(app_state, local_path)
         shot["preview_url"] = preview_url
+        shot["stream_url"] = shot["local_url"]
+        shot["poster_url"] = preview_url
         return shot
 
     shot["local_url"] = None
     if "preview_url" not in shot:
         shot["preview_url"] = None
+    shot["stream_url"] = None
+    shot["poster_url"] = shot.get("preview_url")
     return shot
 
 

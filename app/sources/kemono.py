@@ -18,7 +18,7 @@ from app.sources.base import (
     score_item,
 )
 
-KEMONO_HOSTS = ("kemono.su", "kemono.cr", "kemono.party")
+KEMONO_HOSTS = ("kemono.cr", "kemono.su", "kemono.party")
 KEMONO_IMG_HOST = "https://img.kemono.cr"
 KEMONO_VIDEO_HOST = "https://kemono.cr"
 

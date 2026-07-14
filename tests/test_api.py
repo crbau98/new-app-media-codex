@@ -230,10 +230,15 @@ class _FakeHttpClient:
 
 
 @pytest.fixture
-def screenshots_client(test_db):
+def screenshots_client(test_db, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from app.api.screenshots import router as screenshots_router
+    from app.api import screenshots as screenshots_api
+
+    screenshots_router = screenshots_api.router
+    # Browse responses schedule poster extraction. Keep integration tests
+    # deterministic and offline; poster generation has dedicated coverage.
+    monkeypatch.setattr(screenshots_api, "_bg_extract_poster", lambda *_args, **_kwargs: None)
 
     app = FastAPI()
     app.state.db = test_db
@@ -369,6 +374,12 @@ class TestScreenshotsBrowseMediaType:
             page_url="https://example.com/video-post",
             source_url="https://example.com/data/cc/dd/example-video.mp4",
         )
+        test_db.insert_screenshot(
+            term="archiver-video",
+            source="coomer",
+            page_url="https://coomer.st/data/cc/dd/archiver-video.mp4",
+            source_url="https://coomer.st/data/cc/dd/archiver-video.mp4",
+        )
 
         video_resp = screenshots_client.get("/api/screenshots?media_type=video&limit=20")
         image_resp = screenshots_client.get("/api/screenshots?media_type=image&limit=20")
@@ -383,9 +394,50 @@ class TestScreenshotsBrowseMediaType:
         image_rows_by_url = {row["source_url"]: row for row in image_rows}
 
         assert "https://example.com/data/cc/dd/example-video.mp4" in video_urls
+        assert "https://coomer.st/data/cc/dd/archiver-video.mp4" in video_urls
         assert "https://example.com/data/aa/bb/example-image.jpg" not in video_urls
 
         image_row = image_rows_by_url["https://example.com/data/aa/bb/example-image.jpg"]
         assert image_row["local_url"].endswith("example-image.jpg")
         assert image_row["preview_url"] == image_row["local_url"]
         assert "/api/screenshots/video-poster/" not in image_row["preview_url"]
+
+        archiver_row = next(row for row in video_rows if row["source"] == "coomer")
+        assert archiver_row["media_type"] == "video"
+        assert archiver_row["is_video"] is True
+        assert archiver_row["stream_url"] == archiver_row["local_url"]
+        assert "shot_id=" in archiver_row["stream_url"]
+        assert archiver_row["poster_url"].startswith("/api/screenshots/video-poster/")
+
+    def test_cached_archiver_video_is_preferred(self, screenshots_client, test_db, monkeypatch) -> None:
+        from app.api import screenshots as screenshots_api
+
+        with test_db.connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM screenshots WHERE source = 'coomer' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        shot_id = int(row["id"])
+        monkeypatch.setattr(screenshots_api, "_is_video_cached", lambda candidate: candidate == shot_id)
+
+        response = screenshots_client.get("/api/screenshots?source=coomer&media_type=video&limit=20")
+        assert response.status_code == 200
+        shot = next(item for item in response.json()["screenshots"] if item["id"] == shot_id)
+        assert shot["cached"] is True
+        assert shot["stream_url"] == f"/api/screenshots/cached-video/{shot_id}"
+
+    def test_cached_video_supports_byte_ranges(self, screenshots_client, test_db, monkeypatch, tmp_path) -> None:
+        from app.api import screenshots as screenshots_api
+
+        payload = b"0123456789abcdef"
+        cached_file = tmp_path / "99.mp4"
+        cached_file.write_bytes(payload)
+        monkeypatch.setattr(screenshots_api, "_video_cache_path", lambda _shot_id: cached_file)
+
+        response = screenshots_client.get(
+            "/api/screenshots/cached-video/99",
+            headers={"Range": "bytes=4-9"},
+        )
+        assert response.status_code == 206
+        assert response.content == b"456789"
+        assert response.headers["accept-ranges"] == "bytes"
+        assert response.headers["content-range"] == "bytes 4-9/16"

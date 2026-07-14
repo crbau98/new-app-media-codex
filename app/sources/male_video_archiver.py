@@ -18,11 +18,11 @@ from app.sources.base import (
     score_item,
 )
 
-COOMER_HOSTS = ("coomer.su", "coomer.st")
+COOMER_HOSTS = ("coomer.st", "coomer.su")
 COOMER_IMG_HOST = "https://img.coomer.st"
 COOMER_VIDEO_HOST = "https://coomer.st"
 
-KEMONO_HOSTS = ("kemono.su", "kemono.cr", "kemono.party")
+KEMONO_HOSTS = ("kemono.cr", "kemono.su", "kemono.party")
 KEMONO_IMG_HOST = "https://img.kemono.cr"
 KEMONO_VIDEO_HOST = "https://kemono.cr"
 
