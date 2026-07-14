@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useQuery } from '@tanstack/react-query'
-import { Check, ExternalLink, Eye, Heart, Plus, Radar, Search, Sparkles, Users, X } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Check, ExternalLink, Eye, Heart, Plus, Radar, RefreshCw, Search, Sparkles, Users, X } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import { fetchLiveCreatorDirectory } from '@/lib/api'
@@ -177,14 +177,17 @@ export default function CreatorsPage() {
   const [sort, setSort] = useState<CreatorSort>('Smart picks')
   const [filter, setFilter] = useState<CreatorFilter>('all')
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null)
+  const [isScanningNow, setIsScanningNow] = useState(false)
+  const queryClient = useQueryClient()
   const followCache = useAppStore((state) => state.followCache)
   const toggleFollow = useAppStore((state) => state.toggleFollow)
   const addToast = useAppStore((state) => state.addToast)
   const creatorWatchlist = useAppStore((state) => state.creatorWatchlist)
   const addCreatorToWatchlist = useAppStore((state) => state.addCreatorToWatchlist)
   const removeCreatorFromWatchlist = useAppStore((state) => state.removeCreatorFromWatchlist)
+  const directoryQueryKey = useMemo(() => ['live-creators', 'directory', creatorWatchlist] as const, [creatorWatchlist])
   const { data: creators = [], isLoading, isError, isFetching, refetch, dataUpdatedAt } = useQuery({
-    queryKey: ['live-creators', 'directory', creatorWatchlist],
+    queryKey: directoryQueryKey,
     queryFn: () => fetchLiveCreatorDirectory(creatorWatchlist),
     staleTime: 60_000,
     refetchInterval: 120_000,
@@ -233,6 +236,26 @@ export default function CreatorsPage() {
     addToast({ type: 'success', title: `Scanning public sources for @${candidate}` })
   }, [addCreatorToWatchlist, addToast, creatorWatchlist, watchInput])
 
+  const scanNow = useCallback(async () => {
+    if (isScanningNow) return
+    setIsScanningNow(true)
+    try {
+      const freshCreators = await fetchLiveCreatorDirectory(creatorWatchlist, true)
+      queryClient.setQueryData(directoryQueryKey, freshCreators)
+      await queryClient.invalidateQueries({ queryKey: ['media'] })
+      const aiMatches = freshCreators.filter((creator) => creator.isSimilar).length
+      addToast({
+        type: 'success',
+        title: 'Fresh public-source scan complete',
+        message: `${freshCreators.length} creators observed · ${aiMatches} AI matches`,
+      })
+    } catch {
+      addToast({ type: 'error', title: 'Immediate scan could not complete', message: 'The public provider did not respond. Scheduled scanning remains active.' })
+    } finally {
+      setIsScanningNow(false)
+    }
+  }, [addToast, creatorWatchlist, directoryQueryKey, isScanningNow, queryClient])
+
   return (
     <div className="space-y-6">
       <header className="rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 sm:p-7">
@@ -252,9 +275,14 @@ export default function CreatorsPage() {
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Radar size={17} className="text-[var(--accent)]" /> Automatic creator radar</div>
             <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">Add a public handle or creator name. AI compares source tags to find adjacent creators, while the live app refreshes every two minutes and a background scan keeps the seeded radar warm. Emails are removed before anything is displayed.</p>
           </div>
-          <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[11px] text-[var(--text-secondary)]">
-            {isFetching ? 'Scanning sources…' : `${creators.filter((creator) => creator.isWatched).length} matched`} · {dataUpdatedAt ? `updated ${new Date(dataUpdatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'waiting'}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span aria-live="polite" className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[11px] text-[var(--text-secondary)]">
+              {isFetching || isScanningNow ? 'Scanning sources…' : `${creators.filter((creator) => creator.isWatched).length} matched`} · {dataUpdatedAt ? `updated ${new Date(dataUpdatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'waiting'}
+            </span>
+            <button onClick={scanNow} disabled={isScanningNow} className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-[var(--accent)]/50 bg-[var(--bg-base)] px-3 text-xs font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent-dim)] disabled:cursor-wait disabled:opacity-60">
+              <RefreshCw size={13} className={cn(isScanningNow && 'animate-spin')} /> {isScanningNow ? 'Scanning now' : 'Scan now'}
+            </button>
+          </div>
         </div>
         <form onSubmit={addWatch} className="mt-4 flex flex-col gap-2 sm:flex-row">
           <label className="flex min-h-11 flex-1 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 focus-within:border-[var(--accent)]">

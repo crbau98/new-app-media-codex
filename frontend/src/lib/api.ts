@@ -139,10 +139,15 @@ async function fetchLiveMediaFallback(
   return buildPaginatedResult(sorted, page, perPage)
 }
 
-export async function fetchLiveCreatorDirectory(watchlist: string[] = []): Promise<Creator[]> {
+export async function fetchLiveCreatorDirectory(watchlist: string[] = [], forceFresh = false): Promise<Creator[]> {
   const params = new URLSearchParams({ count: '100', pages: '3', sort: 'smart' })
   for (const creator of watchlist.slice(0, 8)) params.append('watch', creator)
-  const response = await fetchWithTimeout(`/api/live-media?${params.toString()}`, undefined, 25000)
+  if (forceFresh) params.set('_refresh', String(Date.now()))
+  const response = await fetchWithTimeout(
+    `/api/live-media?${params.toString()}`,
+    forceFresh ? { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } } : undefined,
+    forceFresh ? 45000 : 25000,
+  )
   if (!response.ok) throw new Error(`Live creator directory returned ${response.status}`)
   const payload = redactEmailsDeep(await response.json() as { performers?: Creator[] })
   return Array.isArray(payload.performers) ? payload.performers : []
