@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { DiscoveryMode } from '@/lib/discovery'
 
 export type Theme = 'dark' | 'light' | 'auto'
 export type ViewMode = 'images' | 'explore' | 'creators' | 'search' | 'settings' | 'analytics'
@@ -10,6 +11,13 @@ export type FontSize = 'small' | 'default' | 'large'
 export type VideoQuality = 'auto' | '720p' | '1080p' | '4K'
 export type PreferredPlayer = 'inline' | 'lightbox' | 'external'
 export type DigestFrequency = 'realtime' | 'daily' | 'weekly' | 'never'
+export type DiscoveryFeedback = 'view' | 'more' | 'less' | 'hide'
+
+export interface DiscoverySignalItem {
+  id: string
+  creator: string
+  tags: string[]
+}
 
 export interface Toast {
   id: string
@@ -85,6 +93,15 @@ interface AppState {
   // Follow cache
   followCache: Record<string, boolean>
   toggleFollow: (id: string) => void
+
+  // Private, on-device discovery profile
+  tagPreferences: Record<string, number>
+  creatorPreferences: Record<string, number>
+  hiddenMedia: string[]
+  discoveryMode: DiscoveryMode
+  recordDiscoveryFeedback: (item: DiscoverySignalItem, signal: DiscoveryFeedback) => void
+  setDiscoveryMode: (mode: DiscoveryMode) => void
+  resetDiscoveryProfile: () => void
 
   // Command palette
   commandPaletteOpen: boolean
@@ -246,6 +263,29 @@ export const useAppStore = create<AppState>()(
           followCache: { ...s.followCache, [id]: !s.followCache[id] },
         })),
 
+      tagPreferences: {},
+      creatorPreferences: {},
+      hiddenMedia: [],
+      discoveryMode: 'balanced',
+      recordDiscoveryFeedback: (item, signal) => set((state) => {
+        const normalize = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+        const delta = signal === 'more' ? 2 : signal === 'less' || signal === 'hide' ? -2 : 0.2
+        const tagPreferences = { ...state.tagPreferences }
+        for (const tag of item.tags.slice(0, 8)) {
+          const tagKey = normalize(tag)
+          if (tagKey) tagPreferences[tagKey] = Math.max(-8, Math.min(12, (tagPreferences[tagKey] || 0) + delta))
+        }
+        const creatorKey = normalize(item.creator)
+        const creatorPreferences = { ...state.creatorPreferences }
+        if (creatorKey) creatorPreferences[creatorKey] = Math.max(-5, Math.min(8, (creatorPreferences[creatorKey] || 0) + delta))
+        const hiddenMedia = signal === 'hide'
+          ? [item.id, ...state.hiddenMedia.filter((id) => id !== item.id)].slice(0, 200)
+          : state.hiddenMedia
+        return { tagPreferences, creatorPreferences, hiddenMedia }
+      }),
+      setDiscoveryMode: (discoveryMode) => set({ discoveryMode }),
+      resetDiscoveryProfile: () => set({ tagPreferences: {}, creatorPreferences: {}, hiddenMedia: [], discoveryMode: 'balanced' }),
+
       commandPaletteOpen: false,
       setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
       toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
@@ -306,6 +346,10 @@ export const useAppStore = create<AppState>()(
         recentlyViewed: state.recentlyViewed,
         likeCache: state.likeCache,
         followCache: state.followCache,
+        tagPreferences: state.tagPreferences,
+        creatorPreferences: state.creatorPreferences,
+        hiddenMedia: state.hiddenMedia,
+        discoveryMode: state.discoveryMode,
         gridDensity: state.gridDensity,
         filters: state.filters,
         accentColor: state.accentColor,

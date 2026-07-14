@@ -105,7 +105,7 @@ async function fetchLiveMediaFallback(
   page: number,
   perPage: number
 ): Promise<PaginatedResult<MediaItem>> {
-  const params = new URLSearchParams({ count: '80' })
+  const params = new URLSearchParams({ count: '100', pages: '3' })
   if (filters.search) params.set('q', filters.search)
   else if (filters.creator) params.set('creator', filters.creator)
   else if (filters.category) params.set('q', filters.category)
@@ -114,7 +114,7 @@ async function fetchLiveMediaFallback(
   if (filters.sort === 'mostViewed') params.set('sort', 'views')
   else if (filters.sort === 'newest') params.set('sort', 'newest')
   else if (filters.sort === 'topRated') params.set('sort', 'likes')
-  const response = await fetchWithTimeout(`/api/live-media?${params.toString()}`, undefined, 15000)
+  const response = await fetchWithTimeout(`/api/live-media?${params.toString()}`, undefined, 20000)
   if (!response.ok) throw new Error(`Live media fallback returned ${response.status}`)
   const payload = await response.json() as { items?: MediaItem[] }
   // Query terms were applied upstream. Category remains a tag-level client
@@ -125,7 +125,7 @@ async function fetchLiveMediaFallback(
 }
 
 export async function fetchLiveCreatorDirectory(): Promise<Creator[]> {
-  const response = await fetchWithTimeout('/api/live-media?count=80&sort=smart', undefined, 15000)
+  const response = await fetchWithTimeout('/api/live-media?count=100&pages=3&sort=smart', undefined, 20000)
   if (!response.ok) throw new Error(`Live creator directory returned ${response.status}`)
   const payload = await response.json() as { performers?: Creator[] }
   return Array.isArray(payload.performers) ? payload.performers : []
@@ -230,13 +230,13 @@ export async function fetchMedia(
     return await fetchLiveMediaFallback(filters, page, perPage)
   } catch (liveError) {
     warnFallback(liveError, 'fetchLiveMedia')
-    return buildPaginatedResult([], page, perPage)
+    throw liveError
   }
 }
 
 export async function fetchCategories(): Promise<CategoryDef[]> {
   try {
-    const response = await fetchWithTimeout('/api/live-media?count=80&sort=smart', undefined, 15000)
+    const response = await fetchWithTimeout('/api/live-media?count=100&pages=3&sort=smart', undefined, 20000)
     if (!response.ok) throw new Error(`Live categories returned ${response.status}`)
     const payload = await response.json() as { items?: MediaItem[] }
     const counts = new Map<string, number>()

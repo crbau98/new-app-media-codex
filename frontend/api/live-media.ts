@@ -11,8 +11,8 @@ export const config = { runtime: 'edge' }
 const REDGIFS_API = 'https://api.redgifs.com/v2'
 const FEMALE_MARKERS = [
   'female', 'woman', 'women', 'girl', 'lesbian', 'straight', 'pussy',
-  'vagina', 'shemale', 'ladyboy', 'femboy', 'bisexual', 'hetero',
-  'girlfriend', 'wife', 'b/g', 'm/f', 'ftm', 'boob', 'breast', 'tits',
+  'vagina', 'shemale', 'ladyboy', 'hetero',
+  'girlfriend', 'wife', 'b/g', 'm/f', 'boob', 'breast', 'tits',
   'petite', 'bbw', 'milf', 'femdom',
 ]
 
@@ -48,6 +48,7 @@ type LiveMediaItem = {
   createdAt: string
   views: number
   mediaUrl?: string
+  streamCandidates: string[]
   pageUrl: string
   description?: string
   likes: number
@@ -71,8 +72,8 @@ function textFor(item: RedgifsItem): string {
 function isEligibleMaleItem(item: RedgifsItem): boolean {
   // Inclusion is established by the exact canonical Gay tag search. These
   // exclusions protect the feed when a provider record is mislabelled.
-  const text = textFor(item)
-  return !FEMALE_MARKERS.some((marker) => text.includes(marker))
+  const tokens = new Set(textFor(item).split(/[^a-z0-9/]+/).filter(Boolean))
+  return !FEMALE_MARKERS.some((marker) => tokens.has(marker))
 }
 
 function durationLabel(seconds = 0): string {
@@ -82,35 +83,50 @@ function durationLabel(seconds = 0): string {
 }
 
 function toIsoDate(value?: number): string {
-  if (!value || !Number.isFinite(value)) return new Date().toISOString()
+  if (!value || !Number.isFinite(value)) return ''
   const milliseconds = value > 1_000_000_000_000 ? value : value * 1000
   const date = new Date(milliseconds)
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString()
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
 }
 
 function proxiedMediaUrl(url?: string): string | undefined {
   return url ? `/api/archiver-proxy?url=${encodeURIComponent(url)}` : undefined
 }
 
-function curation(item: RedgifsItem, createdAt: string): { score: number; reasons: string[] } {
-  const views = Math.max(0, item.views || 0)
-  const likes = Math.max(0, item.likes || 0)
-  const hoursOld = Math.max(0, (Date.now() - Date.parse(createdAt)) / 3_600_000)
-  const freshness = Math.max(0, 16 - Math.log2(hoursOld + 1) * 2.25)
-  const engagement = Math.log1p(views) * 5.5 + Math.log1p(likes) * 9
-  const score = Math.max(0, Math.min(100, Math.round(engagement + freshness)))
-  const reasons: string[] = []
-  if (views >= 10_000) reasons.push('high public view count')
-  if (likes >= 500) reasons.push('strong public engagement')
-  if (hoursOld <= 72) reasons.push('recently published')
-  if (!reasons.length) reasons.push('matches the current public creator feed')
-  return { score, reasons }
+function percentile(value: number, cohort: number[]): number {
+  if (cohort.length <= 1) return 0.5
+  const below = cohort.filter((candidate) => candidate < value).length
+  const equal = cohort.filter((candidate) => candidate === value).length
+  return (below + Math.max(0, equal - 1) / 2) / (cohort.length - 1)
+}
+
+function rankCohort(items: LiveMediaItem[]): LiveMediaItem[] {
+  const viewCohort = items.map((item) => Math.log1p(item.views))
+  const likeCohort = items.map((item) => Math.log1p(item.likes))
+  return items.map((item) => {
+    const viewRank = percentile(Math.log1p(item.views), viewCohort)
+    const likeRank = percentile(Math.log1p(item.likes), likeCohort)
+    const created = Date.parse(item.createdAt)
+    const hoursOld = Number.isFinite(created) ? Math.max(0, (Date.now() - created) / 3_600_000) : Number.POSITIVE_INFINITY
+    const freshness = Math.exp(-hoursOld / (24 * 14))
+    const score = Math.round((viewRank * 0.52 + likeRank * 0.32 + freshness * 0.16) * 100)
+    const reasons: string[] = []
+    if (viewRank >= 0.75) reasons.push('among the most watched in this feed')
+    if (likeRank >= 0.75) reasons.push('strong public engagement')
+    if (hoursOld <= 72) reasons.push('recently published')
+    if (!reasons.length) reasons.push('adds variety to the current public feed')
+    return { ...item, curationScore: score, curationReasons: reasons }
+  })
 }
 
 function parseBoundedInt(value: string | null, fallback: number, maximum: number): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
   return Math.min(maximum, Math.max(0, Math.floor(parsed)))
+}
+
+function boundedQuery(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').slice(0, 80)
 }
 
 function canonicalCreator(value: string): string {
@@ -131,7 +147,7 @@ function sortItems(items: LiveMediaItem[], sort: string): LiveMediaItem[] {
   const sorted = [...items]
   if (sort === 'views') return sorted.sort((a, b) => b.views - a.views || b.likes - a.likes)
   if (sort === 'likes') return sorted.sort((a, b) => b.likes - a.likes || b.views - a.views)
-  if (sort === 'newest') return sorted.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+  if (sort === 'newest') return sorted.sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))
   return sorted.sort((a, b) => b.curationScore - a.curationScore || b.views - a.views)
 }
 
@@ -193,11 +209,14 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const requestUrl = new URL(req.url)
-    const count = Math.min(80, Math.max(20, parseBoundedInt(requestUrl.searchParams.get('count'), 60, 80)))
-    const query = (requestUrl.searchParams.get('q') || requestUrl.searchParams.get('creator') || '').trim()
+    const count = Math.min(100, Math.max(20, parseBoundedInt(requestUrl.searchParams.get('count'), 80, 100)))
+    const pages = Math.max(1, parseBoundedInt(requestUrl.searchParams.get('pages'), 2, 3))
+    const startPage = Math.max(1, parseBoundedInt(requestUrl.searchParams.get('page'), 1, 50))
+    const query = boundedQuery(requestUrl.searchParams.get('q') || requestUrl.searchParams.get('creator') || '')
     const minViews = parseBoundedInt(requestUrl.searchParams.get('minViews'), 0, 10_000_000)
     const minLikes = parseBoundedInt(requestUrl.searchParams.get('minLikes'), 0, 1_000_000)
-    const sort = (requestUrl.searchParams.get('sort') || 'smart').toLowerCase()
+    const requestedSort = (requestUrl.searchParams.get('sort') || 'smart').toLowerCase()
+    const sort = ['smart', 'views', 'likes', 'newest'].includes(requestedSort) ? requestedSort : 'smart'
 
     const auth = await fetch(`${REDGIFS_API}/auth/temporary`, {
       headers: { Accept: 'application/json', 'User-Agent': 'MediaCodex/1.0' },
@@ -207,26 +226,34 @@ export default async function handler(req: Request): Promise<Response> {
     const token = String((await auth.json() as { token?: string }).token || '')
     if (!token) throw new Error('Redgifs did not return a temporary token')
 
-    const params = new URLSearchParams({
-      // `tags`, not `search_text`, is the provider's canonical tag filter.
-      type: 'g',
-      tags: 'Gay',
-      count: String(count),
-      page: '1',
-      order: 'trending',
-    })
-    const result = await fetch(`${REDGIFS_API}/gifs/search?${params}`, {
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
-        'User-Agent': 'MediaCodex/1.0',
-      },
-      cache: 'no-store',
-    })
-    if (!result.ok) throw new Error(`Redgifs search returned ${result.status}`)
-
-    const body = await result.json() as { gifs?: RedgifsItem[] }
-    const received = body.gifs || []
+    const providerCount = Math.min(80, Math.max(30, Math.ceil(count / pages * 1.7)))
+    const pageResults = await Promise.allSettled(Array.from({ length: pages }, async (_, index) => {
+      const params = new URLSearchParams({
+        type: 'g',
+        tags: 'Gay',
+        count: String(providerCount),
+        page: String(startPage + index),
+        order: 'trending',
+      })
+      const result = await fetch(`${REDGIFS_API}/gifs/search?${params}`, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+          'User-Agent': 'MediaCodex/1.0',
+        },
+        cache: 'no-store',
+      })
+      if (!result.ok) throw new Error(`Redgifs search returned ${result.status}`)
+      const body = await result.json() as { gifs?: RedgifsItem[] }
+      return body.gifs || []
+    }))
+    const successfulPages = pageResults.filter((result): result is PromiseFulfilledResult<RedgifsItem[]> => result.status === 'fulfilled')
+    if (!successfulPages.length) throw new Error('Public provider search is temporarily unavailable')
+    const deduplicated = new Map<string, RedgifsItem>()
+    for (const item of successfulPages.flatMap((result) => result.value)) {
+      if (item.id) deduplicated.set(item.id, item)
+    }
+    const received = [...deduplicated.values()]
     const eligible = received.filter(isEligibleMaleItem)
     const mapped = eligible
       .filter((item) => item.id && item.urls?.poster && (item.urls.hd || item.urls.sd))
@@ -234,7 +261,10 @@ export default async function handler(req: Request): Promise<Response> {
         const tags = (item.tags || []).filter(Boolean).slice(0, 12)
         const creator = item.userName || 'Redgifs creator'
         const createdAt = toIsoDate(item.createDate)
-        const ranked = curation(item, createdAt)
+        const directCandidates = [item.urls?.hd, item.urls?.sd].filter((url): url is string => Boolean(url))
+        const streamCandidates = [...directCandidates.map(proxiedMediaUrl), ...directCandidates]
+          .filter((url): url is string => Boolean(url))
+          .filter((url, index, list) => list.indexOf(url) === index)
         return {
           id: `rg-${item.id}`,
           title: item.description?.trim() || tags.slice(0, 3).join(' · ') || `Video by ${creator}`,
@@ -249,15 +279,16 @@ export default async function handler(req: Request): Promise<Response> {
           createdAt,
           views: Math.max(0, item.views || 0),
           mediaUrl: proxiedMediaUrl(item.urls?.hd || item.urls?.sd),
+          streamCandidates,
           pageUrl: `https://www.redgifs.com/watch/${item.id}`,
           description: item.description || undefined,
           likes: Math.max(0, item.likes || 0),
           comments: 0,
           isLiked: false,
-          isNew: Date.now() - Date.parse(createdAt) < 86_400_000,
-          isTrending: ranked.score >= 65,
-          curationScore: ranked.score,
-          curationReasons: ranked.reasons,
+          isNew: Boolean(createdAt) && Date.now() - Date.parse(createdAt) < 86_400_000,
+          isTrending: false,
+          curationScore: 0,
+          curationReasons: [],
         }
       })
       .filter((item) => matchesQuery({
@@ -267,14 +298,14 @@ export default async function handler(req: Request): Promise<Response> {
       }, query))
       .filter((item) => item.views >= minViews && item.likes >= minLikes)
 
-    const items = sortItems(mapped, sort)
+    const items = sortItems(rankCohort(mapped).map((item) => ({ ...item, isTrending: item.curationScore >= 65 })), sort).slice(0, count)
     return new Response(JSON.stringify({
       items,
       performers: buildCreators(items),
       source: 'public-redgifs-api',
       updatedAt: new Date().toISOString(),
-      counts: { received: received.length, eligible: eligible.length, playable: items.length },
-      ranking: 'public engagement and freshness; no appearance scoring',
+      counts: { received: received.length, eligible: eligible.length, playable: items.length, pagesScanned: successfulPages.length },
+      ranking: 'cohort-normalized public engagement and freshness; no appearance scoring',
     }), { status: 200, headers: corsHeaders() })
   } catch (error) {
     return new Response(JSON.stringify({

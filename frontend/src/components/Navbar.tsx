@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router'
 import { useAppStore } from '@/store'
 import {
   Library,
+  Sparkles,
   Search,
   Users,
   Settings,
@@ -19,6 +20,7 @@ const navSections = [
     title: 'Library',
     items: [
       { label: 'Library', icon: Library, href: '/media' },
+      { label: 'For You', icon: Sparkles, href: '/explore' },
       { label: 'Search', icon: Search, href: '/search' },
       { label: 'Creators', icon: Users, href: '/creators' },
     ],
@@ -80,7 +82,7 @@ export default function Navbar({ onClose }: NavbarProps) {
 
   const isActive = useCallback(
     (label: string) => {
-      const map: Record<string, string> = { Library: '/media', Search: '/search', Creators: '/creators', Settings: '/settings' }
+      const map: Record<string, string> = { Library: '/media', 'For You': '/explore', Search: '/search', Creators: '/creators', Settings: '/settings' }
       return location.pathname === map[label]
     },
     [location.pathname]

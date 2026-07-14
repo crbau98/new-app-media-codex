@@ -407,9 +407,12 @@ export default function HomePage() {
     'Most Viewed': 'mostViewed',
   } as const)[sort] ?? 'newest', [sort])
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['media', 'home', sortValue],
     queryFn: () => fetchMedia({ sort: sortValue }, 1, 100),
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+    refetchOnWindowFocus: true,
   })
   const { data: liveCategories } = useQuery({
     queryKey: ['categories'],
@@ -423,15 +426,16 @@ export default function HomePage() {
 
   const allItems = useMemo(() => data?.items ?? [], [data?.items])
   const filters = useAppStore((s) => s.filters)
+  const likeCache = useAppStore((s) => s.likeCache)
   const visibleItems = useMemo(() => {
     if (filters.sourceType === 'video') return allItems.filter((item) => item.isVideo)
     if (filters.sourceType === 'image') return allItems.filter((item) => !item.isVideo)
-    if (filters.sourceType === 'favorites') return allItems.filter((item) => item.isLiked)
+    if (filters.sourceType === 'favorites') return allItems.filter((item) => likeCache[item.id] ?? item.isLiked)
     if (filters.sourceType === 'smart') return [...allItems].sort((a, b) => (b.curationScore || 0) - (a.curationScore || 0))
     if (filters.sourceType === 'highDemand') return allItems.filter((item) => (item.curationScore || 0) >= 65)
     if (filters.sourceType === 'mostViewed') return [...allItems].sort((a, b) => b.views - a.views)
     return allItems
-  }, [allItems, filters.sourceType])
+  }, [allItems, filters.sourceType, likeCache])
 
   useEffect(() => {
     const onScroll = () => setScrollY(window.scrollY)
@@ -514,7 +518,9 @@ export default function HomePage() {
       />
 
       {/* Category grids */}
-      {isLoading ? (
+      {isError ? (
+        <EmptyState variant="error" title="The public feed is temporarily unavailable" description="Retry the source without losing your local likes, follows, or discovery profile." actionLabel="Retry" onAction={() => refetch()} />
+      ) : isLoading ? (
         <div className="space-y-6">
           <SkeletonGrid count={6} />
           <SkeletonGrid count={6} />

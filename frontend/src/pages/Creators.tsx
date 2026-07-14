@@ -46,6 +46,15 @@ function CreatorCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index * 0.035, 0.35), duration: 0.35, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
       onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen()
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open creator ${creator.name}`}
       className="group overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] cursor-pointer card-lift"
     >
       <div className="relative h-28 overflow-hidden bg-[var(--bg-surface)]">
@@ -65,7 +74,7 @@ function CreatorCard({
             loading="lazy"
           />
           <span className="mb-1 flex items-center gap-1 rounded-full bg-[var(--accent-dim)] px-2 py-1 text-[10px] font-semibold text-[var(--accent)]">
-            <Sparkles size={11} /> {creator.curationScore || 0}
+            <Sparkles size={11} /> {creator.curationScore || 0} public signal
           </span>
         </div>
 
@@ -163,10 +172,12 @@ export default function CreatorsPage() {
   const followCache = useAppStore((state) => state.followCache)
   const toggleFollow = useAppStore((state) => state.toggleFollow)
   const addToast = useAppStore((state) => state.addToast)
-  const { data: creators = [], isLoading } = useQuery({
+  const { data: creators = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['live-creators', 'directory'],
     queryFn: fetchLiveCreatorDirectory,
     staleTime: 60_000,
+    refetchInterval: 120_000,
+    refetchOnWindowFocus: true,
   })
 
   const visibleCreators = useMemo(() => {
@@ -215,7 +226,7 @@ export default function CreatorsPage() {
         </select>
       </div>
 
-      {isLoading ? <SkeletonGrid count={10} /> : visibleCreators.length ? (
+      {isError ? <EmptyState variant="error" title="Creator directory unavailable" description="The public source did not respond. Your local follows are unchanged." actionLabel="Retry" onAction={() => refetch()} /> : isLoading ? <SkeletonGrid count={10} /> : visibleCreators.length ? (
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {visibleCreators.map((creator, index) => <CreatorCard key={creator.id} creator={creator} index={index} following={Boolean(followCache[creator.id])} onFollow={() => follow(creator)} onOpen={() => setSelectedCreator(creator)} />)}
         </section>

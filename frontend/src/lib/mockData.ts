@@ -12,6 +12,8 @@ export interface MediaItem {
   createdAt: string
   views: number
   mediaUrl?: string
+  /** Ordered playback fallbacks supplied by the public provider adapter. */
+  streamCandidates?: string[]
   pageUrl?: string
   description?: string
   likes?: number
@@ -23,6 +25,10 @@ export interface MediaItem {
   curationScore?: number
   /** Short, source-derived explanation for why the item is surfaced. */
   curationReasons?: string[]
+  /** On-device recommendation score derived from the user's local feedback. */
+  personalizedScore?: number
+  /** Human-readable explanation of the recommendation. */
+  recommendationReasons?: string[]
 }
 
 export interface Creator {
