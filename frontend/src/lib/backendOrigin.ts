@@ -28,7 +28,6 @@ export function getBackendOrigin(): string {
   // If the UI is hosted on Render (same domain as backend), use same-origin
   const host = window.location.host
   if (
-    host.includes('render.com') ||
     host.includes('localhost') ||
     host.includes('127.0.0.1') ||
     host === 'codex-research-radar.onrender.com'

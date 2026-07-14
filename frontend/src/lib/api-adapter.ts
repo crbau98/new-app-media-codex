@@ -159,18 +159,13 @@ export interface DashboardPayload {
    Helpers
    ────────────────────────────────────────────── */
 
-const VALID_SOURCES = new Set(['Tube', 'Redgifs', 'Imgur', 'Local', 'Xtube'])
-
 function normalizeSource(src: string): MediaItem['source'] {
-  if (VALID_SOURCES.has(src)) return src as MediaItem['source']
-  // Try common aliases
-  const lower = src.toLowerCase()
-  if (lower.includes('tube')) return 'Tube'
-  if (lower.includes('redgifs')) return 'Redgifs'
-  if (lower.includes('imgur')) return 'Imgur'
-  if (lower.includes('local')) return 'Local'
-  if (lower.includes('xtube')) return 'Xtube'
-  return 'Local'
+  if (!src.trim()) return 'Unknown'
+  return src
+    .trim()
+    .split(/[_-]/)
+    .map((part) => capitalizeFirst(part))
+    .join(' ')
 }
 
 function parseTags(tagField: string | null | undefined): string[] {
@@ -187,16 +182,8 @@ function parseTags(tagField: string | null | undefined): string[] {
     .filter(Boolean)
 }
 
-function generateDuration(sourceUrl: string | null | undefined, source: string): string {
-  const isVideoLike =
-    !!sourceUrl &&
-    /\.(mp4|webm|mov|mkv|avi|m4v|gifv)(\?|$)/i.test(sourceUrl)
-  if (!isVideoLike && source !== 'Redgifs' && source !== 'Tube' && source !== 'Xtube') {
-    return ''
-  }
-  const mins = Math.floor(Math.random() * 15) + 1
-  const secs = Math.floor(Math.random() * 59)
-  return `${mins}:${secs.toString().padStart(2, '0')}`
+function isVideoUrl(url: string | null | undefined): boolean {
+  return !!url && (/\.(mp4|webm|mov|mkv|avi|m4v|m3u8|gifv)(\?|$)/i.test(url) || /\/video(?:\/|\?|$)/i.test(url))
 }
 
 function isNewlyCaptured(capturedAt: string): boolean {
@@ -224,21 +211,29 @@ export function adaptScreenshot(s: BackendScreenshot): MediaItem {
   const source = normalizeSource(s.source)
   const creator = s.performer_username || 'Unknown'
   const tags = parseTags(s.ai_tags || s.user_tags)
-  const duration = generateDuration(s.source_url, source)
+  const localMediaUrl = resolvePublicUrl(s.local_url)
+  const sourceMediaUrl = resolvePublicUrl(s.source_url)
+  const mediaUrl = isVideoUrl(localMediaUrl) ? localMediaUrl : isVideoUrl(sourceMediaUrl) ? sourceMediaUrl : undefined
 
   return {
     id: String(s.id),
     title: capitalizeFirst(s.term),
     thumbnail,
     source,
-    duration,
-    isVideo: duration !== '',
+    duration: '',
+    isVideo: Boolean(mediaUrl),
     category: s.term,
     creator,
     tags,
     rating: s.rating ?? 0,
     createdAt: s.captured_at,
     views: s.views_count ?? 0,
+    mediaUrl,
+    pageUrl: resolvePublicUrl(s.page_url),
+    description: s.ai_summary ?? undefined,
+    likes: s.likes_count ?? 0,
+    comments: s.comments_count ?? 0,
+    isLiked: s.is_liked ?? false,
     isNew: isNewlyCaptured(s.captured_at),
     isTrending: (s.views_count ?? 0) > 100,
   }

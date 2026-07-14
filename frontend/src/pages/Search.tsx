@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useQuery } from '@tanstack/react-query'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import {
-  mediaItems,
   creators,
   categories,
   type MediaItem,
@@ -12,6 +12,8 @@ import {
 import MediaCard from '@/components/MediaCard'
 import EmptyState from '@/components/EmptyState'
 import SkeletonGrid from '@/components/SkeletonGrid'
+import MediaDetail from '@/components/MediaDetail'
+import { fetchMedia, searchMedia } from '@/lib/api'
 import {
   Search,
   X,
@@ -658,10 +660,9 @@ export default function SearchPage() {
   const [filters, setFilters] = useState<SearchFilters>({ ...defaultFilters })
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [recentSearches, setRecentSearches] = useState<string[]>([])
-  const [loading, setLoading] = useState(false)
-  const [results, setResults] = useState<MediaItem[]>([])
   const [displayCount, setDisplayCount] = useState(24)
   const [sort, setSort] = useState('Relevance')
+  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null)
 
   const searchQuery = useAppStore((s) => s.searchQuery)
   const setAppSearchQuery = useAppStore((s) => s.setSearchQuery)
@@ -685,10 +686,8 @@ export default function SearchPage() {
 
   // Debounce search
   useEffect(() => {
-    setLoading(true)
     const timer = setTimeout(() => {
       setDebouncedQuery(query)
-      setLoading(false)
     }, 300)
     return () => clearTimeout(timer)
   }, [query])
@@ -713,19 +712,16 @@ export default function SearchPage() {
     setAppSearchQuery(debouncedQuery)
   }, [debouncedQuery, setAppSearchQuery])
 
-  // Perform search
+  const { data: searchData, isFetching: loading } = useQuery({
+    queryKey: ['search', debouncedQuery],
+    queryFn: () => debouncedQuery.trim()
+      ? searchMedia(debouncedQuery.trim())
+      : fetchMedia({ sort: 'newest' }, 1, 100),
+  })
+
+  // Refine the real API result set locally for display-only filters.
   const allResults = useMemo(() => {
-    let result = [...mediaItems]
-    if (debouncedQuery.trim()) {
-      const q = debouncedQuery.toLowerCase()
-      result = result.filter(
-        (m) =>
-          m.title.toLowerCase().includes(q) ||
-          m.creator.toLowerCase().includes(q) ||
-          m.tags.some((t) => t.toLowerCase().includes(q)) ||
-          m.category.toLowerCase().includes(q)
-      )
-    }
+    let result = [...(searchData?.items ?? [])]
     // Apply filters
     if (filters.type === 'video') result = result.filter((m) => m.isVideo)
     if (filters.type === 'image') result = result.filter((m) => !m.isVideo)
@@ -773,7 +769,7 @@ export default function SearchPage() {
         break
     }
     return result
-  }, [debouncedQuery, filters, sort])
+  }, [searchData?.items, debouncedQuery, filters, sort])
 
   const displayed = useMemo(() => allResults.slice(0, displayCount), [allResults, displayCount])
 
@@ -852,25 +848,13 @@ export default function SearchPage() {
           )}
         </button>
 
-        <div className="relative shrink-0 group">
-          <button className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-            {sort} <ChevronDown size={14} />
-          </button>
-          <div className="absolute top-full left-0 mt-1 w-40 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity z-50 py-1">
-            {(['Relevance', 'Newest', 'Top Rated', 'Most Viewed'] as const).map((opt) => (
-              <button
-                key={opt}
-                onClick={() => setSort(opt)}
-                className={cn(
-                  'w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--bg-surface)] transition-colors',
-                  sort === opt ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'
-                )}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        </div>
+        <label className="relative shrink-0 text-sm text-[var(--text-secondary)]">
+          <span className="sr-only">Sort results</span>
+          <select value={sort} onChange={(event) => setSort(event.target.value)} className="min-h-11 appearance-none rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] py-2 pl-3 pr-8 text-sm text-[var(--text-primary)] outline-none">
+            {(['Relevance', 'Newest', 'Top Rated', 'Most Viewed'] as const).map((option) => <option key={option}>{option}</option>)}
+          </select>
+          <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+        </label>
       </div>
 
       {/* Advanced Filter Panel */}
@@ -939,7 +923,8 @@ export default function SearchPage() {
             <div key={item.id} className="flex flex-col gap-1.5">
               <MediaCard
                 item={item}
-                aspectRatio={i % 3 === 0 ? '3/4' : i % 3 === 1 ? '4/5' : '1/1'}
+                aspectRatio="4/5"
+                onSelect={() => setSelectedItem(item)}
               />
               {debouncedQuery && (
                 <p className="text-xs text-[var(--text-secondary)] line-clamp-1 px-0.5">
@@ -963,6 +948,12 @@ export default function SearchPage() {
           </motion.button>
         </div>
       )}
+
+      <MediaDetail
+        item={selectedItem}
+        open={Boolean(selectedItem)}
+        onClose={() => setSelectedItem(null)}
+      />
     </div>
   )
 }

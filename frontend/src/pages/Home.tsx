@@ -9,7 +9,7 @@ import {
   categories,
   type MediaItem,
 } from '@/lib/mockData'
-import { fetchMedia } from '@/lib/api'
+import { fetchCategories, fetchMedia } from '@/lib/api'
 import { useQuery } from '@tanstack/react-query'
 import MediaCard from '@/components/MediaCard'
 import MediaDetail from '@/components/MediaDetail'
@@ -34,8 +34,8 @@ import {
 /* ───────────────────────────────────────────────
    Cinematic Hero
    ─────────────────────────────────────────────── */
-function CinematicHero({ onWatch }: { onWatch: (item: MediaItem) => void }) {
-  const featured = useMemo(() => getFeaturedItems(3), [])
+function CinematicHero({ items, onWatch }: { items: MediaItem[]; onWatch: (item: MediaItem) => void }) {
+  const featured = items.length ? items.slice(0, 3) : getFeaturedItems(3)
   const [index, setIndex] = useState(0)
   const [_direction, setDirection] = useState(1)
 
@@ -105,9 +105,7 @@ function CinematicHero({ onWatch }: { onWatch: (item: MediaItem) => void }) {
               >
                 <Play size={16} fill="white" /> Watch Now
               </button>
-              <button className="px-3 sm:px-4 py-2 rounded-md border border-[var(--border-medium)] text-xs sm:text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none">
-                Add to Collection
-              </button>
+              {current.pageUrl && <a href={current.pageUrl} target="_blank" rel="noreferrer" className="px-3 sm:px-4 py-2 rounded-md border border-white/20 text-xs sm:text-sm text-white hover:bg-white/10 transition-colors tap-highlight-none">Open source</a>}
             </div>
           </motion.div>
         </AnimatePresence>
@@ -216,10 +214,10 @@ function DiscoverabilityToolbar({
   const setFilters = useAppStore((s) => s.setFilters)
 
   const chips = [
-    { label: 'All', count: 1447, value: null },
-    { label: 'Videos', count: 48, value: 'video' },
-    { label: 'Images', count: null, value: 'image' },
-    { label: 'Favorites', count: 0, value: 'favorites' },
+    { label: 'All', value: null },
+    { label: 'Videos', value: 'video' },
+    { label: 'Images', value: 'image' },
+    { label: 'Favorites', value: 'favorites' },
   ]
 
   const sortOptions = ['Newest', 'Oldest', 'Top Rated', 'A–Z', 'Random', 'Most Viewed']
@@ -245,9 +243,6 @@ function DiscoverabilityToolbar({
             )}
           >
             {chip.label}
-            {chip.count !== null && (
-              <span className="text-[var(--text-muted)]">({chip.count})</span>
-            )}
           </button>
         ))}
       </div>
@@ -255,25 +250,13 @@ function DiscoverabilityToolbar({
       <div className="w-px h-5 bg-[var(--border-subtle)] shrink-0" />
 
       {/* Sort */}
-      <div className="relative shrink-0 group">
-        <button className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors tap-highlight-none">
-          {sort} <ChevronDown size={14} />
-        </button>
-        <div className="absolute top-full left-0 mt-1 w-40 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity z-50 py-1">
-          {sortOptions.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => onSortChange(opt)}
-              className={cn(
-                'w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none',
-                sort === opt ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'
-              )}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      </div>
+      <label className="relative shrink-0 text-sm text-[var(--text-secondary)]">
+        <span className="sr-only">Sort library</span>
+        <select value={sort} onChange={(event) => onSortChange(event.target.value)} className="min-h-11 appearance-none rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] py-2 pl-3 pr-8 text-sm text-[var(--text-primary)] outline-none">
+          {sortOptions.map((option) => <option key={option}>{option}</option>)}
+        </select>
+        <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+      </label>
 
       <div className="w-px h-5 bg-[var(--border-subtle)] shrink-0" />
 
@@ -399,12 +382,32 @@ export default function HomePage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const mainRef = useRef<HTMLDivElement>(null)
 
+  const sortValue = useMemo(() => ({
+    Newest: 'newest',
+    Oldest: 'oldest',
+    'Top Rated': 'topRated',
+    'A–Z': 'az',
+    Random: 'random',
+    'Most Viewed': 'mostViewed',
+  } as const)[sort] ?? 'newest', [sort])
+
   const { data, isLoading } = useQuery({
-    queryKey: ['media', 'home'],
-    queryFn: () => fetchMedia({ sort: 'newest' }, 1, 100),
+    queryKey: ['media', 'home', sortValue],
+    queryFn: () => fetchMedia({ sort: sortValue }, 1, 100),
+  })
+  const { data: liveCategories } = useQuery({
+    queryKey: ['categories'],
+    queryFn: fetchCategories,
   })
 
-  const allItems = data?.items ?? []
+  const allItems = useMemo(() => data?.items ?? [], [data?.items])
+  const filters = useAppStore((s) => s.filters)
+  const visibleItems = useMemo(() => {
+    if (filters.sourceType === 'video') return allItems.filter((item) => item.isVideo)
+    if (filters.sourceType === 'image') return allItems.filter((item) => !item.isVideo)
+    if (filters.sourceType === 'favorites') return allItems.filter((item) => item.isLiked)
+    return allItems
+  }, [allItems, filters.sourceType])
 
   useEffect(() => {
     const onScroll = () => setScrollY(window.scrollY)
@@ -418,12 +421,12 @@ export default function HomePage() {
 
   const handleSurprise = useCallback(() => {
     setShowSurprise(true)
-    const candidates = allItems.length > 0 ? allItems : getMediaByCategory('Featured')
+    const candidates = visibleItems.length > 0 ? visibleItems : getMediaByCategory('Featured')
     const random = candidates[Math.floor(Math.random() * candidates.length)]
     setTimeout(() => {
       setSurpriseItem(random)
     }, 600)
-  }, [allItems])
+  }, [visibleItems])
 
   const handleSurpriseClose = useCallback(() => {
     setShowSurprise(false)
@@ -457,32 +460,22 @@ export default function HomePage() {
   // Group items by category
   const grouped = useMemo(() => {
     const map: Record<string, MediaItem[]> = {}
-    for (const cat of categories) {
-      map[cat.name] = allItems.filter((m) => m.category === cat.name)
-      if (map[cat.name].length === 0 && cat.name !== 'Featured') {
-        map[cat.name] = getMediaByCategory(cat.name)
-      }
-    }
-    // If API data missing, use static data for Featured
-    if (!map['Featured'] || map['Featured'].length === 0) {
-      map['Featured'] = getMediaByCategory('Featured')
+    map['Recently added'] = visibleItems
+    for (const cat of liveCategories ?? []) {
+      map[cat.name] = visibleItems.filter((m) => m.category === cat.name)
     }
     return map
-  }, [allItems])
+  }, [liveCategories, visibleItems])
 
-  const categoryOrder = categories.map((c) => c.name)
+  const categoryOrder = ['Recently added', ...(liveCategories ?? []).map((c) => c.name)]
+    .filter((name, index, list) => list.indexOf(name) === index)
   const showFloatingNav = scrollY > 400
 
   return (
     <div ref={mainRef} className="space-y-6">
       {/* Hero */}
       <section className="animate-page-enter">
-        <CinematicHero onWatch={handleOpenDetail} />
-      </section>
-
-      {/* Stories */}
-      <section>
-        <StoriesRail />
+        <CinematicHero items={visibleItems} onWatch={handleOpenDetail} />
       </section>
 
       {/* Toolbar */}
@@ -527,7 +520,7 @@ export default function HomePage() {
                           <MediaCard
                             key={item.id}
                             item={item}
-                            aspectRatio={i % 3 === 0 ? '3/4' : i % 3 === 1 ? '4/5' : '1/1'}
+                            aspectRatio="4/5"
                             onSelect={() => handleOpenDetail(item)}
                           />
                         ))}

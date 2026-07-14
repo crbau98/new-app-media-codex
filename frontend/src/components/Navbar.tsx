@@ -3,16 +3,9 @@ import { useNavigate, useLocation } from 'react-router'
 import { useAppStore } from '@/store'
 import {
   Library,
-  Video,
-  Image,
-  Heart,
-  Compass,
   Search,
   Users,
   Settings,
-  BarChart3,
-  Bot,
-  Camera,
   Moon,
   Sun,
   ChevronLeft,
@@ -25,32 +18,15 @@ const navSections = [
   {
     title: 'Library',
     items: [
-      { label: 'Media', icon: Library, href: '/media' },
-      { label: 'Videos', icon: Video, href: '/media' },
-      { label: 'Images', icon: Image, href: '/media' },
-      { label: 'Favorites', icon: Heart, href: '/media' },
-    ],
-  },
-  {
-    title: 'Discover',
-    items: [
-      { label: 'Explore', icon: Compass, href: '/explore' },
+      { label: 'Library', icon: Library, href: '/media' },
       { label: 'Search', icon: Search, href: '/search' },
       { label: 'Creators', icon: Users, href: '/creators' },
     ],
   },
   {
-    title: 'System',
+    title: 'Preferences',
     items: [
       { label: 'Settings', icon: Settings, href: '/settings' },
-      { label: 'Analytics', icon: BarChart3, href: '/analytics' },
-    ],
-  },
-  {
-    title: 'Automation',
-    items: [
-      { label: 'Crawl', icon: Bot, href: '/settings' },
-      { label: 'Capture', icon: Camera, href: '/settings' },
     ],
   },
 ]
@@ -90,49 +66,21 @@ export default function Navbar({ onClose }: NavbarProps) {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const toggleTheme = useAppStore((s) => s.toggleTheme)
   const theme = useAppStore((s) => s.theme)
-  const setActiveView = useAppStore((s) => s.setActiveView)
 
   const navigate = useNavigate()
   const location = useLocation()
 
   const handleNav = useCallback(
-    (label: string, href: string) => {
-      const viewMap: Record<string, ReturnType<typeof useAppStore.getState>['activeView']> = {
-        Media: 'images',
-        Videos: 'images',
-        Images: 'images',
-        Favorites: 'images',
-        Explore: 'explore',
-        Search: 'search',
-        Creators: 'creators',
-        Settings: 'settings',
-        Analytics: 'analytics',
-        Crawl: 'settings',
-        Capture: 'settings',
-      }
-      const view = viewMap[label]
-      if (view) setActiveView(view)
+    (_label: string, href: string) => {
       navigate(href)
       onClose?.()
     },
-    [navigate, setActiveView, onClose]
+    [navigate, onClose]
   )
 
   const isActive = useCallback(
     (label: string) => {
-      const map: Record<string, string> = {
-        Media: '/media',
-        Videos: '/media',
-        Images: '/media',
-        Favorites: '/media',
-        Explore: '/explore',
-        Search: '/search',
-        Creators: '/creators',
-        Settings: '/settings',
-        Analytics: '/analytics',
-        Crawl: '/settings',
-        Capture: '/settings',
-      }
+      const map: Record<string, string> = { Library: '/media', Search: '/search', Creators: '/creators', Settings: '/settings' }
       return location.pathname === map[label]
     },
     [location.pathname]
