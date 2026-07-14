@@ -9,6 +9,19 @@ const ALLOWED = new Set(["media.redgifs.com"])
 const MAX_REDIRECTS = 2
 const MAX_EXPLICIT_RANGE_BYTES = 12 * 1024 * 1024
 
+const NO_STORE_HEADERS = {
+  "Cache-Control": "private, no-store",
+  "CDN-Cache-Control": "no-store",
+  "Vercel-CDN-Cache-Control": "no-store",
+}
+
+function jsonError(error: string, status: number): Response {
+  return new Response(JSON.stringify({ error }), {
+    status,
+    headers: { "Content-Type": "application/json", ...NO_STORE_HEADERS },
+  })
+}
+
 function allowedArchiverHost(hostname: string): boolean {
   const h = hostname.toLowerCase()
   if (ALLOWED.has(h)) return true
@@ -67,10 +80,7 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
   if (req.method !== "GET" && req.method !== "HEAD") {
-    return new Response(JSON.stringify({ error: "method_not_allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    })
+    return jsonError("method_not_allowed", 405)
   }
 
   let targetUrl: string
@@ -78,20 +88,20 @@ export default async function handler(req: Request): Promise<Response> {
     const u = new URL(req.url)
     targetUrl = u.searchParams.get("url") || ""
   } catch {
-    return new Response(JSON.stringify({ error: "bad_request" }), { status: 400, headers: { "Content-Type": "application/json" } })
+    return jsonError("bad_request", 400)
   }
   if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
-    return new Response(JSON.stringify({ error: "invalid_url" }), { status: 400, headers: { "Content-Type": "application/json" } })
+    return jsonError("invalid_url", 400)
   }
 
   const target = safeTarget(targetUrl)
   if (!target) {
-    return new Response(JSON.stringify({ error: "host_not_allowed" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    return jsonError("host_not_allowed", 403)
   }
 
   const range = safeRange(req.headers.get("range"))
   if (range === false) {
-    return new Response(JSON.stringify({ error: "invalid_range" }), { status: 416, headers: { "Content-Type": "application/json" } })
+    return jsonError("invalid_range", 416)
   }
   let upstream: Response
   try {
@@ -119,21 +129,18 @@ export default async function handler(req: Request): Promise<Response> {
       redirects += 1
     }
   } catch {
-    return new Response(
-      JSON.stringify({ error: "upstream_fetch_failed" }),
-      { status: 502, headers: { "Content-Type": "application/json" } },
-    )
+    return jsonError("upstream_fetch_failed", 502)
   }
 
   const contentType = upstream.headers.get("content-type")?.toLowerCase() || ""
   if (upstream.ok && !contentType.startsWith("image/") && !contentType.startsWith("video/")) {
     upstream.body?.cancel()
-    return new Response(JSON.stringify({ error: "unsupported_media_type" }), { status: 415, headers: { "Content-Type": "application/json" } })
+    return jsonError("unsupported_media_type", 415)
   }
   const length = Number(upstream.headers.get("content-length") || 0)
   if (contentType.startsWith("image/") && length > 15 * 1024 * 1024) {
     upstream.body?.cancel()
-    return new Response(JSON.stringify({ error: "image_too_large" }), { status: 413, headers: { "Content-Type": "application/json" } })
+    return jsonError("image_too_large", 413)
   }
 
   const out = new Headers(upstream.headers)
@@ -142,7 +149,12 @@ export default async function handler(req: Request): Promise<Response> {
   out.set("Cross-Origin-Resource-Policy", "same-origin")
   out.set("Accept-Ranges", "bytes")
   out.set("X-Content-Type-Options", "nosniff")
-  if (upstream.ok && !out.has("cache-control")) out.set("Cache-Control", contentType.startsWith("image/") ? "public, max-age=3600, s-maxage=86400" : "public, max-age=300, s-maxage=3600")
+  out.append("Vary", "Range")
+  if (contentType.startsWith("video/") || range) {
+    for (const [name, value] of Object.entries(NO_STORE_HEADERS)) out.set(name, value)
+  } else if (upstream.ok && !out.has("cache-control")) {
+    out.set("Cache-Control", "public, max-age=3600, s-maxage=86400")
+  }
   if (!upstream.ok && !upstream.headers.get("cache-control")) {
     out.set("Cache-Control", "no-store")
   }
