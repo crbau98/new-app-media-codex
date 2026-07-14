@@ -12,6 +12,7 @@ import {
   Mail,
   FileText,
   Shield,
+  BrainCircuit,
   ChevronDown,
   ChevronUp,
   Check,
@@ -396,11 +397,6 @@ export function SettingsPage() {
     setDeleteModalOpen(false)
   }, [addToast])
 
-  const timeOptions = Array.from({ length: 24 }, (_, i) => {
-    const h = i.toString().padStart(2, '0')
-    return { label: `${h}:00`, value: `${h}:00` }
-  })
-
   return (
     <div className="min-h-[100dvh] pb-20">
       <div className="max-w-[720px] mx-auto px-4 md:px-6 py-6 md:py-8 space-y-6">
@@ -516,6 +512,26 @@ export function SettingsPage() {
           </div>
         </SectionCard>
 
+        <SectionCard eyebrow="Discovery" title="Your private taste model" description="Control how the For You feed balances familiarity and variety" delay={0.14}>
+          <SettingRow label="Discovery balance" description="Recommendations are calculated on this device from your explicit feedback">
+            <SegmentedControl
+              options={[
+                { label: 'Balanced', value: 'balanced' },
+                { label: 'Familiar', value: 'familiar' },
+                { label: 'Explore', value: 'adventurous' },
+              ]}
+              value={store.discoveryMode}
+              onChange={(value) => store.setDiscoveryMode(value)}
+            />
+          </SettingRow>
+          <SettingRow label="Taste signals" description={`${Object.keys(store.tagPreferences).length} topics and ${Object.keys(store.creatorPreferences).length} creators learned locally`}>
+            <div className="flex items-center gap-2 text-xs text-[var(--accent)]"><BrainCircuit size={15} /> On-device</div>
+          </SettingRow>
+          <SettingRow label="Reset recommendations" description="Clear feedback and hidden posts without changing follows or likes">
+            <button onClick={() => { store.resetDiscoveryProfile(); addToast({ type: 'success', title: 'Recommendation profile reset' }) }} className="rounded-md px-3 py-1.5 text-[13px] font-medium text-[var(--error)] hover:bg-[var(--error)]/10">Reset</button>
+          </SettingRow>
+        </SectionCard>
+
         {/* ── Section 2: Playback ── */}
         <SectionCard eyebrow="Media" title="Playback" description="Control how videos and media behave" delay={0.16}>
           <SettingRow label="Autoplay Videos" description="Start playing videos automatically when opened">
@@ -528,7 +544,6 @@ export function SettingsPage() {
                 { label: 'Auto', value: 'auto' },
                 { label: '720p', value: '720p' },
                 { label: '1080p', value: '1080p' },
-                { label: '4K', value: '4K' },
               ]}
               value={store.defaultQuality}
               onChange={(v) => store.setDefaultQuality(v)}
@@ -543,76 +558,10 @@ export function SettingsPage() {
             <ToggleSwitch checked={store.pictureInPicture} onChange={(v) => store.setPictureInPicture(v)} />
           </SettingRow>
 
-          <SettingRow label="Preferred Player" description="How media opens when you click an item">
-            <SegmentedControl
-              options={[
-                { label: 'Inline', value: 'inline' },
-                { label: 'Lightbox', value: 'lightbox' },
-                { label: 'External', value: 'external' },
-              ]}
-              value={store.preferredPlayer}
-              onChange={(v) => store.setPreferredPlayer(v)}
-            />
-          </SettingRow>
-        </SectionCard>
-
-        {/* ── Section 3: Notifications ── */}
-        <SectionCard eyebrow="Alerts" title="Notifications" description="Choose what you want to be notified about" delay={0.24}>
-          <SettingRow label="Enable Notifications" description="Master switch for all push notifications">
-            <ToggleSwitch checked={store.notificationsEnabled} onChange={(v) => store.setNotificationsEnabled(v)} />
-          </SettingRow>
-
-          <SettingRow label="New Media from Followed Creators" description="Get alerted when creators you follow add content">
-            <ToggleSwitch
-              checked={store.notifyCreatorUpdates}
-              onChange={(v) => store.setNotifyCreatorUpdates(v)}
-              disabled={!store.notificationsEnabled}
-            />
-          </SettingRow>
-
-          <SettingRow label="Comments and Replies" description="Notifications for interactions on your activity">
-            <ToggleSwitch
-              checked={store.notifyNewMedia}
-              onChange={(v) => store.setNotifyNewMedia(v)}
-              disabled={!store.notificationsEnabled}
-            />
-          </SettingRow>
-
-          <SettingRow label="Trending Alerts" description="Notify when items start trending in the community">
-            <ToggleSwitch
-              checked={store.notifyTrending}
-              onChange={(v) => store.setNotifyTrending(v)}
-              disabled={!store.notificationsEnabled}
-            />
-          </SettingRow>
-
-          <SettingRow label="Crawl Completed" description="Alert when background media crawling finishes">
-            <ToggleSwitch
-              checked={store.notifyCrawlCompleted}
-              onChange={(v) => store.setNotifyCrawlCompleted(v)}
-              disabled={!store.notificationsEnabled}
-            />
-          </SettingRow>
-
-          <SettingRow label="Quiet Hours" description="Pause notifications during these hours">
-            <div className="flex items-center gap-2">
-              <Dropdown options={timeOptions} value={store.quietHoursStart} onChange={(v) => store.setQuietHoursStart(v)} />
-              <span className="text-[var(--text-tertiary)]">–</span>
-              <Dropdown options={timeOptions} value={store.quietHoursEnd} onChange={(v) => store.setQuietHoursEnd(v)} />
-            </div>
-          </SettingRow>
         </SectionCard>
 
         {/* ── Section 4: Privacy ── */}
         <SectionCard eyebrow="Security" title="Privacy & Data" description="Manage your data and visibility" delay={0.32}>
-          <SettingRow label="Private Profile" description="Hide your profile and activity from other users">
-            <ToggleSwitch checked={store.privateProfile} onChange={(v) => store.setPrivateProfile(v)} />
-          </SettingRow>
-
-          <SettingRow label="Hide Activity Status" description="Don&apos;t show when you&apos;re online or active">
-            <ToggleSwitch checked={store.hideActivityStatus} onChange={(v) => store.setHideActivityStatus(v)} />
-          </SettingRow>
-
           <SettingRow label="Clear Recently Viewed" description="Remove all items from your recently viewed history">
             <button
               onClick={() => setClearRecentModalOpen(true)}

@@ -30,7 +30,9 @@ export default function MediaCard({
     setError(false)
     setLoaded(false)
     if (imgRef.current) {
-      imgRef.current.src = item.thumbnail + '?retry=' + Date.now()
+      const retryUrl = new URL(item.thumbnail, window.location.href)
+      retryUrl.searchParams.set('retry', String(Date.now()))
+      imgRef.current.src = retryUrl.href
     }
   }, [item.thumbnail])
 
@@ -39,6 +41,7 @@ export default function MediaCard({
 
   return (
     <motion.div
+      data-testid={isVideo ? 'video-tile' : 'media-tile'}
       layout
       className={cn(
         'group relative rounded-[var(--radius-md)] overflow-hidden cursor-pointer',

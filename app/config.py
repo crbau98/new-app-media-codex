@@ -94,67 +94,11 @@ class Settings:
     themes: list[Theme] = field(
         default_factory=lambda: [
             Theme(
-                slug="onlyfans_creators",
-                label="OnlyFans Gay Male Creators",
+                slug="public_creator_discovery",
+                label="Public Gay Male Creator Discovery",
                 queries=[
-                    "gay onlyfans creator nude male",
-                    "gay onlyfans male performer leaked",
-                ],
-            ),
-            Theme(
-                slug="fansly_creators",
-                label="Fansly Gay Male Creators",
-                queries=[
-                    "gay fansly creator nude male",
-                    "gay fansly male performer explicit",
-                ],
-            ),
-            Theme(
-                slug="reddit_gay",
-                label="Gay Reddit NSFW",
-                queries=[
-                    "gay reddit nsfw nude male r/GayNSFW",
-                    "gay porn reddit nude male r/gayporn",
-                ],
-            ),
-            Theme(
-                slug="x_gay_creators",
-                label="Gay X/Twitter Creators",
-                queries=[
-                    "gay nude creator twitter male explicit",
-                    "gay explicit content x.com male onlyfans",
-                ],
-            ),
-            Theme(
-                slug="lpsg_threads",
-                label="LPSG Gay Content",
-                queries=[
-                    "lpsg gay male nude hung cock",
-                    "lpsg gay porn content bareback",
-                ],
-            ),
-            Theme(
-                slug="twinks",
-                label="Gay Twinks",
-                queries=[
-                    "gay twink nude male",
-                    "twink gay porn onlyfans male",
-                ],
-            ),
-            Theme(
-                slug="muscle_bears",
-                label="Gay Muscle & Bears",
-                queries=[
-                    "gay muscle nude male bodybuilder",
-                    "gay bear hairy nude male",
-                ],
-            ),
-            Theme(
-                slug="fetish_kink",
-                label="Gay Fetish & Kink",
-                queries=[
-                    "gay fetish nude male bdsm leather",
-                    "gay kink bareback nude male bondage",
+                    "public gay male creator profile",
+                    "gay male creator public posts",
                 ],
             ),
         ]

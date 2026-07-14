@@ -1,8 +1,8 @@
-"""Vision-based image quality and gender filters.
+"""Optional vision-based technical quality checks.
 
-The default quality filter keeps the historical fail-open behavior so temporary
-vision outages do not halt the whole pipeline. Strict callers can opt into
-fail-closed handling when they need to guarantee that female content stays out.
+The model is deliberately prohibited from rating attractiveness, physique,
+gender presentation, sexual orientation, or other sensitive traits. Discovery
+eligibility comes from creator/provider metadata and user-controlled filters.
 """
 from __future__ import annotations
 
@@ -18,24 +18,13 @@ import requests
 from app.config import Settings
 
 _VISION_PROMPT = (
-    "You are a strict content filter. Evaluate this image and respond ONLY with JSON.\n\n"
-    "PASS criteria — ALL must be true:\n"
-    "1. Contains one or more real adult human males (not cartoon, illustration, or CGI).\n"
-    "2. Every visible male appears young-to-middle-aged (roughly 18–45), NOT elderly or old.\n"
-    "3. Every visible male has a fit, lean, athletic, or muscular physique — "
-    "no overweight, fat, chubby, or average/dad-bod builds.\n"
-    "4. NO women or female-presenting individuals are present anywhere in the image.\n"
-    "5. Content must be sexual or erotic in nature (nude, semi-nude, or explicitly sexual).\n\n"
-    "If ANY criterion fails, set pass=false.\n"
+    "Evaluate only technical media quality and respond ONLY with JSON.\n\n"
+    "Set pass=false only when the image is a broken placeholder, error page, badly corrupted, "
+    "too unclear to understand, or depicts an apparent minor. Do not infer or score gender, "
+    "sexual orientation, race, ethnicity, age beyond apparent-minor safety, physique, body type, "
+    "or attractiveness. Do not decide whether a person fits a demographic.\n\n"
     "Respond with JSON only, no markdown: "
     '{"pass": true_or_false, "reason": "one-line reason"}'
-)
-
-_WOMEN_CHECK_PROMPT = (
-    "Look at this image carefully. Does it contain any women, girls, or female-presenting individuals "
-    "(including transgender women)? Answer based only on visual cues — body shape, breasts, facial features, etc.\n\n"
-    "Respond ONLY with JSON, no markdown: "
-    '{"has_women": true_or_false, "reason": "one-line reason"}'
 )
 
 # Extensions treated as video — skip vision check (model can't evaluate video frames).
@@ -194,35 +183,13 @@ def passes_vision_filter(settings: Settings, image_path: str, *, fail_open: bool
 
 
 def contains_women(settings: Settings, image_path: str, *, default_on_error: bool = False) -> bool:
-    """Return True if the image appears to contain women.
-
-    ``default_on_error`` lets strict callers treat unknown or unevaluable media
-    as unsafe instead of letting it pass through.
-    """
-    if not settings.openai_api_key:
-        return default_on_error
-
-    cached = _get_cached_vision_result(image_path, _WOMEN_CHECK_PROMPT)
-    parsed = _call_vision_api(settings, image_path, _WOMEN_CHECK_PROMPT) if cached is _VISION_CACHE_MISS else cached
-    if cached is _VISION_CACHE_MISS:
-        _store_cached_vision_result(image_path, _WOMEN_CHECK_PROMPT, parsed)
-    if parsed is None:
-        return default_on_error
-
-    result = bool(parsed.get("has_women", False))
-    if result:
-        reason = parsed.get("reason", "")
-        _log_once_per_window(
-            f"women:{reason}",
-            f"[vision_filter] WOMEN DETECTED in {Path(image_path).name}: {reason}",
-        )
-    return result
+    """Deprecated compatibility shim; demographic inference is disabled."""
+    del settings, image_path, default_on_error
+    return False
 
 
 def passes_strict_content_filter(settings: Settings, image_path: str) -> bool:
-    """Return True only for confidently male-only, in-scope content."""
-    if contains_women(settings, image_path, default_on_error=True):
-        return False
+    """Return True only when the technical quality check succeeds."""
     return passes_vision_filter(settings, image_path, fail_open=False)
 
 
@@ -310,20 +277,11 @@ def passes_vision_filter_url(settings: Settings, image_url: str, *, fail_open: b
 
 
 def contains_women_url(settings: Settings, image_url: str, *, default_on_error: bool = False) -> bool:
-    """Like contains_women but works on a remote image URL."""
-    if not settings.openai_api_key:
-        return default_on_error
-    cached = _get_cached_url_vision(image_url, _WOMEN_CHECK_PROMPT)
-    parsed = _call_vision_api_url(settings, image_url, _WOMEN_CHECK_PROMPT) if cached is _VISION_CACHE_MISS else cached
-    if cached is _VISION_CACHE_MISS:
-        _store_cached_url_vision(image_url, _WOMEN_CHECK_PROMPT, parsed)
-    if parsed is None:
-        return default_on_error
-    return bool(parsed.get("has_women", False))
+    """Deprecated compatibility shim; demographic inference is disabled."""
+    del settings, image_url, default_on_error
+    return False
 
 
 def passes_strict_content_filter_url(settings: Settings, image_url: str) -> bool:
     """Like passes_strict_content_filter but works on a remote image URL."""
-    if contains_women_url(settings, image_url, default_on_error=True):
-        return False
     return passes_vision_filter_url(settings, image_url, fail_open=False)

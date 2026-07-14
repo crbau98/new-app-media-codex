@@ -6,17 +6,18 @@ import {
   Search,
   Users,
   Settings,
+  Sparkles,
 } from 'lucide-react'
 
 const tabs = [
   { label: 'Library', icon: Grid3X3, href: '/media', view: 'images' as const },
+  { label: 'For You', icon: Sparkles, href: '/explore', view: 'explore' as const },
   { label: 'Search', icon: Search, href: '/search', view: 'search' as const },
   { label: 'Creators', icon: Users, href: '/creators', view: 'creators' as const },
   { label: 'Settings', icon: Settings, href: '/settings', view: 'settings' as const },
 ]
 
 export default function BottomTabBar() {
-  const activeView = useAppStore((s) => s.activeView)
   const setActiveView = useAppStore((s) => s.setActiveView)
   const navigate = useNavigate()
   const location = useLocation()
@@ -26,16 +27,7 @@ export default function BottomTabBar() {
     navigate(href)
   }
 
-  const isActive = (label: string) => {
-    const map: Record<string, string> = {
-      Library: 'images',
-      Search: 'search',
-      Creators: 'creators',
-      Settings: 'settings',
-    }
-    const view = map[label]
-    return location.pathname === tabs.find((tab) => tab.label === label)?.href || activeView === view
-  }
+  const isActive = (label: string) => location.pathname === tabs.find((tab) => tab.label === label)?.href
 
   return (
     <nav

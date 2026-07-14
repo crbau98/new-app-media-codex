@@ -6,12 +6,39 @@
 export const config = { runtime: "edge" }
 
 const ALLOWED = new Set(["media.redgifs.com"])
+const MAX_REDIRECTS = 2
+const MAX_EXPLICIT_RANGE_BYTES = 12 * 1024 * 1024
 
 function allowedArchiverHost(hostname: string): boolean {
   const h = hostname.toLowerCase()
   if (ALLOWED.has(h)) return true
   if (/^(?:media|thumbs\d*)\.redgifs\.com$/i.test(h)) return true
   return false
+}
+
+function safeTarget(value: string): URL | null {
+  try {
+    const target = new URL(value)
+    if (target.protocol !== "https:") return null
+    if (target.username || target.password || target.hash) return null
+    if (target.port && target.port !== "443") return null
+    if (!allowedArchiverHost(target.hostname)) return null
+    return target
+  } catch {
+    return null
+  }
+}
+
+function safeRange(value: string | null): string | null | false {
+  if (!value) return null
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(value.trim())
+  if (!match || (!match[1] && !match[2])) return false
+  if (match[1] && match[2]) {
+    const start = Number(match[1])
+    const end = Number(match[2])
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start || end - start + 1 > MAX_EXPLICIT_RANGE_BYTES) return false
+  }
+  return value.trim()
 }
 
 function buildUpstreamHeaders(target: URL, range: string | null): Headers {
@@ -33,7 +60,6 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(null, {
       status: 204,
       headers: {
-        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
         "Access-Control-Allow-Headers": "Range",
         "Access-Control-Max-Age": "86400",
@@ -58,36 +84,65 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: "invalid_url" }), { status: 400, headers: { "Content-Type": "application/json" } })
   }
 
-  let target: URL
-  try {
-    target = new URL(targetUrl)
-  } catch {
-    return new Response(JSON.stringify({ error: "invalid_url" }), { status: 400, headers: { "Content-Type": "application/json" } })
-  }
-  if (!allowedArchiverHost(target.hostname)) {
+  const target = safeTarget(targetUrl)
+  if (!target) {
     return new Response(JSON.stringify({ error: "host_not_allowed" }), { status: 403, headers: { "Content-Type": "application/json" } })
   }
 
-  const range = req.headers.get("range")
+  const range = safeRange(req.headers.get("range"))
+  if (range === false) {
+    return new Response(JSON.stringify({ error: "invalid_range" }), { status: 416, headers: { "Content-Type": "application/json" } })
+  }
   let upstream: Response
   try {
-    upstream = await fetch(target.href, {
-      method: req.method,
-      headers: buildUpstreamHeaders(target, range),
-      redirect: "follow",
-      // @ts-expect-error edge-specific: disable caching by default for media
-      cf: { cacheTtl: 3600 },
-    })
-  } catch (err) {
+    let current = target
+    let redirects = 0
+    while (true) {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 20_000)
+      try {
+        upstream = await fetch(current.href, {
+          method: req.method,
+          headers: buildUpstreamHeaders(current, range),
+          redirect: "manual",
+          signal: controller.signal,
+        })
+      } finally {
+        clearTimeout(timeout)
+      }
+      if (![301, 302, 303, 307, 308].includes(upstream.status)) break
+      if (redirects >= MAX_REDIRECTS) throw new Error("redirect_limit")
+      const location = upstream.headers.get("location")
+      const next = location ? safeTarget(new URL(location, current).href) : null
+      if (!next) throw new Error("unsafe_redirect")
+      current = next
+      redirects += 1
+    }
+  } catch {
     return new Response(
-      JSON.stringify({ error: "upstream_fetch_failed", detail: String(err), target: target.href }),
+      JSON.stringify({ error: "upstream_fetch_failed" }),
       { status: 502, headers: { "Content-Type": "application/json" } },
     )
   }
 
+  const contentType = upstream.headers.get("content-type")?.toLowerCase() || ""
+  if (upstream.ok && !contentType.startsWith("image/") && !contentType.startsWith("video/")) {
+    upstream.body?.cancel()
+    return new Response(JSON.stringify({ error: "unsupported_media_type" }), { status: 415, headers: { "Content-Type": "application/json" } })
+  }
+  const length = Number(upstream.headers.get("content-length") || 0)
+  if (contentType.startsWith("image/") && length > 15 * 1024 * 1024) {
+    upstream.body?.cancel()
+    return new Response(JSON.stringify({ error: "image_too_large" }), { status: 413, headers: { "Content-Type": "application/json" } })
+  }
+
   const out = new Headers(upstream.headers)
-  out.set("Cross-Origin-Resource-Policy", "cross-origin")
-  out.set("Access-Control-Allow-Origin", "*")
+  out.delete("set-cookie")
+  out.delete("content-disposition")
+  out.set("Cross-Origin-Resource-Policy", "same-origin")
+  out.set("Accept-Ranges", "bytes")
+  out.set("X-Content-Type-Options", "nosniff")
+  if (upstream.ok && !out.has("cache-control")) out.set("Cache-Control", contentType.startsWith("image/") ? "public, max-age=3600, s-maxage=86400" : "public, max-age=300, s-maxage=3600")
   if (!upstream.ok && !upstream.headers.get("cache-control")) {
     out.set("Cache-Control", "no-store")
   }
