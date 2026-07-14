@@ -59,6 +59,10 @@ function corsHeaders(): Record<string, string> {
   }
 }
 
+function proxiedMediaUrl(url?: string): string | undefined {
+  return url ? `/api/archiver-proxy?url=${encodeURIComponent(url)}` : undefined
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders() })
   if (req.method !== 'GET') {
@@ -109,7 +113,7 @@ export default async function handler(req: Request): Promise<Response> {
         return {
           id: `rg-${item.id}`,
           title: item.description?.trim() || tags.slice(0, 3).join(' · ') || `Video by ${creator}`,
-          thumbnail: item.urls?.poster || item.urls?.thumbnail,
+          thumbnail: proxiedMediaUrl(item.urls?.poster || item.urls?.thumbnail),
           source: 'Redgifs',
           duration: durationLabel(item.duration),
           isVideo: true,
@@ -119,7 +123,7 @@ export default async function handler(req: Request): Promise<Response> {
           rating: 0,
           createdAt: item.createDate ? new Date(item.createDate * 1000).toISOString() : now,
           views: item.views || 0,
-          mediaUrl: item.urls?.hd || item.urls?.sd,
+          mediaUrl: proxiedMediaUrl(item.urls?.hd || item.urls?.sd),
           pageUrl: `https://www.redgifs.com/watch/${item.id}`,
           description: item.description || undefined,
           likes: item.likes || 0,
