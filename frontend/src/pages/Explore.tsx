@@ -83,10 +83,11 @@ export default function ExplorePage() {
   const addRecentlyViewed = useAppStore((state) => state.addRecentlyViewed)
   const resetProfile = useAppStore((state) => state.resetDiscoveryProfile)
   const addToast = useAppStore((state) => state.addToast)
+  const creatorWatchlist = useAppStore((state) => state.creatorWatchlist)
 
   const { data, isLoading, isError, isFetching, refetch, dataUpdatedAt } = useQuery({
-    queryKey: ['media', 'for-you'],
-    queryFn: () => fetchMedia({ sort: 'newest' }, 1, 100),
+    queryKey: ['media', 'for-you', creatorWatchlist],
+    queryFn: () => fetchMedia({ sort: 'newest', watchlist: creatorWatchlist }, 1, 100),
     staleTime: 60_000,
     refetchInterval: 120_000,
     refetchOnWindowFocus: true,

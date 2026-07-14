@@ -406,10 +406,11 @@ export default function HomePage() {
     Random: 'random',
     'Most Viewed': 'mostViewed',
   } as const)[sort] ?? 'newest', [sort])
+  const creatorWatchlist = useAppStore((state) => state.creatorWatchlist)
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['media', 'home', sortValue],
-    queryFn: () => fetchMedia({ sort: sortValue }, 1, 100),
+    queryKey: ['media', 'home', sortValue, creatorWatchlist],
+    queryFn: () => fetchMedia({ sort: sortValue, watchlist: creatorWatchlist }, 1, 100),
     staleTime: 60_000,
     refetchInterval: 120_000,
     refetchOnWindowFocus: true,
@@ -419,8 +420,8 @@ export default function HomePage() {
     queryFn: fetchCategories,
   })
   const { data: liveCreators = [] } = useQuery({
-    queryKey: ['live-creators', 'home'],
-    queryFn: fetchLiveCreatorDirectory,
+    queryKey: ['live-creators', 'home', creatorWatchlist],
+    queryFn: () => fetchLiveCreatorDirectory(creatorWatchlist),
     staleTime: 60_000,
   })
 

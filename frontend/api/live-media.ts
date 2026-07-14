@@ -58,6 +58,7 @@ type LiveMediaItem = {
   isTrending: boolean
   curationScore: number
   curationReasons: string[]
+  isWatchedCreator: boolean
 }
 
 function textFor(item: RedgifsItem): string {
@@ -70,8 +71,8 @@ function textFor(item: RedgifsItem): string {
 }
 
 function isEligibleMaleItem(item: RedgifsItem): boolean {
-  // Inclusion is established by the exact canonical Gay tag search. These
-  // exclusions protect the feed when a provider record is mislabelled.
+  // Discovery is established by the canonical Gay tag or an explicit user
+  // watchlist. These exclusions protect the feed when a source is mislabelled.
   const tokens = new Set(textFor(item).split(/[^a-z0-9/]+/).filter(Boolean))
   return !FEMALE_MARKERS.some((marker) => tokens.has(marker))
 }
@@ -109,8 +110,9 @@ function rankCohort(items: LiveMediaItem[]): LiveMediaItem[] {
     const created = Date.parse(item.createdAt)
     const hoursOld = Number.isFinite(created) ? Math.max(0, (Date.now() - created) / 3_600_000) : Number.POSITIVE_INFINITY
     const freshness = Math.exp(-hoursOld / (24 * 14))
-    const score = Math.round((viewRank * 0.52 + likeRank * 0.32 + freshness * 0.16) * 100)
+    const score = Math.min(100, Math.round((viewRank * 0.48 + likeRank * 0.29 + freshness * 0.14) * 100 + (item.isWatchedCreator ? 9 : 0)))
     const reasons: string[] = []
+    if (item.isWatchedCreator) reasons.push('creator is on your watchlist')
     if (viewRank >= 0.75) reasons.push('among the most watched in this feed')
     if (likeRank >= 0.75) reasons.push('strong public engagement')
     if (hoursOld <= 72) reasons.push('recently published')
@@ -131,6 +133,27 @@ function boundedQuery(value: string): string {
 
 function canonicalCreator(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+function parseWatchlist(url: URL): string[] {
+  const candidates = [
+    ...url.searchParams.getAll('watch'),
+    ...(url.searchParams.get('watchlist') || '').split(','),
+  ]
+  const unique = new Map<string, string>()
+  for (const raw of candidates) {
+    const display = raw.trim().replace(/^@/, '').replace(/\s+/g, ' ').slice(0, 50)
+    const key = canonicalCreator(display)
+    if (key.length < 2 || unique.has(key)) continue
+    unique.set(key, display)
+    if (unique.size >= 8) break
+  }
+  return [...unique.values()]
+}
+
+function creatorIsWatched(creator: string, watchlist: string[]): boolean {
+  const key = canonicalCreator(creator)
+  return Boolean(key) && watchlist.some((candidate) => canonicalCreator(candidate) === key)
 }
 
 function matchesQuery(item: RedgifsItem, query: string): boolean {
@@ -183,6 +206,7 @@ function buildCreators(items: LiveMediaItem[]) {
         curationScore: Math.max(...creatorItems.map((item) => item.curationScore)),
         sourceAttribution: 'Public Redgifs source',
         observedAt: first.createdAt,
+        isWatched: creatorItems.some((item) => item.isWatchedCreator),
         media: ranked.slice(0, 12),
       }
     })
@@ -213,6 +237,7 @@ export default async function handler(req: Request): Promise<Response> {
     const pages = Math.max(1, parseBoundedInt(requestUrl.searchParams.get('pages'), 2, 3))
     const startPage = Math.max(1, parseBoundedInt(requestUrl.searchParams.get('page'), 1, 50))
     const query = boundedQuery(requestUrl.searchParams.get('q') || requestUrl.searchParams.get('creator') || '')
+    const watchlist = parseWatchlist(requestUrl)
     const minViews = parseBoundedInt(requestUrl.searchParams.get('minViews'), 0, 10_000_000)
     const minLikes = parseBoundedInt(requestUrl.searchParams.get('minLikes'), 0, 1_000_000)
     const requestedSort = (requestUrl.searchParams.get('sort') || 'smart').toLowerCase()
@@ -226,8 +251,23 @@ export default async function handler(req: Request): Promise<Response> {
     const token = String((await auth.json() as { token?: string }).token || '')
     if (!token) throw new Error('Redgifs did not return a temporary token')
 
+    const providerHeaders = {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+      'User-Agent': 'MediaCodex/1.0',
+    }
+    const fetchProvider = async (path: string, params: URLSearchParams): Promise<RedgifsItem[]> => {
+      const result = await fetch(`${REDGIFS_API}${path}?${params}`, {
+        headers: providerHeaders,
+        cache: 'no-store',
+      })
+      if (!result.ok) throw new Error(`Public provider returned ${result.status}`)
+      const body = await result.json() as { gifs?: RedgifsItem[] }
+      return body.gifs || []
+    }
+
     const providerCount = Math.min(80, Math.max(30, Math.ceil(count / pages * 1.7)))
-    const pageResults = await Promise.allSettled(Array.from({ length: pages }, async (_, index) => {
+    const discoveryRequests: Array<Promise<RedgifsItem[]>> = Array.from({ length: pages }, (_, index) => {
       const params = new URLSearchParams({
         type: 'g',
         tags: 'Gay',
@@ -235,18 +275,28 @@ export default async function handler(req: Request): Promise<Response> {
         page: String(startPage + index),
         order: 'trending',
       })
-      const result = await fetch(`${REDGIFS_API}/gifs/search?${params}`, {
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-          'User-Agent': 'MediaCodex/1.0',
-        },
-        cache: 'no-store',
-      })
-      if (!result.ok) throw new Error(`Redgifs search returned ${result.status}`)
-      const body = await result.json() as { gifs?: RedgifsItem[] }
-      return body.gifs || []
-    }))
+      return fetchProvider('/gifs/search', params)
+    })
+
+    if (query) {
+      discoveryRequests.push(fetchProvider('/gifs/search', new URLSearchParams({
+        search_text: query,
+        count: String(Math.min(60, providerCount)),
+        page: '1',
+        order: 'trending',
+      })))
+    }
+
+    for (const creator of watchlist) {
+      const handle = canonicalCreator(creator)
+      discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(handle)}/search`, new URLSearchParams({
+        count: '30',
+        page: '1',
+        order: 'recent',
+      })).then((items) => items.filter((item) => canonicalCreator(item.userName || '') === handle)))
+    }
+
+    const pageResults = await Promise.allSettled(discoveryRequests)
     const successfulPages = pageResults.filter((result): result is PromiseFulfilledResult<RedgifsItem[]> => result.status === 'fulfilled')
     if (!successfulPages.length) throw new Error('Public provider search is temporarily unavailable')
     const deduplicated = new Map<string, RedgifsItem>()
@@ -260,6 +310,7 @@ export default async function handler(req: Request): Promise<Response> {
       .map((item): LiveMediaItem => {
         const tags = (item.tags || []).filter(Boolean).slice(0, 12)
         const creator = item.userName || 'Redgifs creator'
+        const isWatchedCreator = creatorIsWatched(creator, watchlist)
         const createdAt = toIsoDate(item.createDate)
         const directCandidates = [item.urls?.hd, item.urls?.sd].filter((url): url is string => Boolean(url))
         const streamCandidates = [...directCandidates.map(proxiedMediaUrl), ...directCandidates]
@@ -289,6 +340,7 @@ export default async function handler(req: Request): Promise<Response> {
           isTrending: false,
           curationScore: 0,
           curationReasons: [],
+          isWatchedCreator,
         }
       })
       .filter((item) => matchesQuery({
@@ -305,6 +357,10 @@ export default async function handler(req: Request): Promise<Response> {
       source: 'public-redgifs-api',
       updatedAt: new Date().toISOString(),
       counts: { received: received.length, eligible: eligible.length, playable: items.length, pagesScanned: successfulPages.length },
+      watchlist: {
+        requested: watchlist,
+        matched: [...new Set(items.filter((item) => item.isWatchedCreator).map((item) => item.creator))],
+      },
       ranking: 'cohort-normalized public engagement and freshness; no appearance scoring',
     }), { status: 200, headers: corsHeaders() })
   } catch (error) {
