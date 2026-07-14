@@ -25,6 +25,10 @@ function creatorKey(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
+function containsEmail(value: string): boolean {
+  return /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(value)
+}
+
 export interface Toast {
   id: string
   type: ToastType
@@ -276,6 +280,7 @@ export const useAppStore = create<AppState>()(
 
       creatorWatchlist: DEFAULT_CREATOR_WATCHLIST,
       addCreatorToWatchlist: (creator) => set((state) => {
+        if (containsEmail(creator)) return state
         const display = creator.trim().replace(/^@/, '').replace(/\s+/g, ' ').slice(0, 50)
         const key = creatorKey(display)
         if (key.length < 2 || state.creatorWatchlist.some((item) => creatorKey(item) === key) || state.creatorWatchlist.length >= 8) return state

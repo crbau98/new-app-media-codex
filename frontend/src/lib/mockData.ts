@@ -48,6 +48,9 @@ export interface Creator {
   sourceAttribution?: string
   observedAt?: string
   isWatched?: boolean
+  isSimilar?: boolean
+  similarityScore?: number
+  discoveryReasons?: string[]
   media?: MediaItem[]
 }
 

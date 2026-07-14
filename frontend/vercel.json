@@ -9,5 +9,11 @@
       "source": "/:path*",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/live-media?count=100&pages=3&sort=newest&watch=Jakipz&watch=Christian%20Hogue&watch=Michael%20Yerger&watch=SebastianCoxxx",
+      "schedule": "0 * * * *"
+    }
   ]
 }
