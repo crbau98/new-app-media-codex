@@ -6,17 +6,47 @@ import Footer from './Footer'
 import BottomTabBar from './BottomTabBar'
 import { cn } from '@/lib/utils'
 
+const ACCENTS = {
+  rose: ['#f178a9', '#ff91bd', 'rgba(241,120,169,.16)', 'rgba(241,120,169,.35)'],
+  purple: ['#a78bfa', '#b8a2ff', 'rgba(167,139,250,.16)', 'rgba(167,139,250,.35)'],
+  teal: ['#2dd4bf', '#5eead4', 'rgba(45,212,191,.16)', 'rgba(45,212,191,.35)'],
+  amber: ['#fbbf24', '#fcd34d', 'rgba(251,191,36,.16)', 'rgba(251,191,36,.35)'],
+  blue: ['#60a5fa', '#93c5fd', 'rgba(96,165,250,.16)', 'rgba(96,165,250,.35)'],
+  green: ['#4ade80', '#86efac', 'rgba(74,222,128,.16)', 'rgba(74,222,128,.35)'],
+} as const
+
 interface LayoutProps {
   children: React.ReactNode
 }
 
 export default function Layout({ children }: LayoutProps) {
   const theme = useAppStore((s) => s.theme)
+  const accentColor = useAppStore((s) => s.accentColor)
+  const fontSize = useAppStore((s) => s.fontSize)
+  const reduceMotion = useAppStore((s) => s.reduceMotion)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
+    const root = document.documentElement
+    const applyTheme = () => root.setAttribute('data-theme', theme === 'auto'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : theme)
+    applyTheme()
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    media.addEventListener('change', applyTheme)
+    return () => media.removeEventListener('change', applyTheme)
   }, [theme])
+
+  useEffect(() => {
+    const [accent, hover, dim, glow] = ACCENTS[accentColor]
+    const root = document.documentElement
+    root.style.setProperty('--accent', accent)
+    root.style.setProperty('--accent-hover', hover)
+    root.style.setProperty('--accent-dim', dim)
+    root.style.setProperty('--accent-glow', glow)
+    root.setAttribute('data-font-size', fontSize)
+    root.setAttribute('data-reduce-motion', String(reduceMotion))
+  }, [accentColor, fontSize, reduceMotion])
 
   // Lock body scroll when mobile sidebar is open
   useEffect(() => {
@@ -25,21 +55,15 @@ export default function Layout({ children }: LayoutProps) {
     } else {
       document.body.style.overflow = ''
     }
-    return () => { document.body.style.overflow = '' }
-  }, [mobileSidebarOpen])
-
-  // Listen to system theme changes when in auto mode
-  useEffect(() => {
-    if (theme !== 'auto') return
-    const mql = window.matchMedia('(prefers-color-scheme: dark)')
-    const apply = () => {
-      const resolved = mql.matches ? 'dark' : 'light'
-      document.documentElement.setAttribute('data-theme', resolved)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileSidebarOpen(false)
     }
-    apply()
-    mql.addEventListener('change', apply)
-    return () => mql.removeEventListener('change', apply)
-  }, [theme])
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = ''
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [mobileSidebarOpen])
 
   return (
     <div className="min-h-[100dvh] flex shell-bg">
@@ -76,6 +100,9 @@ export default function Layout({ children }: LayoutProps) {
           'fixed top-0 left-0 bottom-0 z-[100] md:hidden transition-transform duration-300',
           mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation menu"
       >
         <Navbar onClose={() => setMobileSidebarOpen(false)} />
       </div>

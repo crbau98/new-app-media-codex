@@ -51,6 +51,15 @@ export default function MediaCard({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={() => onSelect?.(item.id)}
+      role="button"
+      tabIndex={0}
+      aria-label={`${item.isVideo ? 'Play' : 'View'} ${item.title} by ${item.creator}`}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSelect?.(item.id)
+        }
+      }}
       whileTap={{ scale: 0.98 }}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
@@ -126,7 +135,7 @@ export default function MediaCard({
           'absolute inset-x-0 bottom-0 p-3 flex flex-col gap-1',
           'bg-gradient-to-t from-[rgba(3,3,5,0.7)] via-[rgba(3,3,5,0.35)] to-transparent',
           'transition-opacity duration-300',
-          hovered ? 'opacity-100' : 'opacity-0 md:opacity-0'
+          hovered ? 'opacity-100' : 'opacity-100 md:opacity-0'
         )}
       >
         <h4 className="text-sm font-semibold text-[var(--text-primary)] line-clamp-2 leading-snug">
@@ -140,7 +149,7 @@ export default function MediaCard({
       </div>
 
       {/* Source badge (bottom-left, always visible but subtle) */}
-      <div className="absolute bottom-2 left-2 flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] bg-[var(--bg-overlay)] px-1.5 py-0.5 rounded-sm opacity-70 group-hover:opacity-100 transition-opacity">
+      <div className="absolute bottom-2 left-2 hidden md:flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] bg-[var(--bg-overlay)] px-1.5 py-0.5 rounded-sm opacity-70 group-hover:opacity-100 transition-opacity">
         {item.source}
       </div>
 

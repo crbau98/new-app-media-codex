@@ -2,7 +2,7 @@ export interface MediaItem {
   id: string
   title: string
   thumbnail: string
-  source: 'Tube' | 'Redgifs' | 'Imgur' | 'Local' | 'Xtube'
+  source: string
   duration: string
   isVideo: boolean
   category: string
@@ -11,6 +11,12 @@ export interface MediaItem {
   rating: number
   createdAt: string
   views: number
+  mediaUrl?: string
+  pageUrl?: string
+  description?: string
+  likes?: number
+  comments?: number
+  isLiked?: boolean
   isNew?: boolean
   isTrending?: boolean
 }

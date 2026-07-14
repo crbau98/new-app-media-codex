@@ -15,10 +15,7 @@ import {
   Download,
   X,
   Play,
-  Pause,
-  Volume2,
-  VolumeX,
-  Maximize,
+  ExternalLink,
   MoreHorizontal,
   Send,
   ThumbsUp,
@@ -49,12 +46,6 @@ function timeAgo(dateStr: string): string {
   const days = Math.floor(hours / 24)
   if (days < 7) return `${days}d ago`
   return `${Math.floor(days / 7)}w ago`
-}
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
 }
 
 /* ────────────────────────────────────────────────
@@ -106,131 +97,38 @@ const mockComments = [
 /* ────────────────────────────────────────────────
    Video Player Component
    ──────────────────────────────────────────────── */
-function VideoPlayer({ poster }: { poster: string }) {
-  const [playing, setPlaying] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [volume, setVolume] = useState(true)
-  const [showControls, setShowControls] = useState(true)
-  const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const progressRef = useRef<HTMLDivElement>(null)
+function VideoPlayer({ item }: { item: MediaItem }) {
+  const [failed, setFailed] = useState(false)
 
-  const togglePlay = useCallback(() => {
-    setPlaying((p) => !p)
-  }, [])
-
-  const toggleVolume = useCallback(() => {
-    setVolume((v) => !v)
-  }, [])
-
-  const handleMouseMove = useCallback(() => {
-    setShowControls(true)
-    if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current)
-    controlsTimerRef.current = setTimeout(() => {
-      if (playing) setShowControls(false)
-    }, 3000)
-  }, [playing])
-
-  useEffect(() => {
-    return () => {
-      if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current)
-    }
-  }, [])
-
-  const handleScrub = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressRef.current) return
-    const rect = progressRef.current.getBoundingClientRect()
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    setProgress(pct)
-  }, [])
-
-  // Simulate progress when playing
-  useEffect(() => {
-    if (!playing) return
-    const interval = setInterval(() => {
-      setProgress((p) => {
-        if (p >= 1) {
-          setPlaying(false)
-          return 0
-        }
-        return p + 0.005
-      })
-    }, 100)
-    return () => clearInterval(interval)
-  }, [playing])
-
-  return (
-    <div
-      className="relative w-full aspect-video bg-[var(--bg-darkest)] rounded-[var(--radius-lg)] overflow-hidden group/player"
-      onMouseMove={handleMouseMove}
-      onMouseLeave={() => playing && setShowControls(false)}
-    >
-      {/* Poster image */}
-      <img
-        src={poster}
-        alt=""
-        className={cn(
-          'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
-          playing ? 'opacity-50' : 'opacity-100'
-        )}
-      />
-
-      {/* Play/Pause overlay button */}
-      <button
-        onClick={togglePlay}
-        className={cn(
-          'absolute inset-0 flex items-center justify-center transition-opacity duration-300',
-          showControls ? 'opacity-100' : 'opacity-0'
-        )}
-      >
-        <motion.div
-          whileTap={{ scale: 0.9 }}
-          className="w-14 h-14 rounded-full bg-[var(--bg-overlay)] backdrop-blur-sm flex items-center justify-center"
-        >
-          {playing ? (
-            <Pause size={24} className="text-white" fill="white" />
-          ) : (
-            <Play size={24} className="text-white ml-0.5" fill="white" />
+  if (!item.mediaUrl || failed) {
+    return (
+      <div className="relative grid aspect-video w-full place-items-center overflow-hidden rounded-[var(--radius-lg)] bg-[var(--bg-darkest)]">
+        <img src={item.thumbnail} alt="" className="absolute inset-0 h-full w-full object-cover opacity-35 blur-sm" />
+        <div className="relative z-10 flex max-w-xs flex-col items-center gap-3 px-6 text-center">
+          <div className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white"><Play size={20} /></div>
+          <p className="text-sm font-medium text-white">Playback is not available from this source.</p>
+          {item.pageUrl && (
+            <a href={item.pageUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black">
+              Open original <ExternalLink size={14} />
+            </a>
           )}
-        </motion.div>
-      </button>
-
-      {/* Controls bar */}
-      <div
-        className={cn(
-          'absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-[rgba(3,3,5,0.8)] to-transparent transition-opacity duration-300',
-          showControls ? 'opacity-100' : 'opacity-0'
-        )}
-      >
-        {/* Progress bar */}
-        <div
-          ref={progressRef}
-          className="w-full h-1 bg-[rgba(255,255,255,0.2)] rounded-full cursor-pointer mb-3"
-          onClick={handleScrub}
-        >
-          <div
-            className="h-full rounded-full bg-[var(--accent)] transition-all"
-            style={{ width: `${progress * 100}%` }}
-          />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button onClick={togglePlay} className="text-white hover:text-[var(--accent)] transition-colors">
-              {playing ? <Pause size={16} /> : <Play size={16} />}
-            </button>
-            <button onClick={toggleVolume} className="text-white hover:text-[var(--accent)] transition-colors">
-              {volume ? <Volume2 size={16} /> : <VolumeX size={16} />}
-            </button>
-            <span className="text-[11px] font-mono text-white/70">
-              {formatDuration(progress * 180)} / 3:00
-            </span>
-          </div>
-          <button className="text-white hover:text-[var(--accent)] transition-colors">
-            <Maximize size={16} />
-          </button>
         </div>
       </div>
-    </div>
+    )
+  }
+
+  return (
+    <video
+      src={item.mediaUrl}
+      poster={item.thumbnail}
+      controls
+      playsInline
+      preload="metadata"
+      onError={() => setFailed(true)}
+      className="aspect-video w-full rounded-[var(--radius-lg)] bg-black object-contain"
+    >
+      Your browser does not support video playback.
+    </video>
   )
 }
 
@@ -278,10 +176,16 @@ function EngagementBar({
 }) {
   const likeCache = useAppStore((s) => s.likeCache)
   const toggleLike = useAppStore((s) => s.toggleLike)
-  const liked = likeCache[item.id] ?? false
-  const [likeCount, setLikeCount] = useState(item.views > 1000 ? Math.floor(item.views / 100) : 12)
+  const liked = likeCache[item.id] ?? item.isLiked ?? false
+  const [likeCount, setLikeCount] = useState(item.likes ?? 0)
   const [burstTrigger, setBurstTrigger] = useState(0)
-  const [saved, setSaved] = useState(false)
+
+  const handleShare = useCallback(async () => {
+    if (onShare) return onShare()
+    const url = item.pageUrl || window.location.href
+    if (navigator.share) await navigator.share({ title: item.title, url })
+    else await navigator.clipboard.writeText(url)
+  }, [item.pageUrl, item.title, onShare])
 
   const handleLike = useCallback(() => {
     toggleLike(item.id)
@@ -303,32 +207,11 @@ function EngagementBar({
       hasBurst: true,
     },
     {
-      key: 'comment',
-      icon: MessageCircle,
-      active: false,
-      count: 12,
-      onClick: () => {},
-    },
-    {
       key: 'share',
       icon: Share2,
       active: false,
       count: null,
-      onClick: onShare,
-    },
-    {
-      key: 'save',
-      icon: Bookmark,
-      active: saved,
-      count: null,
-      onClick: () => setSaved((s) => !s),
-    },
-    {
-      key: 'download',
-      icon: Download,
-      active: false,
-      count: null,
-      onClick: () => {},
+      onClick: handleShare,
     },
   ]
 
@@ -382,11 +265,9 @@ function EngagementBar({
 function MetadataPanel({ item }: { item: MediaItem }) {
   const fields = [
     { label: 'Source', value: item.source },
-    { label: 'Quality', value: 'HD' },
     { label: 'Uploaded', value: timeAgo(item.createdAt) },
-    { label: 'Duration', value: item.isVideo ? item.duration : 'Photo' },
-    { label: 'File size', value: `${(Math.random() * 20 + 2).toFixed(1)} MB` },
-    { label: 'Dimensions', value: '1920×1080' },
+    { label: 'Format', value: item.isVideo ? 'Video' : 'Image' },
+    { label: 'Views', value: formatViews(item.views) },
   ]
 
   return (
@@ -621,6 +502,9 @@ export default function MediaDetail({ item, open, onClose, onShare }: MediaDetai
           {/* Drawer */}
           <motion.div
             ref={containerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="media-detail-title"
             initial={{ x: '100%', opacity: 0.5 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0.5 }}
@@ -654,7 +538,7 @@ export default function MediaDetail({ item, open, onClose, onShare }: MediaDetai
                 className="mb-4"
               >
                 {activeItem.isVideo ? (
-                  <VideoPlayer poster={activeItem.thumbnail} />
+                  <VideoPlayer item={activeItem} />
                 ) : (
                   <div className="relative w-full aspect-[4/5] md:aspect-video bg-[var(--bg-darkest)] rounded-[var(--radius-lg)] overflow-hidden">
                     <img
@@ -668,7 +552,7 @@ export default function MediaDetail({ item, open, onClose, onShare }: MediaDetai
 
                 {/* Caption overlay */}
                 <div className="mt-3">
-                  <h2 className="text-xl font-bold text-[var(--text-primary)] leading-tight">
+                  <h2 id="media-detail-title" className="text-xl font-bold text-[var(--text-primary)] leading-tight">
                     {activeItem.title}
                   </h2>
                   <div className="flex items-center gap-2 mt-1">
@@ -754,26 +638,7 @@ export default function MediaDetail({ item, open, onClose, onShare }: MediaDetai
                 <TagsSection tags={activeItem.tags} />
               </motion.div>
 
-              {/* Related Media */}
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5, duration: 0.4, ease: easeOutExpo }}
-              >
-                <RelatedMedia
-                  currentId={activeItem.id}
-                  onSelect={handleSelectRelated}
-                />
-              </motion.div>
-
-              {/* Comments */}
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.58, duration: 0.4, ease: easeOutExpo }}
-              >
-                <CommentsThread />
-              </motion.div>
+              {activeItem.description && <p className="py-4 text-sm leading-6 text-[var(--text-secondary)]">{activeItem.description}</p>}
             </div>
           </motion.div>
         </div>

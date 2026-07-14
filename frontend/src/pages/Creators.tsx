@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useQuery } from '@tanstack/react-query'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import {
@@ -11,6 +12,7 @@ import {
 import MediaCard from '@/components/MediaCard'
 import EmptyState from '@/components/EmptyState'
 import SkeletonGrid from '@/components/SkeletonGrid'
+import { fetchCreators } from '@/lib/api'
 import {
   Search,
   ChevronDown,
@@ -467,12 +469,13 @@ export default function CreatorsPage() {
   const followCache = useAppStore((s) => s.followCache)
   const toggleFollow = useAppStore((s) => s.toggleFollow)
   const addToast = useAppStore((s) => s.addToast)
+  const { data: creatorData = [], isLoading } = useQuery({ queryKey: ['creators'], queryFn: fetchCreators })
 
   // Spotlight: pick a creator deterministically
   const spotlight = useMemo(() => {
-    const idx = Math.floor(creators.length / 2)
-    return creators[idx]
-  }, [])
+    const idx = Math.floor(creatorData.length / 2)
+    return creatorData[idx]
+  }, [creatorData])
 
   // Scroll listener for sticky rail
   useEffect(() => {
@@ -483,7 +486,7 @@ export default function CreatorsPage() {
 
   // Filter & sort creators
   const filtered = useMemo(() => {
-    let result = [...creators]
+    let result = [...creatorData]
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       result = result.filter(
@@ -511,7 +514,7 @@ export default function CreatorsPage() {
         break
     }
     return result
-  }, [searchQuery, sort])
+  }, [creatorData, searchQuery, sort])
 
   const handleFollow = useCallback((id: string, name: string) => {
     toggleFollow(id)
@@ -549,7 +552,7 @@ export default function CreatorsPage() {
           Discover and follow your favorite performers
         </p>
         <p className="text-xs font-mono text-[var(--text-muted)] mt-1">
-          {creators.length} creators • {totalItems} items
+          {creatorData.length} creators
         </p>
       </motion.div>
 
@@ -626,13 +629,13 @@ export default function CreatorsPage() {
       </div>
 
       {/* Creator Spotlight */}
-      <section>
+      {spotlight && <section>
         <CreatorSpotlight
           creator={spotlight}
           isFollowing={!!followCache[spotlight.id]}
           onFollow={() => handleFollow(spotlight.id, spotlight.name)}
         />
-      </section>
+      </section>}
 
       {/* Quick-Access Rail (appears on scroll) */}
       <AnimatePresence>
@@ -643,7 +646,7 @@ export default function CreatorsPage() {
 
       {/* Creator Grid */}
       <section>
-        {filtered.length === 0 ? (
+        {isLoading ? <SkeletonGrid count={10} /> : filtered.length === 0 ? (
           <EmptyState
             variant="search"
             title="No creators found"

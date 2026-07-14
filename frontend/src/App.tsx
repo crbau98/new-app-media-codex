@@ -1,15 +1,18 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, useLocation } from 'react-router'
 import { AnimatePresence, motion } from 'framer-motion'
 import Layout from './components/Layout'
-import HomePage from './pages/Home'
-import ExplorePage from './pages/Explore'
 import ToastContainer from './components/Toast'
 import CommandPalette from './components/CommandPalette'
 import AmbientGlow from './components/AmbientGlow'
-import CreatorsPage from './pages/Creators'
-import SearchPage from './pages/Search'
-import { SettingsPage } from './pages/Settings'
-import { AnalyticsPage } from './pages/Analytics'
+import AdultGate from './components/AdultGate'
+
+const HomePage = lazy(() => import('./pages/Home'))
+const ExplorePage = lazy(() => import('./pages/Explore'))
+const CreatorsPage = lazy(() => import('./pages/Creators'))
+const SearchPage = lazy(() => import('./pages/Search'))
+const SettingsPage = lazy(() => import('./pages/Settings').then((module) => ({ default: module.SettingsPage })))
+const AnalyticsPage = lazy(() => import('./pages/Analytics').then((module) => ({ default: module.AnalyticsPage })))
 
 function PageWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -29,8 +32,10 @@ export default function App() {
 
   return (
     <>
+      <AdultGate />
       <AmbientGlow />
       <Layout>
+        <Suspense fallback={<div className="grid min-h-[50vh] place-items-center text-sm text-[var(--text-secondary)]">Loading workspace…</div>}>
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             <Route
@@ -91,6 +96,7 @@ export default function App() {
             />
           </Routes>
         </AnimatePresence>
+        </Suspense>
       </Layout>
       <ToastContainer />
       <CommandPalette />
