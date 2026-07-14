@@ -7,10 +7,6 @@ const FEMALE_MARKERS = [
   'girlfriend', 'wife', 'b/g', 'm/f', 'ftm', 'boob', 'breast', 'tits',
   'petite', 'bbw', 'milf', 'femdom', 'pornstar',
 ]
-const MALE_MARKERS = [
-  'gay', 'male', 'men', 'man', 'twink', 'bear', 'otter', 'daddy',
-  'jock', 'hunk', 'boy', 'beefcake', 'muscleman', 'm/m',
-]
 type RedgifsItem = {
   id?: string
   userName?: string
@@ -41,8 +37,11 @@ function textFor(item: RedgifsItem): string {
 
 function isEligibleMaleItem(item: RedgifsItem): boolean {
   const text = textFor(item)
-  return !FEMALE_MARKERS.some((marker) => text.includes(marker)) &&
-    MALE_MARKERS.some((marker) => text.includes(marker))
+  // Inclusion is established by the exact canonical `Gay` tag search below.
+  // Redgifs does not repeat the searched tag in every result's metadata, so a
+  // second positive keyword requirement would reject valid records. Metadata
+  // remains useful as a strict exclusion guard for mislabeled/mixed results.
+  return !FEMALE_MARKERS.some((marker) => text.includes(marker))
 }
 
 function durationLabel(seconds = 0): string {
