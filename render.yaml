@@ -23,11 +23,11 @@ services:
       - key: SQLITE_BUSY_TIMEOUT_MS
         value: 10000
       - key: RUN_STARTUP_CRAWL
-        value: "true"
+        value: "false"
       - key: CRAWL_INTERVAL_MINUTES
         value: "30"
-      - key: MALE_VIDEO_ARCHIVER_RESULTS
-        value: "24"
+      - key: ENABLE_EXTERNAL_CRAWLS
+        value: "false"
       - key: ADMIN_TOKEN
         generateValue: true
       - key: SKIP_MEDIA_DOWNLOADS
@@ -35,13 +35,6 @@ services:
       # Explicit public UI origins for browser API/WebSocket/SSE access.
       - key: CORS_ALLOW_ORIGINS
         value: "https://new-app-media-codex.vercel.app,https://new-app-media-codex-chases-projects-cec7ce2c.vercel.app"
-      # Outbound proxy for coomer/kemono fetches (blocked from datacenter IPs).
-      # Set in Render dashboard: http://user:pass@host:port
-      # (Webshare/IPRoyal/Smartproxy/etc.) See /api/screenshots/proxy-status to verify.
-      - key: ARCHIVER_PROXY_URL
-        sync: false
-      - key: ARCHIVER_PROXY_DISABLE_IMG
-        value: "1"
 
   # Keep-alive cron — pings /healthz every 14 minutes so Render never spins
   # the starter-plan service down. Cold starts caused 30-90s first-load delays.

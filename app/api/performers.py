@@ -746,10 +746,11 @@ def _heuristic_discover_performers(
     seed_terms = [row.get("term", "") for row in seed_context.get("top_terms", []) if isinstance(row, dict)]
     query_tokens = _tokenize_discovery_text(query, seed_context.get("seed_term"), seed_terms, seed_performer.get("tags"), seed_performer.get("bio"))
 
-    candidates: list[dict[str, object]] = []
-    candidates.extend(_CURATED_DISCOVERY_CREATORS)
-    candidates.extend(_FALLBACK_DISCOVERY_CREATORS)
-    candidates.extend(_mine_local_creator_candidates(db, desired_platform))
+    # Never turn a hard-coded or model-hallucinated person list into a public
+    # directory. Suggestions are limited to source-attributed candidates that
+    # have already been observed locally and still require operator review
+    # before any profile or media is published.
+    candidates: list[dict[str, object]] = list(_mine_local_creator_candidates(db, desired_platform))
 
     deduped: dict[str, dict] = {}
     for candidate in candidates:
@@ -875,7 +876,10 @@ def discover_performers(body: DiscoverBody, request: Request):
         f"(OnlyFans, Twitter/X, Instagram, Reddit, or Fansly), bio, tags, and reason."
     )
 
-    ai_suggestions = _request_discovery_suggestions(settings, prompt)
+    # A model may organize metadata for a creator who has opted in, but it must
+    # not invent or add real people to the directory. Candidate discovery stays
+    # inside the source-attributed local graph.
+    ai_suggestions: list[dict] = []
     has_api_key = bool(settings.openai_api_key)
     print(f"[performers] discover: AI returned {len(ai_suggestions)} suggestions, "
           f"existing_usernames={len(existing_usernames)}, "
@@ -1683,6 +1687,11 @@ def _coomer_search_username(session, service: str, query: str) -> str | None:
 
 def _run_performer_capture(app_state, performer_id: int, username: str, platform: str, display_name: str | None = None) -> int:
     """Run targeted image/video capture for a specific performer. Sync, runs in thread."""
+    if not getattr(app_state.settings, "enable_external_crawls", False):
+        # Directory records remain useful as outbound, official-profile links;
+        # they must not trigger an implicit scrape of a creator's library.
+        return 0
+
     from app.sources.screenshot import (
         _search_ddg_images,
         _search_redgifs_videos,

@@ -19,6 +19,10 @@ export interface MediaItem {
   isLiked?: boolean
   isNew?: boolean
   isTrending?: boolean
+  /** Explainable 0–100 ordering signal based on public engagement and freshness. */
+  curationScore?: number
+  /** Short, source-derived explanation for why the item is surfaced. */
+  curationReasons?: string[]
 }
 
 export interface Creator {
@@ -28,6 +32,16 @@ export interface Creator {
   followers: number
   hasStory: boolean
   storySeen: boolean
+  username?: string
+  platform?: string
+  profileUrl?: string
+  mediaCount?: number
+  viewCount?: number
+  likeCount?: number
+  curationScore?: number
+  sourceAttribution?: string
+  observedAt?: string
+  media?: MediaItem[]
 }
 
 export interface CategoryDef {
