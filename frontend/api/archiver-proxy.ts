@@ -1,1 +1,1 @@
-export { config, default } from '../../api/archiver-proxy'
+export { config, default } from '../../api/archiver-proxy.js'
