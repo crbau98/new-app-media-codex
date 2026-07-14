@@ -6,12 +6,6 @@ const FEMALE_MARKERS = [
   'vagina', 'shemale', 'ladyboy', 'femboy', 'bisexual', 'hetero',
   'girlfriend', 'wife', 'b/g', 'm/f', 'ftm',
 ]
-const MALE_MARKERS = [
-  'gay', 'male', 'men', 'man', 'twink', 'bear', 'otter', 'daddy',
-  'jock', 'muscle', 'cock', 'dick', 'penis', 'blowjob', 'bareback',
-  'anal', 'm/m', 'hunk',
-]
-
 type RedgifsItem = {
   id?: string
   userName?: string
@@ -38,10 +32,13 @@ function textFor(item: RedgifsItem): string {
   return [...(item.tags || []), ...niches, item.description || ''].join(' ').toLowerCase()
 }
 
-function isMaleOnly(item: RedgifsItem): boolean {
+function isEligibleMaleItem(item: RedgifsItem): boolean {
   const text = textFor(item)
-  return !FEMALE_MARKERS.some((marker) => text.includes(marker)) &&
-    MALE_MARKERS.some((marker) => text.includes(marker))
+  // The upstream request is already constrained to Redgifs' gay niche. Some
+  // records contain only scene-specific tags, so requiring a second positive
+  // `male` keyword here incorrectly removes the whole feed. Keep a strict
+  // negative guard to prevent mixed/female material from crossing the niche.
+  return !FEMALE_MARKERS.some((marker) => text.includes(marker))
 }
 
 function durationLabel(seconds = 0): string {
@@ -98,8 +95,9 @@ export default async function handler(req: Request): Promise<Response> {
     if (!result.ok) throw new Error(`Redgifs search returned ${result.status}`)
     const body = await result.json() as { gifs?: RedgifsItem[] }
     const now = new Date().toISOString()
-    const items = (body.gifs || [])
-      .filter(isMaleOnly)
+    const received = body.gifs || []
+    const eligible = received.filter(isEligibleMaleItem)
+    const items = eligible
       .filter((item) => item.id && item.urls?.poster && (item.urls.hd || item.urls.sd))
       .map((item) => {
         const tags = (item.tags || []).filter(Boolean).slice(0, 12)
@@ -128,7 +126,12 @@ export default async function handler(req: Request): Promise<Response> {
         }
       })
 
-    return new Response(JSON.stringify({ items, source: 'redgifs-live', updatedAt: now }), {
+    return new Response(JSON.stringify({
+      items,
+      source: 'redgifs-live',
+      updatedAt: now,
+      counts: { received: received.length, eligible: eligible.length, playable: items.length },
+    }), {
       status: 200,
       headers: corsHeaders(),
     })
