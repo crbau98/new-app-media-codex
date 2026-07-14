@@ -1,6 +1,6 @@
 /**
- * Vercel Edge: stream coomer/kemono file URLs when the primary API host cannot
- * reach those CDNs. Only allowlisted hosts are forwarded.
+ * Vercel Edge: stream allowlisted archive/media URLs when clients or the
+ * primary API host cannot reach those CDNs directly.
  *
  * Must live under `frontend/api/` when the Vercel project root is `frontend/`.
  *
@@ -16,6 +16,7 @@ const ALLOWED = new Set([
   "kemono.su",
   "kemono.party",
   "kemono.cr",
+  "media.redgifs.com",
 ])
 
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|avif)(?:$|\?)/i
@@ -25,6 +26,7 @@ function allowedArchiverHost(hostname: string): boolean {
   if (ALLOWED.has(h)) return true
   if (/^(?:img|n\d+)\.coomer\.(st|su)$/i.test(h)) return true
   if (/^(?:img|n\d+)\.kemono\.(su|party|cr)$/i.test(h)) return true
+  if (/^(?:media|thumbs\d*)\.redgifs\.com$/i.test(h)) return true
   return false
 }
 
@@ -46,7 +48,8 @@ function rewriteArchiverUrlToThumbnail(target: URL): URL {
 }
 
 function buildUpstreamHeaders(target: URL, range: string | null): Headers {
-  const referer = `${target.protocol}//${target.host}/`
+  const isRedgifs = target.hostname.toLowerCase().endsWith('.redgifs.com')
+  const referer = isRedgifs ? 'https://www.redgifs.com/' : `${target.protocol}//${target.host}/`
   const h = new Headers({
     "User-Agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
