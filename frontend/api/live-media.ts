@@ -4,7 +4,12 @@ const REDGIFS_API = 'https://api.redgifs.com/v2'
 const FEMALE_MARKERS = [
   'female', 'woman', 'women', 'girl', 'lesbian', 'straight', 'pussy',
   'vagina', 'shemale', 'ladyboy', 'femboy', 'bisexual', 'hetero',
-  'girlfriend', 'wife', 'b/g', 'm/f', 'ftm',
+  'girlfriend', 'wife', 'b/g', 'm/f', 'ftm', 'boob', 'breast', 'tits',
+  'petite', 'bbw', 'milf', 'femdom', 'pornstar',
+]
+const MALE_MARKERS = [
+  'gay', 'male', 'men', 'man', 'twink', 'bear', 'otter', 'daddy',
+  'jock', 'hunk', 'boy', 'beefcake', 'muscleman', 'm/m',
 ]
 type RedgifsItem = {
   id?: string
@@ -29,16 +34,15 @@ function textFor(item: RedgifsItem): string {
   const niches = (item.niches || []).map((niche) =>
     typeof niche === 'string' ? niche : niche.name || ''
   )
-  return [...(item.tags || []), ...niches, item.description || ''].join(' ').toLowerCase()
+  return [item.userName || '', ...(item.tags || []), ...niches, item.description || '']
+    .join(' ')
+    .toLowerCase()
 }
 
 function isEligibleMaleItem(item: RedgifsItem): boolean {
   const text = textFor(item)
-  // The upstream request is already constrained to Redgifs' gay niche. Some
-  // records contain only scene-specific tags, so requiring a second positive
-  // `male` keyword here incorrectly removes the whole feed. Keep a strict
-  // negative guard to prevent mixed/female material from crossing the niche.
-  return !FEMALE_MARKERS.some((marker) => text.includes(marker))
+  return !FEMALE_MARKERS.some((marker) => text.includes(marker)) &&
+    MALE_MARKERS.some((marker) => text.includes(marker))
 }
 
 function durationLabel(seconds = 0): string {
@@ -75,14 +79,15 @@ export default async function handler(req: Request): Promise<Response> {
     if (!token) throw new Error('Redgifs did not return a temporary token')
 
     const requestUrl = new URL(req.url)
-    const query = (requestUrl.searchParams.get('q') || 'gay male').slice(0, 80)
     const count = Math.min(60, Math.max(12, Number(requestUrl.searchParams.get('count')) || 36))
     const params = new URLSearchParams({
-      search_text: query,
+      // Redgifs search accepts one tag. A phrase such as `gay male` can fall
+      // back to unscoped trending results, which is why the old feed mixed in
+      // unrelated performers. Use the canonical tag and filter again below.
+      search_text: 'Gay',
       count: String(count),
       page: '1',
       order: 'trending',
-      niches: 'gay',
     })
     const result = await fetch(`${REDGIFS_API}/gifs/search?${params}`, {
       headers: {
