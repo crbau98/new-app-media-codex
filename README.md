@@ -48,11 +48,13 @@ Required:
 - `DATABASE_PATH`: persistent SQLite path.
 - `IMAGE_DIR`: persistent image-cache path.
 
-Optional integrations include `OPENAI_API_KEY`, `X_BEARER_TOKEN`, and Telegram credentials. Never commit secrets or place an OpenAI key in frontend code.
+Optional integrations include Vercel AI Gateway, `X_BEARER_TOKEN`, `TUMBLR_API_KEY`, existing-customer Google Programmable Search credentials, `OPENAI_API_KEY`, and Telegram credentials. Never commit secrets or place provider keys in `VITE_*` variables.
 
 ### Public discovery operation
 
-The Vercel live endpoint refreshes public, source-attributed discovery media on demand with a short edge cache. It groups observed public posts into searchable performer cards and ranks them with an explainable combination of public engagement and freshness.
+The Vercel live endpoint refreshes public, source-attributed discovery media on demand with a short edge cache. Redgifs works without credentials; X and Tumblr activate through their official API credentials. Google licensed-image search contributes canonical profile leads only. DuckDuckGo is an outbound private-search handoff because it has no supported general-search ingestion API. Coomer, Kemono, and other subscription mirrors are deliberately excluded.
+
+`Scan now` asks AI Gateway to rerank cross-source creator candidates using public metadata only. The model receives no images and is instructed not to infer appearance or sensitive traits. High-confidence suggestions are added to the visible directory with their reasons and source attribution. If Gateway is unavailable, deterministic TF-IDF tag similarity remains active and the API reports the fallback state.
 
 The Render crawler is disabled by default (`ENABLE_EXTERNAL_CRAWLS=false`). It must only be enabled for creator-authorized integrations with a documented rights basis; it is not required for the live public discovery experience.
 

@@ -70,6 +70,8 @@ export interface LiveDiscoveryPayload {
     pagesScanned: number
     providerRequestsSucceeded?: number
     providerRequestsAttempted?: number
+    sourcesConnected?: number
+    creatorsDiscovered?: number
   }
   watchlist: {
     requested: string[]
@@ -77,10 +79,23 @@ export interface LiveDiscoveryPayload {
   }
   aiDiscovery: {
     model: string
+    state?: 'model' | 'fallback' | 'not-requested'
+    detail?: string
     explainable: boolean
     suggestedCreators: number
+    autoAddedCreators?: number
     sensitiveAttributeInference: boolean
   }
+  sources: Array<{
+    id: string
+    name: string
+    mode: 'stream' | 'discovery' | 'blocked'
+    state: 'connected' | 'not-configured' | 'limited' | 'error' | 'blocked'
+    mediaFound: number
+    creatorsFound: number
+    detail: string
+    searchUrl?: string
+  }>
 }
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
@@ -181,7 +196,7 @@ export async function fetchLiveDiscovery(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(forceFresh ? { 'Cache-Control': 'no-cache' } : {}) },
       cache: 'no-store',
-      body: JSON.stringify({ count: 100, pages: 3, sort: 'smart', watchlist: watchlist.slice(0, 8), forceFresh }),
+      body: JSON.stringify({ count: 100, pages: 3, sort: 'smart', watchlist: watchlist.slice(0, 8), forceFresh, useAI: forceFresh }),
     },
     forceFresh ? 45000 : 25000,
   )
@@ -202,6 +217,7 @@ export async function fetchLiveDiscovery(
       suggestedCreators: 0,
       sensitiveAttributeInference: false,
     },
+    sources: Array.isArray(payload.sources) ? payload.sources : [],
   }
 }
 
