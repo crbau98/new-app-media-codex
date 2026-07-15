@@ -337,18 +337,21 @@ if _cors_origins:
         allow_headers=["*"],
     )
 else:
-    import logging
-    logging.getLogger("codex").warning(
-        "CORS_ALLOW_ORIGINS is not set. Allowing all origins for cross-origin requests. "
-        "Set CORS_ALLOW_ORIGINS in production to restrict access."
-    )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    if settings.environment == "production":
+        logging.getLogger("codex").error(
+            "CORS_ALLOW_ORIGINS is not set in production; cross-origin access is disabled."
+        )
+    else:
+        logging.getLogger("codex").warning(
+            "CORS_ALLOW_ORIGINS is not set. Allowing all origins in non-production."
+        )
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
 app.mount(
     "/static",

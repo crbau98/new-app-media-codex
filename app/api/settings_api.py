@@ -3,16 +3,18 @@ from __future__ import annotations
 import json
 import re
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-router = APIRouter()
+from app.security import redact_settings, require_admin
+
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 @router.get("")
 async def get_settings(request: Request):
     db = request.app.state.db
-    return db.get_all_settings()
+    return redact_settings(db.get_all_settings())
 
 
 @router.put("")
@@ -20,6 +22,8 @@ async def update_settings(request: Request):
     db = request.app.state.db
     body = await request.json()
     for key, value in body.items():
+        if key == "vision_base_url":
+            raise HTTPException(status_code=422, detail="Vision base URL is controlled by the server environment")
         db.set_setting(key, json.dumps(value))
     return {"ok": True}
 
@@ -149,4 +153,3 @@ async def delete_theme(slug: str, request: Request):
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Theme '{slug}' not found")
     return {"ok": True, "deleted": slug}
-

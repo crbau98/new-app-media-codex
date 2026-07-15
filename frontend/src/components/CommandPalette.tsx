@@ -9,10 +9,7 @@ import {
   Compass,
   Users,
   Settings,
-  BarChart3,
   MonitorPlay,
-  Clock,
-  TrendingUp,
   ArrowRight,
   X,
 } from 'lucide-react'
@@ -70,10 +67,7 @@ export default function CommandPalette() {
     { id: 'creators', label: 'Go to Creators', icon: Users, category: 'Navigate', action: () => handleNavigate('/creators', 'creators') },
     { id: 'search', label: 'Go to Search', icon: Search, category: 'Navigate', action: () => handleNavigate('/search', 'search') },
     { id: 'settings', label: 'Go to Settings', icon: Settings, category: 'Navigate', action: () => handleNavigate('/settings', 'settings') },
-    { id: 'analytics', label: 'Go to Analytics', icon: BarChart3, category: 'Navigate', action: () => handleNavigate('/analytics', 'analytics') },
     { id: 'theme', label: 'Toggle Theme', icon: Command, category: 'Actions', action: () => { useAppStore.getState().toggleTheme(); setOpen(false) } },
-    { id: 'recent1', label: 'Recently viewed: Midnight Steam', icon: Clock, category: 'Recent', action: () => setOpen(false) },
-    { id: 'trend1', label: 'Trending: Three in the Locker Room', icon: TrendingUp, category: 'Trending', action: () => setOpen(false) },
   ]
 
   const filtered = items.filter((i) => i.label.toLowerCase().includes(query.toLowerCase()))

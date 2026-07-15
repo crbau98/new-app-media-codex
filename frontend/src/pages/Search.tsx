@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { ExternalLink, Eye, Heart, Search, Sparkles, Users, X } from 'lucide-react'
@@ -6,7 +6,7 @@ import EmptyState from '@/components/EmptyState'
 import MediaCard from '@/components/MediaCard'
 import MediaDetail from '@/components/MediaDetail'
 import SkeletonGrid from '@/components/SkeletonGrid'
-import { fetchLiveCreatorDirectory, fetchMedia, searchMedia, type MediaFilters } from '@/lib/api'
+import { fetchLiveDiscovery, searchMedia, type MediaFilters } from '@/lib/api'
 import type { Creator, MediaItem } from '@/lib/mockData'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
@@ -36,36 +36,52 @@ function CreatorResult({ creator, onSelect }: { creator: Creator; onSelect: (cre
 }
 
 export default function SearchPage() {
-  const [query, setQuery] = useState('')
+  const query = useAppStore((state) => state.searchQuery)
+  const setQuery = useAppStore((state) => state.setSearchQuery)
   const [tab, setTab] = useState<ResultTab>('all')
   const [sort, setSort] = useState<SearchSort>('smart')
   const [highDemand, setHighDemand] = useState(false)
   const [creator, setCreator] = useState<Creator | null>(null)
   const [selected, setSelected] = useState<MediaItem | null>(null)
-  const deferredQuery = useDeferredValue(query.trim())
+  const [deferredQuery, setDeferredQuery] = useState(query.trim())
   const creatorWatchlist = useAppStore((state) => state.creatorWatchlist)
+  const hiddenMedia = useAppStore((state) => state.hiddenMedia)
 
-  const apiSort: MediaFilters['sort'] = sort === 'mostViewed' ? 'mostViewed' : sort === 'mostLiked' ? 'topRated' : 'newest'
-  const { data, isLoading, isError, isFetching, refetch } = useQuery({
-    queryKey: ['search', deferredQuery, sort, creatorWatchlist],
-    queryFn: () => deferredQuery ? searchMedia(deferredQuery, { sort: apiSort, watchlist: creatorWatchlist }) : fetchMedia({ sort: apiSort, watchlist: creatorWatchlist }, 1, 100),
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDeferredQuery(query.trim()), 350)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  const apiSort: MediaFilters['sort'] = sort === 'mostViewed' ? 'mostViewed' : sort === 'mostLiked' ? 'topRated' : sort === 'newest' ? 'newest' : 'smart'
+  const discoveryQuery = useQuery({
+    queryKey: ['live-discovery', 'search', creatorWatchlist],
+    queryFn: () => fetchLiveDiscovery(creatorWatchlist),
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   })
-  const { data: creators = [], isLoading: creatorsLoading } = useQuery({
-    queryKey: ['live-creators', 'search', creatorWatchlist],
-    queryFn: () => fetchLiveCreatorDirectory(creatorWatchlist),
+  const searchQuery = useQuery({
+    queryKey: ['search', deferredQuery, sort, creatorWatchlist],
+    queryFn: () => searchMedia(deferredQuery, { sort: apiSort, watchlist: creatorWatchlist }),
+    enabled: Boolean(deferredQuery),
     staleTime: 60_000,
+    refetchOnWindowFocus: true,
   })
+  const data = deferredQuery ? searchQuery.data : discoveryQuery.data
+  const isLoading = deferredQuery ? searchQuery.isLoading : discoveryQuery.isLoading
+  const isError = deferredQuery ? searchQuery.isError : discoveryQuery.isError
+  const isFetching = deferredQuery ? searchQuery.isFetching : discoveryQuery.isFetching
+  const refetch = deferredQuery ? searchQuery.refetch : discoveryQuery.refetch
+  const creators = useMemo(() => discoveryQuery.data?.performers ?? [], [discoveryQuery.data?.performers])
+  const creatorsLoading = discoveryQuery.isLoading
 
   const media = useMemo(() => {
-    let result = data?.items ?? []
+    let result = (data?.items ?? []).filter((item) => !hiddenMedia.includes(item.id))
     if (creator) result = result.filter((item) => item.creator.toLowerCase() === creator.name.toLowerCase())
     if (highDemand) result = result.filter((item) => (item.curationScore || 0) >= 65)
     if (sort === 'smart') result = [...result].sort((a, b) => (b.curationScore || 0) - (a.curationScore || 0))
     if (sort === 'mostLiked') result = [...result].sort((a, b) => (b.likes || 0) - (a.likes || 0))
     return result
-  }, [creator, data?.items, highDemand, sort])
+  }, [creator, data?.items, hiddenMedia, highDemand, sort])
   const creatorResults = useMemo(() => {
     const needle = deferredQuery.toLowerCase()
     return creators.filter((candidate) => !needle || `${candidate.name} ${candidate.username || ''}`.toLowerCase().includes(needle)).slice(0, tab === 'creators' ? 40 : 8)
@@ -75,7 +91,7 @@ export default function SearchPage() {
     setCreator(next)
     setQuery(next.name)
     setTab('videos')
-  }, [])
+  }, [setQuery])
 
   return (
     <div className="space-y-6">
@@ -90,7 +106,7 @@ export default function SearchPage() {
         </label>
       </header>
 
-      <div className="sticky top-14 z-30 -mx-4 flex flex-wrap items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]/95 px-4 py-3 backdrop-blur-md">
+      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 flex flex-wrap items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]/95 px-4 py-3 backdrop-blur-md">
         <div className="flex items-center gap-1 rounded-full bg-[var(--bg-surface)] p-1">
           {([['all', 'All'], ['videos', 'Videos'], ['creators', 'Creators']] as const).map(([value, label]) => <button key={value} onClick={() => setTab(value)} className={cn('rounded-full px-3 py-1.5 text-xs font-medium', tab === value ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>{label}</button>)}
         </div>

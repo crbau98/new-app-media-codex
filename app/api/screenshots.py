@@ -21,12 +21,13 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 import requests as http_requests
-from fastapi import APIRouter, BackgroundTasks, Body, Header, HTTPException, Query, Request, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPException, Query, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse, Response
 from PIL import Image, ImageOps
 
 from app.db import Database
 from app.performer_identity import normalize_identity_alias
+from app.security import require_admin
 
 _logger = logging.getLogger(__name__)
 
@@ -3273,7 +3274,7 @@ async def find_similar(request: Request, screenshot_id: int, limit: int = 12):
     return await find_related(request, screenshot_id, limit)
 
 
-@router.post("/{screenshot_id}/summarize")
+@router.post("/{screenshot_id}/summarize", dependencies=[Depends(require_admin)])
 def summarize_screenshot(screenshot_id: int, request: Request):
     """Generate an AI description of a screenshot using the vision API."""
     settings = request.app.state.settings
@@ -3282,7 +3283,9 @@ def summarize_screenshot(screenshot_id: int, request: Request):
     # Use user-configured vision settings if available, fall back to env config
     user_settings = db.get_all_settings()
     api_key = user_settings.get("vision_api_key") or settings.openai_api_key
-    base_url = user_settings.get("vision_base_url") or settings.openai_base_url
+    # The outbound API origin is deployment-controlled. Never read it from the
+    # mutable database, which would turn this route into an SSRF/credential sink.
+    base_url = settings.openai_base_url
     model = user_settings.get("vision_model") or settings.openai_model
 
     if not api_key:

@@ -112,7 +112,7 @@ export default function Layout({ children }: LayoutProps) {
 
         <main
           id="main-content"
-          className="flex-1 pt-14"
+          className="flex-1 pt-[calc(3.5rem+env(safe-area-inset-top))]"
         >
           <div className="section-shell pb-24 md:pb-8">{children}</div>
         </main>
