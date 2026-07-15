@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /search
+
+Sitemap: https://new-app-media-codex.vercel.app/sitemap.xml

@@ -1,7 +1,7 @@
 {
   "name": "Media Codex",
   "short_name": "MediaCodex",
-  "description": "Discover and explore curated media content",
+  "description": "Private, explainable discovery across public creator sources",
   "start_url": "/media",
   "display": "standalone",
   "background_color": "#0a0a0f",
@@ -22,7 +22,7 @@
     }
   ],
   "shortcuts": [
-    { "name": "Library", "url": "/media" },
+    { "name": "Discover", "url": "/media" },
     { "name": "Search", "url": "/search" },
     { "name": "Creators", "url": "/creators" }
   ]
