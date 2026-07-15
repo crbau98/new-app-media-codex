@@ -392,7 +392,13 @@ app.mount(
     name="cached-previews",
 )
 
-_FRONTEND_DIST = BASE_DIR / "static" / "dist"
+_PACKAGED_FRONTEND_DIST = BASE_DIR / "static" / "dist"
+_DEVELOPMENT_FRONTEND_DIST = BASE_DIR.parent / "frontend" / "dist"
+_FRONTEND_DIST = (
+    _PACKAGED_FRONTEND_DIST
+    if (_PACKAGED_FRONTEND_DIST / "index.html").exists()
+    else _DEVELOPMENT_FRONTEND_DIST
+)
 _FRONTEND_INDEX_CACHE: str | None = None
 _FRONTEND_INDEX_CACHE_MTIME_NS = 0
 _TEMPLATES = None
