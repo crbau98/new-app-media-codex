@@ -1,14 +1,12 @@
 import { test, expect } from '@playwright/test'
+import { installAppFixture } from './fixtures'
 
 test('click video and verify player opens', async ({ page }) => {
-  await page.goto('/#/media')
-  await page.waitForTimeout(1000)
-  // Look for any element that looks like a video tile
+  await installAppFixture(page)
+  await page.goto('/media')
   const videoTile = page.locator('[data-testid="video-tile"]').first()
-  if (await videoTile.isVisible().catch(() => false)) {
-    await videoTile.click()
-    await expect(page.locator('video, [data-testid="video-player"]')).toBeVisible()
-  } else {
-    test.skip()
-  }
+  await expect(videoTile).toBeVisible()
+  await videoTile.click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.locator('video')).toBeVisible()
 })

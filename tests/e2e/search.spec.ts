@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test'
+import { installAppFixture } from './fixtures'
 
 test('type in search and verify results update', async ({ page }) => {
-  await page.goto('/#/media')
-  const searchInput = page.locator('input[placeholder*="Search" i], input[type="search"]').first()
-  await searchInput.fill('test query')
-  await page.waitForTimeout(600)
-  // Results container or no-results state should be visible
-  await expect(page.locator('body')).toContainText('test query')
+  await installAppFixture(page)
+  await page.goto('/search')
+  const searchInput = page.getByPlaceholder('Search a creator, tag, or description')
+  await searchInput.fill('Studio')
+  await expect(searchInput).toHaveValue('Studio')
+  await expect(page.getByText('Studio signal').first()).toBeVisible()
 })

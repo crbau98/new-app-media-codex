@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test'
+import { installAppFixture } from './fixtures'
 
 test('visit media page, scroll, and click an item', async ({ page }) => {
-  await page.goto('/#/media')
-  await expect(page.locator('text=Media')).toBeVisible()
-  // Scroll down to trigger lazy loading
+  await installAppFixture(page)
+  await page.goto('/media')
+  await expect(page.getByRole('heading', { name: /Find the signal/i })).toBeVisible()
+  await expect(page.getByText('Studio signal').first()).toBeVisible()
   await page.evaluate(() => window.scrollBy(0, 500))
-  await page.waitForTimeout(300)
-  // Expect at least the grid or skeleton to be present
-  await expect(page.locator('body')).toContainText('Media')
+  await expect(page.locator('[data-testid="video-tile"]').first()).toBeVisible()
 })

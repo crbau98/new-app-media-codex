@@ -45,14 +45,12 @@ jobs:
         run: |
           cd frontend
           npm run lint
-      - name: Run frontend tests
+      - name: Enforce production bundle budgets
         run: |
           cd frontend
-          npm run test:coverage
+          npm run build:budget
       - name: Build frontend
-        run: |
-          cd frontend
-          npm run build
+        run: test -f frontend/dist/index.html
 
   e2e-tests:
     runs-on: ubuntu-latest
@@ -77,12 +75,9 @@ jobs:
           cd frontend
           npm ci --legacy-peer-deps
       - name: Install Playwright browsers
-        run: |
-          cd frontend
-          npx playwright install chromium
+        run: frontend/node_modules/.bin/playwright install --with-deps chromium
       - name: Run Playwright tests
-        run: |
-          cd frontend
-          npx playwright test ../tests/e2e
+        run: frontend/node_modules/.bin/playwright test --config=playwright.config.ts
         env:
           CI: true
+          NODE_PATH: ${{ github.workspace }}/frontend/node_modules
