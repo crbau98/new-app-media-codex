@@ -8,7 +8,12 @@
  */
 export const config = { runtime: 'edge' }
 
+import { rankSimilarCreatorsWithAI } from './_lib/ai-similarity.js'
+import { collectAdditionalSources } from './_lib/multi-source.js'
+import type { CreatorLead, UnifiedMediaItem } from './_lib/discovery-types.js'
+
 const REDGIFS_API = 'https://api.redgifs.com/v2'
+const DEFAULT_WATCHLIST = ['Jakipz', 'Christian Hogue', 'Michael Yerger', 'SebastianCoxxx']
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 const EMAIL_TEST = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
 const GENERIC_SIMILARITY_TAGS = new Set(['gay', 'male', 'men', 'man', 'video', 'verified'])
@@ -40,32 +45,7 @@ type RedgifsItem = {
   }
 }
 
-type LiveMediaItem = {
-  id: string
-  title: string
-  thumbnail?: string
-  source: 'Redgifs'
-  duration: string
-  isVideo: true
-  category: string
-  creator: string
-  tags: string[]
-  rating: number
-  createdAt: string
-  views: number
-  mediaUrl?: string
-  streamCandidates: string[]
-  pageUrl: string
-  description?: string
-  likes: number
-  comments: number
-  isLiked: false
-  isNew: boolean
-  isTrending: boolean
-  curationScore: number
-  curationReasons: string[]
-  isWatchedCreator: boolean
-}
+type LiveMediaItem = UnifiedMediaItem
 
 type CreatorSimilarity = {
   score: number
@@ -224,6 +204,26 @@ function sortItems(items: LiveMediaItem[], sort: string): LiveMediaItem[] {
   return sorted.sort((a, b) => b.curationScore - a.curationScore || b.views - a.views)
 }
 
+function diversifySources(items: LiveMediaItem[], count: number): LiveMediaItem[] {
+  const selected: LiveMediaItem[] = []
+  const seen = new Set<string>()
+  const sources = [...new Set(items.map((item) => item.source))]
+  for (const source of sources) {
+    for (const item of items.filter((candidate) => candidate.source === source).slice(0, 6)) {
+      if (selected.length >= count || seen.has(item.id)) continue
+      selected.push(item)
+      seen.add(item.id)
+    }
+  }
+  for (const item of items) {
+    if (selected.length >= count) break
+    if (seen.has(item.id)) continue
+    selected.push(item)
+    seen.add(item.id)
+  }
+  return selected.sort((a, b) => items.indexOf(a) - items.indexOf(b))
+}
+
 function creatorSimilarities(items: LiveMediaItem[]): Map<string, CreatorSimilarity> {
   const byCreator = new Map<string, LiveMediaItem[]>()
   for (const item of items) {
@@ -301,30 +301,91 @@ function buildCreators(items: LiveMediaItem[], similarities: Map<string, Creator
       const views = creatorItems.reduce((sum, item) => sum + item.views, 0)
       const likes = creatorItems.reduce((sum, item) => sum + item.likes, 0)
       const similarity = similarities.get(key)
+      const platforms = [...new Set(creatorItems.map((item) => item.source))]
+      const discoveryTags = [...new Set(creatorItems.flatMap((item) => item.tags))].slice(0, 20)
       return {
-        id: `redgifs-${key}`,
+        id: `creator-${key}`,
         name: first.creator,
         username: first.creator,
         avatar: first.thumbnail,
         followers: 0,
         hasStory: false,
         storySeen: true,
-        platform: 'Redgifs',
-        profileUrl: `https://www.redgifs.com/users/${encodeURIComponent(first.creator)}`,
+        platform: platforms.join(' + '),
+        platforms,
+        profileUrl: first.profileUrl || (first.source === 'Redgifs' ? `https://www.redgifs.com/users/${encodeURIComponent(first.creator)}` : first.pageUrl),
         mediaCount: creatorItems.length,
         viewCount: views,
         likeCount: likes,
         curationScore: Math.max(...creatorItems.map((item) => item.curationScore)),
-        sourceAttribution: 'Public Redgifs source',
+        sourceAttribution: `Public source metadata: ${platforms.join(', ')}`,
         observedAt: first.createdAt,
         isWatched: creatorItems.some((item) => item.isWatchedCreator),
         isSimilar: Boolean(similarity),
         similarityScore: similarity?.score || 0,
+        similarityMethod: similarity ? 'metadata' : 'none',
         discoveryReasons: similarity?.reasons || [],
+        autoAdded: false,
+        discoveryConfidence: similarity?.score || 0,
+        discoveryTags,
         media: ranked.slice(0, 12),
       }
     })
     .sort((a, b) => Number(b.isWatched) - Number(a.isWatched) || (b.similarityScore - a.similarityScore) || (b.curationScore - a.curationScore) || (b.viewCount - a.viewCount))
+}
+
+type BuiltCreator = ReturnType<typeof buildCreators>[number]
+
+function mergeCreatorLeads(creators: BuiltCreator[], leads: CreatorLead[]): BuiltCreator[] {
+  const merged = new Map(creators.map((creator) => [canonicalCreator(creator.username), creator]))
+  for (const lead of leads) {
+    const key = canonicalCreator(lead.username)
+    if (!key) continue
+    const existing = merged.get(key)
+    if (existing) {
+      const platforms = [...new Set([...(existing.platforms || [existing.platform]), lead.platform].filter(Boolean))]
+      merged.set(key, {
+        ...existing,
+        platform: platforms.join(' + '),
+        platforms,
+        profileUrl: existing.profileUrl || lead.profileUrl,
+        avatar: existing.avatar || lead.avatar,
+        isWatched: existing.isWatched || lead.exactWatchMatch,
+        discoveryConfidence: Math.max(existing.discoveryConfidence || 0, lead.confidence),
+        discoveryTags: [...new Set([...(existing.discoveryTags || []), ...lead.tags])].slice(0, 20),
+        sourceAttribution: `${existing.sourceAttribution}; ${lead.sourceAttribution}`,
+      })
+      continue
+    }
+    merged.set(key, {
+      id: `creator-${key}`,
+      name: lead.name,
+      username: lead.username,
+      avatar: lead.avatar,
+      followers: 0,
+      hasStory: false,
+      storySeen: true,
+      platform: lead.platform,
+      platforms: [lead.platform],
+      profileUrl: lead.profileUrl,
+      mediaCount: 0,
+      viewCount: 0,
+      likeCount: 0,
+      curationScore: lead.confidence,
+      sourceAttribution: lead.sourceAttribution,
+      observedAt: lead.observedAt,
+      isWatched: lead.exactWatchMatch,
+      isSimilar: false,
+      similarityScore: 0,
+      similarityMethod: 'none',
+      discoveryReasons: [],
+      autoAdded: false,
+      discoveryConfidence: lead.confidence,
+      discoveryTags: lead.tags,
+      media: [],
+    })
+  }
+  return [...merged.values()]
 }
 
 function corsHeaders(noStore = false): Record<string, string> {
@@ -369,41 +430,53 @@ export default async function handler(req: Request): Promise<Response> {
     const pages = Math.max(1, parseBoundedInt(value('pages'), 2, 3))
     const startPage = Math.max(1, parseBoundedInt(value('page'), 1, 50))
     const query = boundedQuery(String(body.query || value('q') || value('creator') || ''))
-    const watchlist = Array.isArray(body.watchlist)
+    const suppliedWatchlist = Array.isArray(body.watchlist)
       ? parseWatchlistCandidates(body.watchlist.filter((item): item is string => typeof item === 'string'))
       : parseWatchlist(requestUrl)
+    const scheduled = requestUrl.searchParams.get('scheduled') === '1'
+    const watchlist = scheduled && !suppliedWatchlist.length ? DEFAULT_WATCHLIST : suppliedWatchlist
     const minViews = parseBoundedInt(value('minViews'), 0, 10_000_000)
     const minLikes = parseBoundedInt(value('minLikes'), 0, 1_000_000)
     const requestedSort = (value('sort') || 'smart').toLowerCase()
     const sort = ['smart', 'views', 'likes', 'newest'].includes(requestedSort) ? requestedSort : 'smart'
     const noStore = req.method === 'POST' || body.forceFresh === true || requestUrl.searchParams.get('refresh') === '1'
     const expandWatchlist = body.expandWatchlist !== false
+    const useAI = body.useAI === true || (scheduled && requestUrl.searchParams.get('ai') === '1')
+    const additionalSourcesPromise = collectAdditionalSources(watchlist)
 
-    const auth = await fetchWithTimeout(`${REDGIFS_API}/auth/temporary`, {
-      headers: { Accept: 'application/json', 'User-Agent': 'MediaCodex/1.0' },
-      cache: 'no-store',
-    })
-    if (!auth.ok) throw new Error(`Redgifs auth returned ${auth.status}`)
-    const token = String((await auth.json() as { token?: string }).token || '')
-    if (!token) throw new Error('Redgifs did not return a temporary token')
-
-    const providerHeaders = {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-      'User-Agent': 'MediaCodex/1.0',
-    }
-    const fetchProvider = async (path: string, params: URLSearchParams): Promise<RedgifsItem[]> => {
-      const result = await fetchWithTimeout(`${REDGIFS_API}${path}?${params}`, {
-        headers: providerHeaders,
+    let received: RedgifsItem[] = []
+    let eligible: RedgifsItem[] = []
+    let mapped: LiveMediaItem[] = []
+    let basePagesScanned = 0
+    let redgifsRequestsSucceeded = 0
+    let redgifsRequestsAttempted = 0
+    let redgifsError = ''
+    try {
+      const auth = await fetchWithTimeout(`${REDGIFS_API}/auth/temporary`, {
+        headers: { Accept: 'application/json', 'User-Agent': 'MediaCodex/1.0' },
         cache: 'no-store',
       })
-      if (!result.ok) throw new Error(`Public provider returned ${result.status}`)
-      const body = await result.json() as { gifs?: RedgifsItem[] }
-      return body.gifs || []
-    }
+      if (!auth.ok) throw new Error(`Redgifs auth returned ${auth.status}`)
+      const token = String((await auth.json() as { token?: string }).token || '')
+      if (!token) throw new Error('Redgifs did not return a temporary token')
 
-    const providerCount = Math.min(80, Math.max(30, Math.ceil(count / pages * 1.7)))
-    const discoveryRequests: Array<Promise<RedgifsItem[]>> = Array.from({ length: pages }, (_, index) => {
+      const providerHeaders = {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+        'User-Agent': 'MediaCodex/1.0',
+      }
+      const fetchProvider = async (path: string, params: URLSearchParams): Promise<RedgifsItem[]> => {
+        const result = await fetchWithTimeout(`${REDGIFS_API}${path}?${params}`, {
+          headers: providerHeaders,
+          cache: 'no-store',
+        })
+        if (!result.ok) throw new Error(`Public provider returned ${result.status}`)
+        const body = await result.json() as { gifs?: RedgifsItem[] }
+        return body.gifs || []
+      }
+
+      const providerCount = Math.min(80, Math.max(30, Math.ceil(count / pages * 1.7)))
+      const discoveryRequests: Array<Promise<RedgifsItem[]>> = Array.from({ length: pages }, (_, index) => {
       const params = new URLSearchParams({
         type: 'g',
         tags: 'Gay',
@@ -412,47 +485,49 @@ export default async function handler(req: Request): Promise<Response> {
         order: 'trending',
       })
       return fetchProvider('/gifs/search', params)
-    })
+      })
 
-    if (query) {
-      discoveryRequests.push(fetchProvider('/gifs/search', new URLSearchParams({
+      if (query) {
+        discoveryRequests.push(fetchProvider('/gifs/search', new URLSearchParams({
         type: 'g',
         tags: query,
         count: String(Math.min(60, providerCount)),
         page: '1',
         order: 'trending',
-      })))
-      const possibleHandle = canonicalCreator(query)
-      if (possibleHandle.length >= 2) {
-        discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(possibleHandle)}/search`, new URLSearchParams({
+        })))
+        const possibleHandle = canonicalCreator(query)
+        if (possibleHandle.length >= 2) {
+          discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(possibleHandle)}/search`, new URLSearchParams({
           count: '40',
           page: '1',
           order: 'recent',
-        })).then((items) => items.filter((item) => canonicalCreator(item.userName || '') === possibleHandle)))
+          })).then((items) => items.filter((item) => canonicalCreator(item.userName || '') === possibleHandle)))
+        }
       }
-    }
 
-    for (const creator of expandWatchlist ? watchlist : []) {
-      const handle = canonicalCreator(creator)
-      discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(handle)}/search`, new URLSearchParams({
+      for (const creator of expandWatchlist ? watchlist : []) {
+        const handle = canonicalCreator(creator)
+        discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(handle)}/search`, new URLSearchParams({
         count: '30',
         page: '1',
         order: 'recent',
-      })).then((items) => items.filter((item) => canonicalCreator(item.userName || '') === handle)))
-    }
+        })).then((items) => items.filter((item) => canonicalCreator(item.userName || '') === handle)))
+      }
 
-    const pageResults = await Promise.allSettled(discoveryRequests)
-    const successfulPages = pageResults.filter((result): result is PromiseFulfilledResult<RedgifsItem[]> => result.status === 'fulfilled')
-    const basePagesScanned = pageResults.slice(0, pages).filter((result) => result.status === 'fulfilled').length
-    if (!successfulPages.length) throw new Error('Public provider search is temporarily unavailable')
-    const deduplicated = new Map<string, RedgifsItem>()
-    for (const item of successfulPages.flatMap((result) => result.value)) {
-      const sanitized = sanitizeProviderItem(item)
-      if (sanitized.id) deduplicated.set(sanitized.id, sanitized)
-    }
-    const received = [...deduplicated.values()]
-    const eligible = received.filter(isEligibleScopedItem)
-    const mapped = eligible
+      const pageResults = await Promise.allSettled(discoveryRequests)
+      const successfulPages = pageResults.filter((result): result is PromiseFulfilledResult<RedgifsItem[]> => result.status === 'fulfilled')
+      basePagesScanned = pageResults.slice(0, pages).filter((result) => result.status === 'fulfilled').length
+      redgifsRequestsAttempted = discoveryRequests.length
+      redgifsRequestsSucceeded = successfulPages.length
+      if (!successfulPages.length) throw new Error('Public provider search is temporarily unavailable')
+      const deduplicated = new Map<string, RedgifsItem>()
+      for (const item of successfulPages.flatMap((result) => result.value)) {
+        const sanitized = sanitizeProviderItem(item)
+        if (sanitized.id) deduplicated.set(sanitized.id, sanitized)
+      }
+      received = [...deduplicated.values()]
+      eligible = received.filter(isEligibleScopedItem)
+      mapped = eligible
       .filter((item) => item.id && safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail) && (safeProviderMediaUrl(item.urls?.hd) || safeProviderMediaUrl(item.urls?.sd)))
       .map((item): LiveMediaItem => {
         const tags = (item.tags || []).filter(Boolean).slice(0, 12)
@@ -479,6 +554,7 @@ export default async function handler(req: Request): Promise<Response> {
           mediaUrl: proxiedMediaUrl(directCandidates[0]),
           streamCandidates,
           pageUrl: `https://www.redgifs.com/watch/${item.id}`,
+          profileUrl: `https://www.redgifs.com/users/${encodeURIComponent(creator)}`,
           description: item.description || undefined,
           likes: Math.max(0, item.likes || 0),
           comments: 0,
@@ -495,34 +571,84 @@ export default async function handler(req: Request): Promise<Response> {
         description: item.description,
         tags: item.tags,
       }, query))
-      .filter((item) => item.views >= minViews && item.likes >= minLikes)
+        .filter((item) => item.views >= minViews && item.likes >= minLikes)
+    } catch (error) {
+      redgifsError = error instanceof Error ? error.message : 'request failed'
+    }
 
-    const ranked = sortItems(rankCohort(mapped).map((item) => ({ ...item, isTrending: item.curationScore >= 65 })), sort)
-    const items = ranked.slice(0, count)
+    const additional = await additionalSourcesPromise
+    const additionalFiltered = additional.media
+      .filter((item) => !query || [item.creator, item.title, item.description || '', ...item.tags].join(' ').toLowerCase().includes(query.toLowerCase()))
+      .filter((item) => item.views >= minViews && item.likes >= minLikes)
+    const combined = [...mapped, ...additionalFiltered]
+      .filter((item, index, list) => list.findIndex((candidate) => candidate.id === item.id) === index)
+    if (!combined.length) throw new Error('No connected public source returned playable media')
+    const ranked = sortItems(rankCohort(combined).map((item) => ({ ...item, isTrending: item.curationScore >= 65 })), sort)
+    const items = diversifySources(ranked, count)
     const similarities = creatorSimilarities(ranked)
-    const performers = buildCreators(items, similarities)
+    const creatorPool = mergeCreatorLeads(buildCreators(ranked.slice(0, 240), similarities), additional.leads)
+    const aiResult = await rankSimilarCreatorsWithAI(creatorPool.map((creator) => ({
+      id: creator.id,
+      name: creator.name,
+      platform: creator.platform,
+      tags: creator.discoveryTags || [...new Set((creator.media || []).flatMap((item) => item.tags))].slice(0, 20),
+      watched: creator.isWatched,
+      mediaCount: creator.mediaCount,
+      publicViews: creator.viewCount,
+      deterministicScore: creator.similarityScore || creator.discoveryConfidence || 0,
+    })), useAI)
+    const performers = creatorPool
+      .map((creator) => {
+        const ai = aiResult.suggestions.get(creator.id)
+        return ai ? {
+          ...creator,
+          isSimilar: true,
+          similarityScore: ai.score,
+          similarityMethod: 'ai',
+          discoveryReasons: ai.reasons,
+          autoAdded: ai.score >= 70,
+          discoveryConfidence: Math.max(creator.discoveryConfidence || 0, ai.score),
+        } : creator
+      })
+      .filter((creator) => creator.mediaCount > 0 || creator.isWatched || creator.isSimilar || creator.discoveryConfidence >= 75)
+      .sort((a, b) => Number(b.isWatched) - Number(a.isWatched) || Number(b.autoAdded) - Number(a.autoAdded) || b.similarityScore - a.similarityScore || b.curationScore - a.curationScore)
+    const redgifsStatus = {
+      id: 'redgifs' as const,
+      name: 'Redgifs',
+      mode: 'stream' as const,
+      state: redgifsError ? 'error' as const : 'connected' as const,
+      mediaFound: mapped.length,
+      creatorsFound: new Set(mapped.map((item) => canonicalCreator(item.creator))).size,
+      detail: redgifsError ? `Public provider unavailable: ${redgifsError}` : 'Public provider API with source links and same-origin streaming fallbacks.',
+    }
     return new Response(JSON.stringify({
       items,
       performers,
-      source: 'public-redgifs-api',
+      source: 'multi-source-public-discovery',
+      sources: [redgifsStatus, ...additional.statuses],
       updatedAt: new Date().toISOString(),
       counts: {
-        received: received.length,
-        eligible: eligible.length,
+        received: received.length + additional.media.length + additional.leads.length,
+        eligible: eligible.length + additional.media.length,
         playable: items.length,
         pagesScanned: basePagesScanned,
-        providerRequestsSucceeded: successfulPages.length,
-        providerRequestsAttempted: discoveryRequests.length,
+        providerRequestsSucceeded: redgifsRequestsSucceeded + additional.requestsSucceeded,
+        providerRequestsAttempted: redgifsRequestsAttempted + additional.requestsAttempted,
+        sourcesConnected: Number(!redgifsError) + additional.statuses.filter((source) => source.state === 'connected').length,
+        creatorsDiscovered: performers.length,
       },
       watchlist: { matched: [...new Set(items.filter((item) => item.isWatchedCreator).map((item) => item.creator))] },
       aiDiscovery: {
-        model: 'tf-idf-cosine-v1',
+        model: aiResult.model,
+        state: aiResult.state,
+        detail: aiResult.detail,
         explainable: true,
         suggestedCreators: performers.filter((creator) => creator.isSimilar).length,
+        autoAddedCreators: performers.filter((creator) => creator.autoAdded).length,
         sensitiveAttributeInference: false,
       },
       privacy: { emailsRedacted: true },
-      ranking: 'cohort-normalized public engagement and freshness; no appearance scoring',
+      ranking: 'AI-assisted public metadata similarity plus cohort-normalized engagement and freshness; no appearance scoring',
     }), { status: 200, headers: corsHeaders(noStore) })
   } catch (error) {
     return new Response(JSON.stringify({

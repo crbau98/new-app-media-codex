@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ExternalLink, Eye, Heart, Plus, Radar, RefreshCw, Search, Sparkles, Users, X } from 'lucide-react'
+import { Check, ExternalLink, Eye, Globe2, Heart, Plus, Radar, RefreshCw, Search, ShieldCheck, Sparkles, Users, X } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
-import { fetchLiveCreatorDirectory, fetchLiveDiscovery, type LiveDiscoveryPayload } from '@/lib/api'
+import { fetchLiveDiscovery, type LiveDiscoveryPayload } from '@/lib/api'
 import type { Creator, MediaItem } from '@/lib/mockData'
 import MediaCard from '@/components/MediaCard'
 import MediaDetail from '@/components/MediaDetail'
@@ -12,7 +12,7 @@ import EmptyState from '@/components/EmptyState'
 import SkeletonGrid from '@/components/SkeletonGrid'
 
 type CreatorSort = 'Smart picks' | 'Most watched' | 'Most liked' | 'A–Z'
-type CreatorFilter = 'all' | 'ai-matches' | 'high-demand'
+type CreatorFilter = 'all' | 'ai-matches' | 'auto-added' | 'high-demand'
 
 function formatMetric(value = 0): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}m`
@@ -39,6 +39,7 @@ function CreatorCard({
 }) {
   const media = observedMedia(creator)
   const cover = media[0]
+  const avatar = creator.avatar || cover?.thumbnail
 
   return (
     <motion.article
@@ -67,14 +68,14 @@ function CreatorCard({
 
       <div className="relative px-4 pb-4">
         <div className="-mt-8 flex items-end justify-between gap-3">
-          <img
-            src={creator.avatar || cover?.thumbnail}
+          {avatar ? <img
+            src={avatar}
             alt={creator.name}
             className="h-16 w-16 rounded-full border-4 border-[var(--bg-elevated)] object-cover bg-[var(--bg-surface)]"
             loading="lazy"
-          />
+          /> : <div aria-hidden="true" className="grid h-16 w-16 place-items-center rounded-full border-4 border-[var(--bg-elevated)] bg-[var(--accent-dim)] text-xl font-bold text-[var(--accent)]">{creator.name.charAt(0).toUpperCase()}</div>}
           <span className="mb-1 flex items-center gap-1 rounded-full bg-[var(--accent-dim)] px-2 py-1 text-[10px] font-semibold text-[var(--accent)]">
-            {creator.isWatched ? <><Radar size={11} /> On radar</> : creator.isSimilar ? <><Sparkles size={11} /> {creator.similarityScore} tag overlap</> : <><Sparkles size={11} /> {creator.curationScore || 0} source signal</>}
+            {creator.isWatched ? <><Radar size={11} /> On radar</> : creator.autoAdded ? <><Sparkles size={11} /> AI added · {creator.similarityScore}</> : creator.isSimilar ? <><Sparkles size={11} /> {creator.similarityScore} metadata match</> : <><Sparkles size={11} /> {creator.curationScore || 0} source signal</>}
           </span>
         </div>
 
@@ -130,7 +131,7 @@ function CreatorDrawer({ creator, onClose }: { creator: Creator | null; onClose:
               <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-base)] to-transparent" />
             </div>
             <div className="-mt-12 relative">
-              <img src={creator.avatar || media[0]?.thumbnail} alt={creator.name} className="h-24 w-24 rounded-full border-4 border-[var(--bg-base)] object-cover bg-[var(--bg-surface)]" />
+              {creator.avatar || media[0]?.thumbnail ? <img src={creator.avatar || media[0]?.thumbnail} alt={creator.name} className="h-24 w-24 rounded-full border-4 border-[var(--bg-base)] object-cover bg-[var(--bg-surface)]" /> : <div aria-hidden="true" className="grid h-24 w-24 place-items-center rounded-full border-4 border-[var(--bg-base)] bg-[var(--accent-dim)] text-3xl font-bold text-[var(--accent)]">{creator.name.charAt(0).toUpperCase()}</div>}
               <h2 className="mt-3 text-2xl font-bold text-[var(--text-primary)]">{creator.name}</h2>
               <p className="text-sm text-[var(--text-secondary)]">@{creator.username || creator.name.replace(/\s+/g, '').toLowerCase()} · {creator.sourceAttribution || creator.platform}</p>
             </div>
@@ -186,13 +187,15 @@ export default function CreatorsPage() {
   const addCreatorToWatchlist = useAppStore((state) => state.addCreatorToWatchlist)
   const removeCreatorFromWatchlist = useAppStore((state) => state.removeCreatorFromWatchlist)
   const directoryQueryKey = useMemo(() => ['live-creators', 'directory', creatorWatchlist] as const, [creatorWatchlist])
-  const { data: creators = [], isLoading, isError, isFetching, refetch, dataUpdatedAt } = useQuery({
+  const { data: discovery, isLoading, isError, isFetching, refetch, dataUpdatedAt } = useQuery({
     queryKey: directoryQueryKey,
-    queryFn: () => fetchLiveCreatorDirectory(creatorWatchlist),
+    queryFn: () => fetchLiveDiscovery(creatorWatchlist),
     staleTime: 60_000,
     refetchInterval: 120_000,
     refetchOnWindowFocus: true,
   })
+  const creators = useMemo(() => discovery?.performers || [], [discovery?.performers])
+  const sources = useMemo(() => discovery?.sources || [], [discovery?.sources])
 
   const visibleCreators = useMemo(() => {
     const normalized = query.trim().toLowerCase()
@@ -200,6 +203,7 @@ export default function CreatorsPage() {
       .filter((creator) => !normalized || [creator.name, creator.username || '', creator.platform || ''].join(' ').toLowerCase().includes(normalized))
       .filter((creator) => filter !== 'high-demand' || (creator.curationScore || 0) >= 65)
       .filter((creator) => filter !== 'ai-matches' || creator.isSimilar)
+      .filter((creator) => filter !== 'auto-added' || creator.autoAdded)
     return [...result].sort((a, b) => {
       if (sort === 'Most watched') return (b.viewCount || 0) - (a.viewCount || 0)
       if (sort === 'Most liked') return (b.likeCount || 0) - (a.likeCount || 0)
@@ -243,7 +247,7 @@ export default function CreatorsPage() {
       const cachedDiscoveries = queryClient.getQueriesData<LiveDiscoveryPayload>({ queryKey: ['live-discovery'] })
       const previousIds = new Set(cachedDiscoveries.flatMap(([, payload]) => (payload?.items || []).map((item) => item.id)))
       const fresh = await fetchLiveDiscovery(creatorWatchlist, true)
-      queryClient.setQueriesData<Creator[]>({ queryKey: ['live-creators'] }, fresh.performers)
+      queryClient.setQueriesData<LiveDiscoveryPayload>({ queryKey: ['live-creators'] }, fresh)
       queryClient.setQueriesData<LiveDiscoveryPayload>({ queryKey: ['live-discovery'] }, fresh)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['media'] }),
@@ -256,7 +260,7 @@ export default function CreatorsPage() {
       addToast({
         type: partial ? 'info' : 'success',
         title: partial ? 'Public-source scan partially completed' : 'Public-source scan complete',
-        message: `${newPosts === null ? `${fresh.items.length} posts checked` : `${newPosts} new posts`} · ${fresh.watchlist.matched.length}/${creatorWatchlist.length} exact radar matches · ${succeeded}/${attempted} requests succeeded`,
+        message: `${newPosts === null ? `${fresh.items.length} posts checked` : `${newPosts} new posts`} · ${fresh.watchlist.matched.length}/${creatorWatchlist.length} exact radar matches · ${fresh.aiDiscovery.autoAddedCreators || 0} AI additions · ${fresh.counts.sourcesConnected || 1} sources connected · ${succeeded}/${attempted} requests succeeded`,
       })
     } catch {
       addToast({ type: 'error', title: 'Immediate scan could not complete', message: 'The source did not return a playable result. Try again while the app is open.' })
@@ -272,7 +276,7 @@ export default function CreatorsPage() {
           <div className="max-w-2xl">
             <span className="eyebrow text-[var(--accent)]">PERFORMER RADAR</span>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">Public gay-media account discovery</h1>
-            <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Search source-provided uploader accounts and public clips. Accounts are not treated as verified identities, and ranking never analyzes appearance.</p>
+            <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Search public creator accounts across connected official APIs. AI compares public metadata—not faces or bodies—and automatically admits high-confidence adjacent accounts with reasons and provenance.</p>
           </div>
           <div className="flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-secondary)]"><Users size={14} /> {creators.length} observed creators</div>
         </div>
@@ -282,7 +286,7 @@ export default function CreatorsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Radar size={17} className="text-[var(--accent)]" /> Automatic creator radar</div>
-            <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">Add an exact Redgifs username. While this page is open, results refresh every two minutes; the four default usernames also receive a daily check. Similar accounts use explainable tag overlap. Email-shaped text is redacted from source metadata.</p>
+            <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">Add a creator name or exact public handle. Scan now queries every connected source and invokes server-side AI metadata reranking; daily and two-minute refreshes use the lower-cost deterministic model. Email-shaped text is always redacted.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span aria-live="polite" className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[11px] text-[var(--text-secondary)]">
@@ -296,7 +300,7 @@ export default function CreatorsPage() {
         <form onSubmit={addWatch} className="mt-4 flex flex-col gap-2 sm:flex-row">
           <label className="flex min-h-11 flex-1 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 focus-within:border-[var(--accent)]">
             <Search size={15} className="text-[var(--text-tertiary)]" />
-            <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="Exact Redgifs username" maxLength={50} aria-label="Exact Redgifs username to monitor" className="w-full bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
+            <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="Creator name or public handle" maxLength={50} aria-label="Creator name or public handle to monitor" className="w-full bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
           </label>
           <button type="submit" className="btn-primary flex min-h-11 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-4 text-sm font-medium"><Plus size={15} /> Add to radar</button>
         </form>
@@ -310,6 +314,28 @@ export default function CreatorsPage() {
         </div>
       </section>
 
+      <section className="rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Globe2 size={16} className="text-[var(--accent)]" /> Source coverage</h2>
+            <p className="mt-1 text-xs leading-5 text-[var(--text-tertiary)]">Connected sources can contribute public media. Discovery-only sources contribute canonical profile leads. Blocked mirrors are never queried.</p>
+          </div>
+          <span className="rounded-full bg-[var(--accent-dim)] px-3 py-1.5 text-[11px] font-semibold text-[var(--accent)]">{discovery?.aiDiscovery.state === 'model' ? `AI model · ${discovery.aiDiscovery.model}` : discovery?.aiDiscovery.detail || 'AI runs on Scan now'}</span>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {sources.map((source) => (
+            <div key={source.id} className="rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-primary)]">{source.state === 'connected' ? <ShieldCheck size={13} className="text-emerald-400" /> : <Globe2 size={13} className="text-[var(--text-tertiary)]" />}{source.name}</p>
+                <span className={cn('rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide', source.state === 'connected' ? 'bg-emerald-500/15 text-emerald-300' : source.state === 'blocked' ? 'bg-red-500/15 text-red-300' : 'bg-[var(--bg-base)] text-[var(--text-tertiary)]')}>{source.state.replace('-', ' ')}</span>
+              </div>
+              <p className="mt-2 text-[11px] leading-4 text-[var(--text-tertiary)]">{source.detail}</p>
+              <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--text-muted)]"><span>{source.mode} · {source.mediaFound} media · {source.creatorsFound} creators</span>{source.searchUrl && <a href={source.searchUrl} target="_blank" rel="noreferrer" className="text-[var(--accent)]">Open search <ExternalLink size={10} className="inline" /></a>}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 py-3 backdrop-blur-md">
         <label className="flex min-w-[220px] flex-1 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-secondary)]">
           <Search size={15} />
@@ -317,7 +343,8 @@ export default function CreatorsPage() {
         </label>
         <div className="flex items-center gap-1 rounded-full bg-[var(--bg-surface)] p-1">
           <button onClick={() => setFilter('all')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'all' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>All</button>
-          <button onClick={() => setFilter('ai-matches')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'ai-matches' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>Similar tags</button>
+          <button onClick={() => setFilter('ai-matches')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'ai-matches' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>Similar</button>
+          <button onClick={() => setFilter('auto-added')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'auto-added' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>AI additions</button>
           <button onClick={() => setFilter('high-demand')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'high-demand' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>High demand</button>
         </div>
         <select value={sort} onChange={(event) => setSort(event.target.value as CreatorSort)} className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none">

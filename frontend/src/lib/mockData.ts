@@ -40,6 +40,7 @@ export interface Creator {
   storySeen: boolean
   username?: string
   platform?: string
+  platforms?: string[]
   profileUrl?: string
   mediaCount?: number
   viewCount?: number
@@ -50,7 +51,11 @@ export interface Creator {
   isWatched?: boolean
   isSimilar?: boolean
   similarityScore?: number
+  similarityMethod?: 'ai' | 'metadata' | 'none'
   discoveryReasons?: string[]
+  autoAdded?: boolean
+  discoveryConfidence?: number
+  discoveryTags?: string[]
   media?: MediaItem[]
 }
 
