@@ -135,7 +135,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     db.set_notification_callback(_notify_callback)
 
-    posters_dir = Path(os.getenv("POSTERS_DIR") or (Path(os.getenv("DATABASE_PATH", "/app/data/research.db")).expanduser().parent / "posters"))
+    posters_dir = Path(
+        os.getenv("POSTERS_DIR")
+        or (settings.database_path.expanduser().parent / "posters")
+    )
     posters_dir.mkdir(parents=True, exist_ok=True)
     global _COMMIT_HASH
     _COMMIT_HASH = _resolve_commit_hash()
