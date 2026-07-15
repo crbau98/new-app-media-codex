@@ -74,7 +74,11 @@ def app_client(test_db):
     def healthz():
         return {"status": "ok"}
 
-    with TestClient(minimal_app, raise_server_exceptions=True) as client:
+    with TestClient(
+        minimal_app,
+        raise_server_exceptions=True,
+        headers={"X-Admin-Token": "test-token"},
+    ) as client:
         yield client
 
 
