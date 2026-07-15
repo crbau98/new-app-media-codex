@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ExternalLink, Eye, Heart, Plus, Radar, RefreshCw, Search, Sparkles, Users, X } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
-import { fetchLiveCreatorDirectory } from '@/lib/api'
+import { fetchLiveCreatorDirectory, fetchLiveDiscovery, type LiveDiscoveryPayload } from '@/lib/api'
 import type { Creator, MediaItem } from '@/lib/mockData'
 import MediaCard from '@/components/MediaCard'
 import MediaDetail from '@/components/MediaDetail'
@@ -74,7 +74,7 @@ function CreatorCard({
             loading="lazy"
           />
           <span className="mb-1 flex items-center gap-1 rounded-full bg-[var(--accent-dim)] px-2 py-1 text-[10px] font-semibold text-[var(--accent)]">
-            {creator.isWatched ? <><Radar size={11} /> On radar</> : creator.isSimilar ? <><Sparkles size={11} /> {creator.similarityScore}% AI match</> : <><Sparkles size={11} /> {creator.curationScore || 0} public signal</>}
+            {creator.isWatched ? <><Radar size={11} /> On radar</> : creator.isSimilar ? <><Sparkles size={11} /> {creator.similarityScore} tag overlap</> : <><Sparkles size={11} /> {creator.curationScore || 0} source signal</>}
           </span>
         </div>
 
@@ -143,7 +143,7 @@ function CreatorDrawer({ creator, onClose }: { creator: Creator | null; onClose:
 
             {creator.isSimilar && creator.discoveryReasons?.length ? (
               <section className="mb-5 rounded-[var(--radius-md)] border border-[var(--accent)]/30 bg-[var(--accent-dim)] p-4">
-                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--accent)]"><Sparkles size={14} /> Why AI suggested this creator</p>
+                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--accent)]"><Sparkles size={14} /> Why this source account is similar</p>
                 <div className="mt-3 flex flex-wrap gap-2">{creator.discoveryReasons.map((reason) => <span key={reason} className="rounded-full bg-[var(--bg-base)]/70 px-2.5 py-1 text-xs text-[var(--text-secondary)]">{reason}</span>)}</div>
               </section>
             ) : null}
@@ -151,7 +151,7 @@ function CreatorDrawer({ creator, onClose }: { creator: Creator | null; onClose:
             <div className="mb-5 flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-semibold text-[var(--text-primary)]">Latest public posts</h3>
-                <p className="mt-1 text-xs text-[var(--text-tertiary)]">Source attribution is preserved; use the source to support a creator directly.</p>
+                <p className="mt-1 text-xs text-[var(--text-tertiary)]">These are source-provided uploader accounts; attribution does not verify the person depicted.</p>
               </div>
               {creator.profileUrl && <a href={creator.profileUrl} target="_blank" rel="noreferrer" className="shrink-0 rounded-md border border-[var(--border-medium)] px-3 py-2 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-surface)]"><ExternalLink size={13} className="mr-1 inline" /> Source</a>}
             </div>
@@ -219,7 +219,7 @@ export default function CreatorsPage() {
     const candidate = watchInput.trim().replace(/^@/, '')
     if (candidate.length < 2) return
     if (/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(candidate)) {
-      addToast({ type: 'error', title: 'Use a public handle or creator name—not an email' })
+      addToast({ type: 'error', title: 'Use an exact public source username—not an email' })
       return
     }
     const key = candidate.toLowerCase().replace(/[^a-z0-9]+/g, '')
@@ -240,21 +240,30 @@ export default function CreatorsPage() {
     if (isScanningNow) return
     setIsScanningNow(true)
     try {
-      const freshCreators = await fetchLiveCreatorDirectory(creatorWatchlist, true)
-      queryClient.setQueryData(directoryQueryKey, freshCreators)
-      await queryClient.invalidateQueries({ queryKey: ['media'] })
-      const aiMatches = freshCreators.filter((creator) => creator.isSimilar).length
+      const cachedDiscoveries = queryClient.getQueriesData<LiveDiscoveryPayload>({ queryKey: ['live-discovery'] })
+      const previousIds = new Set(cachedDiscoveries.flatMap(([, payload]) => (payload?.items || []).map((item) => item.id)))
+      const fresh = await fetchLiveDiscovery(creatorWatchlist, true)
+      queryClient.setQueriesData<Creator[]>({ queryKey: ['live-creators'] }, fresh.performers)
+      queryClient.setQueriesData<LiveDiscoveryPayload>({ queryKey: ['live-discovery'] }, fresh)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['media'] }),
+        queryClient.invalidateQueries({ queryKey: ['search'] }),
+      ])
+      const newPosts = previousIds.size ? fresh.items.filter((item) => !previousIds.has(item.id)).length : null
+      const succeeded = fresh.counts.providerRequestsSucceeded ?? fresh.counts.pagesScanned
+      const attempted = fresh.counts.providerRequestsAttempted ?? succeeded
+      const partial = succeeded < attempted
       addToast({
-        type: 'success',
-        title: 'Fresh public-source scan complete',
-        message: `${freshCreators.length} creators observed · ${aiMatches} AI matches`,
+        type: partial ? 'info' : 'success',
+        title: partial ? 'Public-source scan partially completed' : 'Public-source scan complete',
+        message: `${newPosts === null ? `${fresh.items.length} posts checked` : `${newPosts} new posts`} · ${fresh.watchlist.matched.length}/${creatorWatchlist.length} exact radar matches · ${succeeded}/${attempted} requests succeeded`,
       })
     } catch {
-      addToast({ type: 'error', title: 'Immediate scan could not complete', message: 'The public provider did not respond. Scheduled scanning remains active.' })
+      addToast({ type: 'error', title: 'Immediate scan could not complete', message: 'The source did not return a playable result. Try again while the app is open.' })
     } finally {
       setIsScanningNow(false)
     }
-  }, [addToast, creatorWatchlist, directoryQueryKey, isScanningNow, queryClient])
+  }, [addToast, creatorWatchlist, isScanningNow, queryClient])
 
   return (
     <div className="space-y-6">
@@ -262,8 +271,8 @@ export default function CreatorsPage() {
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="max-w-2xl">
             <span className="eyebrow text-[var(--accent)]">PERFORMER RADAR</span>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">Public male creator discovery</h1>
-            <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Search current source-attributed performers, save favorites, and surface public posts by engagement and freshness. Scores describe discovery signals—not anyone’s appearance.</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">Public gay-media account discovery</h1>
+            <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Search source-provided uploader accounts and public clips. Accounts are not treated as verified identities, and ranking never analyzes appearance.</p>
           </div>
           <div className="flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-secondary)]"><Users size={14} /> {creators.length} observed creators</div>
         </div>
@@ -273,7 +282,7 @@ export default function CreatorsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Radar size={17} className="text-[var(--accent)]" /> Automatic creator radar</div>
-            <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">Add a public handle or creator name. AI compares source tags to find adjacent creators, while the live app refreshes every two minutes and a background scan keeps the seeded radar warm. Emails are removed before anything is displayed.</p>
+            <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">Add an exact Redgifs username. While this page is open, results refresh every two minutes; the four default usernames also receive a daily check. Similar accounts use explainable tag overlap. Email-shaped text is redacted from source metadata.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span aria-live="polite" className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[11px] text-[var(--text-secondary)]">
@@ -287,7 +296,7 @@ export default function CreatorsPage() {
         <form onSubmit={addWatch} className="mt-4 flex flex-col gap-2 sm:flex-row">
           <label className="flex min-h-11 flex-1 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 focus-within:border-[var(--accent)]">
             <Search size={15} className="text-[var(--text-tertiary)]" />
-            <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="Public handle or creator name" maxLength={50} className="w-full bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
+            <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="Exact Redgifs username" maxLength={50} aria-label="Exact Redgifs username to monitor" className="w-full bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
           </label>
           <button type="submit" className="btn-primary flex min-h-11 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-4 text-sm font-medium"><Plus size={15} /> Add to radar</button>
         </form>
@@ -301,14 +310,14 @@ export default function CreatorsPage() {
         </div>
       </section>
 
-      <div className="sticky top-14 z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 py-3 backdrop-blur-md">
+      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 py-3 backdrop-blur-md">
         <label className="flex min-w-[220px] flex-1 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-secondary)]">
           <Search size={15} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search performer or platform" className="w-full bg-transparent outline-none placeholder:text-[var(--text-muted)]" />
         </label>
         <div className="flex items-center gap-1 rounded-full bg-[var(--bg-surface)] p-1">
           <button onClick={() => setFilter('all')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'all' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>All</button>
-          <button onClick={() => setFilter('ai-matches')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'ai-matches' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>AI matches</button>
+          <button onClick={() => setFilter('ai-matches')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'ai-matches' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>Similar tags</button>
           <button onClick={() => setFilter('high-demand')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'high-demand' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>High demand</button>
         </div>
         <select value={sort} onChange={(event) => setSort(event.target.value as CreatorSort)} className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none">

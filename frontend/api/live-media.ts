@@ -17,7 +17,10 @@ const FEMALE_MARKERS = [
   'vagina', 'shemale', 'ladyboy', 'hetero',
   'girlfriend', 'wife', 'b/g', 'm/f', 'boob', 'breast', 'tits',
   'petite', 'bbw', 'milf', 'femdom',
+  'sissy', 'sissies', 'sissycaption', 'sissification', 'trans', 'transgender',
+  'girls', 'chick', 'chicks', 'females',
 ]
+const PROVIDER_TIMEOUT_MS = 9_000
 
 type RedgifsItem = {
   id?: string
@@ -100,11 +103,23 @@ function textFor(item: RedgifsItem): string {
     .toLowerCase()
 }
 
-function isEligibleMaleItem(item: RedgifsItem): boolean {
-  // Discovery is established by the canonical Gay tag or an explicit user
-  // watchlist. These exclusions protect the feed when a source is mislabelled.
+function isEligibleScopedItem(item: RedgifsItem): boolean {
+  // Scope is proven only by source-provided metadata. We do not infer anyone's
+  // identity, body, gender, or orientation from imagery.
   const tokens = new Set(textFor(item).split(/[^a-z0-9/]+/).filter(Boolean))
-  return !FEMALE_MARKERS.some((marker) => tokens.has(marker))
+  return tokens.has('gay') && !FEMALE_MARKERS.some((marker) => tokens.has(marker))
+}
+
+function safeProviderMediaUrl(value?: string): string | undefined {
+  if (!value) return undefined
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return undefined
+    if (!/^(?:media|thumbs\d*)\.redgifs\.com$/i.test(url.hostname)) return undefined
+    return url.href
+  } catch {
+    return undefined
+  }
 }
 
 function durationLabel(seconds = 0): string {
@@ -152,6 +167,7 @@ function rankCohort(items: LiveMediaItem[]): LiveMediaItem[] {
 }
 
 function parseBoundedInt(value: string | null, fallback: number, maximum: number): number {
+  if (value === null || value.trim() === '') return fallback
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
   return Math.min(maximum, Math.max(0, Math.floor(parsed)))
@@ -165,11 +181,7 @@ function canonicalCreator(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
-function parseWatchlist(url: URL): string[] {
-  const candidates = [
-    ...url.searchParams.getAll('watch'),
-    ...(url.searchParams.get('watchlist') || '').split(','),
-  ]
+function parseWatchlistCandidates(candidates: string[]): string[] {
   const unique = new Map<string, string>()
   for (const raw of candidates) {
     if (EMAIL_TEST.test(raw)) continue
@@ -180,6 +192,13 @@ function parseWatchlist(url: URL): string[] {
     if (unique.size >= 8) break
   }
   return [...unique.values()]
+}
+
+function parseWatchlist(url: URL): string[] {
+  return parseWatchlistCandidates([
+    ...url.searchParams.getAll('watch'),
+    ...(url.searchParams.get('watchlist') || '').split(','),
+  ])
 }
 
 function creatorIsWatched(creator: string, watchlist: string[]): boolean {
@@ -308,18 +327,29 @@ function buildCreators(items: LiveMediaItem[], similarities: Map<string, Creator
     .sort((a, b) => Number(b.isWatched) - Number(a.isWatched) || (b.similarityScore - a.similarityScore) || (b.curationScore - a.curationScore) || (b.viewCount - a.viewCount))
 }
 
-function corsHeaders(): Record<string, string> {
+function corsHeaders(noStore = false): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Cache-Control',
+    'Cache-Control': noStore ? 'private, no-store' : 'public, s-maxage=120, stale-while-revalidate=300',
     'Content-Type': 'application/json; charset=utf-8',
+  }
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders() })
-  if (req.method !== 'GET') {
+  if (req.method !== 'GET' && req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'method_not_allowed' }), {
       status: 405,
       headers: corsHeaders(),
@@ -328,17 +358,28 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const requestUrl = new URL(req.url)
-    const count = Math.min(100, Math.max(20, parseBoundedInt(requestUrl.searchParams.get('count'), 80, 100)))
-    const pages = Math.max(1, parseBoundedInt(requestUrl.searchParams.get('pages'), 2, 3))
-    const startPage = Math.max(1, parseBoundedInt(requestUrl.searchParams.get('page'), 1, 50))
-    const query = boundedQuery(requestUrl.searchParams.get('q') || requestUrl.searchParams.get('creator') || '')
-    const watchlist = parseWatchlist(requestUrl)
-    const minViews = parseBoundedInt(requestUrl.searchParams.get('minViews'), 0, 10_000_000)
-    const minLikes = parseBoundedInt(requestUrl.searchParams.get('minLikes'), 0, 1_000_000)
-    const requestedSort = (requestUrl.searchParams.get('sort') || 'smart').toLowerCase()
+    const body = req.method === 'POST'
+      ? await req.json().catch(() => ({})) as Record<string, unknown>
+      : {}
+    const value = (bodyKey: string, queryKey = bodyKey): string | null => {
+      const fromBody = body[bodyKey]
+      return fromBody === undefined || fromBody === null ? requestUrl.searchParams.get(queryKey) : String(fromBody)
+    }
+    const count = Math.min(100, Math.max(20, parseBoundedInt(value('count'), 80, 100)))
+    const pages = Math.max(1, parseBoundedInt(value('pages'), 2, 3))
+    const startPage = Math.max(1, parseBoundedInt(value('page'), 1, 50))
+    const query = boundedQuery(String(body.query || value('q') || value('creator') || ''))
+    const watchlist = Array.isArray(body.watchlist)
+      ? parseWatchlistCandidates(body.watchlist.filter((item): item is string => typeof item === 'string'))
+      : parseWatchlist(requestUrl)
+    const minViews = parseBoundedInt(value('minViews'), 0, 10_000_000)
+    const minLikes = parseBoundedInt(value('minLikes'), 0, 1_000_000)
+    const requestedSort = (value('sort') || 'smart').toLowerCase()
     const sort = ['smart', 'views', 'likes', 'newest'].includes(requestedSort) ? requestedSort : 'smart'
+    const noStore = req.method === 'POST' || body.forceFresh === true || requestUrl.searchParams.get('refresh') === '1'
+    const expandWatchlist = body.expandWatchlist !== false
 
-    const auth = await fetch(`${REDGIFS_API}/auth/temporary`, {
+    const auth = await fetchWithTimeout(`${REDGIFS_API}/auth/temporary`, {
       headers: { Accept: 'application/json', 'User-Agent': 'MediaCodex/1.0' },
       cache: 'no-store',
     })
@@ -352,7 +393,7 @@ export default async function handler(req: Request): Promise<Response> {
       'User-Agent': 'MediaCodex/1.0',
     }
     const fetchProvider = async (path: string, params: URLSearchParams): Promise<RedgifsItem[]> => {
-      const result = await fetch(`${REDGIFS_API}${path}?${params}`, {
+      const result = await fetchWithTimeout(`${REDGIFS_API}${path}?${params}`, {
         headers: providerHeaders,
         cache: 'no-store',
       })
@@ -375,14 +416,23 @@ export default async function handler(req: Request): Promise<Response> {
 
     if (query) {
       discoveryRequests.push(fetchProvider('/gifs/search', new URLSearchParams({
-        search_text: query,
+        type: 'g',
+        tags: query,
         count: String(Math.min(60, providerCount)),
         page: '1',
         order: 'trending',
       })))
+      const possibleHandle = canonicalCreator(query)
+      if (possibleHandle.length >= 2) {
+        discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(possibleHandle)}/search`, new URLSearchParams({
+          count: '40',
+          page: '1',
+          order: 'recent',
+        })).then((items) => items.filter((item) => canonicalCreator(item.userName || '') === possibleHandle)))
+      }
     }
 
-    for (const creator of watchlist) {
+    for (const creator of expandWatchlist ? watchlist : []) {
       const handle = canonicalCreator(creator)
       discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(handle)}/search`, new URLSearchParams({
         count: '30',
@@ -393,6 +443,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     const pageResults = await Promise.allSettled(discoveryRequests)
     const successfulPages = pageResults.filter((result): result is PromiseFulfilledResult<RedgifsItem[]> => result.status === 'fulfilled')
+    const basePagesScanned = pageResults.slice(0, pages).filter((result) => result.status === 'fulfilled').length
     if (!successfulPages.length) throw new Error('Public provider search is temporarily unavailable')
     const deduplicated = new Map<string, RedgifsItem>()
     for (const item of successfulPages.flatMap((result) => result.value)) {
@@ -400,22 +451,22 @@ export default async function handler(req: Request): Promise<Response> {
       if (sanitized.id) deduplicated.set(sanitized.id, sanitized)
     }
     const received = [...deduplicated.values()]
-    const eligible = received.filter(isEligibleMaleItem)
+    const eligible = received.filter(isEligibleScopedItem)
     const mapped = eligible
-      .filter((item) => item.id && item.urls?.poster && (item.urls.hd || item.urls.sd))
+      .filter((item) => item.id && safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail) && (safeProviderMediaUrl(item.urls?.hd) || safeProviderMediaUrl(item.urls?.sd)))
       .map((item): LiveMediaItem => {
         const tags = (item.tags || []).filter(Boolean).slice(0, 12)
         const creator = item.userName || 'Redgifs creator'
         const isWatchedCreator = creatorIsWatched(creator, watchlist)
         const createdAt = toIsoDate(item.createDate)
-        const directCandidates = [item.urls?.hd, item.urls?.sd].filter((url): url is string => Boolean(url))
+        const directCandidates = [safeProviderMediaUrl(item.urls?.hd), safeProviderMediaUrl(item.urls?.sd)].filter((url): url is string => Boolean(url))
         const streamCandidates = [...directCandidates.map(proxiedMediaUrl), ...directCandidates]
           .filter((url): url is string => Boolean(url))
           .filter((url, index, list) => list.indexOf(url) === index)
         return {
           id: `rg-${item.id}`,
           title: item.description?.trim() || tags.slice(0, 3).join(' · ') || `Video by ${creator}`,
-          thumbnail: proxiedMediaUrl(item.urls?.poster || item.urls?.thumbnail),
+          thumbnail: proxiedMediaUrl(safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail)),
           source: 'Redgifs',
           duration: durationLabel(item.duration),
           isVideo: true,
@@ -425,7 +476,7 @@ export default async function handler(req: Request): Promise<Response> {
           rating: 0,
           createdAt,
           views: Math.max(0, item.views || 0),
-          mediaUrl: proxiedMediaUrl(item.urls?.hd || item.urls?.sd),
+          mediaUrl: proxiedMediaUrl(directCandidates[0]),
           streamCandidates,
           pageUrl: `https://www.redgifs.com/watch/${item.id}`,
           description: item.description || undefined,
@@ -455,11 +506,15 @@ export default async function handler(req: Request): Promise<Response> {
       performers,
       source: 'public-redgifs-api',
       updatedAt: new Date().toISOString(),
-      counts: { received: received.length, eligible: eligible.length, playable: items.length, pagesScanned: successfulPages.length },
-      watchlist: {
-        requested: watchlist,
-        matched: [...new Set(items.filter((item) => item.isWatchedCreator).map((item) => item.creator))],
+      counts: {
+        received: received.length,
+        eligible: eligible.length,
+        playable: items.length,
+        pagesScanned: basePagesScanned,
+        providerRequestsSucceeded: successfulPages.length,
+        providerRequestsAttempted: discoveryRequests.length,
       },
+      watchlist: { matched: [...new Set(items.filter((item) => item.isWatchedCreator).map((item) => item.creator))] },
       aiDiscovery: {
         model: 'tf-idf-cosine-v1',
         explainable: true,
@@ -468,7 +523,7 @@ export default async function handler(req: Request): Promise<Response> {
       },
       privacy: { emailsRedacted: true },
       ranking: 'cohort-normalized public engagement and freshness; no appearance scoring',
-    }), { status: 200, headers: corsHeaders() })
+    }), { status: 200, headers: corsHeaders(noStore) })
   } catch (error) {
     return new Response(JSON.stringify({
       error: 'live_media_unavailable',

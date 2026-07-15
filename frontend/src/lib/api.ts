@@ -42,7 +42,7 @@ import {
 export interface MediaFilters {
   category?: string | null
   sourceType?: string | null
-  sort?: 'newest' | 'oldest' | 'topRated' | 'az' | 'random' | 'mostViewed'
+  sort?: 'smart' | 'newest' | 'oldest' | 'topRated' | 'az' | 'random' | 'mostViewed'
   tag?: string | null
   search?: string
   creator?: string | null
@@ -57,6 +57,30 @@ export interface PaginatedResult<T> {
   perPage: number
   total: number
   hasMore: boolean
+}
+
+export interface LiveDiscoveryPayload {
+  items: MediaItem[]
+  performers: Creator[]
+  updatedAt: string
+  counts: {
+    received: number
+    eligible: number
+    playable: number
+    pagesScanned: number
+    providerRequestsSucceeded?: number
+    providerRequestsAttempted?: number
+  }
+  watchlist: {
+    requested: string[]
+    matched: string[]
+  }
+  aiDiscovery: {
+    model: string
+    explainable: boolean
+    suggestedCreators: number
+    sensitiveAttributeInference: boolean
+  }
 }
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
@@ -119,17 +143,25 @@ async function fetchLiveMediaFallback(
   page: number,
   perPage: number
 ): Promise<PaginatedResult<MediaItem>> {
-  const params = new URLSearchParams({ count: '100', pages: '3' })
-  if (filters.search) params.set('q', filters.search)
-  else if (filters.creator) params.set('creator', filters.creator)
-  else if (filters.category) params.set('q', filters.category)
-  if (filters.minViews) params.set('minViews', String(filters.minViews))
-  if (filters.minLikes) params.set('minLikes', String(filters.minLikes))
-  for (const creator of (filters.watchlist || []).slice(0, 8)) params.append('watch', creator)
-  if (filters.sort === 'mostViewed') params.set('sort', 'views')
-  else if (filters.sort === 'newest') params.set('sort', 'newest')
-  else if (filters.sort === 'topRated') params.set('sort', 'likes')
-  const response = await fetchWithTimeout(`/api/live-media?${params.toString()}`, undefined, 20000)
+  const sort = filters.sort === 'mostViewed' ? 'views'
+    : filters.sort === 'newest' ? 'newest'
+      : filters.sort === 'topRated' ? 'likes'
+        : 'smart'
+  const response = await fetchWithTimeout('/api/live-media', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({
+      count: 100,
+      pages: 3,
+      query: filters.search || filters.creator || filters.category || '',
+      minViews: filters.minViews || 0,
+      minLikes: filters.minLikes || 0,
+      watchlist: (filters.watchlist || []).slice(0, 8),
+      expandWatchlist: !filters.search,
+      sort,
+    }),
+  }, 20000)
   if (!response.ok) throw new Error(`Live media fallback returned ${response.status}`)
   const payload = redactEmailsDeep(await response.json() as { items?: MediaItem[] })
   // Query terms were applied upstream. Category remains a tag-level client
@@ -139,18 +171,42 @@ async function fetchLiveMediaFallback(
   return buildPaginatedResult(sorted, page, perPage)
 }
 
-export async function fetchLiveCreatorDirectory(watchlist: string[] = [], forceFresh = false): Promise<Creator[]> {
-  const params = new URLSearchParams({ count: '100', pages: '3', sort: 'smart' })
-  for (const creator of watchlist.slice(0, 8)) params.append('watch', creator)
-  if (forceFresh) params.set('_refresh', String(Date.now()))
+export async function fetchLiveDiscovery(
+  watchlist: string[] = [],
+  forceFresh = false,
+): Promise<LiveDiscoveryPayload> {
   const response = await fetchWithTimeout(
-    `/api/live-media?${params.toString()}`,
-    forceFresh ? { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } } : undefined,
+    '/api/live-media',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(forceFresh ? { 'Cache-Control': 'no-cache' } : {}) },
+      cache: 'no-store',
+      body: JSON.stringify({ count: 100, pages: 3, sort: 'smart', watchlist: watchlist.slice(0, 8), forceFresh }),
+    },
     forceFresh ? 45000 : 25000,
   )
-  if (!response.ok) throw new Error(`Live creator directory returned ${response.status}`)
-  const payload = redactEmailsDeep(await response.json() as { performers?: Creator[] })
-  return Array.isArray(payload.performers) ? payload.performers : []
+  if (!response.ok) throw new Error(`Live discovery returned ${response.status}`)
+  const payload = redactEmailsDeep(await response.json() as Partial<LiveDiscoveryPayload>)
+  const items = Array.isArray(payload.items) ? payload.items : []
+  const performers = Array.isArray(payload.performers) ? payload.performers : []
+  if (!items.length || !performers.length) throw new Error('Live discovery returned no playable results')
+  return {
+    items,
+    performers,
+    updatedAt: payload.updatedAt || new Date().toISOString(),
+    counts: payload.counts || { received: items.length, eligible: items.length, playable: items.length, pagesScanned: 0 },
+    watchlist: { requested: watchlist, matched: payload.watchlist?.matched || [] },
+    aiDiscovery: payload.aiDiscovery || {
+      model: 'unavailable',
+      explainable: true,
+      suggestedCreators: 0,
+      sensitiveAttributeInference: false,
+    },
+  }
+}
+
+export async function fetchLiveCreatorDirectory(watchlist: string[] = [], forceFresh = false): Promise<Creator[]> {
+  return (await fetchLiveDiscovery(watchlist, forceFresh)).performers
 }
 
 /* ───────────────────────────────────────────────
@@ -163,6 +219,9 @@ function applyClientSort(
 ): MediaItem[] {
   const copy = [...items]
   switch (sort) {
+    case 'smart':
+      copy.sort((a, b) => (b.curationScore || 0) - (a.curationScore || 0))
+      break
     case 'oldest':
       copy.sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt))
       break
@@ -296,7 +355,7 @@ export async function searchMedia(
     return await fetchLiveMediaFallback({ ...filters, search: query }, 1, 24)
   } catch (liveError) {
     warnFallback(liveError, 'searchMedia live fallback')
-    return buildPaginatedResult([], 1, 24)
+    throw liveError
   }
 }
 

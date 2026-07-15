@@ -2,11 +2,11 @@
   "name": "Media Codex",
   "short_name": "MediaCodex",
   "description": "Discover and explore curated media content",
-  "start_url": "/",
+  "start_url": "/media",
   "display": "standalone",
   "background_color": "#0a0a0f",
   "theme_color": "#0a0a0f",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -22,8 +22,8 @@
     }
   ],
   "shortcuts": [
-    { "name": "Library", "url": "/#/media" },
-    { "name": "Search", "url": "/#/search" },
-    { "name": "Creators", "url": "/#/creators" }
+    { "name": "Library", "url": "/media" },
+    { "name": "Search", "url": "/search" },
+    { "name": "Creators", "url": "/creators" }
   ]
 }

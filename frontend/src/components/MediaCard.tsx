@@ -82,19 +82,11 @@ export default function MediaCard({
             onLoad={handleLoad}
             onError={handleError}
             loading="lazy"
+            decoding="async"
           />
-          {/* Blur-up placeholder */}
+          {/* Neutral placeholder keeps native lazy loading effective. */}
           {!loaded && (
-            <div
-              className="absolute inset-0 bg-[var(--bg-elevated)]"
-              style={{
-                backgroundImage: `url(${item.thumbnail})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                filter: 'blur(20px)',
-                transform: 'scale(1.1)',
-              }}
-            />
+            <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-[var(--bg-elevated)] via-[var(--bg-surface)] to-[var(--bg-elevated)]" aria-hidden="true" />
           )}
         </>
       ) : (
@@ -161,7 +153,7 @@ export default function MediaCard({
         <div
           className={cn(
             'absolute inset-0 flex items-center justify-center transition-all duration-300',
-            hovered ? 'opacity-100' : 'opacity-0'
+            hovered ? 'opacity-100' : 'opacity-70 md:opacity-0'
           )}
         >
           <div className="w-12 h-12 rounded-full bg-[var(--bg-overlay)] flex items-center justify-center backdrop-blur-sm">

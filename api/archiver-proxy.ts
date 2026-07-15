@@ -46,10 +46,19 @@ function safeRange(value: string | null): string | null | false {
   if (!value) return null
   const match = /^bytes=(\d*)-(\d*)$/i.exec(value.trim())
   if (!match || (!match[1] && !match[2])) return false
+  if (!match[1] && match[2]) {
+    const suffixLength = Number(match[2])
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0 || suffixLength > MAX_EXPLICIT_RANGE_BYTES) return false
+  }
   if (match[1] && match[2]) {
     const start = Number(match[1])
     const end = Number(match[2])
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start || end - start + 1 > MAX_EXPLICIT_RANGE_BYTES) return false
+  }
+  if (match[1] && !match[2]) {
+    const start = Number(match[1])
+    if (!Number.isSafeInteger(start) || start > Number.MAX_SAFE_INTEGER - MAX_EXPLICIT_RANGE_BYTES + 1) return false
+    return `bytes=${start}-${start + MAX_EXPLICIT_RANGE_BYTES - 1}`
   }
   return value.trim()
 }

@@ -1,18 +1,17 @@
-import { lazy, Suspense } from 'react'
-import { Routes, Route, useLocation } from 'react-router'
+import { lazy, Suspense, useState } from 'react'
+import { Navigate, Routes, Route, useLocation } from 'react-router'
 import { AnimatePresence, motion } from 'framer-motion'
 import Layout from './components/Layout'
 import ToastContainer from './components/Toast'
 import CommandPalette from './components/CommandPalette'
 import AmbientGlow from './components/AmbientGlow'
-import AdultGate from './components/AdultGate'
+import AdultGate, { hasAdultConfirmation } from './components/AdultGate'
 
 const HomePage = lazy(() => import('./pages/Home'))
 const ExplorePage = lazy(() => import('./pages/Explore'))
 const CreatorsPage = lazy(() => import('./pages/Creators'))
 const SearchPage = lazy(() => import('./pages/Search'))
 const SettingsPage = lazy(() => import('./pages/Settings').then((module) => ({ default: module.SettingsPage })))
-const AnalyticsPage = lazy(() => import('./pages/Analytics').then((module) => ({ default: module.AnalyticsPage })))
 
 function PageWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -29,10 +28,12 @@ function PageWrapper({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const location = useLocation()
+  const [adultConfirmed, setAdultConfirmed] = useState(hasAdultConfirmation)
+
+  if (!adultConfirmed) return <AdultGate onConfirm={() => setAdultConfirmed(true)} />
 
   return (
     <>
-      <AdultGate />
       <AmbientGlow />
       <Layout>
         <Suspense fallback={<div className="grid min-h-[50vh] place-items-center text-sm text-[var(--text-secondary)]">Loading workspace…</div>}>
@@ -79,21 +80,10 @@ export default function App() {
               }
             />
             <Route
-              path="/analytics"
-              element={
-                <PageWrapper>
-                  <AnalyticsPage />
-                </PageWrapper>
-              }
-            />
-            <Route
               path="/"
-              element={
-                <PageWrapper>
-                  <HomePage />
-                </PageWrapper>
-              }
+              element={<Navigate to="/media" replace />}
             />
+            <Route path="*" element={<Navigate to="/media" replace />} />
           </Routes>
         </AnimatePresence>
         </Suspense>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useNavigate } from 'react-router'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import {
@@ -7,7 +8,7 @@ import {
   type Creator,
   type MediaItem,
 } from '@/lib/mockData'
-import { fetchCategories, fetchLiveCreatorDirectory, fetchMedia } from '@/lib/api'
+import { fetchLiveDiscovery } from '@/lib/api'
 import { useQuery } from '@tanstack/react-query'
 import MediaCard from '@/components/MediaCard'
 import MediaDetail from '@/components/MediaDetail'
@@ -158,8 +159,8 @@ function CinematicHero({ items, onWatch }: { items: MediaItem[]; onWatch: (item:
 /* ───────────────────────────────────────────────
    Stories Rail
    ─────────────────────────────────────────────── */
-function StoriesRail({ creators }: { creators: Creator[] }) {
-  const storyCreators = useMemo(() => creators.slice(0, 8), [creators])
+function StoriesRail({ creators, onOpen }: { creators: Creator[]; onOpen: () => void }) {
+  const storyCreators = useMemo(() => creators.slice(0, 6), [creators])
 
   if (!storyCreators.length) return null
 
@@ -170,21 +171,15 @@ function StoriesRail({ creators }: { creators: Creator[] }) {
       <div className="absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-[var(--bg-base)] to-transparent z-10 pointer-events-none" />
 
       <div className="flex gap-4 overflow-x-auto hide-scrollbar px-2 py-2 scroll-snap-x mandatory">
-        {/* Live-source marker */}
-        <div className="flex flex-col items-center gap-1.5 shrink-0 scroll-snap-align-start">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-dashed border-[var(--border-medium)] flex items-center justify-center text-[var(--accent)]">
-            <Plus size={20} />
-          </div>
-          <span className="text-[10px] sm:text-[11px] text-[var(--text-secondary)]">Live</span>
-        </div>
-
         {storyCreators.map((creator, i) => (
-          <motion.div
+          <motion.button
             key={creator.id}
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: i * 0.05, duration: 0.4, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-            className="flex flex-col items-center gap-1.5 shrink-0 scroll-snap-align-start"
+            className="flex min-h-20 min-w-16 shrink-0 snap-start flex-col items-center gap-1.5 rounded-lg p-1"
+            onClick={onOpen}
+            aria-label={`Open creator directory at ${creator.name}`}
           >
             <div className={cn('p-[2px] sm:p-[3px] rounded-full', creator.storySeen ? 'story-ring-seen' : 'story-ring')}>
               <img
@@ -197,7 +192,7 @@ function StoriesRail({ creators }: { creators: Creator[] }) {
             <span className="text-[10px] sm:text-[11px] text-[var(--text-secondary)] max-w-[56px] sm:max-w-[64px] truncate">
               {creator.name}
             </span>
-          </motion.div>
+          </motion.button>
         ))}
       </div>
     </div>
@@ -238,7 +233,7 @@ function DiscoverabilityToolbar({
 
   return (
     <div
-      className="sticky top-14 z-30 -mx-4 px-4 py-2 flex items-center gap-3 overflow-x-auto hide-scrollbar border-b border-[var(--border-subtle)]"
+      className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-2 flex items-center gap-3 overflow-x-auto hide-scrollbar border-b border-[var(--border-subtle)]"
       style={{
         background: 'var(--bg-base)',
         backdropFilter: 'blur(12px)',
@@ -387,9 +382,10 @@ function FloatingNavigator({
    Home Page
    ─────────────────────────────────────────────── */
 export default function HomePage() {
+  const navigate = useNavigate()
   const [viewMode, setViewMode] = useState<ViewModeType>('grid')
   const [sort, setSort] = useState('Newest')
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({ 'Recently added': true })
   const [showSurprise, setShowSurprise] = useState(false)
   const [surpriseItem, setSurpriseItem] = useState<MediaItem | null>(null)
   const [scrollY, setScrollY] = useState(0)
@@ -409,34 +405,48 @@ export default function HomePage() {
   const creatorWatchlist = useAppStore((state) => state.creatorWatchlist)
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['media', 'home', sortValue, creatorWatchlist],
-    queryFn: () => fetchMedia({ sort: sortValue, watchlist: creatorWatchlist }, 1, 100),
+    queryKey: ['live-discovery', 'home', creatorWatchlist],
+    queryFn: () => fetchLiveDiscovery(creatorWatchlist),
     staleTime: 60_000,
     refetchInterval: 120_000,
     refetchOnWindowFocus: true,
   })
-  const { data: liveCategories } = useQuery({
-    queryKey: ['categories'],
-    queryFn: fetchCategories,
-  })
-  const { data: liveCreators = [] } = useQuery({
-    queryKey: ['live-creators', 'home', creatorWatchlist],
-    queryFn: () => fetchLiveCreatorDirectory(creatorWatchlist),
-    staleTime: 60_000,
-  })
-
-  const allItems = useMemo(() => data?.items ?? [], [data?.items])
+  const liveCreators = data?.performers ?? []
+  const liveCategories = useMemo<CategoryDef[]>(() => {
+    const counts = new Map<string, number>()
+    for (const item of data?.items ?? []) {
+      for (const tag of item.tags.slice(0, 6)) {
+        const normalized = tag.trim()
+        if (normalized) counts.set(normalized, (counts.get(normalized) || 0) + 1)
+      }
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 8)
+      .map(([name, count]) => ({ id: name.toLowerCase().replace(/\s+/g, '-'), name, count }))
+  }, [data?.items])
+  const allItems = useMemo(() => {
+    const items = [...(data?.items ?? [])]
+    if (sortValue === 'oldest') return items.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+    if (sortValue === 'az') return items.sort((a, b) => a.title.localeCompare(b.title))
+    if (sortValue === 'random') return items.sort(() => Math.random() - 0.5)
+    if (sortValue === 'mostViewed') return items.sort((a, b) => b.views - a.views)
+    if (sortValue === 'topRated') return items.sort((a, b) => (b.likes || 0) - (a.likes || 0))
+    return items.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+  }, [data?.items, sortValue])
   const filters = useAppStore((s) => s.filters)
   const likeCache = useAppStore((s) => s.likeCache)
+  const hiddenMedia = useAppStore((s) => s.hiddenMedia)
   const visibleItems = useMemo(() => {
-    if (filters.sourceType === 'video') return allItems.filter((item) => item.isVideo)
-    if (filters.sourceType === 'image') return allItems.filter((item) => !item.isVideo)
-    if (filters.sourceType === 'favorites') return allItems.filter((item) => likeCache[item.id] ?? item.isLiked)
-    if (filters.sourceType === 'smart') return [...allItems].sort((a, b) => (b.curationScore || 0) - (a.curationScore || 0))
-    if (filters.sourceType === 'highDemand') return allItems.filter((item) => (item.curationScore || 0) >= 65)
-    if (filters.sourceType === 'mostViewed') return [...allItems].sort((a, b) => b.views - a.views)
-    return allItems
-  }, [allItems, filters.sourceType, likeCache])
+    const available = allItems.filter((item) => !hiddenMedia.includes(item.id))
+    if (filters.sourceType === 'video') return available.filter((item) => item.isVideo)
+    if (filters.sourceType === 'image') return available.filter((item) => !item.isVideo)
+    if (filters.sourceType === 'favorites') return available.filter((item) => likeCache[item.id] ?? item.isLiked)
+    if (filters.sourceType === 'smart') return [...available].sort((a, b) => (b.curationScore || 0) - (a.curationScore || 0))
+    if (filters.sourceType === 'highDemand') return available.filter((item) => (item.curationScore || 0) >= 65)
+    if (filters.sourceType === 'mostViewed') return [...available].sort((a, b) => b.views - a.views)
+    return available
+  }, [allItems, filters.sourceType, hiddenMedia, likeCache])
 
   useEffect(() => {
     const onScroll = () => setScrollY(window.scrollY)
@@ -490,13 +500,13 @@ export default function HomePage() {
   const grouped = useMemo(() => {
     const map: Record<string, MediaItem[]> = {}
     map['Recently added'] = visibleItems
-    for (const cat of liveCategories ?? []) {
+    for (const cat of liveCategories) {
       map[cat.name] = visibleItems.filter((m) => m.category === cat.name || m.tags.includes(cat.name))
     }
     return map
   }, [liveCategories, visibleItems])
 
-  const categoryOrder = ['Recently added', ...(liveCategories ?? []).map((c) => c.name)]
+  const categoryOrder = ['Recently added', ...liveCategories.map((c) => c.name)]
     .filter((name, index, list) => list.indexOf(name) === index)
   const showFloatingNav = scrollY > 400
 
@@ -507,7 +517,7 @@ export default function HomePage() {
         <CinematicHero items={visibleItems} onWatch={handleOpenDetail} />
       </section>
 
-      <StoriesRail creators={liveCreators} />
+      <StoriesRail creators={liveCreators} onOpen={() => navigate('/creators')} />
 
       {/* Toolbar */}
       <DiscoverabilityToolbar
@@ -531,7 +541,8 @@ export default function HomePage() {
         <div className="space-y-8">
           {categoryOrder.map((catName) => {
             const items = grouped[catName] ?? []
-            const expanded = expandedCategories[catName] !== false // default open
+            const expanded = Boolean(expandedCategories[catName])
+            const renderedItems = items.slice(0, catName === 'Recently added' ? 30 : 18)
             return (
               <section key={catName} id={`cat-${catName}`}>
                 <CategoryHeader
@@ -549,7 +560,7 @@ export default function HomePage() {
                       />
                     ) : viewMode === 'grid' ? (
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 stagger-in">
-                        {items.map((item, i) => (
+                        {renderedItems.map((item) => (
                           <MediaCard
                             key={item.id}
                             item={item}
@@ -560,7 +571,7 @@ export default function HomePage() {
                       </div>
                     ) : viewMode === 'list' ? (
                       <div className="flex flex-col gap-2 stagger-in">
-                        {items.map((item) => (
+                        {renderedItems.map((item) => (
                           <div
                             key={item.id}
                             onClick={() => handleOpenDetail(item)}
@@ -583,7 +594,7 @@ export default function HomePage() {
                       </div>
                     ) : viewMode === 'mosaic' ? (
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 md:gap-4 stagger-in">
-                        {items.map((item, i) => (
+                        {renderedItems.map((item, i) => (
                           <MediaCard
                             key={item.id}
                             item={item}
@@ -596,7 +607,7 @@ export default function HomePage() {
                     ) : (
                       /* timeline */
                       <div className="flex flex-col gap-2 stagger-in">
-                        {items.map((item) => (
+                        {renderedItems.map((item) => (
                           <div
                             key={item.id}
                             onClick={() => handleOpenDetail(item)}
@@ -706,7 +717,7 @@ export default function HomePage() {
           scrollToCategory(name)
         }}
         visible={showFloatingNav}
-        categories={liveCategories ?? []}
+        categories={liveCategories}
       />
 
       {/* Media Detail Drawer */}

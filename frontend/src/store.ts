@@ -29,6 +29,19 @@ function containsEmail(value: string): boolean {
   return /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(value)
 }
 
+function sanitizeCreatorWatchlist(values: unknown): string[] {
+  if (!Array.isArray(values)) return DEFAULT_CREATOR_WATCHLIST
+  const unique = new Map<string, string>()
+  for (const raw of values) {
+    if (typeof raw !== 'string' || containsEmail(raw)) continue
+    const display = raw.trim().replace(/^@/, '').replace(/\s+/g, ' ').slice(0, 50)
+    const key = creatorKey(display)
+    if (key.length >= 2 && !unique.has(key)) unique.set(key, display)
+    if (unique.size >= 8) break
+  }
+  return [...unique.values()]
+}
+
 export interface Toast {
   id: string
   type: ToastType
@@ -330,11 +343,11 @@ export const useAppStore = create<AppState>()(
       setFontSize: (fontSize) => set({ fontSize }),
       reduceMotion: false,
       setReduceMotion: (reduceMotion) => set({ reduceMotion }),
-      autoplayVideos: true,
+      autoplayVideos: false,
       setAutoplayVideos: (autoplayVideos) => set({ autoplayVideos }),
       defaultQuality: 'auto',
       setDefaultQuality: (defaultQuality) => set({ defaultQuality }),
-      muteOnStart: false,
+      muteOnStart: true,
       setMuteOnStart: (muteOnStart) => set({ muteOnStart }),
       pictureInPicture: true,
       setPictureInPicture: (pictureInPicture) => set({ pictureInPicture }),
@@ -367,6 +380,11 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'media-codex-store',
+      version: 2,
+      migrate: (persisted) => {
+        const state = persisted as Partial<AppState>
+        return { ...state, creatorWatchlist: sanitizeCreatorWatchlist(state.creatorWatchlist) } as AppState
+      },
       partialize: (state) => ({
         theme: state.theme,
         sidebarCollapsed: state.sidebarCollapsed,

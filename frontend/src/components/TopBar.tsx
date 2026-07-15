@@ -4,7 +4,6 @@ import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import {
   Search,
-  Bell,
   Sun,
   Moon,
   Menu,
@@ -24,7 +23,6 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
   const toggleTheme = useAppStore((s) => s.toggleTheme)
   const theme = useAppStore((s) => s.theme)
   const toggleCommandPalette = useAppStore((s) => s.toggleCommandPalette)
-  const unreadCount = useAppStore((s) => s.unreadCount)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
   const setAppSearchQuery = useAppStore((s) => s.setSearchQuery)
 
@@ -74,7 +72,7 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
   return (
     <header
       className={cn(
-        'fixed top-0 right-0 z-40 flex items-center justify-between px-4 h-14',
+        'fixed top-0 right-0 z-40 flex items-end justify-between px-4 pb-2 h-[calc(3.5rem+env(safe-area-inset-top))]',
         'transition-all duration-200',
         scrolled
           ? 'bg-[var(--bg-base)]/80 backdrop-blur-xl border-b border-[var(--border-subtle)]'
@@ -135,7 +133,7 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
       <button
         className="md:hidden p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50 tap-highlight-none"
         aria-label="Search"
-        onClick={() => setCommandPaletteOpen(true)}
+        onClick={() => navigate('/search')}
       >
         <Search size={20} />
       </button>
@@ -143,24 +141,12 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
       {/* Right actions */}
       <div className="flex items-center gap-1">
         <button
-          className="relative p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50 transition-colors tap-highlight-none"
-          aria-label="Notifications"
-        >
-          <Bell size={18} />
-          {unreadCount > 0 && (
-            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-[var(--live-pulse)] animate-live-pulse" />
-          )}
-        </button>
-        <button
           onClick={toggleTheme}
           className="hidden md:flex p-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]/50 transition-colors tap-highlight-none"
           aria-label="Toggle theme"
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
-        <div className="w-8 h-8 rounded-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center text-xs font-semibold text-[var(--text-secondary)] ml-1 select-none">
-          U
-        </div>
       </div>
     </header>
   )
