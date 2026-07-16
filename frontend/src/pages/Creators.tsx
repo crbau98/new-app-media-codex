@@ -122,6 +122,9 @@ function CreatorDrawer({ creator, onClose }: { creator: Creator | null; onClose:
             exit={{ x: '100%' }}
             transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
             className="fixed inset-y-0 right-0 z-[101] w-full max-w-[540px] overflow-y-auto border-l border-[var(--border-subtle)] bg-[var(--bg-base)] p-5"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Creator ${creator.name}`}
           >
             <button onClick={onClose} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-[var(--bg-overlay)] text-white" aria-label="Close creator">
               <X size={17} />

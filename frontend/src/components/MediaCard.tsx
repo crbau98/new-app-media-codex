@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { memo, useState, useCallback, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import type { MediaItem } from '@/lib/mockData'
 import { Play, RefreshCw } from 'lucide-react'
@@ -12,7 +12,7 @@ interface MediaCardProps {
   onSelect?: (id: string) => void
 }
 
-export default function MediaCard({
+function MediaCard({
   item,
   aspectRatio = '4/5',
   className,
@@ -42,11 +42,10 @@ export default function MediaCard({
   return (
     <motion.div
       data-testid={isVideo ? 'video-tile' : 'media-tile'}
-      layout
       className={cn(
         'group relative rounded-[var(--radius-md)] overflow-hidden cursor-pointer',
         'border border-[var(--border-subtle)] shadow-sm',
-        'card-lift tile-zoom',
+        'card-lift tile-zoom media-card-virtual',
         selected && 'ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-[var(--bg-base)]',
         className
       )}
@@ -173,3 +172,5 @@ export default function MediaCard({
     </motion.div>
   )
 }
+
+export default memo(MediaCard)

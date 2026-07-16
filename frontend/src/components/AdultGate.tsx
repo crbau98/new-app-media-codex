@@ -21,14 +21,18 @@ export default function AdultGate({ onConfirm }: { onConfirm: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[1000] grid place-items-center bg-[#07070b]/95 p-5 backdrop-blur-xl" role="dialog" aria-modal="true" aria-labelledby="adult-gate-title">
-      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#111118] p-7 text-center shadow-2xl">
-        <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-[var(--accent-dim)] text-[var(--accent)]"><ShieldCheck size={26} /></div>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--accent)]">Private media workspace</p>
-        <h1 id="adult-gate-title" className="text-2xl font-bold tracking-tight text-white">For adults only</h1>
-        <p className="mt-3 text-sm leading-6 text-white/60">Media Codex may display explicit content. Continue only if you are at least 18 and legally permitted to view adult material where you live.</p>
-        <button autoFocus onClick={confirm} className="mt-7 min-h-12 w-full rounded-full bg-[var(--accent)] px-5 font-semibold text-white transition hover:bg-[var(--accent-hover)]">I’m 18 or older</button>
-        <p className="mt-4 text-xs text-white/35">Your confirmation stays on this device.</p>
+    <div className="adult-gate" role="dialog" aria-modal="true" aria-labelledby="adult-gate-title">
+      <div className="adult-gate-grid" aria-hidden="true" />
+      <div className="adult-gate-panel">
+        <div className="gate-orbit" aria-hidden="true">
+          <span /><span />
+          <div><ShieldCheck size={27} /></div>
+        </div>
+        <p className="signal-kicker">Private discovery observatory</p>
+        <h1 id="adult-gate-title">A space for adults.</h1>
+        <p className="adult-gate-copy">Media Codex may display explicit content. Continue only if you are at least 18 and legally permitted to view adult material where you live.</p>
+        <button autoFocus onClick={confirm} className="adult-gate-confirm">I’m 18 or older</button>
+        <p className="adult-gate-note"><ShieldCheck size={12} /> Confirmation stays privately on this device</p>
       </div>
     </div>
   )

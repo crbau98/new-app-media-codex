@@ -37,7 +37,7 @@ def test_db(temp_data_dir: Path):
 
 
 @pytest.fixture
-def app_client(test_db):
+def app_client(test_db, monkeypatch: pytest.MonkeyPatch):
     """Create a minimal FastAPI app with routers, no lifespan side effects."""
     from fastapi.testclient import TestClient
 
@@ -62,6 +62,17 @@ def app_client(test_db):
     import app.main as _main_module
     _main_module.db = test_db
 
+    # app.security may be imported before this module's environment defaults are
+    # applied (for example by a pytest plugin). Override the dependency's module
+    # settings explicitly so authenticated API tests do not depend on import
+    # order.
+    import app.security as _security_module
+    monkeypatch.setattr(
+        _security_module,
+        "settings",
+        SimpleNamespace(admin_token="test-token", environment="testing"),
+    )
+
     from app.api.items import router as items_router, browse_router as items_browse_router
     from app.api.search import router as search_router
     from app.api.export import router as export_router
@@ -85,6 +96,7 @@ def app_client(test_db):
         return {"status": "ok"}
 
     with TestClient(minimal_app, raise_server_exceptions=True) as client:
+        client.headers.update({"X-Admin-Token": "test-token"})
         yield client
 
 

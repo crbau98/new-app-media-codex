@@ -135,7 +135,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     db.set_notification_callback(_notify_callback)
 
-    posters_dir = Path(os.getenv("POSTERS_DIR") or (Path(os.getenv("DATABASE_PATH", "/app/data/research.db")).expanduser().parent / "posters"))
+    posters_dir = Path(
+        os.getenv("POSTERS_DIR")
+        or (settings.database_path.expanduser().parent / "posters")
+    )
     posters_dir.mkdir(parents=True, exist_ok=True)
     global _COMMIT_HASH
     _COMMIT_HASH = _resolve_commit_hash()
@@ -389,7 +392,13 @@ app.mount(
     name="cached-previews",
 )
 
-_FRONTEND_DIST = BASE_DIR / "static" / "dist"
+_PACKAGED_FRONTEND_DIST = BASE_DIR / "static" / "dist"
+_DEVELOPMENT_FRONTEND_DIST = BASE_DIR.parent / "frontend" / "dist"
+_FRONTEND_DIST = (
+    _PACKAGED_FRONTEND_DIST
+    if (_PACKAGED_FRONTEND_DIST / "index.html").exists()
+    else _DEVELOPMENT_FRONTEND_DIST
+)
 _FRONTEND_INDEX_CACHE: str | None = None
 _FRONTEND_INDEX_CACHE_MTIME_NS = 0
 _TEMPLATES = None

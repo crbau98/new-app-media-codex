@@ -103,6 +103,8 @@ export default function Layout({ children }: LayoutProps) {
         role="dialog"
         aria-modal="true"
         aria-label="Navigation menu"
+        aria-hidden={!mobileSidebarOpen}
+        inert={!mobileSidebarOpen}
       >
         <Navbar onClose={() => setMobileSidebarOpen(false)} />
       </div>

@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:budget": "npm run build && node scripts/check-performance-budget.mjs",
+    "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
+    "test:e2e": "NODE_PATH=./node_modules playwright test --config=../playwright.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -63,6 +66,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",

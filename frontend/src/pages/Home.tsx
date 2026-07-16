@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router'
 import { useAppStore } from '@/store'
@@ -24,137 +24,11 @@ import {
   Clock,
   Sparkles,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Shuffle,
   X,
 } from 'lucide-react'
 
-/* ───────────────────────────────────────────────
-   Cinematic Hero
-   ─────────────────────────────────────────────── */
-function CinematicHero({ items, onWatch }: { items: MediaItem[]; onWatch: (item: MediaItem) => void }) {
-  const featured = items.slice(0, 3)
-  const [index, setIndex] = useState(0)
-  const [_direction, setDirection] = useState(1)
-
-  useEffect(() => {
-    if (!featured.length) return
-    const timer = setInterval(() => {
-      setDirection(1)
-      setIndex((i) => (i + 1) % featured.length)
-    }, 6000)
-    return () => clearInterval(timer)
-  }, [featured.length])
-
-  const current = featured[index]
-  const goTo = (i: number) => {
-    setDirection(i > index ? 1 : -1)
-    setIndex(i)
-  }
-
-  if (!current) {
-    return (
-      <div className="mb-6 grid min-h-[200px] place-items-center rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-6 text-center">
-        <div>
-          <p className="text-base font-semibold text-[var(--text-primary)]">Connecting to live media…</p>
-          <p className="mt-2 text-sm text-[var(--text-secondary)]">Loading source-attributed public media. Design placeholders stay hidden.</p>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="relative w-full h-[200px] sm:h-[280px] md:h-[420px] rounded-[var(--radius-lg)] overflow-hidden mb-6">
-      {/* Background layers with crossfade */}
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.div
-          key={current.id}
-          initial={{ opacity: 0, scale: 1.05 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.8, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-          className="absolute inset-0"
-        >
-          <img
-            src={current.thumbnail}
-            alt=""
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-[rgba(3,3,5,0.6)] backdrop-blur-[40px]" />
-          <div
-            className="absolute inset-0"
-            style={{ boxShadow: 'var(--shadow-hero)' }}
-          />
-        </motion.div>
-      </AnimatePresence>
-
-      {/* Content */}
-      <div className="absolute inset-0 flex flex-col justify-end p-4 sm:p-6 md:p-8">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={current.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-            className="flex flex-col gap-2 sm:gap-3 max-w-xl"
-          >
-            <span className="eyebrow text-[var(--accent)] bg-[var(--accent-dim)] px-3 py-1 rounded-full w-fit text-[11px] sm:text-sm">
-              FEATURED
-            </span>
-            <h1 className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-[var(--text-primary)] line-clamp-2 leading-tight">
-              {current.title}
-            </h1>
-            <p className="text-xs sm:text-sm text-[var(--text-secondary)]">
-              {current.creator} • {current.duration || 'Photo'} • {current.source}
-            </p>
-            <div className="flex items-center gap-3 mt-1">
-              <button
-                className="btn-primary tap-highlight-none"
-                onClick={() => onWatch(current)}
-              >
-                <Play size={16} fill="white" /> Watch Now
-              </button>
-              {current.pageUrl && <a href={current.pageUrl} target="_blank" rel="noreferrer" className="px-3 sm:px-4 py-2 rounded-md border border-white/20 text-xs sm:text-sm text-white hover:bg-white/10 transition-colors tap-highlight-none">Open source</a>}
-            </div>
-          </motion.div>
-        </AnimatePresence>
-
-        {/* Navigation dots */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
-          {featured.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => goTo(i)}
-              className={cn(
-                'h-1.5 rounded-full transition-all duration-300',
-                i === index ? 'w-[18px] bg-[var(--accent)]' : 'w-1.5 bg-[var(--text-muted)]'
-              )}
-              aria-label={`Go to slide ${i + 1}`}
-            />
-          ))}
-        </div>
-
-        {/* Manual arrows (desktop hover) */}
-        <div className="hidden md:flex absolute inset-y-0 left-0 right-0 items-center justify-between px-4 opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
-          <button
-            onClick={() => goTo((index - 1 + featured.length) % featured.length)}
-            className="pointer-events-auto w-10 h-10 rounded-full bg-[var(--bg-overlay)] flex items-center justify-center text-white hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none"
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <button
-            onClick={() => goTo((index + 1) % featured.length)}
-            className="pointer-events-auto w-10 h-10 rounded-full bg-[var(--bg-overlay)] flex items-center justify-center text-white hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none"
-          >
-            <ChevronRight size={20} />
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+const ImmersiveHero = lazy(() => import('@/components/ImmersiveHero'))
 
 /* ───────────────────────────────────────────────
    Stories Rail
@@ -514,7 +388,15 @@ export default function HomePage() {
     <div ref={mainRef} className="space-y-6">
       {/* Hero */}
       <section className="animate-page-enter">
-        <CinematicHero items={visibleItems} onWatch={handleOpenDetail} />
+        <Suspense fallback={<div className="immersive-hero immersive-hero-empty" aria-busy="true"><p className="signal-kicker">Preparing discovery space</p></div>}>
+          <ImmersiveHero
+            items={visibleItems}
+            creators={liveCreators}
+            discovery={data}
+            onWatch={handleOpenDetail}
+            onExploreCreators={() => navigate('/creators')}
+          />
+        </Suspense>
       </section>
 
       <StoriesRail creators={liveCreators} onOpen={() => navigate('/creators')} />
@@ -544,7 +426,7 @@ export default function HomePage() {
             const expanded = Boolean(expandedCategories[catName])
             const renderedItems = items.slice(0, catName === 'Recently added' ? 30 : 18)
             return (
-              <section key={catName} id={`cat-${catName}`}>
+              <section key={catName} id={`cat-${catName}`} className="content-auto">
                 <CategoryHeader
                   name={catName}
                   count={items.length}
