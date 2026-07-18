@@ -48,7 +48,7 @@ async def sse_events(request: Request) -> StreamingResponse:
 
     Clients connect once and receive a stream of ``data: <json>\\n\\n`` frames.
     The connection stays open until the client disconnects.  A heartbeat
-    comment (``:``) is sent every 25 seconds so proxies don't time out.
+    comment (``:\"``) is sent every 25 seconds so proxies don't time out.
     """
     service = request.app.state.service
     queue: asyncio.Queue[dict] = asyncio.Queue()
