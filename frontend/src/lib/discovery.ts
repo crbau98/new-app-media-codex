@@ -1,4 +1,4 @@
-import type { MediaItem } from './mockData'
+import type { MediaItem } from './types'
 
 export type DiscoveryMode = 'balanced' | 'familiar' | 'adventurous'
 
@@ -12,8 +12,17 @@ export interface DiscoveryProfile {
   mode: DiscoveryMode
 }
 
-function key(value: string): string {
+/** Canonical lowercase key for a creator name or handle. */
+export function creatorKey(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+/**
+ * ONE follow-id scheme used by the Creators page, MediaDetail and the
+ * For-You ranker, so a Follow anywhere feeds recommendations everywhere.
+ */
+export function creatorFollowId(name: string): string {
+  return `creator-${creatorKey(name)}`
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -27,13 +36,13 @@ function ageHours(createdAt: string): number {
 
 function affinityReasons(item: MediaItem, profile: DiscoveryProfile): string[] {
   const reasons: string[] = []
-  const creatorKey = key(item.creator)
+  const key = creatorKey(item.creator)
   const matchingTags = item.tags
-    .filter((tag) => (profile.tagPreferences[key(tag)] || 0) > 0)
-    .sort((a, b) => (profile.tagPreferences[key(b)] || 0) - (profile.tagPreferences[key(a)] || 0))
+    .filter((tag) => (profile.tagPreferences[creatorKey(tag)] || 0) > 0)
+    .sort((a, b) => (profile.tagPreferences[creatorKey(b)] || 0) - (profile.tagPreferences[creatorKey(a)] || 0))
 
-  if (profile.followCache[`redgifs-${creatorKey}`]) reasons.push(`Because you follow @${item.creator}`)
-  else if ((profile.creatorPreferences[creatorKey] || 0) > 0) reasons.push(`More from @${item.creator}`)
+  if (profile.followCache[creatorFollowId(item.creator)]) reasons.push(`Because you follow @${item.creator}`)
+  else if ((profile.creatorPreferences[key] || 0) > 0) reasons.push(`More from @${item.creator}`)
   if (matchingTags.length) reasons.push(`Matches ${matchingTags.slice(0, 2).map((tag) => `#${tag}`).join(' and ')}`)
   if ((item.curationScore || 0) >= 65) reasons.push('Popular with viewers right now')
   if (ageHours(item.createdAt) <= 72) reasons.push('Recently published')
@@ -42,10 +51,10 @@ function affinityReasons(item: MediaItem, profile: DiscoveryProfile): string[] {
 }
 
 function scoreItem(item: MediaItem, profile: DiscoveryProfile): number {
-  const creatorKey = key(item.creator)
-  const tagAffinity = item.tags.reduce((sum, tag) => sum + (profile.tagPreferences[key(tag)] || 0), 0)
-  const creatorAffinity = profile.creatorPreferences[creatorKey] || 0
-  const followed = profile.followCache[`redgifs-${creatorKey}`] ? 1 : 0
+  const key = creatorKey(item.creator)
+  const tagAffinity = item.tags.reduce((sum, tag) => sum + (profile.tagPreferences[creatorKey(tag)] || 0), 0)
+  const creatorAffinity = profile.creatorPreferences[key] || 0
+  const followed = profile.followCache[creatorFollowId(item.creator)] ? 1 : 0
   const liked = profile.likeCache[item.id] ? 1 : 0
   const seen = profile.recentlyViewed.includes(item.id) ? 1 : 0
   const freshness = clamp(14 - Math.log2(ageHours(item.createdAt) + 1) * 2, 0, 14)
@@ -88,7 +97,7 @@ export function rankForYou(items: MediaItem[], profile: DiscoveryProfile): Media
     let bestAdjusted = Number.NEGATIVE_INFINITY
     for (let index = 0; index < remaining.length; index += 1) {
       const item = remaining[index]
-      const repeats = creatorCount.get(key(item.creator)) || 0
+      const repeats = creatorCount.get(creatorKey(item.creator)) || 0
       const penalty = repeats * (profile.mode === 'familiar' ? 5 : 14)
       const adjusted = (item.personalizedScore || 0) - penalty
       if (adjusted > bestAdjusted) {
@@ -98,8 +107,8 @@ export function rankForYou(items: MediaItem[], profile: DiscoveryProfile): Media
     }
     const [next] = remaining.splice(bestIndex, 1)
     ranked.push(next)
-    const creatorKey = key(next.creator)
-    creatorCount.set(creatorKey, (creatorCount.get(creatorKey) || 0) + 1)
+    const key = creatorKey(next.creator)
+    creatorCount.set(key, (creatorCount.get(key) || 0) + 1)
   }
   return ranked
 }
@@ -109,3 +118,24 @@ export function discoveryStrength(tagPreferences: Record<string, number>, creato
   return Math.min(100, Math.round(signals.reduce((sum, value) => sum + Math.abs(value), 0) * 7))
 }
 
+/** Compact metric formatting: 1.2k / 3.4m. */
+export function formatMetric(value = 0): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}m`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}k`
+  return String(value)
+}
+
+/** Relative "x ago" formatting for timestamps. */
+export function relativeTime(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return '—'
+  const timestamp = typeof value === 'number' ? value : Date.parse(value)
+  if (!Number.isFinite(timestamp)) return '—'
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000))
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d ago`
+  return `${Math.floor(days / 7)}w ago`
+}
