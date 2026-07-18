@@ -44,10 +44,17 @@ def _utcnow() -> str:
 
 
 def _run_queue_worker(app_state: Any, stop_event: threading.Event) -> None:
-    """Daemon thread: process capture_queue one entry at a time."""
+    """Daemon thread: process capture_queue one entry at a time.
+
+    Fully gated: when external crawls are disabled the worker idles and leaves
+    queued entries untouched (product guardrail — no external scraping).
+    """
     from app.api.performers import _run_performer_capture
     db = app_state.db
     while not stop_event.is_set():
+        if not getattr(app_state.settings, "enable_external_crawls", False):
+            stop_event.wait(30)
+            continue
         with db.connect() as conn:
             row = conn.execute(
                 """SELECT cq.id, cq.performer_id, p.username, p.display_name, p.platform
@@ -212,8 +219,9 @@ class ResearchService:
                     id="research-crawl",
                     replace_existing=True,
                 )
-            # Screenshot capture job - runs every 12 hours
-            if not self.scheduler.get_job("screenshot-capture"):
+            # Screenshot capture job - runs every 12 hours (external crawls only;
+            # registration is skipped entirely when crawls are disabled)
+            if self.settings.enable_external_crawls and not self.scheduler.get_job("screenshot-capture"):
                 self.scheduler.add_job(
                     self._run_screenshot_capture,
                     "interval",
@@ -222,17 +230,8 @@ class ResearchService:
                     replace_existing=True,
                     max_instances=1,
                 )
-            # Self-ping keepalive to prevent Render cold starts
-            if not self.scheduler.get_job("keepalive-ping"):
-                self.scheduler.add_job(
-                    self._keepalive_ping,
-                    "interval",
-                    minutes=10,
-                    id="keepalive-ping",
-                    replace_existing=True,
-                    max_instances=1,
-                    coalesce=True,
-                )
+            # NOTE: keep-alive is handled by the Render cron job hitting /healthz
+            # (see render.yaml); no in-app self-ping is scheduled here.
             # WAL checkpoint — keeps the WAL file from growing unbounded (1.4)
             if not self.scheduler.get_job("wal-checkpoint"):
                 self.scheduler.add_job(
@@ -333,42 +332,6 @@ class ResearchService:
                 return future.result()
         return self._run_crawl_sync()
 
-    def _ensure_archiver_performer(self, item: Any | None) -> int | None:
-        """Resolve a scraped creator to a durable performer row.
-
-        Archiver post authors are the strongest identity signal available and
-        should be attached during ingestion, not left for a fuzzy backfill.
-        """
-        if item is None:
-            return None
-        username = str(getattr(item, "author", "") or "").strip().lstrip("@")
-        if not username:
-            return None
-        existing = self.db.get_performer_by_username(username)
-        if existing:
-            return int(existing["id"])
-
-        metadata = item.metadata if isinstance(getattr(item, "metadata", None), dict) else {}
-        platform = str(metadata.get("service") or "onlyfans").strip().lower() or "onlyfans"
-        domain = str(getattr(item, "domain", "") or "").strip()
-        profile_url = f"https://{domain}/{platform}/user/{username}" if domain else None
-        try:
-            performer = self.db.add_performer(
-                username=username,
-                platform=platform,
-                display_name=username,
-                profile_url=profile_url,
-                avatar_url=(getattr(item, "image_url", "") or None),
-                tags=[str(getattr(item, "theme", "") or "male creator")],
-                discovered_via=f"{getattr(item, 'source_type', 'archiver')}_api",
-            )
-            return int(performer["id"])
-        except Exception:
-            # Another worker or an earlier alias may have inserted it between
-            # lookup and insert. Re-read before giving up attribution.
-            existing = self.db.get_performer_by_username(username)
-            return int(existing["id"]) if existing else None
-
     def _run_crawl_sync(self) -> dict[str, Any]:
         return asyncio.run(self._run_crawl_async())
 
@@ -389,7 +352,6 @@ class ResearchService:
             collect_instagram_theme,
             collect_justforfans_theme,
             collect_lpsg,
-            collect_male_video_archiver,
             collect_reddit,
             collect_spankbang_theme,
             collect_x,
@@ -422,7 +384,6 @@ class ResearchService:
                         "instagram": 0,
                         "fansly": 0,
                         "justforfans": 0,
-                        "male_archiver": 0,
                     },
                 )
 
@@ -433,13 +394,12 @@ class ResearchService:
                     ("reddit", collect_reddit),
                     ("x", collect_x),
                     ("lpsg", collect_lpsg),
-                    ("male_archiver", collect_male_video_archiver),
                 ):
                     self._emit({"type": "source_start", "source": source_key, "theme": theme.slug})
                     social_tasks.append(
                         asyncio.wait_for(
                             asyncio.to_thread(collector, session, self.settings, theme),
-                            timeout=90.0 if source_key == "male_archiver" else 30.0,
+                            timeout=30.0,
                         )
                     )
                     social_keys.append(source_key)
@@ -471,29 +431,10 @@ class ResearchService:
                         continue
                     source_items, source_images = result
                     self._record_source_metric(source_key, success=True, items=len(source_items) + len(source_images), duration=time.monotonic() - start_time)
-                    item_by_page = {item.url: item for item in source_items}
                     for image in source_images:
                         self.db.insert_image(cache_image_record(session, self.settings, image.__dict__))
                         notes["collected"]["images"] += 1
                         theme_notes["images"] += 1
-                        if source_key == "male_archiver" and image.image_url:
-                            owner = item_by_page.get(image.page_url)
-                            performer_id = self._ensure_archiver_performer(owner) if owner else None
-                            source_name = image.source_type.removesuffix("_image")
-                            try:
-                                self.db.insert_screenshot(
-                                    term=(owner.author if owner and owner.author else image.title),
-                                    source=source_name,
-                                    page_url=image.image_url,
-                                    local_path=None,
-                                    performer_id=performer_id,
-                                    source_url=image.image_url,
-                                    thumbnail_url=image.thumb_url or image.image_url,
-                                )
-                            except Exception as exc:
-                                notes["errors"].append(
-                                    f"{theme.slug}:{source_name}_image_insert:{exc}"
-                                )
                     for item in source_items:
                         record = item.to_record()
                         _, created = self.db.upsert_item(record, run_id)
@@ -515,9 +456,8 @@ class ResearchService:
                                     },
                                 ),
                             )
-                        if source_key in {"reddit", "male_archiver"}:
+                        if source_key == "reddit":
                             videos = item.metadata.get("videos") if isinstance(item.metadata, dict) else None
-                            performer_id = self._ensure_archiver_performer(item) if source_key == "male_archiver" else None
                             for video in videos or []:
                                 video_url = (video or {}).get("source_url")
                                 if not video_url:
@@ -531,7 +471,7 @@ class ResearchService:
                                         # using the post URL collapsed them into one.
                                         page_url=video_url,
                                         local_path=None,
-                                        performer_id=performer_id,
+                                        performer_id=None,
                                         source_url=video_url,
                                         thumbnail_url=item.image_url or None,
                                     )
@@ -589,19 +529,16 @@ class ResearchService:
                 session.close()
             self.lock.release()
 
-    @staticmethod
-    def _keepalive_ping() -> None:
-        """Ping the local healthz endpoint to prevent Render cold starts."""
-        try:
-            import requests
-
-            port = int(os.environ.get("PORT", 8000))
-            requests.get(f"http://127.0.0.1:{port}/healthz", timeout=5)
-        except Exception:
-            pass
-
     def _run_screenshot_capture(self) -> None:
-        """Run screenshot capture for explicit terms + per-performer targeted capture."""
+        """Run screenshot capture for explicit terms + per-performer targeted capture.
+
+        Fully gated behind ENABLE_EXTERNAL_CRAWLS: this job scrapes external
+        sites (DDG/Redgifs/tube sites) and must never run when external
+        crawls are disabled. The scheduler registration is skipped too.
+        """
+        if not self.settings.enable_external_crawls:
+            logger.info("service: screenshot capture skipped (external crawls disabled)")
+            return
         from app.sources.screenshot import capture_screenshots
         from app.api.performers import _run_performer_capture
         from copy import copy as _copy
@@ -634,7 +571,7 @@ class ResearchService:
                 if row["reddit_username"]:
                     performer_lookup[normalize_identity_alias(row["reddit_username"])] = row["id"]
 
-        # ── Phase 1: Term-based capture (TERM_QUERIES + CREATOR_QUERIES) ──────
+        # ── Phase 1: Term-based capture (TERM_QUERIES) ───────────────────────
         for result in capture_screenshots(image_dir, db=self.db, settings=settings):
             if result["ok"]:
                 performer_id = performer_lookup.get(normalize_identity_alias(result["term"]))
