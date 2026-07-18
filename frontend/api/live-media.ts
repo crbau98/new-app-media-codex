@@ -55,6 +55,7 @@ function consumeScanBudget(key: string): boolean {
 
 function clientIp(req: Request): string {
   const forwarded = req.headers.get('x-forwarded-for') || ''
+  // Trust the closest proxy's appended client view, not the spoofable left-most entry.
   const chain = forwarded.split(',').map((value) => value.trim()).filter(Boolean)
   return chain[chain.length - 1] || req.headers.get('x-real-ip') || 'unknown'
 }
