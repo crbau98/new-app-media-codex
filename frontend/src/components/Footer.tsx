@@ -1,7 +1,9 @@
 export default function Footer() {
   return (
-    <footer className="py-8 px-6 text-center text-[12px] text-[var(--text-muted)] border-t border-[var(--border-subtle)]">
-      <p>Media Codex — Curated with care.</p>
+    <footer className="border-t border-line px-6 py-8">
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">
+        Codex — after-hours cinema archive · 18+ · all media source-attributed
+      </p>
     </footer>
   )
 }

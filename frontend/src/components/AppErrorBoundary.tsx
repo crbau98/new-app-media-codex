@@ -1,34 +1,53 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Component, type ReactNode } from 'react'
+import { AlertTriangle, RefreshCw } from 'lucide-react'
 
 interface Props {
   children: ReactNode
+  fallback?: ReactNode
+  onError?: (error: Error, errorInfo: React.ErrorInfo) => void
 }
 
 interface State {
-  failed: boolean
+  hasError: boolean
+  error: Error | null
 }
 
 export default class AppErrorBoundary extends Component<Props, State> {
-  state: State = { failed: false }
-
-  static getDerivedStateFromError(): State {
-    return { failed: true }
+  constructor(props: Props) {
+    super(props)
+    this.state = { hasError: false, error: null }
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('[app] unrecoverable render error', { message: error.message, componentStack: info.componentStack })
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('AppErrorBoundary caught an error:', error, errorInfo)
+    this.props.onError?.(error, errorInfo)
+  }
+
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null })
   }
 
   render() {
-    if (!this.state.failed) return this.props.children
-    return (
-      <main className="grid min-h-[100dvh] place-items-center bg-[#0a0a0f] p-6 text-center text-white">
-        <div className="max-w-sm">
-          <h1 className="text-xl font-semibold">Media Codex needs a quick refresh</h1>
-          <p className="mt-3 text-sm leading-6 text-white/60">The app may have updated while it was open. Your on-device preferences are preserved.</p>
-          <button onClick={() => window.location.reload()} className="mt-6 min-h-12 rounded-full bg-[#f178a9] px-5 font-semibold text-white">Reload app</button>
+    if (this.state.hasError) {
+      if (this.props.fallback) return <>{this.props.fallback}</>
+      return (
+        <div className="empty-state-panel min-h-[400px]" role="alert">
+          <AlertTriangle size={16} strokeWidth={1.75} className="text-error" aria-hidden="true" />
+          <h2 className="font-mono text-xs font-medium uppercase tracking-[0.12em] text-ink">Something went wrong</h2>
+          <p className="max-w-md text-[13px] text-ink-2">
+            {this.state.error?.message || 'An unexpected error occurred'}
+          </p>
+          <button onClick={this.handleRetry} className="btn-primary mt-1">
+            <RefreshCw size={14} strokeWidth={1.75} aria-hidden="true" />
+            Try again
+          </button>
         </div>
-      </main>
-    )
+      )
+    }
+    return <>{this.props.children}</>
   }
 }
