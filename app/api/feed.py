@@ -9,6 +9,18 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 router = APIRouter(prefix="/api", tags=["feed"])
 
+# The screenshots table has no created_at or preview_url columns — its timestamp
+# is captured_at and its stored image is thumbnail_url. Map the feed's expected
+# keys onto the real columns so the queries run (previously every screenshot
+# feed endpoint 500'd with "no such column: s.created_at").
+_FEED_SHOT_COLUMNS = (
+    "s.id, s.term, s.source, s.source_url, s.local_path, s.thumbnail_url, "
+    "s.thumbnail_url AS preview_url, s.page_url, s.performer_id, s.rating, "
+    "s.ai_summary, s.ai_tags, s.captured_at AS created_at, "
+    "s.likes_count, s.views_count, s.comments_count, "
+    "p.username as performer_username, p.avatar_url as performer_avatar"
+)
+
 
 def _compute_trending_score(
     likes: int,
@@ -27,7 +39,9 @@ def _compute_trending_score(
         dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
     except Exception:
         dt = datetime.now(timezone.utc)
-    hours_ago = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+    # Clamp at 0: a future/clock-skewed created_at would otherwise produce a
+    # negative age and an exponentially INFLATED score (decay > 1).
+    hours_ago = max(0.0, (datetime.now(timezone.utc) - dt).total_seconds() / 3600)
     decay = 0.5 ** (hours_ago / half_life_hours)
     raw = likes * 3 + views * 1 + comments * 5 + rating * 2
     return raw * decay
@@ -63,22 +77,23 @@ def get_trending_feed(
 
         where_clause = " AND ".join(where_parts)
 
+        # Fetch ALL matching rows (ordered for deterministic ties) and score them
+        # in Python. Previously SQL applied LIMIT/OFFSET to created_at-ordered
+        # rows and Python then re-sorted by score, so offset pages were not a
+        # coherent score ordering and `total` was just the page size.
         rows = conn.execute(
             f"""
-            SELECT s.id, s.term, s.source, s.source_url, s.local_path, s.thumbnail_url,
-                   s.preview_url, s.page_url, s.performer_id, s.rating, s.ai_summary,
-                   s.ai_tags, s.created_at, s.likes_count, s.views_count, s.comments_count,
-                   p.username as performer_username, p.avatar_url as performer_avatar
+            SELECT {_FEED_SHOT_COLUMNS}
             FROM screenshots s
             LEFT JOIN performers p ON s.performer_id = p.id
             WHERE {where_clause}
-            ORDER BY s.created_at DESC
-            LIMIT ? OFFSET ?
+            ORDER BY s.captured_at DESC, s.id DESC
             """,
-            (*params, limit * 3, offset),
+            params,
         ).fetchall()
 
-    # Compute trending score and sort in Python
+    # Score every match, sort by score (stable: created_at/id order breaks ties),
+    # then paginate the score-ordered list and report the real total.
     scored = []
     for row in rows:
         score = _compute_trending_score(
@@ -91,11 +106,12 @@ def get_trending_feed(
         scored.append((score, dict(row)))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    results = [item for _, item in scored[:limit]]
+    total = len(scored)
+    results = [item for _, item in scored[offset : offset + limit]]
 
     return {
         "screenshots": results,
-        "total": len(results),
+        "total": total,
         "offset": offset,
         "limit": limit,
         "algorithm": "trending",
@@ -115,24 +131,21 @@ def get_popular_feed(
     params: list[Any] = []
 
     if period == "day":
-        date_filter = "AND s.created_at >= datetime('now', '-1 day')"
+        date_filter = "AND s.captured_at >= datetime('now', '-1 day')"
     elif period == "week":
-        date_filter = "AND s.created_at >= datetime('now', '-7 days')"
+        date_filter = "AND s.captured_at >= datetime('now', '-7 days')"
     elif period == "month":
-        date_filter = "AND s.created_at >= datetime('now', '-30 days')"
+        date_filter = "AND s.captured_at >= datetime('now', '-30 days')"
 
     with db.connect() as conn:
         rows = conn.execute(
             f"""
-            SELECT s.id, s.term, s.source, s.source_url, s.local_path, s.thumbnail_url,
-                   s.preview_url, s.page_url, s.performer_id, s.rating, s.ai_summary,
-                   s.ai_tags, s.created_at, s.likes_count, s.views_count, s.comments_count,
-                   p.username as performer_username, p.avatar_url as performer_avatar,
+            SELECT {_FEED_SHOT_COLUMNS},
                    COALESCE(s.likes_count, 0) + COALESCE(s.views_count, 0) + COALESCE(s.comments_count, 0) as engagement
             FROM screenshots s
             LEFT JOIN performers p ON s.performer_id = p.id
             WHERE s.performer_id IS NOT NULL {date_filter}
-            ORDER BY engagement DESC, s.created_at DESC
+            ORDER BY engagement DESC, s.captured_at DESC
             LIMIT ? OFFSET ?
             """,
             (limit, offset),
@@ -178,14 +191,11 @@ def get_following_feed(
         placeholders = ",".join("?" * len(performer_ids))
         rows = conn.execute(
             f"""
-            SELECT s.id, s.term, s.source, s.source_url, s.local_path, s.thumbnail_url,
-                   s.preview_url, s.page_url, s.performer_id, s.rating, s.ai_summary,
-                   s.ai_tags, s.created_at, s.likes_count, s.views_count, s.comments_count,
-                   p.username as performer_username, p.avatar_url as performer_avatar
+            SELECT {_FEED_SHOT_COLUMNS}
             FROM screenshots s
             LEFT JOIN performers p ON s.performer_id = p.id
             WHERE s.performer_id IN ({placeholders})
-            ORDER BY s.created_at DESC
+            ORDER BY s.captured_at DESC
             LIMIT ? OFFSET ?
             """,
             (*performer_ids, limit, offset),
@@ -267,15 +277,12 @@ def get_for_you_feed(
 
         rows = conn.execute(
             f"""
-            SELECT s.id, s.term, s.source, s.source_url, s.local_path, s.thumbnail_url,
-                   s.preview_url, s.page_url, s.performer_id, s.rating, s.ai_summary,
-                   s.ai_tags, s.created_at, s.likes_count, s.views_count, s.comments_count,
-                   p.username as performer_username, p.avatar_url as performer_avatar,
+            SELECT {_FEED_SHOT_COLUMNS},
                    {order_by} as rec_score
             FROM screenshots s
             LEFT JOIN performers p ON s.performer_id = p.id
             WHERE {where_clause}
-            ORDER BY rec_score DESC, s.created_at DESC
+            ORDER BY rec_score DESC, s.captured_at DESC
             LIMIT ? OFFSET ?
             """,
             (*params, limit, offset),
