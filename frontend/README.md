@@ -23,10 +23,11 @@ frontend/
 ```
 
 The app is fed by a single edge function, `POST /api/live-media`, which aggregates
-public sources (Redgifs, X, Tumblr, DuckDuckGo) into one payload: media items,
-creator directory entries, per-source health, AI suggestions, and web-discovery
-leads. The client treats every field beyond `items`/`performers` as optional and
-renders source state honestly (connected / not-configured / limited / error / blocked).
+public sources (Redgifs, X, Tumblr, DuckDuckGo, SerpApi, Firecrawl) into one
+payload: media items, creator directory entries, per-source health, AI suggestions,
+and web-discovery leads. The client treats every field beyond `items`/`performers`
+as optional and renders source state honestly (connected / not-configured / limited /
+error / blocked).
 
 Deploy topology: the static client and the edge function deploy together on Vercel.
 The older FastAPI backend on Render is only used as a stream-recovery fallback for
@@ -54,3 +55,28 @@ npm run lint          # eslint
 "After-hours cinema archive": warm near-black canvas, off-white ink, one heat-coral
 accent, film grain, hairlines, mono metadata. Dark is primary; light derives by
 inversion. See `src/index.css` for the token set.
+
+## Discovery integrations
+
+All integrations are **optional** and **server-side only** (never prefixed `VITE_`).
+Copy `.env.example` to `.env.local` and populate the keys you have.
+**Rotate any key immediately if it is ever exposed or committed.**
+
+| Env var | Source | What it enables |
+|---|---|---|
+| `X_BEARER_TOKEN` | [developer.twitter.com](https://developer.twitter.com) | X/Twitter public-post photos and videos via official API; watchlist queries + bounded open search |
+| `TUMBLR_API_KEY` | [tumblr.com/oauth/apps](https://www.tumblr.com/oauth/apps) | Tumblr public tagged-post photos |
+| `GOOGLE_CSE_API_KEY` + `GOOGLE_CSE_ID` | [programmablesearchengine.google.com](https://programmablesearchengine.google.com) | Google Programmable Search licensed-image profile leads |
+| `SERPAPI_API_KEY` | [serpapi.com](https://serpapi.com) | Google Images discovery (source-attributed photo leads) and DuckDuckGo profile/post leads via SerpApi |
+| `FIRECRAWL_API_KEY` | [firecrawl.dev](https://www.firecrawl.dev) | OG metadata enrichment (title, preview thumbnail, canonical URL) for public creator profile pages |
+
+### Rights and legal boundaries
+
+- **Public, source-attributed only.** Every item links back to its origin.
+- **No subscription mirrors.** Coomer, Kemono, and equivalent paywall-mirror domains are blocked at the query and URL level.
+- **No login/paywall bypass.** Firecrawl is called only on public-profile URLs; it is never pointed at paywalled or login-required pages.
+- **No media rehosting.** Images from SerpApi are third-party browser-rendered URLs (`referrerpolicy=no-referrer`); they are never proxied or persisted by this server.
+- **No robots.txt bypass.** Firecrawl respects robots.txt by default; no override flags are used.
+- **No identity inference.** Scope and exclusion signals are content-based (tags, text). No appearance, ethnicity, or sensitive-trait inference is performed.
+- **Key rotation.** Treat any accidentally committed or chat-pasted API key as compromised. Rotate it immediately at the respective provider dashboard and update Vercel environment variables.
+
