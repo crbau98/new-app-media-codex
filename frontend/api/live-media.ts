@@ -55,7 +55,10 @@ function consumeScanBudget(key: string): boolean {
 
 function clientIp(req: Request): string {
   const forwarded = req.headers.get('x-forwarded-for') || ''
-  return forwarded.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
+  // Match the backend's trusted-proxy expectation: use the closest proxy's
+  // right-most entry, not the left-most client-provided value.
+  const chain = forwarded.split(',').map((value) => value.trim()).filter(Boolean)
+  return chain[chain.length - 1] || req.headers.get('x-real-ip') || 'unknown'
 }
 
 type RedgifsItem = {
@@ -721,7 +724,10 @@ export default async function handler(req: Request): Promise<Response> {
         sourcesConnected: Number(!redgifsError) + additional.statuses.filter((source) => source.state === 'connected').length,
         creatorsDiscovered: performers.length,
       },
-      watchlist: { matched: [...new Set(items.filter((item) => item.isWatchedCreator).map((item) => item.creator))] },
+      watchlist: {
+        requested: watchlist,
+        matched: [...new Set(items.filter((item) => item.isWatchedCreator).map((item) => item.creator))],
+      },
       aiDiscovery: {
         model: aiResult.model,
         state: aiResult.state === 'model' ? 'ok' : aiResult.state,
