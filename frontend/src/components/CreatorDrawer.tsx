@@ -6,6 +6,7 @@ import { creatorFollowId, creatorKey, formatMetric, relativeTime } from '@/lib/d
 import { useAppStore } from '@/store'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import MediaDetail from './MediaDetail'
+import MediaImage from './MediaImage'
 import { cn } from '@/lib/utils'
 
 const easeOut = [0.16, 1, 0.3, 1] as [number, number, number, number]
@@ -127,7 +128,14 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
           >
             {/* Cover */}
             <div className="relative h-36 shrink-0 overflow-hidden bg-sunken">
-              {media[0] && <img src={media[0].thumbnail} alt="" className="h-full w-full object-cover opacity-40" />}
+              {media[0] && (
+                <MediaImage
+                  sources={media[0].isVideo ? [media[0].thumbnail] : [media[0].thumbnail, media[0].mediaUrl]}
+                  alt=""
+                  className="h-full w-full object-cover opacity-40"
+                  skeletonClassName="h-full w-full"
+                />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-canvas to-transparent" aria-hidden="true" />
               <button
                 onClick={onClose}
@@ -269,8 +277,13 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
                         className="block text-left tap-highlight-none"
                         aria-label={`Open ${item.title}`}
                       >
-                        <span className="block aspect-[2/3] overflow-hidden rounded-md border border-line bg-sunken">
-                          <img src={item.thumbnail} alt="" loading="lazy" className="h-full w-full object-cover" />
+                        <span className="relative block aspect-[2/3] overflow-hidden rounded-md border border-line bg-sunken">
+                          <MediaImage
+                            sources={item.isVideo ? [item.thumbnail] : [item.thumbnail, item.mediaUrl]}
+                            alt=""
+                            className="absolute inset-0 h-full w-full object-cover"
+                            skeletonClassName="absolute inset-0"
+                          />
                         </span>
                         <span className="mt-1.5 block truncate font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">
                           {item.source} · {relativeTime(item.createdAt)}

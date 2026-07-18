@@ -2,6 +2,7 @@ import { memo, useState, useCallback } from 'react'
 import { Play, RefreshCw } from 'lucide-react'
 import type { MediaItem } from '@/lib/types'
 import { relativeTime } from '@/lib/discovery'
+import MediaImage from '@/components/MediaImage'
 import { cn } from '@/lib/utils'
 
 interface MediaCardProps {
@@ -16,15 +17,18 @@ interface MediaCardProps {
  * hairline + slight brightness — siblings dim via the parent `.media-grid`.
  */
 function MediaCard({ item, aspectRatio = '2/3', className, onSelect }: MediaCardProps) {
-  const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
 
   const handleRetry = useCallback(() => {
     setError(false)
-    setLoaded(false)
     setRetryKey((value) => value + 1)
   }, [])
+
+  // Cards stay thumbnail-first for speed. Photos may fall back to the full-size
+  // public media URL when a provider thumbnail is missing or temporarily 404s;
+  // videos never use a stream URL as an <img> fallback.
+  const imageSources = item.isVideo ? [item.thumbnail] : [item.thumbnail, item.mediaUrl]
 
   return (
     <button
@@ -36,22 +40,14 @@ function MediaCard({ item, aspectRatio = '2/3', className, onSelect }: MediaCard
     >
       <div className="relative overflow-hidden rounded-md bg-sunken" style={{ aspectRatio }}>
         {!error ? (
-          <>
-            <img
-              key={retryKey}
-              src={item.thumbnail}
-              alt=""
-              className={cn(
-                'media-card-img absolute inset-0 h-full w-full object-cover',
-                loaded ? 'opacity-100' : 'opacity-0'
-              )}
-              onLoad={() => setLoaded(true)}
-              onError={() => setError(true)}
-              loading="lazy"
-              decoding="async"
-            />
-            {!loaded && <div className="absolute inset-0 skeleton-tile rounded-none" aria-hidden="true" />}
-          </>
+          <MediaImage
+            sources={imageSources}
+            alt=""
+            retryToken={retryKey}
+            className="media-card-img absolute inset-0 h-full w-full object-cover transition-opacity duration-200"
+            skeletonClassName="absolute inset-0"
+            onExhausted={() => setError(true)}
+          />
         ) : (
           <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-ink-3">
             <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
