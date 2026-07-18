@@ -242,7 +242,7 @@ function VideoPlayer({ item }: { item: MediaItem }) {
         autoPlay={autoplay}
         muted={muteOnStart}
         disablePictureInPicture={!pictureInPicture}
-        crossOrigin={sameOrigin ? 'anonymous' : undefined}
+        crossOrigin={sameOrigin ? undefined : 'anonymous'}
         onLoadedData={handleReady}
         onCanPlay={handleReady}
         onPlaying={handleReady}
