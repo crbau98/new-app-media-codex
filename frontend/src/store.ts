@@ -1,16 +1,12 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { DiscoveryMode } from '@/lib/discovery'
+import { creatorKey, type DiscoveryMode } from '@/lib/discovery'
 
 export type Theme = 'dark' | 'light' | 'auto'
-export type ViewMode = 'images' | 'explore' | 'creators' | 'search' | 'settings' | 'analytics'
 export type GridDensity = 'compact' | 'normal' | 'spacious'
-export type ToastType = 'success' | 'error' | 'info' | 'achievement'
-export type AccentColor = 'rose' | 'purple' | 'teal' | 'amber' | 'blue' | 'green'
+export type ToastType = 'success' | 'error' | 'info'
 export type FontSize = 'small' | 'default' | 'large'
-export type VideoQuality = 'auto' | '720p' | '1080p' | '4K'
-export type PreferredPlayer = 'inline' | 'lightbox' | 'external'
-export type DigestFrequency = 'realtime' | 'daily' | 'weekly' | 'never'
+export type VideoQuality = 'auto' | '720p' | '1080p'
 export type DiscoveryFeedback = 'view' | 'more' | 'less' | 'hide'
 
 export interface DiscoverySignalItem {
@@ -19,18 +15,27 @@ export interface DiscoverySignalItem {
   tags: string[]
 }
 
-export const DEFAULT_CREATOR_WATCHLIST = ['Jakipz', 'Christian Hogue', 'Michael Yerger', 'SebastianCoxxx']
+export interface Toast {
+  id: string
+  type: ToastType
+  title: string
+  message?: string
+}
 
-function creatorKey(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+export interface Filters {
+  search: string
+  sourceType: string | null
+  sort: 'newest' | 'oldest' | 'topRated' | 'az' | 'random' | 'mostViewed'
+  tag: string | null
+  category: string | null
 }
 
 function containsEmail(value: string): boolean {
   return /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(value)
 }
 
-function sanitizeCreatorWatchlist(values: unknown): string[] {
-  if (!Array.isArray(values)) return DEFAULT_CREATOR_WATCHLIST
+export function sanitizeCreatorWatchlist(values: unknown): string[] {
+  if (!Array.isArray(values)) return []
   const unique = new Map<string, string>()
   for (const raw of values) {
     if (typeof raw !== 'string' || containsEmail(raw)) continue
@@ -42,50 +47,16 @@ function sanitizeCreatorWatchlist(values: unknown): string[] {
   return [...unique.values()]
 }
 
-export interface Toast {
-  id: string
-  type: ToastType
-  title: string
-  message?: string
-}
-
-export interface Notification {
-  id: string
-  title: string
-  message: string
-  read: boolean
-  createdAt: string
-}
-
-export interface Filters {
-  search: string
-  sourceType: string | null
-  sort: 'newest' | 'oldest' | 'topRated' | 'az' | 'random' | 'mostViewed'
-  tag: string | null
-  category: string | null
-}
-
 interface AppState {
-  // Theme
+  // Theme (DOM application lives in Layout + the pre-hydration script)
   theme: Theme
   toggleTheme: () => void
   setTheme: (theme: Theme) => void
-
-  // Active view
-  activeView: ViewMode
-  setActiveView: (view: ViewMode) => void
 
   // Sidebar
   sidebarCollapsed: boolean
   toggleSidebar: () => void
   setSidebarCollapsed: (collapsed: boolean) => void
-
-  // Notifications
-  notifications: Notification[]
-  unreadCount: number
-  addNotification: (n: Omit<Notification, 'id' | 'read' | 'createdAt'>) => void
-  markNotificationRead: (id: string) => void
-  markAllRead: () => void
 
   // Toasts
   toasts: Toast[]
@@ -96,14 +67,10 @@ interface AppState {
   searchQuery: string
   setSearchQuery: (q: string) => void
 
-  // Filters
+  // Filters (intentionally NOT persisted — fresh session, fresh filters)
   filters: Filters
   setFilters: (f: Partial<Filters>) => void
   resetFilters: () => void
-
-  // Selected item
-  selectedItemId: string | null
-  setSelectedItemId: (id: string | null) => void
 
   // Recently viewed
   recentlyViewed: string[]
@@ -113,11 +80,12 @@ interface AppState {
   likeCache: Record<string, boolean>
   toggleLike: (id: string) => void
 
-  // Follow cache
+  // Follow cache — ids use the unified `creator-<canonical>` scheme
   followCache: Record<string, boolean>
   toggleFollow: (id: string) => void
 
-  // Creator radar: user-curated public-source lookups
+  // Creator radar: user-curated public-source lookups. Empty by default —
+  // the Creators page onboards the user into building it.
   creatorWatchlist: string[]
   addCreatorToWatchlist: (creator: string) => void
   removeCreatorFromWatchlist: (creator: string) => void
@@ -140,13 +108,7 @@ interface AppState {
   gridDensity: GridDensity
   setGridDensity: (d: GridDensity) => void
 
-  // Media creator filter
-  mediaCreatorFilter: string | null
-  setMediaCreatorFilter: (id: string | null) => void
-
-  // ── Settings ──
-  accentColor: AccentColor
-  setAccentColor: (c: AccentColor) => void
+  // Settings
   fontSize: FontSize
   setFontSize: (s: FontSize) => void
   reduceMotion: boolean
@@ -159,32 +121,9 @@ interface AppState {
   setMuteOnStart: (v: boolean) => void
   pictureInPicture: boolean
   setPictureInPicture: (v: boolean) => void
-  preferredPlayer: PreferredPlayer
-  setPreferredPlayer: (p: PreferredPlayer) => void
-  notificationsEnabled: boolean
-  setNotificationsEnabled: (v: boolean) => void
-  notifyNewMedia: boolean
-  setNotifyNewMedia: (v: boolean) => void
-  notifyCreatorUpdates: boolean
-  setNotifyCreatorUpdates: (v: boolean) => void
-  notifyTrending: boolean
-  setNotifyTrending: (v: boolean) => void
-  notifyCrawlCompleted: boolean
-  setNotifyCrawlCompleted: (v: boolean) => void
-  quietHoursStart: string
-  setQuietHoursStart: (v: string) => void
-  quietHoursEnd: string
-  setQuietHoursEnd: (v: string) => void
-  privateProfile: boolean
-  setPrivateProfile: (v: boolean) => void
-  hideActivityStatus: boolean
-  setHideActivityStatus: (v: boolean) => void
-  saveSearchHistory: boolean
-  setSaveSearchHistory: (v: boolean) => void
-  trackRecentlyViewed: boolean
-  setTrackRecentlyViewed: (v: boolean) => void
-  offlineCache: boolean
-  setOfflineCache: (v: boolean) => void
+
+  // Full local wipe (Delete Account)
+  wipeLocalData: () => void
 }
 
 const initialFilters: Filters = {
@@ -195,66 +134,53 @@ const initialFilters: Filters = {
   category: null,
 }
 
+/** Every persisted/transient data field at its factory default. */
+function defaultDataState() {
+  return {
+    theme: 'dark' as Theme,
+    sidebarCollapsed: false,
+    toasts: [] as Toast[],
+    searchQuery: '',
+    filters: { ...initialFilters },
+    recentlyViewed: [] as string[],
+    likeCache: {} as Record<string, boolean>,
+    followCache: {} as Record<string, boolean>,
+    creatorWatchlist: [] as string[],
+    tagPreferences: {} as Record<string, number>,
+    creatorPreferences: {} as Record<string, number>,
+    hiddenMedia: [] as string[],
+    discoveryMode: 'balanced' as DiscoveryMode,
+    commandPaletteOpen: false,
+    gridDensity: 'normal' as GridDensity,
+    fontSize: 'default' as FontSize,
+    reduceMotion: false,
+    autoplayVideos: false,
+    defaultQuality: 'auto' as VideoQuality,
+    muteOnStart: true,
+    pictureInPicture: true,
+  }
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
-      theme: 'dark',
-      toggleTheme: () =>
-        set((s) => {
-          const next = s.theme === 'dark' ? 'light' : 'dark'
-          document.documentElement.setAttribute('data-theme', next)
-          return { theme: next }
-        }),
-      setTheme: (theme) => {
-        let resolved = theme
-        if (theme === 'auto') {
-          resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-        }
-        document.documentElement.setAttribute('data-theme', resolved)
-        set({ theme })
+      ...defaultDataState(),
+
+      toggleTheme: () => {
+        const current = get().theme
+        const resolved = current === 'auto'
+          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : current
+        set({ theme: resolved === 'dark' ? 'light' : 'dark' })
       },
+      setTheme: (theme) => set({ theme }),
 
-      activeView: 'images',
-      setActiveView: (activeView) => set({ activeView }),
-
-      sidebarCollapsed: false,
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
 
-      notifications: [],
-      unreadCount: 0,
-      addNotification: (n) =>
-        set((s) => {
-          const notification: Notification = {
-            ...n,
-            id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
-            read: false,
-            createdAt: new Date().toISOString(),
-          }
-          return {
-            notifications: [notification, ...s.notifications].slice(0, 50),
-            unreadCount: s.unreadCount + 1,
-          }
-        }),
-      markNotificationRead: (id) =>
-        set((s) => {
-          const notifications = s.notifications.map((n) =>
-            n.id === id ? { ...n, read: true } : n
-          )
-          const unreadCount = notifications.filter((n) => !n.read).length
-          return { notifications, unreadCount }
-        }),
-      markAllRead: () =>
-        set((s) => ({
-          notifications: s.notifications.map((n) => ({ ...n, read: true })),
-          unreadCount: 0,
-        })),
-
-      toasts: [],
       addToast: (toast) => {
         const id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
         set((s) => ({ toasts: [...s.toasts, { ...toast, id }] }))
-        // Auto-dismiss after 4s
         setTimeout(() => {
           get().removeToast(id)
         }, 4000)
@@ -263,35 +189,26 @@ export const useAppStore = create<AppState>()(
       removeToast: (id) =>
         set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
-      searchQuery: '',
       setSearchQuery: (searchQuery) => set({ searchQuery }),
 
-      filters: { ...initialFilters },
       setFilters: (f) => set((s) => ({ filters: { ...s.filters, ...f } })),
       resetFilters: () => set({ filters: { ...initialFilters } }),
 
-      selectedItemId: null,
-      setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
-
-      recentlyViewed: [],
       addRecentlyViewed: (id) =>
         set((s) => ({
           recentlyViewed: [id, ...s.recentlyViewed.filter((x) => x !== id)].slice(0, 20),
         })),
 
-      likeCache: {},
       toggleLike: (id) =>
         set((s) => ({
           likeCache: { ...s.likeCache, [id]: !s.likeCache[id] },
         })),
 
-      followCache: {},
       toggleFollow: (id) =>
         set((s) => ({
           followCache: { ...s.followCache, [id]: !s.followCache[id] },
         })),
 
-      creatorWatchlist: DEFAULT_CREATOR_WATCHLIST,
       addCreatorToWatchlist: (creator) => set((state) => {
         if (containsEmail(creator)) return state
         const display = creator.trim().replace(/^@/, '').replace(/\s+/g, ' ').slice(0, 50)
@@ -303,21 +220,16 @@ export const useAppStore = create<AppState>()(
         creatorWatchlist: state.creatorWatchlist.filter((item) => creatorKey(item) !== creatorKey(creator)),
       })),
 
-      tagPreferences: {},
-      creatorPreferences: {},
-      hiddenMedia: [],
-      discoveryMode: 'balanced',
       recordDiscoveryFeedback: (item, signal) => set((state) => {
-        const normalize = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
         const delta = signal === 'more' ? 2 : signal === 'less' || signal === 'hide' ? -2 : 0.2
         const tagPreferences = { ...state.tagPreferences }
         for (const tag of item.tags.slice(0, 8)) {
-          const tagKey = normalize(tag)
+          const tagKey = creatorKey(tag)
           if (tagKey) tagPreferences[tagKey] = Math.max(-8, Math.min(12, (tagPreferences[tagKey] || 0) + delta))
         }
-        const creatorKey = normalize(item.creator)
+        const key = creatorKey(item.creator)
         const creatorPreferences = { ...state.creatorPreferences }
-        if (creatorKey) creatorPreferences[creatorKey] = Math.max(-5, Math.min(8, (creatorPreferences[creatorKey] || 0) + delta))
+        if (key) creatorPreferences[key] = Math.max(-5, Math.min(8, (creatorPreferences[key] || 0) + delta))
         const hiddenMedia = signal === 'hide'
           ? [item.id, ...state.hiddenMedia.filter((id) => id !== item.id)].slice(0, 200)
           : state.hiddenMedia
@@ -326,63 +238,31 @@ export const useAppStore = create<AppState>()(
       setDiscoveryMode: (discoveryMode) => set({ discoveryMode }),
       resetDiscoveryProfile: () => set({ tagPreferences: {}, creatorPreferences: {}, hiddenMedia: [], discoveryMode: 'balanced' }),
 
-      commandPaletteOpen: false,
       setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
       toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
 
-      gridDensity: 'normal',
       setGridDensity: (gridDensity) => set({ gridDensity }),
-
-      mediaCreatorFilter: null,
-      setMediaCreatorFilter: (mediaCreatorFilter) => set({ mediaCreatorFilter }),
-
-      // ── Settings defaults ──
-      accentColor: 'rose',
-      setAccentColor: (accentColor) => set({ accentColor }),
-      fontSize: 'default',
       setFontSize: (fontSize) => set({ fontSize }),
-      reduceMotion: false,
       setReduceMotion: (reduceMotion) => set({ reduceMotion }),
-      autoplayVideos: false,
       setAutoplayVideos: (autoplayVideos) => set({ autoplayVideos }),
-      defaultQuality: 'auto',
       setDefaultQuality: (defaultQuality) => set({ defaultQuality }),
-      muteOnStart: true,
       setMuteOnStart: (muteOnStart) => set({ muteOnStart }),
-      pictureInPicture: true,
       setPictureInPicture: (pictureInPicture) => set({ pictureInPicture }),
-      preferredPlayer: 'lightbox',
-      setPreferredPlayer: (preferredPlayer) => set({ preferredPlayer }),
-      notificationsEnabled: true,
-      setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
-      notifyNewMedia: true,
-      setNotifyNewMedia: (notifyNewMedia) => set({ notifyNewMedia }),
-      notifyCreatorUpdates: true,
-      setNotifyCreatorUpdates: (notifyCreatorUpdates) => set({ notifyCreatorUpdates }),
-      notifyTrending: false,
-      setNotifyTrending: (notifyTrending) => set({ notifyTrending }),
-      notifyCrawlCompleted: true,
-      setNotifyCrawlCompleted: (notifyCrawlCompleted) => set({ notifyCrawlCompleted }),
-      quietHoursStart: '22:00',
-      setQuietHoursStart: (quietHoursStart) => set({ quietHoursStart }),
-      quietHoursEnd: '08:00',
-      setQuietHoursEnd: (quietHoursEnd) => set({ quietHoursEnd }),
-      privateProfile: false,
-      setPrivateProfile: (privateProfile) => set({ privateProfile }),
-      hideActivityStatus: false,
-      setHideActivityStatus: (hideActivityStatus) => set({ hideActivityStatus }),
-      saveSearchHistory: true,
-      setSaveSearchHistory: (saveSearchHistory) => set({ saveSearchHistory }),
-      trackRecentlyViewed: true,
-      setTrackRecentlyViewed: (trackRecentlyViewed) => set({ trackRecentlyViewed }),
-      offlineCache: false,
-      setOfflineCache: (offlineCache) => set({ offlineCache }),
+
+      wipeLocalData: () => {
+        try {
+          window.localStorage.clear()
+        } catch {
+          // Storage can be unavailable in private contexts; state reset still applies.
+        }
+        set({ ...defaultDataState() })
+      },
     }),
     {
       name: 'media-codex-store',
-      version: 2,
+      version: 3,
       migrate: (persisted) => {
-        const state = persisted as Partial<AppState>
+        const state = (persisted ?? {}) as Partial<AppState>
         return { ...state, creatorWatchlist: sanitizeCreatorWatchlist(state.creatorWatchlist) } as AppState
       },
       partialize: (state) => ({
@@ -397,27 +277,12 @@ export const useAppStore = create<AppState>()(
         hiddenMedia: state.hiddenMedia,
         discoveryMode: state.discoveryMode,
         gridDensity: state.gridDensity,
-        filters: state.filters,
-        accentColor: state.accentColor,
         fontSize: state.fontSize,
         reduceMotion: state.reduceMotion,
         autoplayVideos: state.autoplayVideos,
         defaultQuality: state.defaultQuality,
         muteOnStart: state.muteOnStart,
         pictureInPicture: state.pictureInPicture,
-        preferredPlayer: state.preferredPlayer,
-        notificationsEnabled: state.notificationsEnabled,
-        notifyNewMedia: state.notifyNewMedia,
-        notifyCreatorUpdates: state.notifyCreatorUpdates,
-        notifyTrending: state.notifyTrending,
-        notifyCrawlCompleted: state.notifyCrawlCompleted,
-        quietHoursStart: state.quietHoursStart,
-        quietHoursEnd: state.quietHoursEnd,
-        privateProfile: state.privateProfile,
-        hideActivityStatus: state.hideActivityStatus,
-        saveSearchHistory: state.saveSearchHistory,
-        trackRecentlyViewed: state.trackRecentlyViewed,
-        offlineCache: state.offlineCache,
       }),
     }
   )

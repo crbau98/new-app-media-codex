@@ -1,95 +1,68 @@
-import { lazy, Suspense, useState } from 'react'
-import { Navigate, Routes, Route, useLocation } from 'react-router'
-import { AnimatePresence, motion } from 'framer-motion'
-import Layout from './components/Layout'
-import ToastContainer from './components/Toast'
-import CommandPalette from './components/CommandPalette'
-import AmbientGlow from './components/AmbientGlow'
-import AdultGate, { hasAdultConfirmation } from './components/AdultGate'
+import { useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router'
+import { MotionConfig } from 'framer-motion'
+import Layout from '@/components/Layout'
+import CommandPalette from '@/components/CommandPalette'
+import Toast from '@/components/Toast'
+import AdultGate from '@/components/AdultGate'
+import AppErrorBoundary from '@/components/AppErrorBoundary'
+import Home from '@/pages/Home'
+import Explore from '@/pages/Explore'
+import Search from '@/pages/Search'
+import Creators from '@/pages/Creators'
+import Settings from '@/pages/Settings'
+import NotFound from '@/pages/NotFound'
+import { useAppStore } from '@/store'
 
-const HomePage = lazy(() => import('./pages/Home'))
-const ExplorePage = lazy(() => import('./pages/Explore'))
-const CreatorsPage = lazy(() => import('./pages/Creators'))
-const SearchPage = lazy(() => import('./pages/Search'))
-const SettingsPage = lazy(() => import('./pages/Settings').then((module) => ({ default: module.SettingsPage })))
+const routeTitles: Record<string, string> = {
+  '/media': 'Library',
+  '/explore': 'For You',
+  '/search': 'Search',
+  '/creators': 'Creators',
+  '/settings': 'Settings',
+}
 
-function PageWrapper({ children }: { children: React.ReactNode }) {
+/** Per-route document titles. */
+function RouteTitle() {
+  const location = useLocation()
+  useEffect(() => {
+    const title = routeTitles[location.pathname]
+    document.title = title ? `${title} — Media Codex` : 'Media Codex — After-hours cinema archive'
+  }, [location.pathname])
+  return null
+}
+
+function AppShell() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -12 }}
-      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-    >
-      {children}
-    </motion.div>
+    <Layout>
+      <RouteTitle />
+      <AppErrorBoundary>
+        <Routes>
+          <Route path="/" element={<Navigate to="/media" replace />} />
+          <Route path="/media" element={<Home />} />
+          <Route path="/explore" element={<Explore />} />
+          <Route path="/search" element={<Search />} />
+          <Route path="/creators" element={<Creators />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </AppErrorBoundary>
+    </Layout>
   )
 }
 
 export default function App() {
-  const location = useLocation()
-  const [adultConfirmed, setAdultConfirmed] = useState(hasAdultConfirmation)
-
-  if (!adultConfirmed) return <AdultGate onConfirm={() => setAdultConfirmed(true)} />
+  const reduceMotion = useAppStore((s) => s.reduceMotion)
 
   return (
-    <>
-      <AmbientGlow />
-      <Layout>
-        <Suspense fallback={<div className="grid min-h-[50vh] place-items-center text-sm text-[var(--text-secondary)]">Loading workspace…</div>}>
-        <AnimatePresence mode="wait">
-          <Routes location={location} key={location.pathname}>
-            <Route
-              path="/media"
-              element={
-                <PageWrapper>
-                  <HomePage />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/explore"
-              element={
-                <PageWrapper>
-                  <ExplorePage />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/creators"
-              element={
-                <PageWrapper>
-                  <CreatorsPage />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/search"
-              element={
-                <PageWrapper>
-                  <SearchPage />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <PageWrapper>
-                  <SettingsPage />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/"
-              element={<Navigate to="/media" replace />}
-            />
-            <Route path="*" element={<Navigate to="/media" replace />} />
-          </Routes>
-        </AnimatePresence>
-        </Suspense>
-      </Layout>
-      <ToastContainer />
-      <CommandPalette />
-    </>
+    <AdultGate>
+      <MotionConfig reducedMotion={reduceMotion ? 'always' : 'user'}>
+        <BrowserRouter>
+          <AppShell />
+          <CommandPalette />
+          <Toast />
+        </BrowserRouter>
+      </MotionConfig>
+    </AdultGate>
   )
 }
