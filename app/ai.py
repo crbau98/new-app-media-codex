@@ -45,27 +45,69 @@ Output strict JSON only with:
 }"""
 
 
+class _TransientModelError(Exception):
+    """Retryable model-call failure (429/5xx, connection, timeout)."""
+
+
+def _parse_chat_response(response: requests.Response) -> list[dict[str, Any]]:
+    """Guarded parsing of a chat-completions response.
+
+    Raises ValueError with a precise message instead of bare KeyError/
+    IndexError/JSONDecodeError when the provider returns something odd.
+    """
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise ValueError(f"model returned a non-JSON response: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("model response is not a JSON object")
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ValueError("model response has no choices")
+    message = choices[0].get("message") if isinstance(choices[0], dict) else None
+    content = (message or {}).get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("model response has no message content")
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"model message content is not valid JSON: {exc}") from exc
+    hypotheses = parsed.get("hypotheses", []) if isinstance(parsed, dict) else []
+    if not isinstance(hypotheses, list):
+        raise ValueError("model 'hypotheses' field is not a list")
+    return [_normalize_hypothesis(item) for item in hypotheses if isinstance(item, dict)]
+
+
 def call_model(settings: Settings, payload: dict[str, Any]) -> list[dict[str, Any]]:
-    response = requests.post(
-        f"{settings.openai_base_url}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {settings.openai_api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": settings.openai_model,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(payload, ensure_ascii=True)},
-            ],
-            "response_format": {"type": "json_object"},
-        },
-        timeout=settings.request_timeout_seconds * 2,
-    )
-    response.raise_for_status()
-    message = response.json()["choices"][0]["message"]["content"]
-    parsed = json.loads(message)
-    return [_normalize_hypothesis(item) for item in parsed.get("hypotheses", [])]
+    """POST to the chat-completions API with one retry on transient failure."""
+    body = {
+        "model": settings.openai_model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=True)},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.openai_api_key}",
+        "Content-Type": "application/json",
+    }
+    url = f"{settings.openai_base_url}/chat/completions"
+    timeout = settings.request_timeout_seconds * 2
+
+    last_exc: Exception | None = None
+    for attempt in (1, 2):
+        try:
+            response = requests.post(url, headers=headers, json=body, timeout=timeout)
+            if response.status_code == 429 or response.status_code >= 500:
+                raise _TransientModelError(f"transient HTTP {response.status_code}")
+            response.raise_for_status()
+            return _parse_chat_response(response)
+        except (requests.ConnectionError, requests.Timeout, _TransientModelError) as exc:
+            last_exc = exc
+            if attempt == 2:
+                break
+    raise RuntimeError(f"model call failed after 2 attempts: {last_exc}")
 
 
 def _stringify(value: Any) -> str:
