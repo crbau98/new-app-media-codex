@@ -36,6 +36,11 @@ function preferQuality(candidates: string[], quality: VideoQuality): string[] {
     .map((entry) => entry.url)
 }
 
+/**
+ * Extract the numeric screenshot id from legacy archived-media identifiers:
+ * plain numeric strings or `shot-123` / `screenshot-123`. Returns null for
+ * modern public-source ids such as `rg-...` or `x-...`.
+ */
 function legacyScreenshotId(id: string): string | null {
   const value = id.trim()
   if (/^\d+$/.test(value)) return value
