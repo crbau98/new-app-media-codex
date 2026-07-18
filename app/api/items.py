@@ -5,7 +5,8 @@ import time
 from threading import Lock
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query, Depends
+from app.security import require_admin
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -76,7 +77,7 @@ def items(
     )
 
 
-@router.post("/bulk")
+@router.post("/bulk", dependencies=[Depends(require_admin)])
 def update_items_bulk(
     payload: BulkItemUpdateRequest,
     x_admin_token: str | None = Header(default=None),
@@ -163,7 +164,7 @@ def find_duplicates() -> JSONResponse:
     return JSONResponse({"groups": groups, "total_groups": len(groups)})
 
 
-@router.post("/merge")
+@router.post("/merge", dependencies=[Depends(require_admin)])
 def merge_items(
     payload: MergeItemsRequest,
     x_admin_token: str | None = Header(default=None),
@@ -188,7 +189,7 @@ def item_detail(item_id: int) -> JSONResponse:
     return JSONResponse(item)
 
 
-@router.patch("/{item_id}")
+@router.patch("/{item_id}", dependencies=[Depends(require_admin)])
 def update_item(
     item_id: int,
     payload: ItemUpdateRequest,
@@ -253,7 +254,7 @@ def list_tags() -> JSONResponse:
     return JSONResponse(db.get_all_tags())
 
 
-@tags_router.post("")
+@tags_router.post("", dependencies=[Depends(require_admin)])
 def create_tag(payload: CreateTagRequest) -> JSONResponse:
     from app.main import db
     name = payload.name.strip()
@@ -266,7 +267,7 @@ def create_tag(payload: CreateTagRequest) -> JSONResponse:
     return JSONResponse(tag, status_code=201)
 
 
-@tags_router.delete("/{tag_id}")
+@tags_router.delete("/{tag_id}", dependencies=[Depends(require_admin)])
 def delete_tag(tag_id: int) -> JSONResponse:
     from app.main import db
     ok = db.delete_tag(tag_id)
@@ -281,7 +282,7 @@ def get_item_tags(item_id: int) -> JSONResponse:
     return JSONResponse(db.get_item_tags(item_id))
 
 
-@router.post("/{item_id}/tags")
+@router.post("/{item_id}/tags", dependencies=[Depends(require_admin)])
 def add_item_tag(item_id: int, payload: AddItemTagRequest) -> JSONResponse:
     from app.main import db
     if payload.tag_id is None and not payload.tag_name:
@@ -295,7 +296,7 @@ def add_item_tag(item_id: int, payload: AddItemTagRequest) -> JSONResponse:
     return JSONResponse(db.get_item_tags(item_id))
 
 
-@router.delete("/{item_id}/tags/{tag_id}")
+@router.delete("/{item_id}/tags/{tag_id}", dependencies=[Depends(require_admin)])
 def remove_item_tag(item_id: int, tag_id: int) -> JSONResponse:
     from app.main import db
     db.remove_item_tag(item_id, tag_id)

@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 REDDIT_QUERIES = {
     "onlyfans_creators": [
         "gay onlyfans creator nude reddit site:reddit.com",
-        "gay onlyfans male leaked nude reddit r/GayNSFW",
+        "gay onlyfans male nude reddit r/GayNSFW",
         "gay onlyfans performer reddit nude cock",
         "gay male onlyfans content reddit nude amateur",
     ],

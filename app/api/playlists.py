@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from app.security import require_admin
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -70,7 +71,7 @@ def list_playlists() -> JSONResponse:
     return JSONResponse(result)
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_admin)])
 def create_playlist(payload: PlaylistCreate) -> JSONResponse:
     from app.main import db
 
@@ -140,7 +141,7 @@ def get_playlist(
     })
 
 
-@router.patch("/{playlist_id}")
+@router.patch("/{playlist_id}", dependencies=[Depends(require_admin)])
 def update_playlist(playlist_id: int, payload: PlaylistUpdate) -> JSONResponse:
     from app.main import db
 
@@ -177,7 +178,7 @@ def update_playlist(playlist_id: int, payload: PlaylistUpdate) -> JSONResponse:
     return JSONResponse(_playlist_row_to_dict(row))
 
 
-@router.delete("/{playlist_id}")
+@router.delete("/{playlist_id}", dependencies=[Depends(require_admin)])
 def delete_playlist(playlist_id: int) -> JSONResponse:
     from app.main import db
 
@@ -187,7 +188,7 @@ def delete_playlist(playlist_id: int) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
-@router.post("/{playlist_id}/items")
+@router.post("/{playlist_id}/items", dependencies=[Depends(require_admin)])
 def add_items_to_playlist(playlist_id: int, payload: PlaylistItemsBody) -> JSONResponse:
     from app.main import db
 
@@ -226,7 +227,7 @@ def add_items_to_playlist(playlist_id: int, payload: PlaylistItemsBody) -> JSONR
     return JSONResponse({"added": len(payload.screenshot_ids), "playlist_id": playlist_id})
 
 
-@router.delete("/{playlist_id}/items")
+@router.delete("/{playlist_id}/items", dependencies=[Depends(require_admin)])
 def remove_items_from_playlist(playlist_id: int, payload: PlaylistItemsBody) -> JSONResponse:
     from app.main import db
 
@@ -250,7 +251,7 @@ def remove_items_from_playlist(playlist_id: int, payload: PlaylistItemsBody) -> 
     return JSONResponse({"removed": len(payload.screenshot_ids), "playlist_id": playlist_id})
 
 
-@router.post("/{playlist_id}/reorder")
+@router.post("/{playlist_id}/reorder", dependencies=[Depends(require_admin)])
 def reorder_playlist(playlist_id: int, payload: ReorderBody) -> JSONResponse:
     from app.main import db
 
@@ -268,7 +269,7 @@ def reorder_playlist(playlist_id: int, payload: ReorderBody) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
-@router.post("/{playlist_id}/populate")
+@router.post("/{playlist_id}/populate", dependencies=[Depends(require_admin)])
 def populate_smart_playlist(playlist_id: int) -> JSONResponse:
     from app.main import db
 
