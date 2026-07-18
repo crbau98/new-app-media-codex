@@ -1,3 +1,10 @@
+# ⚠️  SUPERSEDED — DO NOT USE. ⚠️
+#
+# This file is kept for historical reference only. The canonical Render
+# blueprint is the repository-root `render.yaml` (backend web service +
+# keep-alive cron). The frontend is deployed separately on Vercel (see
+# `frontend/vercel.json`), not on Render. Render reads only the root
+# `render.yaml`; this file is ignored and must not be deployed.
 services:
   # Frontend static site (if deploying separately)
   - type: web
