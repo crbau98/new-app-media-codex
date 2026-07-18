@@ -52,6 +52,14 @@ def settings() -> Settings:
     return s
 
 
+def test_settings_expose_kemono_and_coomer_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("KEMONO_RESULTS", raising=False)
+    monkeypatch.delenv("COOMER_RESULTS", raising=False)
+    s = Settings()
+    assert s.kemono_results == 4
+    assert s.coomer_results == 4
+
+
 def _sample_posts() -> list[dict[str, Any]]:
     return [
         {
