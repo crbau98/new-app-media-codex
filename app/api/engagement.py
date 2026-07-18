@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Depends
+from app.security import require_admin
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["engagement"])
@@ -33,7 +34,7 @@ _DEFAULT_USER = "default"
 
 # ── Likes ──────────────────────────────────────────────────────────────
 
-@router.post("/like")
+@router.post("/like", dependencies=[Depends(require_admin)])
 def like_item(body: LikeBody, request: Request):
     db = request.app.state.db
     if body.screenshot_id is not None:
@@ -45,7 +46,7 @@ def like_item(body: LikeBody, request: Request):
     raise HTTPException(400, detail="screenshot_id or performer_id required")
 
 
-@router.delete("/like")
+@router.delete("/like", dependencies=[Depends(require_admin)])
 def unlike_item(
     request: Request,
     screenshot_id: int | None = Query(None),
@@ -75,7 +76,7 @@ def get_likes(
 
 # ── Views ──────────────────────────────────────────────────────────────
 
-@router.post("/view")
+@router.post("/view", dependencies=[Depends(require_admin)])
 def record_view(body: ViewBody, request: Request):
     db = request.app.state.db
     db.record_view(
@@ -107,7 +108,7 @@ def get_comments(
     )
 
 
-@router.post("/comments")
+@router.post("/comments", dependencies=[Depends(require_admin)])
 def create_comment(body: CommentBody, request: Request):
     db = request.app.state.db
     if not body.content or not body.content.strip():
@@ -149,7 +150,7 @@ def create_comment(body: CommentBody, request: Request):
     return comment
 
 
-@router.delete("/comments/{comment_id}")
+@router.delete("/comments/{comment_id}", dependencies=[Depends(require_admin)])
 def delete_comment(comment_id: int, request: Request):
     db = request.app.state.db
     ok = db.delete_comment(comment_id)
@@ -160,13 +161,13 @@ def delete_comment(comment_id: int, request: Request):
 
 # ── Follows ────────────────────────────────────────────────────────────
 
-@router.post("/follow")
+@router.post("/follow", dependencies=[Depends(require_admin)])
 def follow_performer(body: FollowBody, request: Request):
     db = request.app.state.db
     return db.follow_performer(body.performer_id, _DEFAULT_USER)
 
 
-@router.delete("/follow")
+@router.delete("/follow", dependencies=[Depends(require_admin)])
 def unfollow_performer(
     request: Request,
     performer_id: int = Query(...),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from app.security import require_admin
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -53,7 +54,7 @@ def list_collections() -> JSONResponse:
     )
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_admin)])
 def create_collection(payload: CollectionCreate) -> JSONResponse:
     from app.main import db
 
@@ -73,7 +74,7 @@ def create_collection(payload: CollectionCreate) -> JSONResponse:
     )
 
 
-@router.patch("/{collection_id}")
+@router.patch("/{collection_id}", dependencies=[Depends(require_admin)])
 def update_collection(collection_id: int, payload: CollectionUpdate) -> JSONResponse:
     from app.main import db
 
@@ -122,7 +123,7 @@ def update_collection(collection_id: int, payload: CollectionUpdate) -> JSONResp
     )
 
 
-@router.delete("/{collection_id}")
+@router.delete("/{collection_id}", dependencies=[Depends(require_admin)])
 def delete_collection(collection_id: int) -> JSONResponse:
     from app.main import db
 
@@ -132,7 +133,7 @@ def delete_collection(collection_id: int) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
-@router.post("/{collection_id}/items")
+@router.post("/{collection_id}/items", dependencies=[Depends(require_admin)])
 def add_items_to_collection(collection_id: int, payload: CollectionItemsBody) -> JSONResponse:
     from app.main import db
 
@@ -157,7 +158,7 @@ def add_items_to_collection(collection_id: int, payload: CollectionItemsBody) ->
     return JSONResponse({"added": len(payload.item_ids), "collection_id": collection_id})
 
 
-@router.delete("/{collection_id}/items")
+@router.delete("/{collection_id}/items", dependencies=[Depends(require_admin)])
 def remove_items_from_collection(collection_id: int, payload: CollectionItemsBody) -> JSONResponse:
     from app.main import db
 
