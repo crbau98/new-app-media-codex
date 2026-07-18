@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Request, Depends
 from app.security import require_admin
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
