@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Bookmark,
+  Camera,
   ExternalLink,
   Play,
   Share2,
@@ -18,6 +19,7 @@ import type { MediaItem } from '@/lib/types'
 import type { VideoQuality } from '@/store'
 import { useAppStore } from '@/store'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
+import MediaImage from '@/components/MediaImage'
 import { cn } from '@/lib/utils'
 
 const easeOut = [0.16, 1, 0.3, 1] as [number, number, number, number]
@@ -49,32 +51,66 @@ function legacyScreenshotId(id: string): string | null {
   return value.match(/^(?:shot|screenshot)-(\d+)$/)?.[1] || null
 }
 
+function isSameOriginMediaUrl(url: string): boolean {
+  if (url.startsWith('/')) return true
+  if (typeof window === 'undefined') return false
+  return url.startsWith(window.location.origin)
+}
+
+function resolveProviderStreamUrl(url: string | null | undefined): string {
+  if (!url) return ''
+  // `/api/archiver-proxy` is a Vercel edge route owned by this SPA; resolving it
+  // through the separate backend origin would turn a same-origin stream into a 404.
+  if (url.startsWith('/api/archiver-proxy')) return url
+  return resolvePublicUrl(url)
+}
+
 function VideoPlayer({ item }: { item: MediaItem }) {
   const autoplay = useAppStore((state) => state.autoplayVideos)
   const muteOnStart = useAppStore((state) => state.muteOnStart)
   const pictureInPicture = useAppStore((state) => state.pictureInPicture)
   const quality = useAppStore((state) => state.defaultQuality)
+  const addToast = useAppStore((state) => state.addToast)
+
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const watchdogRef = useRef<number | null>(null)
+  const recoveringRef = useRef(false)
 
   const initialCandidates = useMemo(() => {
     const supplied = item.streamCandidates?.length ? item.streamCandidates : item.mediaUrl ? [item.mediaUrl] : []
-    return preferQuality(supplied, quality)
+    const normalized = supplied
+      .map(resolveProviderStreamUrl)
+      .filter((url): url is string => Boolean(url))
+      .filter((url, position, list) => list.indexOf(url) === position)
+    return preferQuality(normalized, quality)
   }, [item.mediaUrl, item.streamCandidates, quality])
 
   const [candidates, setCandidates] = useState(initialCandidates)
   const [index, setIndex] = useState(0)
   const [recovering, setRecovering] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [capturing, setCapturing] = useState(false)
+
+  const clearWatchdog = useCallback(() => {
+    if (watchdogRef.current !== null) {
+      window.clearTimeout(watchdogRef.current)
+      watchdogRef.current = null
+    }
+  }, [])
 
   const recover = useCallback(async () => {
+    clearWatchdog()
     if (index + 1 < candidates.length) {
       setIndex((value) => value + 1)
       return
     }
     const shotId = legacyScreenshotId(item.id)
-    if (!shotId || recovering) {
+    if (!shotId) {
       setFailed(true)
       return
     }
+    if (recoveringRef.current) return
+    recoveringRef.current = true
     setRecovering(true)
     try {
       const response = await fetch(apiUrl(`/api/screenshots/${shotId}/resolve-stream`), { method: 'POST' })
@@ -82,19 +118,101 @@ function VideoPlayer({ item }: { item: MediaItem }) {
       const data = (await response.json()) as { cached_url?: string; local_url?: string; direct_url?: string }
       const alternatives = [data.cached_url, data.local_url, data.direct_url].map(resolvePublicUrl).filter((url): url is string => Boolean(url))
       if (!alternatives.length) throw new Error('No alternate stream')
+      setFailed(false)
       setCandidates(alternatives)
       setIndex(0)
     } catch {
       setFailed(true)
     } finally {
+      recoveringRef.current = false
       setRecovering(false)
     }
-  }, [candidates.length, index, item.id, recovering])
+  }, [candidates.length, clearWatchdog, index, item.id])
+
+  const armWatchdog = useCallback((timeoutMs: number) => {
+    clearWatchdog()
+    watchdogRef.current = window.setTimeout(() => {
+      void recover()
+    }, timeoutMs)
+  }, [clearWatchdog, recover])
+
+  useEffect(() => {
+    recoveringRef.current = false
+    setCandidates(initialCandidates)
+    setIndex(0)
+    setFailed(false)
+    setRecovering(false)
+  }, [initialCandidates])
+
+  useEffect(() => clearWatchdog, [clearWatchdog])
+
+  useEffect(() => {
+    if (failed || !candidates[index]) return undefined
+    const node = videoRef.current
+    armWatchdog(12000)
+    node?.load()
+    return clearWatchdog
+  }, [armWatchdog, candidates, clearWatchdog, failed, index])
+
+  const handleReady = useCallback(() => {
+    clearWatchdog()
+    setFailed(false)
+  }, [clearWatchdog])
+
+  const handleBuffering = useCallback(() => {
+    armWatchdog(9000)
+  }, [armWatchdog])
+
+  const captureFrame = useCallback(async () => {
+    const node = videoRef.current
+    if (!node || !node.videoWidth || !node.videoHeight) {
+      addToast({ type: 'info', title: 'Frame is not ready yet', message: 'Let the video start rendering, then capture again.' })
+      return
+    }
+    setCapturing(true)
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width = node.videoWidth
+      canvas.height = node.videoHeight
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('canvas_unavailable')
+      context.drawImage(node, 0, 0, canvas.width, canvas.height)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+      if (!blob) throw new Error('capture_failed')
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `media-codex-${item.id}-${Math.max(0, Math.floor(node.currentTime))}s.png`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+      addToast({
+        type: 'success',
+        title: 'Frame saved locally',
+        message: 'Only keep captures you have rights or permission to store.',
+      })
+    } catch {
+      addToast({
+        type: 'error',
+        title: 'Capture was blocked by the source',
+        message: 'Try the proxied fallback stream, or open the source link and follow its terms.',
+      })
+    } finally {
+      setCapturing(false)
+    }
+  }, [addToast, item.id])
 
   if (!candidates[index] || failed) {
     return (
       <div className="relative grid min-h-64 place-items-center overflow-hidden rounded-lg bg-sunken">
-        <img src={item.thumbnail} alt="" className="absolute inset-0 h-full w-full object-cover opacity-20" />
+        <MediaImage
+          sources={[item.thumbnail]}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover opacity-20"
+          skeletonClassName="absolute inset-0"
+          loading="eager"
+        />
         <div className="relative z-10 max-w-xs px-5 py-10 text-center">
           <Play size={16} strokeWidth={1.75} className="mx-auto text-ink-2" aria-hidden="true" />
           <p className="mt-3 text-sm font-medium text-ink">This stream is temporarily unavailable.</p>
@@ -108,11 +226,15 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     )
   }
 
+  const currentUrl = candidates[index]
+  const sameOrigin = isSameOriginMediaUrl(currentUrl)
+
   return (
     <div className="relative overflow-hidden rounded-lg bg-black">
       <video
-        key={candidates[index]}
-        src={candidates[index]}
+        key={currentUrl}
+        ref={videoRef}
+        src={currentUrl}
         poster={item.thumbnail}
         controls
         playsInline
@@ -120,11 +242,27 @@ function VideoPlayer({ item }: { item: MediaItem }) {
         autoPlay={autoplay}
         muted={muteOnStart}
         disablePictureInPicture={!pictureInPicture}
+        crossOrigin={sameOrigin ? 'anonymous' : undefined}
+        onLoadedData={handleReady}
+        onCanPlay={handleReady}
+        onPlaying={handleReady}
+        onWaiting={handleBuffering}
+        onStalled={handleBuffering}
         onError={recover}
         className="max-h-[62dvh] min-h-56 w-full object-contain"
       >
         Your browser does not support video playback.
       </video>
+      <button
+        type="button"
+        onClick={captureFrame}
+        disabled={capturing}
+        className="absolute right-3 top-3 inline-flex min-h-9 items-center gap-1.5 rounded-sm bg-canvas/85 px-2.5 font-mono text-[10px] uppercase tracking-[0.08em] text-ink transition-colors hover:bg-canvas disabled:opacity-60"
+        aria-label="Capture current video frame"
+      >
+        <Camera size={13} strokeWidth={1.75} aria-hidden="true" />
+        {capturing ? 'Saving' : 'Capture'}
+      </button>
       {(recovering || index > 0) && (
         <div className="pointer-events-none absolute left-3 top-3 rounded-sm bg-canvas/85 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-ink">
           {recovering ? 'Finding another stream' : `Fallback ${index + 1} connected`}
@@ -351,7 +489,15 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
               {item.isVideo ? (
                 <VideoPlayer key={item.id} item={item} />
               ) : (
-                <img src={item.thumbnail} alt={item.title} className="max-h-[62dvh] w-full rounded-lg object-contain bg-sunken" />
+                <div className="relative">
+                  <MediaImage
+                    sources={[item.mediaUrl, item.thumbnail]}
+                    alt={item.title}
+                    loading="eager"
+                    className="max-h-[62dvh] w-full rounded-lg object-contain bg-sunken transition-opacity duration-200"
+                    skeletonClassName="min-h-56 w-full rounded-lg"
+                  />
+                </div>
               )}
 
               <h2 id="media-title" className="mt-5 text-lg font-semibold leading-tight tracking-[-0.01em] text-ink">
@@ -385,6 +531,11 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                 {item.pageUrl && (
                   <a href={item.pageUrl} target="_blank" rel="noreferrer" className="btn-primary">
                     Watch on source <ExternalLink size={14} strokeWidth={1.75} />
+                  </a>
+                )}
+                {!item.isVideo && item.mediaUrl && (
+                  <a href={resolveProviderStreamUrl(item.mediaUrl)} target="_blank" rel="noreferrer" className="btn-secondary">
+                    Full image <ExternalLink size={14} strokeWidth={1.75} />
                   </a>
                 )}
                 <button onClick={save} className="btn-secondary" aria-pressed={liked}>
@@ -460,8 +611,13 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                         className="w-28 shrink-0 text-left tap-highlight-none"
                         aria-label={`Open ${entry.title}`}
                       >
-                        <span className="block aspect-[2/3] overflow-hidden rounded-md bg-sunken">
-                          <img src={entry.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
+                        <span className="relative block aspect-[2/3] overflow-hidden rounded-md bg-sunken">
+                          <MediaImage
+                            sources={entry.isVideo ? [entry.thumbnail] : [entry.thumbnail, entry.mediaUrl]}
+                            alt=""
+                            className="absolute inset-0 h-full w-full object-cover"
+                            skeletonClassName="absolute inset-0"
+                          />
                         </span>
                         <span className="mt-1.5 block truncate font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">
                           {entry.creator}
