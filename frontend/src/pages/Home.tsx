@@ -1,613 +1,375 @@
-import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { useNavigate } from 'react-router'
-import { useAppStore } from '@/store'
-import { cn } from '@/lib/utils'
-import {
-  type CategoryDef,
-  type Creator,
-  type MediaItem,
-} from '@/lib/mockData'
-import { fetchLiveDiscovery } from '@/lib/api'
+import { useCallback, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import MediaCard from '@/components/MediaCard'
-import MediaDetail from '@/components/MediaDetail'
-import CategoryHeader from '@/components/CategoryHeader'
-import EmptyState from '@/components/EmptyState'
-import SkeletonGrid from '@/components/SkeletonGrid'
 import {
-  Play,
-  Plus,
+  Dice5,
+  RefreshCw,
+  Search,
   Grid3X3,
   List,
-  LayoutGrid,
-  Clock,
-  Sparkles,
-  ChevronDown,
-  Shuffle,
+  Play,
+  Image as ImageIcon,
   X,
+  ArrowRight,
+  Sparkles,
 } from 'lucide-react'
+import type { Creator, MediaItem } from '@/lib/types'
+import { fetchLiveDiscovery } from '@/lib/api'
+import { relativeTime } from '@/lib/discovery'
+import { useAppStore, type GridDensity } from '@/store'
+import MediaCard from '@/components/MediaCard'
+import MediaDetail from '@/components/MediaDetail'
+import Hero from '@/components/Hero'
+import CreatorDrawer from '@/components/CreatorDrawer'
+import EmptyState from '@/components/EmptyState'
+import SkeletonGrid from '@/components/SkeletonGrid'
+import UpdatedChip from '@/components/UpdatedChip'
+import { cn } from '@/lib/utils'
 
-const ImmersiveHero = lazy(() => import('@/components/ImmersiveHero'))
+const VISIBLE_INCREMENT = 24
 
-/* ───────────────────────────────────────────────
-   Stories Rail
-   ─────────────────────────────────────────────── */
-function StoriesRail({ creators, onOpen }: { creators: Creator[]; onOpen: () => void }) {
-  const storyCreators = useMemo(() => creators.slice(0, 6), [creators])
-
-  if (!storyCreators.length) return null
-
-  return (
-    <div className="relative mb-6">
-      {/* Fade edges */}
-      <div className="absolute left-0 top-0 bottom-0 w-10 bg-gradient-to-r from-[var(--bg-base)] to-transparent z-10 pointer-events-none" />
-      <div className="absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-[var(--bg-base)] to-transparent z-10 pointer-events-none" />
-
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-2 py-2 scroll-snap-x mandatory">
-        {storyCreators.map((creator, i) => (
-          <motion.button
-            key={creator.id}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.05, duration: 0.4, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-            className="flex min-h-20 min-w-16 shrink-0 snap-start flex-col items-center gap-1.5 rounded-lg p-1"
-            onClick={onOpen}
-            aria-label={`Open creator directory at ${creator.name}`}
-          >
-            <div className={cn('p-[2px] sm:p-[3px] rounded-full', creator.storySeen ? 'story-ring-seen' : 'story-ring')}>
-              <img
-                src={creator.avatar}
-                alt={creator.name}
-                className="w-[50px] h-[50px] sm:w-[58px] sm:h-[58px] rounded-full object-cover border-2 border-[var(--bg-base)]"
-                loading="lazy"
-              />
-            </div>
-            <span className="text-[10px] sm:text-[11px] text-[var(--text-secondary)] max-w-[56px] sm:max-w-[64px] truncate">
-              {creator.name}
-            </span>
-          </motion.button>
-        ))}
-      </div>
-    </div>
-  )
+const densityCols: Record<GridDensity, string> = {
+  compact: 'grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7',
+  normal: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6',
+  spacious: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5',
 }
 
-/* ───────────────────────────────────────────────
-   Discoverability Toolbar
-   ─────────────────────────────────────────────── */
-type ViewModeType = 'grid' | 'list' | 'mosaic' | 'timeline'
-
-function DiscoverabilityToolbar({
-  viewMode,
-  onViewModeChange,
-  sort,
-  onSortChange,
-  onSurprise,
-}: {
-  viewMode: ViewModeType
-  onViewModeChange: (v: ViewModeType) => void
-  sort: string
-  onSortChange: (s: string) => void
-  onSurprise: () => void
-}) {
-  const filters = useAppStore((s) => s.filters)
-  const setFilters = useAppStore((s) => s.setFilters)
-
-  const chips = [
-    { label: 'All', value: null },
-    { label: 'Smart picks', value: 'smart' },
-    { label: 'High demand', value: 'highDemand' },
-    { label: 'Most watched', value: 'mostViewed' },
-    { label: 'Videos', value: 'video' },
-    { label: 'Favorites', value: 'favorites' },
-  ]
-
-  const sortOptions = ['Newest', 'Oldest', 'Top Rated', 'A–Z', 'Random', 'Most Viewed']
-
-  return (
-    <div
-      className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-2 flex items-center gap-3 overflow-x-auto hide-scrollbar border-b border-[var(--border-subtle)]"
-      style={{
-        background: 'var(--bg-base)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-      }}
-    >
-      {/* Filter pills */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        {chips.map((chip) => (
-          <button
-            key={chip.label}
-            onClick={() => setFilters({ sourceType: chip.value })}
-            className={cn(
-              'ui-chip whitespace-nowrap tap-highlight-none',
-              filters.sourceType === chip.value && 'ui-chip-active'
-            )}
-          >
-            {chip.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="w-px h-5 bg-[var(--border-subtle)] shrink-0" />
-
-      {/* Sort */}
-      <label className="relative shrink-0 text-sm text-[var(--text-secondary)]">
-        <span className="sr-only">Sort library</span>
-        <select value={sort} onChange={(event) => onSortChange(event.target.value)} className="min-h-11 appearance-none rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] py-2 pl-3 pr-8 text-sm text-[var(--text-primary)] outline-none">
-          {sortOptions.map((option) => <option key={option}>{option}</option>)}
-        </select>
-        <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-      </label>
-
-      <div className="w-px h-5 bg-[var(--border-subtle)] shrink-0" />
-
-      {/* View toggles */}
-      <div className="flex items-center gap-1 shrink-0">
-        {([
-          { key: 'grid', icon: Grid3X3 },
-          { key: 'list', icon: List },
-          { key: 'mosaic', icon: LayoutGrid },
-          { key: 'timeline', icon: Clock },
-        ] as const).map(({ key, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => onViewModeChange(key)}
-            className={cn(
-              'p-1.5 rounded-md transition-colors tap-highlight-none',
-              viewMode === key ? 'text-[var(--accent)] bg-[var(--accent-dim)]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'
-            )}
-            aria-label={`${key} view`}
-          >
-            <Icon size={16} />
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1" />
-
-      {/* Surprise Me */}
-      <motion.button
-        onClick={onSurprise}
-        whileTap={{ scale: 0.95 }}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--accent)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors shrink-0 tap-highlight-none"
-      >
-        <Sparkles size={14} />
-        <span className="hidden sm:inline">Surprise Me</span>
-      </motion.button>
-    </div>
-  )
-}
-
-/* ───────────────────────────────────────────────
-   Floating Category Navigator
-   ─────────────────────────────────────────────── */
-function FloatingNavigator({
-  activeCategory,
-  onSelect,
-  visible,
-  categories,
-}: {
-  activeCategory: string
-  onSelect: (name: string) => void
-  visible: boolean
-  categories: CategoryDef[]
-}) {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 20 }}
-          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-          className="fixed bottom-8 right-4 sm:right-8 z-[50] hidden md:block"
-        >
-          <div className="relative">
-            <button
-              onClick={() => setOpen(!open)}
-              className="flex items-center gap-2 px-4 h-11 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] shadow-md text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none"
-            >
-              {activeCategory}
-              <ChevronDown size={14} className={cn('transition-transform', open && 'rotate-180')} />
-            </button>
-
-            <AnimatePresence>
-              {open && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9, y: 8 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, y: 8 }}
-                  transition={{ duration: 0.2, ease: [0.34, 1.56, 0.64, 1] as [number, number, number, number] }}
-                  className="absolute bottom-full right-0 mb-2 w-56 max-h-72 overflow-y-auto hide-scrollbar bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] shadow-lg py-1"
-                >
-                  {categories.map((cat) => (
-                    <button
-                      key={cat.id}
-                      onClick={() => {
-                        onSelect(cat.name)
-                        setOpen(false)
-                      }}
-                      className={cn(
-                        'w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none',
-                        activeCategory === cat.name
-                          ? 'bg-[var(--accent-dim)] text-[var(--accent)]'
-                          : 'text-[var(--text-secondary)]'
-                      )}
-                    >
-                      <span>{cat.name}</span>
-                      <span className="text-[11px] font-mono text-[var(--text-muted)]">{cat.count}</span>
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
-}
-
-/* ───────────────────────────────────────────────
-   Home Page
-   ─────────────────────────────────────────────── */
-export default function HomePage() {
-  const navigate = useNavigate()
-  const [viewMode, setViewMode] = useState<ViewModeType>('grid')
-  const [sort, setSort] = useState('Newest')
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({ 'Recently added': true })
-  const [showSurprise, setShowSurprise] = useState(false)
-  const [surpriseItem, setSurpriseItem] = useState<MediaItem | null>(null)
-  const [scrollY, setScrollY] = useState(0)
-  const [activeCategory, setActiveCategory] = useState('Recently added')
+export default function Home() {
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
-  const mainRef = useRef<HTMLDivElement>(null)
+  const [activeCreator, setActiveCreator] = useState<Creator | null>(null)
+  const [filter, setFilter] = useState<'all' | 'video' | 'photo'>('all')
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [visibleCount, setVisibleCount] = useState(VISIBLE_INCREMENT)
+  const [homeQuery, setHomeQuery] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const category = searchParams.get('category')
 
-  const sortValue = useMemo(() => ({
-    Newest: 'newest',
-    Oldest: 'oldest',
-    'Top Rated': 'topRated',
-    'A–Z': 'az',
-    Random: 'random',
-    'Most Viewed': 'mostViewed',
-  } as const)[sort] ?? 'newest', [sort])
-  const creatorWatchlist = useAppStore((state) => state.creatorWatchlist)
+  const creatorWatchlist = useAppStore((s) => s.creatorWatchlist)
+  const likeCache = useAppStore((s) => s.likeCache)
+  const gridDensity = useAppStore((s) => s.gridDensity)
+  const addToast = useAppStore((s) => s.addToast)
+  const navigate = useNavigate()
 
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['live-discovery', 'home', creatorWatchlist],
+  // Home is the ONLY surface that polls (every 2 minutes).
+  const discoveryQuery = useQuery({
+    queryKey: ['live-discovery', creatorWatchlist],
     queryFn: () => fetchLiveDiscovery(creatorWatchlist),
-    staleTime: 60_000,
-    refetchInterval: 120_000,
-    refetchOnWindowFocus: true,
+    refetchInterval: 120000,
   })
-  const liveCreators = data?.performers ?? []
-  const liveCategories = useMemo<CategoryDef[]>(() => {
+  const discovery = discoveryQuery.data
+
+  const allItems = useMemo(() => discovery?.items ?? [], [discovery])
+  const creators = useMemo(() => discovery?.performers ?? [], [discovery])
+
+  const categories = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const item of data?.items ?? []) {
-      for (const tag of item.tags.slice(0, 6)) {
-        const normalized = tag.trim()
-        if (normalized) counts.set(normalized, (counts.get(normalized) || 0) + 1)
-      }
+    for (const item of allItems) {
+      if (item.category) counts.set(item.category, (counts.get(item.category) || 0) + 1)
     }
     return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
       .slice(0, 8)
-      .map(([name, count]) => ({ id: name.toLowerCase().replace(/\s+/g, '-'), name, count }))
-  }, [data?.items])
-  const allItems = useMemo(() => {
-    const items = [...(data?.items ?? [])]
-    if (sortValue === 'oldest') return items.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
-    if (sortValue === 'az') return items.sort((a, b) => a.title.localeCompare(b.title))
-    if (sortValue === 'random') return items.sort(() => Math.random() - 0.5)
-    if (sortValue === 'mostViewed') return items.sort((a, b) => b.views - a.views)
-    if (sortValue === 'topRated') return items.sort((a, b) => (b.likes || 0) - (a.likes || 0))
-    return items.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-  }, [data?.items, sortValue])
-  const filters = useAppStore((s) => s.filters)
-  const likeCache = useAppStore((s) => s.likeCache)
-  const hiddenMedia = useAppStore((s) => s.hiddenMedia)
-  const visibleItems = useMemo(() => {
-    const available = allItems.filter((item) => !hiddenMedia.includes(item.id))
-    if (filters.sourceType === 'video') return available.filter((item) => item.isVideo)
-    if (filters.sourceType === 'image') return available.filter((item) => !item.isVideo)
-    if (filters.sourceType === 'favorites') return available.filter((item) => likeCache[item.id] ?? item.isLiked)
-    if (filters.sourceType === 'smart') return [...available].sort((a, b) => (b.curationScore || 0) - (a.curationScore || 0))
-    if (filters.sourceType === 'highDemand') return available.filter((item) => (item.curationScore || 0) >= 65)
-    if (filters.sourceType === 'mostViewed') return [...available].sort((a, b) => b.views - a.views)
-    return available
-  }, [allItems, filters.sourceType, hiddenMedia, likeCache])
+  }, [allItems])
 
-  useEffect(() => {
-    const onScroll = () => setScrollY(window.scrollY)
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
+  const heroItems = useMemo(
+    () => [...allItems].sort((a, b) => (b.curationScore || 0) - (a.curationScore || 0)).slice(0, 5),
+    [allItems]
+  )
 
-  const toggleCategory = useCallback((name: string) => {
-    setExpandedCategories((prev) => ({ ...prev, [name]: !prev[name] }))
-  }, [])
-
-  const handleSurprise = useCallback(() => {
-    if (!visibleItems.length) return
-    setShowSurprise(true)
-    const random = visibleItems[Math.floor(Math.random() * visibleItems.length)]
-    setTimeout(() => {
-      setSurpriseItem(random)
-    }, 600)
-  }, [visibleItems])
-
-  const handleSurpriseClose = useCallback(() => {
-    setShowSurprise(false)
-    setSurpriseItem(null)
-  }, [])
-
-  const handleOpenDetail = useCallback((item: MediaItem) => {
-    setSelectedItem(item)
-    setDetailOpen(true)
-  }, [])
-
-  const handleCloseDetail = useCallback(() => {
-    setDetailOpen(false)
-    setTimeout(() => setSelectedItem(null), 400)
-  }, [])
-
-  const handleSurprisePlay = useCallback(() => {
-    if (surpriseItem) {
-      handleOpenDetail(surpriseItem)
-      setShowSurprise(false)
+  const filteredItems = useMemo(() => {
+    let result = allItems.map((item) => (likeCache[item.id] !== undefined ? { ...item, isLiked: likeCache[item.id] } : item))
+    if (filter === 'video') result = result.filter((item) => item.isVideo)
+    else if (filter === 'photo') result = result.filter((item) => !item.isVideo)
+    if (category) result = result.filter((item) => item.category === category || item.tags.includes(category))
+    const needle = homeQuery.trim().toLowerCase()
+    if (needle) {
+      result = result.filter(
+        (item) =>
+          item.title.toLowerCase().includes(needle) ||
+          item.creator.toLowerCase().includes(needle) ||
+          item.tags.some((tag) => tag.toLowerCase().includes(needle))
+      )
     }
-  }, [surpriseItem, handleOpenDetail])
+    return result
+  }, [allItems, category, filter, homeQuery, likeCache])
 
-  const scrollToCategory = useCallback((name: string) => {
-    const el = document.getElementById(`cat-${name}`)
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  // Reset pagination whenever the filter context changes (render-phase adjustment)
+  const filterKey = `${filter}|${category ?? ''}|${homeQuery}`
+  const [lastFilterKey, setLastFilterKey] = useState(filterKey)
+  if (lastFilterKey !== filterKey) {
+    setLastFilterKey(filterKey)
+    setVisibleCount(VISIBLE_INCREMENT)
+  }
+
+  const visibleItems = useMemo(() => filteredItems.slice(0, visibleCount), [filteredItems, visibleCount])
+  const hasMore = visibleCount < filteredItems.length
+
+  const openDetail = useCallback((id: string) => {
+    const item = allItems.find((entry) => entry.id === id)
+    if (item) setSelectedItem(item)
+  }, [allItems])
+
+  const surprise = useCallback(() => {
+    if (!filteredItems.length) {
+      addToast({ type: 'info', title: 'Nothing to surprise you with yet', message: 'Try clearing filters or check back shortly.' })
+      return
     }
-  }, [])
+    const pick = filteredItems[Math.floor(Math.random() * filteredItems.length)]
+    setSelectedItem(pick)
+  }, [addToast, filteredItems])
 
-  // Group items by category
-  const grouped = useMemo(() => {
-    const map: Record<string, MediaItem[]> = {}
-    map['Recently added'] = visibleItems
-    for (const cat of liveCategories) {
-      map[cat.name] = visibleItems.filter((m) => m.category === cat.name || m.tags.includes(cat.name))
-    }
-    return map
-  }, [liveCategories, visibleItems])
-
-  const categoryOrder = ['Recently added', ...liveCategories.map((c) => c.name)]
-    .filter((name, index, list) => list.indexOf(name) === index)
-  const showFloatingNav = scrollY > 400
+  const setCategory = useCallback(
+    (value: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          if (value) next.set('category', value)
+          else next.delete('category')
+          return next
+        },
+        { replace: true }
+      )
+    },
+    [setSearchParams]
+  )
 
   return (
-    <div ref={mainRef} className="space-y-6">
-      {/* Hero */}
-      <section className="animate-page-enter">
-        <Suspense fallback={<div className="immersive-hero immersive-hero-empty" aria-busy="true"><p className="signal-kicker">Preparing discovery space</p></div>}>
-          <ImmersiveHero
-            items={visibleItems}
-            creators={liveCreators}
-            discovery={data}
-            onWatch={handleOpenDetail}
-            onExploreCreators={() => navigate('/creators')}
-          />
-        </Suspense>
-      </section>
-
-      <StoriesRail creators={liveCreators} onOpen={() => navigate('/creators')} />
-
-      {/* Toolbar */}
-      <DiscoverabilityToolbar
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        sort={sort}
-        onSortChange={setSort}
-        onSurprise={handleSurprise}
+    <div className="animate-page-enter space-y-8">
+      {/* Cinematic hero */}
+      <Hero
+        items={heroItems}
+        loading={discoveryQuery.isLoading}
+        error={discoveryQuery.error}
+        onRetry={() => discoveryQuery.refetch()}
+        onSelect={setSelectedItem}
       />
 
-      {/* Category grids */}
-      {isError ? (
-        <EmptyState variant="error" title="The public feed is temporarily unavailable" description="Retry the source without losing your local likes, follows, or discovery profile." actionLabel="Retry" onAction={() => refetch()} />
-      ) : isLoading ? (
-        <div className="space-y-6">
-          <SkeletonGrid count={6} />
-          <SkeletonGrid count={6} />
-          <SkeletonGrid count={6} />
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {categoryOrder.map((catName) => {
-            const items = grouped[catName] ?? []
-            const expanded = Boolean(expandedCategories[catName])
-            const renderedItems = items.slice(0, catName === 'Recently added' ? 30 : 18)
-            return (
-              <section key={catName} id={`cat-${catName}`} className="content-auto">
-                <CategoryHeader
-                  name={catName}
-                  count={items.length}
-                  onToggle={() => toggleCategory(catName)}
-                  expanded={expanded}
-                />
-                {expanded && (
-                  <div className="mt-3">
-                    {items.length === 0 ? (
-                      <EmptyState
-                        variant="category"
-                        onAction={() => {}}
-                      />
-                    ) : viewMode === 'grid' ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 stagger-in">
-                        {renderedItems.map((item) => (
-                          <MediaCard
-                            key={item.id}
-                            item={item}
-                            aspectRatio="4/5"
-                            onSelect={() => handleOpenDetail(item)}
-                          />
-                        ))}
-                      </div>
-                    ) : viewMode === 'list' ? (
-                      <div className="flex flex-col gap-2 stagger-in">
-                        {renderedItems.map((item) => (
-                          <div
-                            key={item.id}
-                            onClick={() => handleOpenDetail(item)}
-                            className="flex items-center gap-3 p-2 rounded-[var(--radius-md)] hover:bg-[var(--bg-surface)] transition-colors cursor-pointer tap-highlight-none"
-                          >
-                            <img
-                              src={item.thumbnail}
-                              alt={item.title}
-                              className="w-[120px] h-[80px] rounded-[var(--radius-md)] object-cover shrink-0"
-                              loading="lazy"
-                            />
-                            <div className="flex flex-col gap-1">
-                              <h4 className="text-sm font-medium text-[var(--text-primary)]">{item.title}</h4>
-                              <p className="text-xs text-[var(--text-secondary)]">
-                                {item.creator} • {item.source}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : viewMode === 'mosaic' ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 md:gap-4 stagger-in">
-                        {renderedItems.map((item, i) => (
-                          <MediaCard
-                            key={item.id}
-                            item={item}
-                            aspectRatio={i % 5 === 0 ? '16/9' : '4/5'}
-                            className={i % 5 === 0 ? 'sm:col-span-2 sm:row-span-2' : ''}
-                            onSelect={() => handleOpenDetail(item)}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      /* timeline */
-                      <div className="flex flex-col gap-2 stagger-in">
-                        {renderedItems.map((item) => (
-                          <div
-                            key={item.id}
-                            onClick={() => handleOpenDetail(item)}
-                            className="flex items-center gap-3 p-2 rounded-[var(--radius-md)] hover:bg-[var(--bg-surface)] transition-colors cursor-pointer tap-highlight-none"
-                          >
-                            <span className="text-[11px] font-mono text-[var(--text-muted)] w-16 shrink-0">
-                              {new Date(item.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                            </span>
-                            <img
-                              src={item.thumbnail}
-                              alt={item.title}
-                              className="w-20 h-14 rounded-[var(--radius-md)] object-cover shrink-0"
-                              loading="lazy"
-                            />
-                            <div className="flex flex-col gap-0.5">
-                              <h4 className="text-sm font-medium text-[var(--text-primary)]">{item.title}</h4>
-                              <p className="text-xs text-[var(--text-secondary)]">{item.creator}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </section>
-            )
-          })}
-        </div>
+      {/* Status strip: real counts only */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] uppercase tracking-[0.1em] text-ink-3">
+        <UpdatedChip updatedAt={discovery?.updatedAt ?? null} />
+        {discovery && (
+          <>
+            <span>{allItems.length} items</span>
+            <span>{creators.length} creators</span>
+            <span>{discovery.sources.filter((s) => s.state === 'connected').length}/{discovery.sources.length} sources connected</span>
+          </>
+        )}
+        {discoveryQuery.isFetching && !discoveryQuery.isLoading && (
+          <span className="inline-flex items-center gap-1.5 text-ink-2">
+            <RefreshCw size={11} className="animate-spin" aria-hidden="true" /> Refreshing
+          </span>
+        )}
+      </div>
+
+      {/* Creators rail → opens the creator's drawer */}
+      {creators.length > 0 && (
+        <section aria-label="Creators on the feed">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="eyebrow">On the feed</h2>
+            <button
+              onClick={() => navigate('/creators')}
+              className="inline-flex min-h-10 items-center gap-1 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2 hover:text-ink"
+            >
+              All creators <ArrowRight size={12} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="hide-scrollbar -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
+            {creators.slice(0, 14).map((creator) => (
+              <button
+                key={creator.id}
+                onClick={() => setActiveCreator(creator)}
+                className="flex w-16 shrink-0 flex-col items-center gap-2 tap-highlight-none"
+                aria-label={`Open creator ${creator.name}`}
+              >
+                <span className="grid h-14 w-14 place-items-center overflow-hidden rounded-full border border-line bg-sunken transition-colors hover:border-line-strong">
+                  {creator.avatar ? (
+                    <img src={creator.avatar} alt="" loading="lazy" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="font-mono text-sm text-ink-2">{creator.name.charAt(0).toUpperCase()}</span>
+                  )}
+                </span>
+                <span className="w-full truncate text-center font-mono text-[9px] uppercase tracking-[0.04em] text-ink-3">
+                  {creator.username || creator.name}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
       )}
 
-      {/* Surprise Me Overlay */}
-      <AnimatePresence>
-        {showSurprise && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-[300] bg-[var(--bg-overlay)] flex items-center justify-center p-4"
-            onClick={handleSurpriseClose}
-          >
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.8, opacity: 0, y: 20 }}
-              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-              className="relative w-full max-w-sm"
-              onClick={(e) => e.stopPropagation()}
+      {/* Library */}
+      <section aria-label="Media library">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="eyebrow">Library</h2>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={cn('grid h-10 w-10 place-items-center rounded-md transition-colors', viewMode === 'grid' ? 'bg-sunken text-ink' : 'text-ink-3 hover:text-ink')}
+              aria-label="Grid view"
+              aria-pressed={viewMode === 'grid'}
             >
-              {surpriseItem ? (
-                <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-[var(--radius-lg)] overflow-hidden shadow-lg">
-                  <div className="relative aspect-[4/5]">
-                    <img
-                      src={surpriseItem.thumbnail}
-                      alt={surpriseItem.title}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[rgba(3,3,5,0.8)] to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 p-5 space-y-3">
-                      <h3 className="text-xl font-bold text-[var(--text-primary)]">{surpriseItem.title}</h3>
-                      <p className="text-sm text-[var(--text-secondary)]">
-                        {surpriseItem.creator} • {surpriseItem.category}
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <button
-                          className="btn-primary flex-1 tap-highlight-none"
-                          onClick={handleSurprisePlay}
-                        >
-                          <Play size={16} fill="white" /> Play
-                        </button>
-                        <button
-                          onClick={handleSurprise}
-                          className="px-4 py-2 rounded-md border border-[var(--border-medium)] text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] transition-colors tap-highlight-none"
-                        >
-                          <Shuffle size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    {[0, 1, 2].map((i) => (
-                      <motion.div
-                        key={i}
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 0.4, repeat: Infinity, ease: 'linear' }}
-                      >
-                        <Sparkles size={24} className="text-[var(--accent)]" />
-                      </motion.div>
-                    ))}
-                  </div>
-                  <p className="text-[var(--text-secondary)] text-sm">Shuffling...</p>
-                </div>
-              )}
-            </motion.div>
-          </motion.div>
+              <Grid3X3 size={16} strokeWidth={1.75} />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={cn('grid h-10 w-10 place-items-center rounded-md transition-colors', viewMode === 'list' ? 'bg-sunken text-ink' : 'text-ink-3 hover:text-ink')}
+              aria-label="List view"
+              aria-pressed={viewMode === 'list'}
+            >
+              <List size={16} strokeWidth={1.75} />
+            </button>
+          </div>
+        </div>
+
+        {/* Filter row */}
+        <div className="mb-5 flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search size={14} strokeWidth={1.75} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden="true" />
+            <input
+              value={homeQuery}
+              onChange={(event) => setHomeQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && homeQuery.trim()) navigate(`/search?q=${encodeURIComponent(homeQuery.trim())}`)
+              }}
+              placeholder="Filter this feed"
+              aria-label="Filter media on this page"
+              className="h-10 w-52 rounded-md border border-line bg-transparent pl-9 pr-8 text-[13px] text-ink outline-none transition-colors placeholder:text-ink-3 focus:border-line-strong"
+            />
+            {homeQuery && (
+              <button
+                onClick={() => setHomeQuery('')}
+                className="absolute right-1.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded text-ink-3 hover:text-ink"
+                aria-label="Clear filter"
+              >
+                <X size={13} strokeWidth={1.75} />
+              </button>
+            )}
+          </div>
+
+          {(['all', 'video', 'photo'] as const).map((value) => (
+            <button
+              key={value}
+              onClick={() => setFilter(value)}
+              className={cn('chip', filter === value && 'chip-active')}
+              aria-pressed={filter === value}
+            >
+              {value === 'video' && <Play size={12} strokeWidth={1.75} aria-hidden="true" />}
+              {value === 'photo' && <ImageIcon size={12} strokeWidth={1.75} aria-hidden="true" />}
+              {value}
+            </button>
+          ))}
+
+          {categories.map(({ name }) => (
+            <button
+              key={name}
+              onClick={() => setCategory(category === name ? null : name)}
+              className={cn('chip', category === name && 'chip-active')}
+              aria-pressed={category === name}
+            >
+              {name}
+            </button>
+          ))}
+
+          {(category || filter !== 'all' || homeQuery) && (
+            <button
+              onClick={() => {
+                setCategory(null)
+                setFilter('all')
+                setHomeQuery('')
+              }}
+              className="inline-flex min-h-10 items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2 hover:text-ink"
+            >
+              <X size={12} strokeWidth={1.75} aria-hidden="true" /> Clear
+            </button>
+          )}
+
+          <div className="ml-auto flex items-center gap-1">
+            <button onClick={surprise} className="btn-secondary min-h-10 px-3" aria-label="Surprise me">
+              <Dice5 size={14} strokeWidth={1.75} aria-hidden="true" />
+              <span className="hidden sm:inline">Surprise</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Grid / list */}
+        {discoveryQuery.isLoading ? (
+          <SkeletonGrid count={12} />
+        ) : discoveryQuery.error ? (
+          <EmptyState
+            icon={RefreshCw}
+            title="The live archive could not be reached"
+            description="Check your connection and try again. Nothing here is cached client-side."
+            actionLabel="Retry"
+            onAction={() => discoveryQuery.refetch()}
+          />
+        ) : visibleItems.length === 0 ? (
+          <EmptyState
+            icon={Search}
+            title="No media matches"
+            description="Try removing a filter or category to widen the archive view."
+            actionLabel="Clear filters"
+            onAction={() => {
+              setCategory(null)
+              setFilter('all')
+              setHomeQuery('')
+            }}
+          />
+        ) : viewMode === 'grid' ? (
+          <>
+            <div className={cn('media-grid grid gap-4', densityCols[gridDensity])}>
+              {visibleItems.map((item) => (
+                <MediaCard key={item.id} item={item} aspectRatio="2/3" onSelect={openDetail} />
+              ))}
+            </div>
+            {hasMore && (
+              <div className="mt-8 flex justify-center">
+                <button onClick={() => setVisibleCount((count) => count + VISIBLE_INCREMENT)} className="btn-secondary">
+                  Show more ({filteredItems.length - visibleCount} remaining)
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="divide-y divide-line border-y border-line">
+            {visibleItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => openDetail(item.id)}
+                className="flex w-full items-center gap-4 py-3 text-left transition-colors hover:bg-sunken/50"
+                aria-label={`Open ${item.title}`}
+              >
+                <span className="h-16 w-12 shrink-0 overflow-hidden rounded-sm bg-sunken">
+                  <img src={item.thumbnail} alt="" loading="lazy" className="h-full w-full object-cover" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-ink">{item.title}</span>
+                  <span className="mono-meta mt-0.5 block uppercase">
+                    {item.source} · {relativeTime(item.createdAt)} · @{item.creator}
+                  </span>
+                </span>
+                <Sparkles size={14} strokeWidth={1.75} className="shrink-0 text-ink-3" aria-hidden="true" />
+              </button>
+            ))}
+            {hasMore && (
+              <div className="flex justify-center py-4">
+                <button onClick={() => setVisibleCount((count) => count + VISIBLE_INCREMENT)} className="btn-secondary">
+                  Show more ({filteredItems.length - visibleCount} remaining)
+                </button>
+              </div>
+            )}
+          </div>
         )}
-      </AnimatePresence>
+      </section>
 
-      {/* Floating Category Navigator */}
-      <FloatingNavigator
-        activeCategory={activeCategory}
-        onSelect={(name) => {
-          setActiveCategory(name)
-          scrollToCategory(name)
-        }}
-        visible={showFloatingNav}
-        categories={liveCategories}
-      />
-
-      {/* Media Detail Drawer */}
       <MediaDetail
         item={selectedItem}
-        open={detailOpen}
-        onClose={handleCloseDetail}
+        open={Boolean(selectedItem)}
+        onClose={() => setSelectedItem(null)}
+        items={allItems}
+        onNavigate={setSelectedItem}
       />
+      <CreatorDrawer creator={activeCreator} onClose={() => setActiveCreator(null)} />
     </div>
   )
 }
