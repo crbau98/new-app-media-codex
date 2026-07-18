@@ -18,10 +18,15 @@ const NO_STORE_HEADERS = {
   "Vercel-CDN-Cache-Control": "no-store",
 }
 
+const PRIVACY_HEADERS = {
+  "Referrer-Policy": "no-referrer",
+  "X-Robots-Tag": "noindex",
+}
+
 function jsonError(error: string, status: number): Response {
   return new Response(JSON.stringify({ error }), {
     status,
-    headers: { "Content-Type": "application/json", ...NO_STORE_HEADERS },
+    headers: { "Content-Type": "application/json", ...NO_STORE_HEADERS, ...PRIVACY_HEADERS },
   })
 }
 
@@ -161,6 +166,8 @@ export default async function handler(req: Request): Promise<Response> {
   out.set("Cross-Origin-Resource-Policy", "same-origin")
   out.set("Accept-Ranges", "bytes")
   out.set("X-Content-Type-Options", "nosniff")
+  out.set("Referrer-Policy", "no-referrer")
+  out.set("X-Robots-Tag", "noindex")
   out.append("Vary", "Range")
   if (contentType.startsWith("video/") || range) {
     for (const [name, value] of Object.entries(NO_STORE_HEADERS)) out.set(name, value)

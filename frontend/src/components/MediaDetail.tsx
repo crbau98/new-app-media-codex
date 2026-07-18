@@ -36,6 +36,12 @@ function preferQuality(candidates: string[], quality: VideoQuality): string[] {
     .map((entry) => entry.url)
 }
 
+function legacyScreenshotId(id: string): string | null {
+  const value = id.trim()
+  if (/^\d+$/.test(value)) return value
+  return value.match(/^(?:shot|screenshot)-(\d+)$/)?.[1] || null
+}
+
 function VideoPlayer({ item }: { item: MediaItem }) {
   const autoplay = useAppStore((state) => state.autoplayVideos)
   const muteOnStart = useAppStore((state) => state.muteOnStart)
@@ -57,13 +63,14 @@ function VideoPlayer({ item }: { item: MediaItem }) {
       setIndex((value) => value + 1)
       return
     }
-    if (item.id.startsWith('rg-') || recovering) {
+    const shotId = legacyScreenshotId(item.id)
+    if (!shotId || recovering) {
       setFailed(true)
       return
     }
     setRecovering(true)
     try {
-      const response = await fetch(apiUrl(`/api/screenshots/${item.id}/resolve-stream`), { method: 'POST' })
+      const response = await fetch(apiUrl(`/api/screenshots/${shotId}/resolve-stream`), { method: 'POST' })
       if (!response.ok) throw new Error('No alternate stream')
       const data = (await response.json()) as { cached_url?: string; local_url?: string; direct_url?: string }
       const alternatives = [data.cached_url, data.local_url, data.direct_url].map(resolvePublicUrl).filter((url): url is string => Boolean(url))
