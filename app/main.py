@@ -291,11 +291,26 @@ async def apply_response_headers(request: Request, call_next):
     request_id = getattr(request.state, "request_id", uuid.uuid4().hex)
     response.headers.setdefault("X-Request-ID", request_id)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # C22: unify Referrer-Policy with the Vercel edge (no-referrer).
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault(
         "Permissions-Policy",
         "camera=(), microphone=(), geolocation=(), fullscreen=(self)",
+    )
+    # C22: FastAPI previously sent no CSP (and a conflicting Referrer-Policy).
+    # Emit one aligned with the edge policy. img-src/media-src allow Redgifs
+    # thumbs and this backend origin; script/style need 'unsafe-inline' because
+    # index() injects an inline bootstrap <script> and inline styles.
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob: https://*.redgifs.com https://codex-research-radar.onrender.com; "
+        "media-src 'self' https://*.redgifs.com https://codex-research-radar.onrender.com; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'",
     )
     if request.url.path.startswith("/api/") or request.url.path == "/healthz":
         _cacheable = {"/api/version", "/api/app-shell-summary", "/api/screenshots/terms", "/api/screenshots/sources"}
@@ -311,8 +326,11 @@ async def rate_limit_middleware(request: Request, call_next):
     path = request.url.path
     if any(path.startswith(p) for p in _RL_EXEMPT_PREFIXES):
         return await call_next(request)
+    # C6: X-Forwarded-For is "client, proxy1, proxy2, ...". The left-most entry
+    # is client-supplied and trivially spoofable; the right-most entry is the
+    # peer seen by our trusted edge proxy (Render), so rate-limit on that.
     ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
-    ip = ip.split(",")[0].strip()
+    ip = ip.split(",")[-1].strip()
     if not _check_rate_limit(ip, _RL_COST):
         return JSONResponse(
             status_code=429,
@@ -329,12 +347,30 @@ def _parse_cors_allow_origins() -> list[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
+# C26: Vercel preview deployments of this project get a unique alias per deploy
+# (e.g. new-app-media-codex-<hash>.vercel.app), which a static allow-list cannot
+# cover. Default to this project's own alias pattern — safe because it matches
+# only new-app-media-codex*.vercel.app, not arbitrary origins. Override with
+# CORS_ALLOW_ORIGIN_REGEX; set it empty to disable regex matching.
+_DEFAULT_CORS_ORIGIN_REGEX = r"^https://new-app-media-codex(-[a-z0-9-]+)?\.vercel\.app$"
+
+
+def _parse_cors_allow_origin_regex() -> str | None:
+    raw = os.environ.get("CORS_ALLOW_ORIGIN_REGEX")
+    if raw is None:
+        return _DEFAULT_CORS_ORIGIN_REGEX
+    raw = raw.strip()
+    return raw or None
+
+
 _cors_origins = _parse_cors_allow_origins()
+_cors_origin_regex = _parse_cors_allow_origin_regex()
 if _cors_origins:
     # Added after other middleware so this runs outermost (handles OPTIONS / CORS headers first).
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins,
+        allow_origin_regex=_cors_origin_regex,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -676,7 +712,12 @@ app.include_router(assistant_router)
 
 # SPA fallback — must be the last route
 @app.get("/{full_path:path}", response_class=HTMLResponse)
-def spa_fallback(full_path: str) -> HTMLResponse:
+def spa_fallback(full_path: str):
+    # C21: unmatched /api/* paths must return a JSON 404, never the SPA shell.
+    # Registered API routers are matched first, so reaching here means the API
+    # path genuinely does not exist.
+    if full_path == "api" or full_path.startswith("api/"):
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
     dist_index_html = _get_frontend_index_html()
     if dist_index_html is not None:
         return HTMLResponse(dist_index_html, headers={"Cache-Control": "no-cache"})
