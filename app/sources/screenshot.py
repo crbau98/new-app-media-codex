@@ -84,7 +84,7 @@ TERM_QUERIES: dict[str, str] = {
     # Intimacy
     "gay kissing":       "gay kissing male nude",
     # OnlyFans creators
-    "onlyfans gay":      "onlyfans gay male creator leaked nude",
+    "onlyfans gay":      "onlyfans gay male creator",
     "onlyfans twink":    "onlyfans twink gay male nude",
     "onlyfans muscle":   "onlyfans muscle gay male nude",
 }
@@ -161,77 +161,13 @@ TERM_REDGIFS_USERS: dict[str, list[str]] = {
     # Example: "edging": ["someuser123"],
 }
 
-# Creator-specific capture queries — known gay male content creators
-# Format: display_name → DDG search query
-# These run after the main TERM_QUERIES loop in capture_screenshots()
-CREATOR_QUERIES: dict[str, str] = {
-    # Explicitly mentioned by user
-    "jakipz":              '"jakipz" gay onlyfans nude',
-    "hoguesdirtylaundry":  '"hoguesdirtylaundry" gay nude twitter',
-    "michael yerger":      '"michael yerger" gay onlyfans nude',
-    "sebastian cox":       '"sebastian cox" gay onlyfans nude',
-    # Well-known gay adult performers / OnlyFans creators
-    "ryan bones":          '"ryan bones" gay nude onlyfans',
-    "drew valentino":      '"drew valentino" gay nude onlyfans',
-    "blake mitchell":      '"blake mitchell" gay nude',
-    "colby keller":        '"colby keller" gay nude artist',
-    "austin wolf":         '"austin wolf" gay nude onlyfans',
-    "cade maddox":         '"cade maddox" gay nude',
-    "levi charming":       '"levi charming" gay onlyfans nude',
-    "brent everett":       '"brent everett" gay nude',
-    "tanner of miami":     '"tanner of miami" gay nude onlyfans',
-    "alex mecum":          '"alex mecum" gay nude',
-    "jacob black":         '"jacob black" gay nude onlyfans',
-    "grayson lange":       '"grayson lange" gay nude onlyfans',
-    "nick fitt":           '"nick fitt" gay nude onlyfans',
-    "pierre fitch":        '"pierre fitch" gay nude',
-    "jj knight":           '"jj knight" gay nude onlyfans',
-    "max carter":          '"max carter" gay nude onlyfans',
-    "troye dean":          '"troye dean" gay nude onlyfans',
-    "johnny rapid":        '"johnny rapid" gay nude',
-    "scott demarco":       '"scott demarco" gay nude',
-    "marcus orelias":      '"marcus orelias" gay onlyfans nude',
-    "devin franco":        '"devin franco" gay nude onlyfans',
-    "manuel skye":         '"manuel skye" gay nude',
-    "bareback bastian":    '"bareback bastian" gay nude onlyfans',
-    "josh moore":          '"josh moore" gay nude onlyfans',
-    "phenix saint":        '"phenix saint" gay nude',
-    "samuel o toole":      '"samuel o toole" gay nude',
-    "boomer banks":        '"boomer banks" gay nude hung',
-    "landon mycles":       '"landon mycles" gay nude hung',
-    "adam ramzi":          '"adam ramzi" gay nude',
-    "skyy knox":           '"skyy knox" gay nude onlyfans',
-    "vincent ocock":       '"vincent ocock" gay nude onlyfans',
-    "theo brady":          '"theo brady" gay nude onlyfans',
-    "ricky roman":         '"ricky roman" gay nude',
-    "rafael alencar":      '"rafael alencar" gay nude hung',
-    # Additional Fansly / newer creators
-    "vincenzo ortiz":      '"vincenzo ortiz" gay onlyfans fansly nude',
-    "tanner myers":        '"tanner myers" gay nude onlyfans fansly',
-    "max konnor":          '"max konnor" gay nude onlyfans hung',
-    "gabriel cross":       '"gabriel cross" gay nude onlyfans',
-    "elijah zayne":        '"elijah zayne" gay nude onlyfans',
-    "wolf hudson":         '"wolf hudson" gay nude onlyfans',
-    "dakota payne":        '"dakota payne" gay nude onlyfans',
-    "tom of finland":      '"tom of finland" gay nude art',
-    "felix fox":           '"felix fox" gay nude onlyfans',
-    "sean xavier":         '"sean xavier" gay nude hung',
-    "osiris blade":        '"osiris blade" gay nude onlyfans hung',
-    "luca del rey":        '"luca del rey" gay nude onlyfans',
-    "jace jenson":         '"jace jenson" gay nude onlyfans',
-    "beaux banks":         '"beaux banks" gay nude onlyfans twink',
-    "ashton summers":      '"ashton summers" gay nude onlyfans twink',
-    "dylan hayes":         '"dylan hayes" gay nude onlyfans twink',
-    "will braun":          '"will braun" gay nude',
-    "billy santoro":       '"billy santoro" gay nude onlyfans daddy',
-    "matthieu paris":      '"matthieu paris" gay nude onlyfans',
-    "leo forte":           '"leo forte" gay nude onlyfans hung',
-}
-
-# Appended to every DDG query to exclude female/straight content
+# Appended to every DDG query to exclude female/straight content.
+# Scope note: only strictly female/straight markers are excluded — trans and
+# femboy terms must never appear in exclusion lists (trans men are men, and
+# femboy content is male content within this app's gay-male scope).
 _DDG_EXCLUDE = (
     "-woman -women -female -girl -girls -lesbian -straight -hetero "
-    "-pussy -vagina -transgender -trans -shemale -ladyboy -femboy "
+    "-pussy -vagina "
     "-couples -couple -wife -girlfriend -bikini"
 )
 
@@ -437,12 +373,13 @@ _REDGIFS_HD_WIDTH = 720         # minimum width to count as HD
 _REDGIFS_BACKOFF_S = 5 * 60
 _REDGIFS_BACKOFF_UNTIL = 0.0
 
-# Gender filtering lists (shared across all Redgifs helpers)
+# Gender filtering lists (shared across all Redgifs helpers).
+# Strictly female/straight markers only — no trans/femboy terms (see above).
 _RG_FEMALE_KEYWORDS = [
     "female", "woman", "women", "girl", "lesbian", "straight",
-    "pussy", "vagina", "vulva", "transgender", "shemale", "ladyboy",
-    "femboy", "bisexual", "bisex", "hetero", "heterosexual",
-    "girlfriend", "wife", "b/g", "m/f", "ftm",
+    "pussy", "vagina", "vulva",
+    "bisexual", "bisex", "hetero", "heterosexual",
+    "girlfriend", "wife", "b/g", "m/f",
 ]
 _RG_MALE_KEYWORDS = [
     "gay", "male", "man", "men", "boy", "twink", "bear", "otter",
@@ -718,7 +655,7 @@ def _search_redgifs_user(
 
 _YTDLP_FEMALE_KEYWORDS = {
     "female", "woman", "women", "girl", "girls", "lesbian", "straight",
-    "pussy", "vagina", "trans", "shemale", "ladyboy", "femboy", "hetero",
+    "pussy", "vagina", "hetero",
     "couple", "bisex", "bisexual", "wife", "girlfriend",
 }
 
@@ -1099,47 +1036,6 @@ def capture_screenshots(
                    "local_path": None, "ok": ok,
                    "source_url": job["url"],
                    "thumbnail_url": job.get("poster_url") or None}
-
-    # ── Creator-specific DDG image capture ─────────────────────────────────
-    for creator_name, creator_query in CREATOR_QUERIES.items():
-        slug_base = creator_name.replace(" ", "_")
-        filtered_query = f"{creator_query} {_DDG_EXCLUDE}"
-        results = (
-            _search_ddg_images(session, filtered_query, 15, start=0)
-            + _search_ddg_images(session, filtered_query, 15, start=50)
-        )
-        seen_creator_urls: set[str] = set()
-        results = [
-            row for row in results
-            if (u := row.get("image") or "") and u not in seen_creator_urls and not seen_creator_urls.add(u)  # type: ignore[func-returns-value]
-        ]
-        print(f"[screenshot] creator '{creator_name}': found {len(results)} images")
-        creator_candidates: list[dict] = []
-        for i, row in enumerate(results):
-            image_url = row.get("image") or ""
-            page_url = row.get("url") or image_url
-            if not image_url:
-                continue
-            if _page_url_exists(page_url):
-                continue
-            creator_candidates.append({
-                "term": creator_name,
-                "source": "ddg",
-                "page_url": page_url,
-                "url": image_url,
-            })
-        for done, cand in enumerate(creator_candidates, 1):
-            image_url = cand["url"]
-            ok = True
-            if settings is not None:
-                from app.vision_filter import passes_strict_content_filter_url
-                if not passes_strict_content_filter_url(settings, image_url):
-                    ok = False
-            if ok:
-                _mark_page_url(cand["page_url"])
-            yield {"term": creator_name, "source": "ddg", "page_url": cand["page_url"],
-                   "local_path": None, "ok": ok,
-                   "source_url": image_url}
 
 
 # ── Term → research theme mapping ────────────────────────────────────────────
