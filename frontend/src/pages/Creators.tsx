@@ -1,369 +1,580 @@
-import { useCallback, useMemo, useState, type FormEvent } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ExternalLink, Eye, Globe2, Heart, Plus, Radar, RefreshCw, Search, ShieldCheck, Sparkles, Users, X } from 'lucide-react'
+import {
+  ArrowUpDown,
+  Check,
+  ExternalLink,
+  FileText,
+  Globe,
+  Play,
+  Plus,
+  Radar,
+  RefreshCw,
+  Search,
+  Sparkles,
+  UserRound,
+  Users,
+  X,
+} from 'lucide-react'
+import type { Creator, LiveDiscoveryPayload, SourceState } from '@/lib/types'
+import { fetchLiveDiscovery } from '@/lib/api'
+import { creatorFollowId, creatorKey, formatMetric, relativeTime } from '@/lib/discovery'
 import { useAppStore } from '@/store'
-import { cn } from '@/lib/utils'
-import { fetchLiveDiscovery, type LiveDiscoveryPayload } from '@/lib/api'
-import type { Creator, MediaItem } from '@/lib/mockData'
-import MediaCard from '@/components/MediaCard'
-import MediaDetail from '@/components/MediaDetail'
+import CreatorDrawer from '@/components/CreatorDrawer'
 import EmptyState from '@/components/EmptyState'
-import SkeletonGrid from '@/components/SkeletonGrid'
+import UpdatedChip from '@/components/UpdatedChip'
+import { cn } from '@/lib/utils'
 
-type CreatorSort = 'Smart picks' | 'Most watched' | 'Most liked' | 'A–Z'
-type CreatorFilter = 'all' | 'ai-matches' | 'auto-added' | 'high-demand'
+type CreatorSort = 'smart' | 'newest' | 'engagement' | 'az'
 
-function formatMetric(value = 0): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}m`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}k`
-  return String(value)
+const sortLabels: Record<CreatorSort, string> = {
+  smart: 'Smart',
+  newest: 'Newest',
+  engagement: 'Top engagement',
+  az: 'A–Z',
 }
 
-function observedMedia(creator: Creator): MediaItem[] {
-  return creator.media ?? []
+const stateTone: Record<SourceState | (string & {}), string> = {
+  connected: 'bg-success',
+  limited: 'bg-warning',
+  'not-configured': 'bg-ink-3',
+  error: 'bg-error',
+  blocked: 'bg-error',
 }
 
-function CreatorCard({
-  creator,
-  index,
-  following,
-  onFollow,
-  onOpen,
-}: {
-  creator: Creator
-  index: number
-  following: boolean
-  onFollow: () => void
-  onOpen: () => void
-}) {
-  const media = observedMedia(creator)
-  const cover = media[0]
-  const avatar = creator.avatar || cover?.thumbnail
-
-  return (
-    <motion.article
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.035, 0.35), duration: 0.35, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-      onClick={onOpen}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          onOpen()
-        }
-      }}
-      role="button"
-      tabIndex={0}
-      aria-label={`Open creator ${creator.name}`}
-      className="group overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] cursor-pointer card-lift"
-    >
-      <div className="relative h-28 overflow-hidden bg-[var(--bg-surface)]">
-        {cover && <img src={cover.thumbnail} alt="" className="h-full w-full object-cover opacity-70 transition-transform duration-500 group-hover:scale-105" loading="lazy" />}
-        <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-elevated)] via-transparent to-transparent" />
-        <span className="absolute right-2 top-2 rounded-full border border-white/15 bg-black/35 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
-          {creator.platform || 'Public source'}
-        </span>
-      </div>
-
-      <div className="relative px-4 pb-4">
-        <div className="-mt-8 flex items-end justify-between gap-3">
-          {avatar ? <img
-            src={avatar}
-            alt={creator.name}
-            className="h-16 w-16 rounded-full border-4 border-[var(--bg-elevated)] object-cover bg-[var(--bg-surface)]"
-            loading="lazy"
-          /> : <div aria-hidden="true" className="grid h-16 w-16 place-items-center rounded-full border-4 border-[var(--bg-elevated)] bg-[var(--accent-dim)] text-xl font-bold text-[var(--accent)]">{creator.name.charAt(0).toUpperCase()}</div>}
-          <span className="mb-1 flex items-center gap-1 rounded-full bg-[var(--accent-dim)] px-2 py-1 text-[10px] font-semibold text-[var(--accent)]">
-            {creator.isWatched ? <><Radar size={11} /> On radar</> : creator.autoAdded ? <><Sparkles size={11} /> AI added · {creator.similarityScore}</> : creator.isSimilar ? <><Sparkles size={11} /> {creator.similarityScore} metadata match</> : <><Sparkles size={11} /> {creator.curationScore || 0} source signal</>}
-          </span>
-        </div>
-
-        <div className="mt-2 min-w-0">
-          <h2 className="truncate text-base font-semibold text-[var(--text-primary)]">{creator.name}</h2>
-          <p className="truncate text-xs text-[var(--text-tertiary)]">@{creator.username || creator.name.replace(/\s+/g, '').toLowerCase()}</p>
-        </div>
-
-        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-          <div><p className="text-sm font-semibold text-[var(--text-primary)]">{creator.mediaCount || media.length}</p><p className="text-[10px] text-[var(--text-muted)]">clips</p></div>
-          <div><p className="text-sm font-semibold text-[var(--text-primary)]">{formatMetric(creator.viewCount)}</p><p className="text-[10px] text-[var(--text-muted)]">watched</p></div>
-          <div><p className="text-sm font-semibold text-[var(--text-primary)]">{formatMetric(creator.likeCount)}</p><p className="text-[10px] text-[var(--text-muted)]">liked</p></div>
-        </div>
-
-        <button
-          onClick={(event) => {
-            event.stopPropagation()
-            onFollow()
-          }}
-          className={cn(
-            'mt-4 flex w-full items-center justify-center gap-1.5 rounded-[var(--radius-sm)] py-2 text-sm font-medium transition-colors',
-            following ? 'bg-[var(--bg-surface)] text-[var(--text-primary)]' : 'btn-primary'
-          )}
-        >
-          {following ? <><Check size={14} /> Following</> : 'Follow'}
-        </button>
-      </div>
-    </motion.article>
-  )
+function creatorPlatforms(creator: Creator): string[] {
+  const set = new Set<string>()
+  if (creator.platform) set.add(creator.platform.toLowerCase())
+  for (const platform of creator.platforms ?? []) set.add(platform.toLowerCase())
+  if (creator.sourceAttribution) set.add(creator.sourceAttribution.toLowerCase())
+  return [...set]
 }
 
-function CreatorDrawer({ creator, onClose }: { creator: Creator | null; onClose: () => void }) {
-  const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null)
-  const media = creator ? observedMedia(creator) : []
-
-  return (
-    <AnimatePresence>
-      {creator && (
-        <>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-[var(--bg-overlay)]" onClick={onClose} />
-          <motion.aside
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-            className="fixed inset-y-0 right-0 z-[101] w-full max-w-[540px] overflow-y-auto border-l border-[var(--border-subtle)] bg-[var(--bg-base)] p-5"
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Creator ${creator.name}`}
-          >
-            <button onClick={onClose} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-[var(--bg-overlay)] text-white" aria-label="Close creator">
-              <X size={17} />
-            </button>
-            <div className="relative -mx-5 -mt-5 h-48 overflow-hidden bg-[var(--bg-surface)]">
-              {media[0] && <img src={media[0].thumbnail} alt="" className="h-full w-full object-cover opacity-55" />}
-              <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-base)] to-transparent" />
-            </div>
-            <div className="-mt-12 relative">
-              {creator.avatar || media[0]?.thumbnail ? <img src={creator.avatar || media[0]?.thumbnail} alt={creator.name} className="h-24 w-24 rounded-full border-4 border-[var(--bg-base)] object-cover bg-[var(--bg-surface)]" /> : <div aria-hidden="true" className="grid h-24 w-24 place-items-center rounded-full border-4 border-[var(--bg-base)] bg-[var(--accent-dim)] text-3xl font-bold text-[var(--accent)]">{creator.name.charAt(0).toUpperCase()}</div>}
-              <h2 className="mt-3 text-2xl font-bold text-[var(--text-primary)]">{creator.name}</h2>
-              <p className="text-sm text-[var(--text-secondary)]">@{creator.username || creator.name.replace(/\s+/g, '').toLowerCase()} · {creator.sourceAttribution || creator.platform}</p>
-            </div>
-
-            <div className="my-6 grid grid-cols-3 divide-x divide-[var(--border-subtle)] rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] py-3 text-center">
-              <div><p className="font-semibold text-[var(--text-primary)]">{creator.mediaCount || media.length}</p><p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Observed</p></div>
-              <div><p className="font-semibold text-[var(--text-primary)]">{formatMetric(creator.viewCount)}</p><p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Public views</p></div>
-              <div><p className="font-semibold text-[var(--text-primary)]">{formatMetric(creator.likeCount)}</p><p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Public likes</p></div>
-            </div>
-
-            {creator.isSimilar && creator.discoveryReasons?.length ? (
-              <section className="mb-5 rounded-[var(--radius-md)] border border-[var(--accent)]/30 bg-[var(--accent-dim)] p-4">
-                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--accent)]"><Sparkles size={14} /> Why this source account is similar</p>
-                <div className="mt-3 flex flex-wrap gap-2">{creator.discoveryReasons.map((reason) => <span key={reason} className="rounded-full bg-[var(--bg-base)]/70 px-2.5 py-1 text-xs text-[var(--text-secondary)]">{reason}</span>)}</div>
-              </section>
-            ) : null}
-
-            <div className="mb-5 flex items-center justify-between gap-3">
-              <div>
-                <h3 className="font-semibold text-[var(--text-primary)]">Latest public posts</h3>
-                <p className="mt-1 text-xs text-[var(--text-tertiary)]">These are source-provided uploader accounts; attribution does not verify the person depicted.</p>
-              </div>
-              {creator.profileUrl && <a href={creator.profileUrl} target="_blank" rel="noreferrer" className="shrink-0 rounded-md border border-[var(--border-medium)] px-3 py-2 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-surface)]"><ExternalLink size={13} className="mr-1 inline" /> Source</a>}
-            </div>
-
-            {media.length ? (
-              <div className="grid grid-cols-2 gap-3">
-                {media.map((item) => <MediaCard key={item.id} item={item} onSelect={() => setSelectedMedia(item)} />)}
-              </div>
-            ) : (
-              <EmptyState variant="category" title="No source posts available" description="The creator was observed, but the source did not return playable public media." />
-            )}
-          </motion.aside>
-          <MediaDetail item={selectedMedia} open={Boolean(selectedMedia)} onClose={() => setSelectedMedia(null)} />
-        </>
-      )}
-    </AnimatePresence>
-  )
+function scanPhase(elapsedSeconds: number): string {
+  if (elapsedSeconds < 3) return 'Contacting sources'
+  if (elapsedSeconds < 8) return 'Ranking matches'
+  return 'Checking AI suggestions'
 }
 
-export default function CreatorsPage() {
-  const [query, setQuery] = useState('')
-  const [watchInput, setWatchInput] = useState('')
-  const [sort, setSort] = useState<CreatorSort>('Smart picks')
-  const [filter, setFilter] = useState<CreatorFilter>('all')
-  const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null)
-  const [isScanningNow, setIsScanningNow] = useState(false)
+export default function Creators() {
+  const creatorWatchlist = useAppStore((s) => s.creatorWatchlist)
+  const addCreatorToWatchlist = useAppStore((s) => s.addCreatorToWatchlist)
+  const removeCreatorFromWatchlist = useAppStore((s) => s.removeCreatorFromWatchlist)
+  const followCache = useAppStore((s) => s.followCache)
+  const toggleFollow = useAppStore((s) => s.toggleFollow)
+  const addToast = useAppStore((s) => s.addToast)
+
+  const [handleDraft, setHandleDraft] = useState('')
+  const [searchText, setSearchText] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [platformFilter, setPlatformFilter] = useState<string | null>(null)
+  const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [sort, setSort] = useState<CreatorSort>('smart')
+  const [activeCreator, setActiveCreator] = useState<Creator | null>(null)
+  const [scanBanner, setScanBanner] = useState<string | null>(null)
+
   const queryClient = useQueryClient()
-  const followCache = useAppStore((state) => state.followCache)
-  const toggleFollow = useAppStore((state) => state.toggleFollow)
-  const addToast = useAppStore((state) => state.addToast)
-  const creatorWatchlist = useAppStore((state) => state.creatorWatchlist)
-  const addCreatorToWatchlist = useAppStore((state) => state.addCreatorToWatchlist)
-  const removeCreatorFromWatchlist = useAppStore((state) => state.removeCreatorFromWatchlist)
-  const directoryQueryKey = useMemo(() => ['live-creators', 'directory', creatorWatchlist] as const, [creatorWatchlist])
-  const { data: discovery, isLoading, isError, isFetching, refetch, dataUpdatedAt } = useQuery({
-    queryKey: directoryQueryKey,
-    queryFn: () => fetchLiveDiscovery(creatorWatchlist),
-    staleTime: 60_000,
-    refetchInterval: 120_000,
-    refetchOnWindowFocus: true,
+
+  // Debounce the backend query term (400ms)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(searchText.trim()), 400)
+    return () => window.clearTimeout(timer)
+  }, [searchText])
+
+  const queryKey = useMemo(
+    () => ['live-discovery', 'creators', creatorWatchlist, debouncedQuery] as const,
+    [creatorWatchlist, debouncedQuery]
+  )
+
+  const discoveryQuery = useQuery({
+    queryKey,
+    queryFn: () => fetchLiveDiscovery(creatorWatchlist, { query: debouncedQuery }),
   })
-  const creators = useMemo(() => discovery?.performers || [], [discovery?.performers])
-  const sources = useMemo(() => discovery?.sources || [], [discovery?.sources])
+  const discovery = discoveryQuery.data
 
-  const visibleCreators = useMemo(() => {
-    const normalized = query.trim().toLowerCase()
-    const result = creators
-      .filter((creator) => !normalized || [creator.name, creator.username || '', creator.platform || ''].join(' ').toLowerCase().includes(normalized))
-      .filter((creator) => filter !== 'high-demand' || (creator.curationScore || 0) >= 65)
-      .filter((creator) => filter !== 'ai-matches' || creator.isSimilar)
-      .filter((creator) => filter !== 'auto-added' || creator.autoAdded)
-    return [...result].sort((a, b) => {
-      if (sort === 'Most watched') return (b.viewCount || 0) - (a.viewCount || 0)
-      if (sort === 'Most liked') return (b.likeCount || 0) - (a.likeCount || 0)
-      if (sort === 'A–Z') return a.name.localeCompare(b.name)
-      return Number(b.isWatched) - Number(a.isWatched) || (b.similarityScore || 0) - (a.similarityScore || 0) || (b.curationScore || 0) - (a.curationScore || 0) || (b.viewCount || 0) - (a.viewCount || 0)
-    })
-  }, [creators, filter, query, sort])
+  /* ── Scan flow with elapsed-time progress ── */
+  const [scanning, setScanning] = useState(false)
+  const [scanElapsed, setScanElapsed] = useState(0)
+  const scanTimerRef = useRef<number | null>(null)
 
-  const follow = useCallback((creator: Creator) => {
-    const isFollowing = !followCache[creator.id]
-    toggleFollow(creator.id)
-    if (isFollowing) addToast({ type: 'success', title: `Following @${creator.username || creator.name}` })
-  }, [addToast, followCache, toggleFollow])
-
-  const addWatch = useCallback((event: FormEvent) => {
-    event.preventDefault()
-    const candidate = watchInput.trim().replace(/^@/, '')
-    if (candidate.length < 2) return
-    if (/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(candidate)) {
-      addToast({ type: 'error', title: 'Use an exact public source username—not an email' })
-      return
-    }
-    const key = candidate.toLowerCase().replace(/[^a-z0-9]+/g, '')
-    if (creatorWatchlist.some((item) => item.toLowerCase().replace(/[^a-z0-9]+/g, '') === key)) {
-      addToast({ type: 'info', title: 'Creator is already on your radar' })
-      return
-    }
-    if (creatorWatchlist.length >= 8) {
-      addToast({ type: 'error', title: 'Creator radar is limited to 8 active searches' })
-      return
-    }
-    addCreatorToWatchlist(candidate)
-    setWatchInput('')
-    addToast({ type: 'success', title: `Scanning public sources for @${candidate}` })
-  }, [addCreatorToWatchlist, addToast, creatorWatchlist, watchInput])
-
-  const scanNow = useCallback(async () => {
-    if (isScanningNow) return
-    setIsScanningNow(true)
+  const runScan = useCallback(async () => {
+    if (scanning) return
+    const beforeKeys = new Set((discovery?.performers ?? []).map((creator) => creatorKey(creator.name)))
+    setScanning(true)
+    setScanElapsed(0)
+    setScanBanner(null)
+    const startedAt = Date.now()
+    scanTimerRef.current = window.setInterval(() => {
+      setScanElapsed(Math.floor((Date.now() - startedAt) / 1000))
+    }, 500)
     try {
-      const cachedDiscoveries = queryClient.getQueriesData<LiveDiscoveryPayload>({ queryKey: ['live-discovery'] })
-      const previousIds = new Set(cachedDiscoveries.flatMap(([, payload]) => (payload?.items || []).map((item) => item.id)))
-      const fresh = await fetchLiveDiscovery(creatorWatchlist, true)
-      queryClient.setQueriesData<LiveDiscoveryPayload>({ queryKey: ['live-creators'] }, fresh)
-      queryClient.setQueriesData<LiveDiscoveryPayload>({ queryKey: ['live-discovery'] }, fresh)
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['media'] }),
-        queryClient.invalidateQueries({ queryKey: ['search'] }),
-      ])
-      const newPosts = previousIds.size ? fresh.items.filter((item) => !previousIds.has(item.id)).length : null
-      const succeeded = fresh.counts.providerRequestsSucceeded ?? fresh.counts.pagesScanned
-      const attempted = fresh.counts.providerRequestsAttempted ?? succeeded
-      const partial = succeeded < attempted
-      addToast({
-        type: partial ? 'info' : 'success',
-        title: partial ? 'Public-source scan partially completed' : 'Public-source scan complete',
-        message: `${newPosts === null ? `${fresh.items.length} posts checked` : `${newPosts} new posts`} · ${fresh.watchlist.matched.length}/${creatorWatchlist.length} exact radar matches · ${fresh.aiDiscovery.autoAddedCreators || 0} AI additions · ${fresh.counts.sourcesConnected || 1} sources connected · ${succeeded}/${attempted} requests succeeded`,
+      const payload: LiveDiscoveryPayload = await fetchLiveDiscovery(creatorWatchlist, {
+        forceFresh: true,
+        query: debouncedQuery,
       })
-    } catch {
-      addToast({ type: 'error', title: 'Immediate scan could not complete', message: 'The source did not return a playable result. Try again while the app is open.' })
+      queryClient.setQueryData(queryKey, payload)
+      const newCount = payload.performers.filter((creator) => !beforeKeys.has(creatorKey(creator.name))).length
+      const matched = payload.watchlist.matched.length
+      const aiCount = payload.aiDiscovery.suggestedCreators
+      const aiNote = payload.aiDiscovery.state === 'ok'
+        ? `AI: ${aiCount} suggestion${aiCount === 1 ? '' : 's'}`
+        : `AI: ${payload.aiDiscovery.state}${payload.aiDiscovery.detail ? ` — ${payload.aiDiscovery.detail}` : ''}`
+      const summary = `${newCount} new creator${newCount === 1 ? '' : 's'} found · ${matched} matched your radar · ${aiNote}`
+      setScanBanner(summary)
+      addToast({ type: 'success', title: 'Scan complete', message: summary })
+    } catch (error) {
+      addToast({
+        type: 'error',
+        title: 'Scan failed',
+        message: error instanceof Error ? error.message : 'The sources could not be reached.',
+      })
     } finally {
-      setIsScanningNow(false)
+      if (scanTimerRef.current) window.clearInterval(scanTimerRef.current)
+      setScanning(false)
     }
-  }, [addToast, creatorWatchlist, isScanningNow, queryClient])
+  }, [addToast, creatorWatchlist, debouncedQuery, discovery, queryClient, queryKey, scanning])
+
+  useEffect(() => {
+    return () => {
+      if (scanTimerRef.current) window.clearInterval(scanTimerRef.current)
+    }
+  }, [])
+
+  /* ── Derived filter data ── */
+  const performers = useMemo(() => discovery?.performers ?? [], [discovery])
+
+  const platforms = useMemo(() => {
+    const set = new Set<string>()
+    for (const creator of performers) for (const platform of creatorPlatforms(creator)) set.add(platform)
+    return [...set].sort()
+  }, [performers])
+
+  const payloadTags = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const creator of performers) {
+      for (const tag of creator.discoveryTags ?? []) counts.set(tag, (counts.get(tag) || 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([tag]) => tag)
+  }, [performers])
+
+  const filteredCreators = useMemo(() => {
+    let result = [...performers]
+    if (platformFilter) result = result.filter((creator) => creatorPlatforms(creator).includes(platformFilter))
+    if (tagFilter) result = result.filter((creator) => (creator.discoveryTags ?? []).includes(tagFilter))
+    const needle = debouncedQuery.toLowerCase()
+    if (needle) {
+      result = result.filter(
+        (creator) =>
+          creator.name.toLowerCase().includes(needle) ||
+          (creator.username ?? '').toLowerCase().includes(needle) ||
+          (creator.discoveryTags ?? []).some((tag) => tag.toLowerCase().includes(needle))
+      )
+    }
+    switch (sort) {
+      case 'newest':
+        result.sort((a, b) => Date.parse(b.lastSeenAt ?? b.observedAt ?? '') - Date.parse(a.lastSeenAt ?? a.observedAt ?? ''))
+        break
+      case 'engagement':
+        result.sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0))
+        break
+      case 'az':
+        result.sort((a, b) => a.name.localeCompare(b.name))
+        break
+      case 'smart':
+      default:
+        result.sort((a, b) => Number(b.aiSuggested ?? false) - Number(a.aiSuggested ?? false) || (b.curationScore ?? 0) - (a.curationScore ?? 0))
+        break
+    }
+    return result
+  }, [performers, platformFilter, tagFilter, debouncedQuery, sort])
+
+  const addHandle = useCallback(() => {
+    const value = handleDraft.trim()
+    if (!value) return
+    addCreatorToWatchlist(value)
+    setHandleDraft('')
+  }, [addCreatorToWatchlist, handleDraft])
+
+  const follow = useCallback(
+    (creator: Creator) => {
+      const id = creatorFollowId(creator.name)
+      const next = !followCache[id]
+      toggleFollow(id)
+      addToast({
+        type: next ? 'success' : 'info',
+        title: next ? `Following @${creator.username || creator.name}` : `Unfollowed @${creator.username || creator.name}`,
+      })
+    },
+    [addToast, followCache, toggleFollow]
+  )
+
+  const ddg = discovery?.ddg
 
   return (
-    <div className="space-y-6">
-      <header className="rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 sm:p-7">
-        <div className="flex flex-wrap items-start justify-between gap-5">
-          <div className="max-w-2xl">
-            <span className="eyebrow text-[var(--accent)]">PERFORMER RADAR</span>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">Public gay-media account discovery</h1>
-            <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Search public creator accounts across connected official APIs. AI compares public metadata—not faces or bodies—and automatically admits high-confidence adjacent accounts with reasons and provenance.</p>
-          </div>
-          <div className="flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-secondary)]"><Users size={14} /> {creators.length} observed creators</div>
+    <div className="animate-page-enter space-y-8">
+      {/* Header */}
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-5">
+        <div>
+          <p className="eyebrow">Creator radar</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-[-0.03em] text-ink">Find male creators</h1>
+          <p className="mt-1.5 max-w-xl text-[13px] leading-5 text-ink-2">
+            Scan public sources for the handles you follow. Results are ranked with specific,
+            source-derived evidence — never inflated numbers.
+          </p>
         </div>
-      </header>
-
-      <section className="rounded-[var(--radius-lg)] border border-[var(--accent)]/30 bg-[linear-gradient(135deg,var(--accent-dim),var(--bg-elevated)_55%)] p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-2xl">
-            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Radar size={17} className="text-[var(--accent)]" /> Automatic creator radar</div>
-            <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">Add a creator name or exact public handle. Scan now queries every connected source and invokes server-side AI metadata reranking; daily and two-minute refreshes use the lower-cost deterministic model. Email-shaped text is always redacted.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span aria-live="polite" className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[11px] text-[var(--text-secondary)]">
-              {isFetching || isScanningNow ? 'Scanning sources…' : `${creators.filter((creator) => creator.isWatched).length} matched`} · {dataUpdatedAt ? `updated ${new Date(dataUpdatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'waiting'}
-            </span>
-            <button onClick={scanNow} disabled={isScanningNow} className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-[var(--accent)]/50 bg-[var(--bg-base)] px-3 text-xs font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent-dim)] disabled:cursor-wait disabled:opacity-60">
-              <RefreshCw size={13} className={cn(isScanningNow && 'animate-spin')} /> {isScanningNow ? 'Scanning now' : 'Scan now'}
-            </button>
-          </div>
+        <div className="flex items-center gap-2">
+          <UpdatedChip updatedAt={discovery?.updatedAt ?? null} />
+          <button onClick={runScan} disabled={scanning} className="btn-heat">
+            <Radar size={14} strokeWidth={1.75} aria-hidden="true" />
+            {scanning ? `Scanning ${scanElapsed}s` : 'Scan now'}
+          </button>
         </div>
-        <form onSubmit={addWatch} className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <label className="flex min-h-11 flex-1 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 focus-within:border-[var(--accent)]">
-            <Search size={15} className="text-[var(--text-tertiary)]" />
-            <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="Creator name or public handle" maxLength={50} aria-label="Creator name or public handle to monitor" className="w-full bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
-          </label>
-          <button type="submit" className="btn-primary flex min-h-11 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-4 text-sm font-medium"><Plus size={15} /> Add to radar</button>
-        </form>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {creatorWatchlist.map((creator) => (
-            <span key={creator} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)]/75 py-1 pl-3 pr-1.5 text-xs text-[var(--text-primary)]">
-              @{creator}
-              <button onClick={() => removeCreatorFromWatchlist(creator)} className="grid h-6 w-6 place-items-center rounded-full text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]" aria-label={`Stop watching ${creator}`}><X size={12} /></button>
-            </span>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Globe2 size={16} className="text-[var(--accent)]" /> Source coverage</h2>
-            <p className="mt-1 text-xs leading-5 text-[var(--text-tertiary)]">Connected sources can contribute public media. Discovery-only sources contribute canonical profile leads. Blocked mirrors are never queried.</p>
-          </div>
-          <span className="rounded-full bg-[var(--accent-dim)] px-3 py-1.5 text-[11px] font-semibold text-[var(--accent)]">{discovery?.aiDiscovery.state === 'model' ? `AI model · ${discovery.aiDiscovery.model}` : discovery?.aiDiscovery.detail || 'AI runs on Scan now'}</span>
-        </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {sources.map((source) => (
-            <div key={source.id} className="rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-primary)]">{source.state === 'connected' ? <ShieldCheck size={13} className="text-emerald-400" /> : <Globe2 size={13} className="text-[var(--text-tertiary)]" />}{source.name}</p>
-                <span className={cn('rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide', source.state === 'connected' ? 'bg-emerald-500/15 text-emerald-300' : source.state === 'blocked' ? 'bg-red-500/15 text-red-300' : 'bg-[var(--bg-base)] text-[var(--text-tertiary)]')}>{source.state.replace('-', ' ')}</span>
-              </div>
-              <p className="mt-2 text-[11px] leading-4 text-[var(--text-tertiary)]">{source.detail}</p>
-              <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--text-muted)]"><span>{source.mode} · {source.mediaFound} media · {source.creatorsFound} creators</span>{source.searchUrl && <a href={source.searchUrl} target="_blank" rel="noreferrer" className="text-[var(--accent)]">Open search <ExternalLink size={10} className="inline" /></a>}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 py-3 backdrop-blur-md">
-        <label className="flex min-w-[220px] flex-1 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-secondary)]">
-          <Search size={15} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search performer or platform" className="w-full bg-transparent outline-none placeholder:text-[var(--text-muted)]" />
-        </label>
-        <div className="flex items-center gap-1 rounded-full bg-[var(--bg-surface)] p-1">
-          <button onClick={() => setFilter('all')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'all' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>All</button>
-          <button onClick={() => setFilter('ai-matches')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'ai-matches' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>Similar</button>
-          <button onClick={() => setFilter('auto-added')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'auto-added' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>AI additions</button>
-          <button onClick={() => setFilter('high-demand')} className={cn('rounded-full px-3 py-1.5 text-xs transition-colors', filter === 'high-demand' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]')}>High demand</button>
-        </div>
-        <select value={sort} onChange={(event) => setSort(event.target.value as CreatorSort)} className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none">
-          {(['Smart picks', 'Most watched', 'Most liked', 'A–Z'] as const).map((option) => <option key={option}>{option}</option>)}
-        </select>
       </div>
 
-      {isError ? <EmptyState variant="error" title="Creator directory unavailable" description="The public source did not respond. Your local follows are unchanged." actionLabel="Retry" onAction={() => refetch()} /> : isLoading ? <SkeletonGrid count={10} /> : visibleCreators.length ? (
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {visibleCreators.map((creator, index) => <CreatorCard key={creator.id} creator={creator} index={index} following={Boolean(followCache[creator.id])} onFollow={() => follow(creator)} onOpen={() => setSelectedCreator(creator)} />)}
+      {/* Scan progress */}
+      {scanning && (
+        <div role="status" className="flex items-center gap-3 rounded-md border border-line p-4">
+          <RefreshCw size={14} strokeWidth={1.75} className="animate-spin text-heat" aria-hidden="true" />
+          <p className="font-mono text-xs text-ink">
+            {scanPhase(scanElapsed)}… <span className="text-ink-3">{scanElapsed}s elapsed</span>
+          </p>
+        </div>
+      )}
+
+      {/* Scan diff banner */}
+      {scanBanner && !scanning && (
+        <div role="status" className="flex items-start justify-between gap-3 rounded-md border border-line bg-elevated p-4">
+          <p className="font-mono text-xs leading-5 text-ink">{scanBanner}</p>
+          <button
+            onClick={() => setScanBanner(null)}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded text-ink-3 hover:text-ink"
+            aria-label="Dismiss scan summary"
+          >
+            <X size={14} strokeWidth={1.75} />
+          </button>
+        </div>
+      )}
+
+      {/* Radar watchlist */}
+      {creatorWatchlist.length === 0 ? (
+        <section className="empty-state-panel">
+          <Radar size={16} strokeWidth={1.75} className="text-ink-3" aria-hidden="true" />
+          <h2 className="font-mono text-xs font-medium uppercase tracking-[0.12em] text-ink">Your radar is empty</h2>
+          <p className="max-w-md text-[13px] leading-5 text-ink-2">
+            Add up to 8 creator handles or names and the radar will scan Redgifs, X, Tumblr and the
+            open web for their public posts — with evidence for every match. Nothing is pre-seeded:
+            this list is yours alone.
+          </p>
+          <div className="flex w-full max-w-sm items-center gap-2">
+            <input
+              value={handleDraft}
+              onChange={(event) => setHandleDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') addHandle()
+              }}
+              placeholder="Add a handle to scan for"
+              aria-label="Creator handle to add to the radar"
+              className="h-10 flex-1 rounded-md border border-line bg-transparent px-3 text-[13px] text-ink outline-none placeholder:text-ink-3 focus:border-line-strong"
+            />
+            <button onClick={addHandle} className="btn-secondary min-h-10 px-3" aria-label="Add handle">
+              <Plus size={14} strokeWidth={1.75} />
+            </button>
+          </div>
+          <button onClick={runScan} disabled={scanning} className="btn-primary mt-1">
+            Run a starter scan
+          </button>
+          <p className="font-mono text-[10px] text-ink-3">
+            Without watchlist entries the scan returns the general public feed.
+          </p>
         </section>
       ) : (
-        <EmptyState variant="search" title="No observed creators match" description="Try a different name, remove the demand filter, or check back when the public source refreshes." actionLabel="Clear filters" onAction={() => { setQuery(''); setFilter('all') }} />
+        <section className="rounded-md border border-line p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="eyebrow flex items-center gap-1.5">
+              <Radar size={12} strokeWidth={1.75} aria-hidden="true" />
+              Radar watchlist · {creatorWatchlist.length}/8
+            </h2>
+            <div className="flex items-center gap-2">
+              <input
+                value={handleDraft}
+                onChange={(event) => setHandleDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') addHandle()
+                }}
+                placeholder="Add handle"
+                aria-label="Creator handle to add to the radar"
+                className="h-10 w-44 rounded-md border border-line bg-transparent px-3 text-[13px] text-ink outline-none placeholder:text-ink-3 focus:border-line-strong"
+              />
+              <button onClick={addHandle} className="btn-secondary min-h-10 px-3" aria-label="Add handle">
+                <Plus size={14} strokeWidth={1.75} />
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {creatorWatchlist.map((handle) => (
+              <span key={handle} className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-line px-3 font-mono text-[11px] text-ink">
+                {handle}
+                <button
+                  onClick={() => removeCreatorFromWatchlist(handle)}
+                  className="grid h-8 w-8 place-items-center rounded-full text-ink-3 hover:text-ink"
+                  aria-label={`Remove ${handle} from the radar`}
+                >
+                  <X size={12} strokeWidth={1.75} />
+                </button>
+              </span>
+            ))}
+          </div>
+        </section>
       )}
 
-      <CreatorDrawer creator={selectedCreator} onClose={() => setSelectedCreator(null)} />
+      {/* Source health strip */}
+      {discovery && discovery.sources.length > 0 && (
+        <section aria-label="Source health">
+          <h2 className="eyebrow mb-3">Source health</h2>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {discovery.sources.map((source) => (
+              <div key={source.id} className="rounded-md border border-line p-3">
+                <div className="flex items-center gap-2">
+                  <span className={cn('h-1.5 w-1.5 rounded-full', stateTone[source.state] ?? 'bg-ink-3')} aria-hidden="true" />
+                  <span className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ink">{source.id}</span>
+                  <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">{source.state}</span>
+                </div>
+                <p className="mt-2 font-mono text-[10px] leading-4 text-ink-3">
+                  {source.detail || (source.state === 'connected' ? 'Responding normally' : 'No detail provided')}
+                  {typeof source.items === 'number' ? ` · ${source.items} items` : ''}
+                  {typeof source.leads === 'number' ? ` · ${source.leads} leads` : ''}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Web discovery (DuckDuckGo leads) */}
+      {ddg && ddg.leads.length > 0 && (
+        <section aria-label="Web discovery">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="eyebrow flex items-center gap-1.5">
+              <Globe size={12} strokeWidth={1.75} aria-hidden="true" /> Web discovery
+            </h2>
+            <a
+              href={ddg.searchUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-10 items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2 hover:text-ink"
+            >
+              Open this search on DuckDuckGo <ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />
+            </a>
+          </div>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {ddg.leads.map((lead) => {
+              let domain = 'web'
+              try {
+                domain = new URL(lead.url).hostname.replace(/^www\./, '')
+              } catch {
+                // keep fallback label
+              }
+              const KindIcon = lead.kind === 'profile' ? UserRound : lead.kind === 'video' ? Play : FileText
+              return (
+                <a
+                  key={lead.url}
+                  href={lead.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group flex items-start gap-3 rounded-md border border-line p-3 transition-colors hover:border-line-strong"
+                >
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-sunken text-ink-2" aria-hidden="true">
+                    <KindIcon size={14} strokeWidth={1.75} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-ink group-hover:underline">{lead.title}</span>
+                    {lead.snippet && (
+                      <span className="mt-0.5 line-clamp-2 block text-xs leading-4 text-ink-2">{lead.snippet}</span>
+                    )}
+                    <span className="mono-meta mt-1 block uppercase">{domain} · {lead.kind}</span>
+                  </span>
+                  <ExternalLink size={14} strokeWidth={1.75} className="mt-1 shrink-0 text-ink-3" aria-hidden="true" />
+                </a>
+              )
+            })}
+          </div>
+          <p className="mt-2 font-mono text-[10px] text-ink-3">Leads via DuckDuckGo · {ddg.detail}</p>
+        </section>
+      )}
+
+      {/* Preference levers */}
+      <section aria-label="Creator filters" className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search size={14} strokeWidth={1.75} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden="true" />
+            <input
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Search creators (queries the sources)"
+              aria-label="Search creators"
+              className="h-10 w-64 rounded-md border border-line bg-transparent pl-9 pr-8 text-[13px] text-ink outline-none placeholder:text-ink-3 focus:border-line-strong"
+            />
+            {searchText && (
+              <button
+                onClick={() => setSearchText('')}
+                className="absolute right-1.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded text-ink-3 hover:text-ink"
+                aria-label="Clear creator search"
+              >
+                <X size={13} strokeWidth={1.75} />
+              </button>
+            )}
+          </div>
+
+          {platforms.map((platform) => (
+            <button
+              key={platform}
+              onClick={() => setPlatformFilter(platformFilter === platform ? null : platform)}
+              className={cn('chip', platformFilter === platform && 'chip-active')}
+              aria-pressed={platformFilter === platform}
+            >
+              {platform}
+            </button>
+          ))}
+
+          <div className="ml-auto flex items-center gap-1">
+            <ArrowUpDown size={13} strokeWidth={1.75} className="text-ink-3" aria-hidden="true" />
+            {(Object.keys(sortLabels) as CreatorSort[]).map((value) => (
+              <button
+                key={value}
+                onClick={() => setSort(value)}
+                className={cn('chip !min-h-10 !px-3', sort === value && 'chip-active')}
+                aria-pressed={sort === value}
+              >
+                {sortLabels[value]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {payloadTags.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {payloadTags.map((tag) => (
+              <button
+                key={tag}
+                onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
+                className={cn('chip !min-h-10', tagFilter === tag && 'chip-active')}
+                aria-pressed={tagFilter === tag}
+              >
+                #{tag}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Creator grid */}
+      {discoveryQuery.isLoading ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="skeleton-tile !aspect-[3/2]" />
+          ))}
+        </div>
+      ) : discoveryQuery.error ? (
+        <EmptyState
+          icon={RefreshCw}
+          title="Creator scan failed"
+          description="The discovery service could not be reached. Try again."
+          actionLabel="Retry"
+          onAction={() => discoveryQuery.refetch()}
+        />
+      ) : filteredCreators.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No creators match"
+          description="Loosen the platform or tag filters, or run a fresh scan for new matches."
+          actionLabel="Clear filters"
+          onAction={() => {
+            setPlatformFilter(null)
+            setTagFilter(null)
+            setSearchText('')
+          }}
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredCreators.map((creator) => {
+            const followId = creatorFollowId(creator.name)
+            const followed = Boolean(followCache[followId])
+            const aiOk = discovery?.aiDiscovery.state === 'ok'
+            return (
+              <article
+                key={creator.id}
+                className="group rounded-md border border-line bg-elevated p-4 transition-colors hover:border-line-strong"
+              >
+                <div className="flex items-start gap-3">
+                  <button
+                    onClick={() => setActiveCreator(creator)}
+                    className="flex min-w-0 flex-1 items-start gap-3 text-left tap-highlight-none"
+                    aria-label={`Open profile of ${creator.name}`}
+                  >
+                    <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-md bg-sunken">
+                      {creator.avatar ? (
+                        <img src={creator.avatar} alt="" loading="lazy" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="font-mono text-sm text-ink-2">{creator.name.charAt(0).toUpperCase()}</span>
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <h3 className="truncate text-sm font-semibold text-ink">{creator.name}</h3>
+                        {creator.aiSuggested && aiOk && (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-heat-dim px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.06em] text-heat">
+                            <Sparkles size={10} strokeWidth={1.75} aria-hidden="true" /> AI
+                          </span>
+                        )}
+                      </span>
+                      <span className="mono-meta mt-0.5 block uppercase">
+                        {(creator.platforms ?? [creator.platform]).filter(Boolean).slice(0, 2).join(' · ') || creator.sourceAttribution || 'public source'}
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => follow(creator)}
+                    className={cn(
+                      'inline-flex h-9 shrink-0 items-center gap-1 rounded-md px-2.5 font-mono text-[10px] uppercase tracking-[0.06em] transition-colors',
+                      followed ? 'bg-sunken text-ink' : 'bg-heat text-canvas hover:bg-heat-hover'
+                    )}
+                    aria-pressed={followed}
+                    aria-label={followed ? `Unfollow ${creator.name}` : `Follow ${creator.name}`}
+                  >
+                    {followed ? <Check size={12} strokeWidth={1.75} /> : <Plus size={12} strokeWidth={1.75} />}
+                    {followed ? 'Following' : 'Follow'}
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setActiveCreator(creator)}
+                  className="mt-3 block w-full text-left tap-highlight-none"
+                  aria-label={`Open profile of ${creator.name}`}
+                  tabIndex={-1}
+                >
+                  <span className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">
+                    {creator.followers != null && <span>{formatMetric(creator.followers)} followers</span>}
+                    <span>{creator.evidenceCount ?? creator.mediaCount ?? 0} evidence</span>
+                    <span>seen {relativeTime(creator.lastSeenAt ?? creator.observedAt)}</span>
+                  </span>
+
+                  {(creator.matchReasons?.length || creator.discoveryReasons?.length) && (
+                    <span className="mt-3 flex flex-wrap gap-1.5">
+                      {(creator.matchReasons ?? creator.discoveryReasons ?? []).slice(0, 3).map((reason) => (
+                        <span key={reason} className="rounded-full border border-line px-2 py-0.5 font-mono text-[9px] tracking-[0.02em] text-ink-2">
+                          {reason}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </button>
+              </article>
+            )
+          })}
+        </div>
+      )}
+
+      <CreatorDrawer creator={activeCreator} onClose={() => setActiveCreator(null)} />
     </div>
   )
 }
