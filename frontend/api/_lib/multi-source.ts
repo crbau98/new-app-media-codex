@@ -161,7 +161,7 @@ async function collectX(watchlist: string[]): Promise<{ media: UnifiedMediaItem[
           : []
         const pageUrl = `https://x.com/${encodeURIComponent(username)}/status/${tweet.id}`
         const thumbnail = safeUrl(asset.preview_image_url || asset.url, /(^|\.)twimg\.com$/i)
-        const mediaUrl = safeUrl(stream?.[0] || asset.url, /(^|\.)twimg\.com$/i)
+        const mediaUrl = safeUrl((stream.length > 0 ? stream[0] : undefined) || asset.url, /(^|\.)twimg\.com$/i)
         if (!thumbnail && !mediaUrl) continue
         media.push({
           id: `x-${tweet.id}-${key}`,
@@ -485,7 +485,7 @@ async function collectSerpApiGoogleImages(watchlist: string[]): Promise<{ media:
         const title = sanitize(result.title || '').slice(0, 140) || sanitize(result.source || '').slice(0, 80)
         if (!title) continue
         const creatorSource = creatorFromUrl(pageUrl)
-        const mediaId = `serpapi-gi-${Buffer.from(pageUrl).toString('base64').slice(0, 16)}`
+        const mediaId = `serpapi-gi-${pageUrl.replace(/https?:\/\//, '').replace(/[^a-z0-9]/gi, '').slice(0, 24)}`
         media.push({
           id: mediaId,
           title,
@@ -821,17 +821,5 @@ export async function collectAdditionalSources(watchlist: string[], opts: { quer
     requestsAttempted: x.attempted + tumblr.attempted + google.attempted + ddg.attempted + serpGoogleImages.attempted + serpDdg.attempted + firecrawl.attempted,
     requestsSucceeded: x.succeeded + tumblr.succeeded + google.succeeded + ddg.succeeded + serpGoogleImages.succeeded + serpDdg.succeeded + firecrawl.succeeded,
   }
-}
-
-function sanitize(value = ''): string {
-  return value.replace(EMAIL_PATTERN, '').replace(/\s+/g, ' ').trim()
-}
-
-function canonical(value = ''): string {
-  return value.trim().toLowerCase().replace(/^@/, '').replace(/[^a-z0-9_]+/g, '')
-}
-
-function isoFromUnix(value: number | undefined): string {
-  return value ? new Date(value * 1000).toISOString() : new Date().toISOString()
 }
 
