@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query, Depends
+from app.security import require_admin
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
@@ -24,7 +25,7 @@ def hypotheses(limit: int = Query(default=12, ge=1, le=100)) -> JSONResponse:
     return JSONResponse(db.get_recent_hypotheses(limit=limit))
 
 
-@router.patch("/{hypothesis_id}")
+@router.patch("/{hypothesis_id}", dependencies=[Depends(require_admin)])
 def update_hypothesis(
     hypothesis_id: int,
     payload: HypothesisUpdateRequest,

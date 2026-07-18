@@ -5,9 +5,10 @@ import logging
 from functools import lru_cache
 from importlib import import_module
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.security import require_admin
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config import settings
 
@@ -17,7 +18,7 @@ router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(max_length=4000)
 
 
 SYSTEM_PROMPT = (
@@ -44,7 +45,7 @@ def _fallback_stream(message: str):
     yield "data: [DONE]\n\n"
 
 
-@router.post("/chat")
+@router.post("/chat", dependencies=[Depends(require_admin)])
 def assistant_chat(req: ChatRequest) -> StreamingResponse:
     if not settings.openai_api_key:
         return StreamingResponse(
@@ -66,7 +67,7 @@ def assistant_chat(req: ChatRequest) -> StreamingResponse:
                 base_url=settings.openai_base_url,
             )
             with client.chat.completions.stream(
-                model="gpt-4.1-mini",
+                model=settings.openai_model,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": req.message},

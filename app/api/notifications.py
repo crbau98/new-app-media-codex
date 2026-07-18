@@ -4,7 +4,8 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, Depends
+from app.security import require_admin
 
 router = APIRouter(tags=["notifications"])
 _logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ def list_notifications(
     return db.get_notifications(_DEFAULT_USER, limit=limit, offset=offset)
 
 
-@router.post("/api/notifications/{notification_id}/read")
+@router.post("/api/notifications/{notification_id}/read", dependencies=[Depends(require_admin)])
 def mark_read(notification_id: int, request: Request) -> dict:
     db = request.app.state.db
     ok = db.mark_notification_read(notification_id)
@@ -88,7 +89,7 @@ def mark_read(notification_id: int, request: Request) -> dict:
     return {"ok": True}
 
 
-@router.post("/api/notifications/read-all")
+@router.post("/api/notifications/read-all", dependencies=[Depends(require_admin)])
 def mark_all_read(request: Request) -> dict:
     db = request.app.state.db
     marked = db.mark_all_notifications_read(_DEFAULT_USER)
@@ -101,7 +102,7 @@ def unread_count(request: Request) -> dict:
     return {"count": db.get_unread_notification_count(_DEFAULT_USER)}
 
 
-@router.delete("/api/notifications/{notification_id}")
+@router.delete("/api/notifications/{notification_id}", dependencies=[Depends(require_admin)])
 def delete_notification(notification_id: int, request: Request) -> dict:
     db = request.app.state.db
     ok = db.delete_notification(notification_id)

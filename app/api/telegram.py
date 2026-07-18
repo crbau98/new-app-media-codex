@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Depends
+from app.security import require_admin
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -29,7 +30,7 @@ class AddChannelBody(BaseModel):
     username: str
 
 
-@router.post("/channels")
+@router.post("/channels", dependencies=[Depends(require_admin)])
 async def add_channel(body: AddChannelBody, request: Request):
     client = _require_client(request)
     db = request.app.state.db
@@ -47,7 +48,7 @@ async def add_channel(body: AddChannelBody, request: Request):
         raise HTTPException(400, detail=f"Could not resolve channel @{username}: {e}")
 
 
-@router.delete("/channels/{username}")
+@router.delete("/channels/{username}", dependencies=[Depends(require_admin)])
 def remove_channel(username: str, request: Request):
     db = request.app.state.db
     db.delete_telegram_channel(username)
@@ -58,7 +59,7 @@ class ToggleBody(BaseModel):
     enabled: bool
 
 
-@router.patch("/channels/{username}")
+@router.patch("/channels/{username}", dependencies=[Depends(require_admin)])
 def toggle_channel(username: str, body: ToggleBody, request: Request):
     db = request.app.state.db
     db.set_telegram_channel_enabled(username, body.enabled)
@@ -69,7 +70,7 @@ class DiscoverBody(BaseModel):
     query: str
 
 
-@router.post("/channels/discover")
+@router.post("/channels/discover", dependencies=[Depends(require_admin)])
 async def discover_channels(body: DiscoverBody, request: Request):
     _require_client(request)
     settings = request.app.state.settings
@@ -131,7 +132,7 @@ def _get_last_message_id(db, channel_username: str) -> int:
     return row[0] or 0
 
 
-@router.post("/scan")
+@router.post("/scan", dependencies=[Depends(require_admin)])
 async def trigger_scan(request: Request, background_tasks: BackgroundTasks):
     _require_client(request)
     if getattr(request.app.state, "telegram_scan_running", False):
