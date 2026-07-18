@@ -8,6 +8,7 @@ import { relativeTime } from '@/lib/discovery'
 import { useAppStore, type GridDensity } from '@/store'
 import MediaCard from '@/components/MediaCard'
 import MediaDetail from '@/components/MediaDetail'
+import MediaImage from '@/components/MediaImage'
 import EmptyState from '@/components/EmptyState'
 import SkeletonGrid from '@/components/SkeletonGrid'
 import UpdatedChip from '@/components/UpdatedChip'
@@ -275,8 +276,13 @@ export default function Search() {
                   className="flex w-full items-center gap-4 py-3 text-left transition-colors hover:bg-sunken/50"
                   aria-label={`Open ${item.title}`}
                 >
-                  <span className="h-16 w-12 shrink-0 overflow-hidden rounded-sm bg-sunken">
-                    <img src={item.thumbnail} alt="" loading="lazy" className="h-full w-full object-cover" />
+                  <span className="relative h-16 w-12 shrink-0 overflow-hidden rounded-sm bg-sunken">
+                    <MediaImage
+                      sources={item.isVideo ? [item.thumbnail] : [item.thumbnail, item.mediaUrl]}
+                      alt=""
+                      className="absolute inset-0 h-full w-full object-cover"
+                      skeletonClassName="absolute inset-0"
+                    />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-ink">{item.title}</span>

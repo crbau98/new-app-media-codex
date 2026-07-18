@@ -164,7 +164,14 @@ export default async function handler(req: Request): Promise<Response> {
   out.delete("set-cookie")
   out.delete("content-disposition")
   out.set("Cross-Origin-Resource-Policy", "same-origin")
-  out.set("Accept-Ranges", "bytes")
+  const upstreamAcceptRanges = upstream.headers.get("accept-ranges")
+  if (upstream.status === 206 || upstreamAcceptRanges) {
+    out.set("Accept-Ranges", upstreamAcceptRanges || "bytes")
+  } else {
+    // Do not advertise byte ranges when the provider ignored Range and sent a
+    // full 200 body; otherwise browsers can wait on seeks that will never satisfy.
+    out.delete("Accept-Ranges")
+  }
   out.set("X-Content-Type-Options", "nosniff")
   out.set("Referrer-Policy", "no-referrer")
   out.set("X-Robots-Tag", "noindex")

@@ -19,6 +19,7 @@ import { relativeTime } from '@/lib/discovery'
 import { useAppStore, type GridDensity } from '@/store'
 import MediaCard from '@/components/MediaCard'
 import MediaDetail from '@/components/MediaDetail'
+import MediaImage from '@/components/MediaImage'
 import Hero from '@/components/Hero'
 import CreatorDrawer from '@/components/CreatorDrawer'
 import EmptyState from '@/components/EmptyState'
@@ -252,7 +253,7 @@ export default function Home() {
               key={value}
               onClick={() => setFilter(value)}
               className={cn('chip', filter === value && 'chip-active')}
-              aria-pressed={filter === value}
+              aria-pressed={value}
             >
               {value === 'video' && <Play size={12} strokeWidth={1.75} aria-hidden="true" />}
               {value === 'photo' && <ImageIcon size={12} strokeWidth={1.75} aria-hidden="true" />}
@@ -339,8 +340,13 @@ export default function Home() {
                 className="flex w-full items-center gap-4 py-3 text-left transition-colors hover:bg-sunken/50"
                 aria-label={`Open ${item.title}`}
               >
-                <span className="h-16 w-12 shrink-0 overflow-hidden rounded-sm bg-sunken">
-                  <img src={item.thumbnail} alt="" loading="lazy" className="h-full w-full object-cover" />
+                <span className="relative h-16 w-12 shrink-0 overflow-hidden rounded-sm bg-sunken">
+                  <MediaImage
+                    sources={item.isVideo ? [item.thumbnail] : [item.thumbnail, item.mediaUrl]}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover"
+                    skeletonClassName="absolute inset-0"
+                  />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-ink">{item.title}</span>

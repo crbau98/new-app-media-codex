@@ -88,7 +88,7 @@ async function collectX(watchlist: string[]): Promise<{ media: UnifiedMediaItem[
       const body = await fetchJson(
         `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(`from:${query} has:media -is:retweet`)}&max_results=10&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=url,preview_image_url,type,variants`,
         { headers },
-      ) as { data?: XTweet[]; includes?: { users?: XUser[]; media?: Array<{ media_key?: string; type?: string; url?: string; preview_image_url?: string; variants?: Array<{ url?: string; content_type?: string }> }> } }
+      ) as { data?: XTweet[]; includes?: { users?: XUser[]; media?: Array<{ media_key?: string; type?: string; url?: string; preview_image_url?: string; variants?: Array<{ url?: string; content_type?: string; bit_rate?: number }> }> } }
       succeeded += 1
       const users = new Map((body.includes?.users || []).map((user) => [user.id, user]))
       const assets = new Map((body.includes?.media || []).map((asset) => [asset.media_key, asset]))
@@ -122,7 +122,10 @@ async function collectX(watchlist: string[]): Promise<{ media: UnifiedMediaItem[
           if (!asset) continue
           const video = asset.type === 'video' || asset.type === 'animated_gif'
           const stream = video
-            ? asset.variants?.filter((variant) => variant.content_type === 'video/mp4' && variant.url).map((variant) => variant.url as string)
+            ? (asset.variants || [])
+              .filter((variant) => variant.content_type === 'video/mp4' && variant.url)
+              .sort((a, b) => (b.bit_rate || 0) - (a.bit_rate || 0))
+              .map((variant) => variant.url as string)
             : []
           const pageUrl = `https://x.com/${encodeURIComponent(username)}/status/${tweet.id}`
           const thumbnail = safeUrl(asset.preview_image_url || asset.url, /(^|\.)twimg\.com$/i)
