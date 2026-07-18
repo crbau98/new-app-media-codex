@@ -5,20 +5,12 @@ interface SkeletonGridProps {
   className?: string
 }
 
-export default function SkeletonGrid({ count = 6, className }: SkeletonGridProps) {
+/** Sunken pulsing tiles (opacity pulse only — no shimmer). */
+export default function SkeletonGrid({ count = 12, className }: SkeletonGridProps) {
   return (
-    <div
-      className={cn(
-        'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4',
-        className
-      )}
-    >
-      {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          className="skeleton-grid-tile"
-          style={{ animationDelay: `${i * 0.05}s` }}
-        />
+    <div className={cn('grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4', className)} aria-hidden="true">
+      {Array.from({ length: count }).map((_, index) => (
+        <div key={index} className="skeleton-tile" />
       ))}
     </div>
   )
