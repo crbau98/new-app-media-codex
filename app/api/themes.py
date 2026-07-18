@@ -1,5 +1,6 @@
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from app.security import require_admin
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -17,14 +18,14 @@ def list_themes() -> JSONResponse:
     return JSONResponse(db.get_themes())
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_admin)])
 def create_theme(payload: ThemeCreate) -> JSONResponse:
     from app.main import db
     theme = db.create_theme(payload.slug, payload.label)
     return JSONResponse(theme)
 
 
-@router.delete("/{slug}")
+@router.delete("/{slug}", dependencies=[Depends(require_admin)])
 def delete_theme(slug: str) -> JSONResponse:
     from app.main import db
     ok = db.delete_theme(slug)

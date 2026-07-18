@@ -1,12 +1,13 @@
 from __future__ import annotations
 import asyncio
 import json
-from fastapi import APIRouter, BackgroundTasks, Request, WebSocket
+from fastapi import APIRouter, BackgroundTasks, Request, WebSocket, Depends
+from app.security import require_admin
 from fastapi.responses import JSONResponse, StreamingResponse
 
 router = APIRouter(tags=["crawl"])
 
-@router.post("/api/run")
+@router.post("/api/run", dependencies=[Depends(require_admin)])
 async def run_now(
     background_tasks: BackgroundTasks,
     request: Request,
@@ -81,4 +82,3 @@ async def sse_events(request: Request) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
-

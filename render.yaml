@@ -1,3 +1,7 @@
+# ── Canonical Render blueprint (C20) ─────────────────────────────────────────
+# This is the SINGLE source of truth for deploying the FastAPI backend to Render.
+# `frontend/render.yaml` is SUPERSEDED (kept for reference only) — the frontend
+# deploys separately on Vercel (see frontend/vercel.json), not on Render.
 services:
   - type: web
     name: codex-research-radar
