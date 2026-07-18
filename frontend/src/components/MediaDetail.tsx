@@ -1,32 +1,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ExternalLink, Eye, Heart, Play, Share2, Sparkles, ThumbsDown, ThumbsUp, UserPlus, X } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bookmark,
+  ExternalLink,
+  Play,
+  Share2,
+  ThumbsDown,
+  ThumbsUp,
+  UserPlus,
+  X,
+} from 'lucide-react'
 import { apiUrl, resolvePublicUrl } from '@/lib/backendOrigin'
-import type { MediaItem } from '@/lib/mockData'
-import { cn } from '@/lib/utils'
+import { creatorFollowId, formatMetric, relativeTime } from '@/lib/discovery'
+import type { MediaItem } from '@/lib/types'
+import type { VideoQuality } from '@/store'
 import { useAppStore } from '@/store'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
+import { cn } from '@/lib/utils'
 
 const easeOut = [0.16, 1, 0.3, 1] as [number, number, number, number]
 
-function creatorId(name: string): string {
-  return `redgifs-${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')}`
-}
-
-function metric(value = 0): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`
-  return String(value)
-}
-
-function relativeDate(value: string): string {
-  const milliseconds = Date.now() - Date.parse(value)
-  if (!Number.isFinite(milliseconds)) return 'Date unavailable'
-  const hours = Math.max(0, Math.floor(milliseconds / 3_600_000))
-  if (hours < 1) return 'Just now'
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
-  return `${Math.floor(days / 7)}w ago`
+/**
+ * Order stream candidates by the preferred quality. Provider URLs carry
+ * resolution hints ('hd'/'1080' high, 'sd'/'720'/'mobile' low); when nothing
+ * matches we keep the provider's own order.
+ */
+function preferQuality(candidates: string[], quality: VideoQuality): string[] {
+  if (quality === 'auto' || candidates.length < 2) return candidates
+  const tokens = quality === '1080p' ? ['1080', 'hd'] : ['720', 'sd', 'mobile']
+  return candidates
+    .map((url, index) => ({ url, index, match: tokens.some((t) => url.toLowerCase().includes(t)) ? 1 : 0 }))
+    .sort((a, b) => b.match - a.match || a.index - b.index)
+    .map((entry) => entry.url)
 }
 
 function VideoPlayer({ item }: { item: MediaItem }) {
@@ -34,22 +41,16 @@ function VideoPlayer({ item }: { item: MediaItem }) {
   const muteOnStart = useAppStore((state) => state.muteOnStart)
   const pictureInPicture = useAppStore((state) => state.pictureInPicture)
   const quality = useAppStore((state) => state.defaultQuality)
-  const initial = useMemo(() => {
+
+  const initialCandidates = useMemo(() => {
     const supplied = item.streamCandidates?.length ? item.streamCandidates : item.mediaUrl ? [item.mediaUrl] : []
-    if (quality !== '720p' || supplied.length < 2) return supplied
-    return [supplied[1], supplied[0], ...supplied.slice(2)]
+    return preferQuality(supplied, quality)
   }, [item.mediaUrl, item.streamCandidates, quality])
-  const [candidates, setCandidates] = useState(initial)
+
+  const [candidates, setCandidates] = useState(initialCandidates)
   const [index, setIndex] = useState(0)
   const [recovering, setRecovering] = useState(false)
   const [failed, setFailed] = useState(false)
-
-  useEffect(() => {
-    setCandidates(initial)
-    setIndex(0)
-    setFailed(false)
-    setRecovering(false)
-  }, [initial, item.id])
 
   const recover = useCallback(async () => {
     if (index + 1 < candidates.length) {
@@ -64,7 +65,7 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     try {
       const response = await fetch(apiUrl(`/api/screenshots/${item.id}/resolve-stream`), { method: 'POST' })
       if (!response.ok) throw new Error('No alternate stream')
-      const data = await response.json() as { cached_url?: string; local_url?: string; direct_url?: string }
+      const data = (await response.json()) as { cached_url?: string; local_url?: string; direct_url?: string }
       const alternatives = [data.cached_url, data.local_url, data.direct_url].map(resolvePublicUrl).filter((url): url is string => Boolean(url))
       if (!alternatives.length) throw new Error('No alternate stream')
       setCandidates(alternatives)
@@ -78,17 +79,43 @@ function VideoPlayer({ item }: { item: MediaItem }) {
 
   if (!candidates[index] || failed) {
     return (
-      <div className="relative grid min-h-72 place-items-center overflow-hidden rounded-[var(--radius-lg)] bg-black">
-        <img src={item.thumbnail} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30 blur-md" />
-        <div className="relative z-10 max-w-xs px-5 text-center"><Play className="mx-auto text-white" /><p className="mt-3 text-sm font-medium text-white">This stream is temporarily unavailable.</p>{item.pageUrl && <a href={item.pageUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-4 text-sm font-semibold text-black">Open original <ExternalLink size={14} /></a>}</div>
+      <div className="relative grid min-h-64 place-items-center overflow-hidden rounded-lg bg-sunken">
+        <img src={item.thumbnail} alt="" className="absolute inset-0 h-full w-full object-cover opacity-20" />
+        <div className="relative z-10 max-w-xs px-5 py-10 text-center">
+          <Play size={16} strokeWidth={1.75} className="mx-auto text-ink-2" aria-hidden="true" />
+          <p className="mt-3 text-sm font-medium text-ink">This stream is temporarily unavailable.</p>
+          {item.pageUrl && (
+            <a href={item.pageUrl} target="_blank" rel="noreferrer" className="btn-primary mt-4">
+              Watch on source <ExternalLink size={14} strokeWidth={1.75} />
+            </a>
+          )}
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="relative overflow-hidden rounded-[var(--radius-lg)] bg-black">
-      <video key={candidates[index]} src={candidates[index]} poster={item.thumbnail} controls playsInline preload="metadata" autoPlay={autoplay} muted={muteOnStart} disablePictureInPicture={!pictureInPicture} onError={recover} className="max-h-[68dvh] min-h-64 w-full object-contain">Your browser does not support video playback.</video>
-      {(recovering || index > 0) && <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/60 px-3 py-1 text-[11px] text-white backdrop-blur-sm">{recovering ? 'Finding another stream…' : `Fallback ${index + 1} connected`}</div>}
+    <div className="relative overflow-hidden rounded-lg bg-black">
+      <video
+        key={candidates[index]}
+        src={candidates[index]}
+        poster={item.thumbnail}
+        controls
+        playsInline
+        preload="metadata"
+        autoPlay={autoplay}
+        muted={muteOnStart}
+        disablePictureInPicture={!pictureInPicture}
+        onError={recover}
+        className="max-h-[62dvh] min-h-56 w-full object-contain"
+      >
+        Your browser does not support video playback.
+      </video>
+      {(recovering || index > 0) && (
+        <div className="pointer-events-none absolute left-3 top-3 rounded-sm bg-canvas/85 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-ink">
+          {recovering ? 'Finding another stream' : `Fallback ${index + 1} connected`}
+        </div>
+      )}
     </div>
   )
 }
@@ -98,9 +125,12 @@ interface MediaDetailProps {
   open: boolean
   onClose: () => void
   onShare?: () => void
+  /** Sibling items enabling ←/→ navigation and the related rail. */
+  items?: MediaItem[]
+  onNavigate?: (item: MediaItem) => void
 }
 
-export default function MediaDetail({ item, open, onClose, onShare }: MediaDetailProps) {
+export default function MediaDetail({ item, open, onClose, onShare, items, onNavigate }: MediaDetailProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const viewedRef = useRef<string | null>(null)
   const likeCache = useAppStore((state) => state.likeCache)
@@ -110,10 +140,81 @@ export default function MediaDetail({ item, open, onClose, onShare }: MediaDetai
   const addRecentlyViewed = useAppStore((state) => state.addRecentlyViewed)
   const recordFeedback = useAppStore((state) => state.recordDiscoveryFeedback)
   const addToast = useAppStore((state) => state.addToast)
-  const id = item ? creatorId(item.creator) : ''
-  const liked = item ? Boolean(likeCache[item.id] ?? item.isLiked) : false
-  const followed = Boolean(id && followCache[id])
 
+  const followId = item ? creatorFollowId(item.creator) : ''
+  const liked = item ? Boolean(likeCache[item.id] ?? item.isLiked) : false
+  const followed = Boolean(followId && followCache[followId])
+
+  const itemIndex = useMemo(() => (items && item ? items.findIndex((entry) => entry.id === item.id) : -1), [items, item])
+  const canGoBack = itemIndex > 0
+  const canGoForward = items ? itemIndex >= 0 && itemIndex < items.length - 1 : false
+
+  const related = useMemo(() => {
+    if (!items || !item) return []
+    const sameCreator = items.filter((entry) => entry.id !== item.id && entry.creator === item.creator)
+    const sameTag = items.filter(
+      (entry) => entry.id !== item.id && entry.creator !== item.creator && entry.tags.some((tag) => item.tags.includes(tag))
+    )
+    return [...sameCreator, ...sameTag].slice(0, 8)
+  }, [items, item])
+
+  const navigateBy = useCallback(
+    (delta: number) => {
+      if (!items || !onNavigate || itemIndex < 0) return
+      const next = items[itemIndex + delta]
+      if (next) onNavigate(next)
+    },
+    [items, itemIndex, onNavigate]
+  )
+
+  const share = useCallback(async () => {
+    if (!item) return
+    if (onShare) return onShare()
+    const url = item.pageUrl || window.location.href
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: item.title, url })
+      } catch {
+        // user dismissed the share sheet
+      }
+    } else {
+      await navigator.clipboard.writeText(url)
+      addToast({ type: 'success', title: 'Source link copied' })
+    }
+  }, [addToast, item, onShare])
+
+  const save = useCallback(() => {
+    if (!item) return
+    const next = !liked
+    toggleLike(item.id)
+    addToast({ type: next ? 'success' : 'info', title: next ? 'Saved to your archive' : 'Removed from saved' })
+  }, [addToast, item, liked, toggleLike])
+
+  const follow = useCallback(() => {
+    if (!item || !followId) return
+    const next = !followed
+    toggleFollow(followId)
+    addToast({
+      type: next ? 'success' : 'info',
+      title: next ? `Following @${item.creator}` : `Unfollowed @${item.creator}`,
+      message: next ? 'Follows shape your For You mix on this device.' : undefined,
+    })
+  }, [addToast, followed, followId, item, toggleFollow])
+
+  const feedback = useCallback(
+    (signal: 'more' | 'less') => {
+      if (!item) return
+      recordFeedback(item, signal)
+      addToast({
+        type: 'info',
+        title: signal === 'more' ? 'Your mix learned from this' : 'Your mix will show less like this',
+        message: 'Saved privately on this device.',
+      })
+    },
+    [addToast, item, recordFeedback]
+  )
+
+  // Record a view once per opened item
   useEffect(() => {
     if (!open || !item || viewedRef.current === item.id) return
     viewedRef.current = item.id
@@ -121,65 +222,245 @@ export default function MediaDetail({ item, open, onClose, onShare }: MediaDetai
     recordFeedback(item, 'view')
   }, [addRecentlyViewed, item, open, recordFeedback])
 
+  // Scroll lock
   useEffect(() => {
     if (!open) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const closeOnEscape = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
     document.body.style.overflow = 'hidden'
-    window.addEventListener('keydown', closeOnEscape)
-    panelRef.current?.focus()
     return () => {
       document.body.style.overflow = ''
-      window.removeEventListener('keydown', closeOnEscape)
-      previous?.focus()
     }
-  }, [onClose, open])
+  }, [open])
 
-  const share = useCallback(async () => {
-    if (!item) return
-    if (onShare) return onShare()
-    const url = item.pageUrl || window.location.href
-    if (navigator.share) await navigator.share({ title: item.title, url })
-    else {
-      await navigator.clipboard.writeText(url)
-      addToast({ type: 'success', title: 'Source link copied' })
+  // Keyboard: Esc close · ←/→ or J/K navigate · F follow · S save
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'VIDEO' || target.isContentEditable) return
+      switch (event.key) {
+        case 'Escape':
+          event.preventDefault()
+          onClose()
+          break
+        case 'ArrowLeft':
+          event.preventDefault()
+          navigateBy(-1)
+          break
+        case 'ArrowRight':
+          event.preventDefault()
+          navigateBy(1)
+          break
+        case 'j':
+        case 'J':
+          navigateBy(1)
+          break
+        case 'k':
+        case 'K':
+          navigateBy(-1)
+          break
+        case 'f':
+        case 'F':
+          follow()
+          break
+        case 's':
+        case 'S':
+          save()
+          break
+      }
     }
-  }, [addToast, item, onShare])
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [follow, navigateBy, onClose, open, save])
 
-  const feedback = useCallback((signal: 'more' | 'less') => {
-    if (!item) return
-    recordFeedback(item, signal)
-    addToast({ type: 'info', title: signal === 'more' ? 'Your mix learned from this' : 'Your mix will show less like this', message: 'Saved privately on this device.' })
-  }, [addToast, item, recordFeedback])
+  useFocusTrap(panelRef, open)
 
   return (
     <AnimatePresence>
-      {open && item && <div className="fixed inset-0 z-[200] flex items-end justify-end md:items-stretch">
-        <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 h-full w-full bg-[var(--bg-overlay)] backdrop-blur-sm" aria-label="Close media details" />
-        <motion.div ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="media-title" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.35, ease: easeOut }} className="relative z-10 flex h-[92dvh] w-full flex-col overflow-hidden rounded-t-[var(--radius-xl)] bg-[var(--bg-elevated)] shadow-lg outline-none md:h-full md:max-w-[620px] md:rounded-l-[var(--radius-xl)] md:rounded-tr-none">
-          <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3"><span className="text-xs font-medium text-[var(--text-tertiary)]">Public source · {item.source}</span><button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-[var(--bg-surface)] text-[var(--text-secondary)]" aria-label="Close"><X size={16} /></button></div>
-          <div className="flex-1 overflow-y-auto px-4 pb-8 pt-4 sm:px-5">
-            {item.isVideo ? <VideoPlayer item={item} /> : <img src={item.thumbnail} alt={item.title} className="max-h-[68dvh] w-full rounded-[var(--radius-lg)] object-contain" />}
-            <div className="mt-5">
-              <h2 id="media-title" className="text-xl font-bold leading-tight text-[var(--text-primary)]">{item.title}</h2>
-              <div className="mt-3 flex items-center gap-3 border-b border-[var(--border-subtle)] pb-4"><div className="grid h-11 w-11 place-items-center rounded-full bg-[var(--accent-dim)] text-sm font-bold text-[var(--accent)]">{item.creator.charAt(0).toUpperCase()}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-[var(--text-primary)]">@{item.creator}</p><p className="text-xs text-[var(--text-tertiary)]">Observed on {item.source}</p></div><button onClick={() => toggleFollow(id)} className={cn('inline-flex min-h-10 items-center gap-1.5 rounded-full px-4 text-xs font-semibold', followed ? 'bg-[var(--bg-surface)] text-[var(--text-primary)]' : 'bg-[var(--accent)] text-white')}><UserPlus size={14} /> {followed ? 'Following' : 'Follow'}</button></div>
+      {open && item && (
+        <div className="fixed inset-0 z-[200] flex items-end justify-end md:items-stretch">
+          <motion.button
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={onClose}
+            className="absolute inset-0 h-full w-full bg-scrim"
+            aria-label="Close media details"
+          />
+          <motion.div
+            ref={panelRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="media-title"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.25, ease: easeOut }}
+            className="relative z-10 flex h-[94dvh] w-full flex-col overflow-hidden border-l border-line bg-elevated shadow-overlay outline-none md:h-full md:max-w-[480px]"
+          >
+            {/* Sheet header */}
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-3">
+              <span className="mono-meta uppercase">Public source · {item.source}</span>
+              <div className="flex items-center gap-1">
+                {items && onNavigate && (
+                  <>
+                    <button
+                      onClick={() => navigateBy(-1)}
+                      disabled={!canGoBack}
+                      className="grid h-10 w-10 place-items-center rounded-md text-ink-2 hover:bg-sunken disabled:opacity-30"
+                      aria-label="Previous item"
+                    >
+                      <ArrowLeft size={16} strokeWidth={1.75} />
+                    </button>
+                    <button
+                      onClick={() => navigateBy(1)}
+                      disabled={!canGoForward}
+                      className="grid h-10 w-10 place-items-center rounded-md text-ink-2 hover:bg-sunken disabled:opacity-30"
+                      aria-label="Next item"
+                    >
+                      <ArrowRight size={16} strokeWidth={1.75} />
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={onClose}
+                  className="grid h-10 w-10 place-items-center rounded-md text-ink-2 hover:bg-sunken"
+                  aria-label="Close"
+                >
+                  <X size={16} strokeWidth={1.75} />
+                </button>
+              </div>
+            </div>
 
-              <div className="flex flex-wrap items-center gap-1 border-b border-[var(--border-subtle)] py-3">
-                <button onClick={() => toggleLike(item.id)} className={cn('inline-flex min-h-10 items-center gap-2 rounded-md px-3 text-sm', liked ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]')}><Heart size={17} className={liked ? 'fill-current' : ''} /> {metric((item.likes || 0) + (liked && !item.isLiked ? 1 : 0))}</button>
-                <button onClick={share} className="inline-flex min-h-10 items-center gap-2 rounded-md px-3 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]"><Share2 size={17} /> Share</button>
-                {item.pageUrl && <a href={item.pageUrl} target="_blank" rel="noreferrer" className="ml-auto inline-flex min-h-10 items-center gap-2 rounded-md border border-[var(--border-subtle)] px-3 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)]">Original <ExternalLink size={14} /></a>}
+            <div className="flex-1 overflow-y-auto px-4 pb-10 pt-4 sm:px-5">
+              {item.isVideo ? (
+                <VideoPlayer key={item.id} item={item} />
+              ) : (
+                <img src={item.thumbnail} alt={item.title} className="max-h-[62dvh] w-full rounded-lg object-contain bg-sunken" />
+              )}
+
+              <h2 id="media-title" className="mt-5 text-lg font-semibold leading-tight tracking-[-0.01em] text-ink">
+                {item.title}
+              </h2>
+
+              {/* Creator row */}
+              <div className="mt-4 flex items-center gap-3 border-b border-line pb-4">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-sunken font-mono text-sm text-ink-2" aria-hidden="true">
+                  {item.creator.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-ink">@{item.creator}</p>
+                  <p className="mono-meta mt-0.5 uppercase">Observed on {item.source}</p>
+                </div>
+                <button
+                  onClick={follow}
+                  className={cn(
+                    'inline-flex min-h-10 items-center gap-1.5 rounded-md px-3.5 text-[13px] font-semibold transition-colors',
+                    followed ? 'bg-sunken text-ink' : 'bg-heat text-canvas hover:bg-heat-hover'
+                  )}
+                  aria-pressed={followed}
+                >
+                  <UserPlus size={14} strokeWidth={1.75} aria-hidden="true" />
+                  {followed ? 'Following' : 'Follow'}
+                </button>
               </div>
 
-              <section className="border-b border-[var(--border-subtle)] py-4"><div className="flex items-center gap-2"><Sparkles size={15} className="text-[var(--accent)]" /><h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-primary)]">Why this appeared</h3></div><div className="mt-3 flex flex-wrap gap-2">{(item.recommendationReasons || item.curationReasons || ['Matches the current public feed']).map((reason) => <span key={reason} className="rounded-full bg-[var(--accent-dim)] px-3 py-1.5 text-xs text-[var(--accent)]">{reason}</span>)}</div><div className="mt-3 flex gap-2"><button onClick={() => feedback('more')} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-[var(--border-subtle)] px-3 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]"><ThumbsUp size={14} /> More like this</button><button onClick={() => feedback('less')} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-[var(--border-subtle)] px-3 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]"><ThumbsDown size={14} /> Less like this</button></div></section>
+              {/* Actions */}
+              <div className="flex flex-wrap items-center gap-2 border-b border-line py-3">
+                {item.pageUrl && (
+                  <a href={item.pageUrl} target="_blank" rel="noreferrer" className="btn-primary">
+                    Watch on source <ExternalLink size={14} strokeWidth={1.75} />
+                  </a>
+                )}
+                <button onClick={save} className="btn-secondary" aria-pressed={liked}>
+                  <Bookmark size={14} strokeWidth={1.75} className={liked ? 'fill-current' : ''} aria-hidden="true" />
+                  {liked ? 'Saved' : 'Save'}
+                </button>
+                <button onClick={share} className="btn-secondary">
+                  <Share2 size={14} strokeWidth={1.75} aria-hidden="true" />
+                  Share
+                </button>
+              </div>
 
-              <div className="grid grid-cols-3 gap-3 border-b border-[var(--border-subtle)] py-4 text-center"><div><Eye size={14} className="mx-auto text-[var(--text-tertiary)]" /><p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{metric(item.views)}</p><p className="text-[10px] text-[var(--text-muted)]">views</p></div><div><Heart size={14} className="mx-auto text-[var(--text-tertiary)]" /><p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{metric(item.likes)}</p><p className="text-[10px] text-[var(--text-muted)]">likes</p></div><div><Sparkles size={14} className="mx-auto text-[var(--text-tertiary)]" /><p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{item.curationScore || 0}</p><p className="text-[10px] text-[var(--text-muted)]">public signal</p></div></div>
-              <p className="mt-4 text-xs text-[var(--text-tertiary)]">Published {relativeDate(item.createdAt)} · Source metrics are sampled when this feed refreshes.</p>
-              {item.description && <p className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">{item.description}</p>}
-              <div className="mt-4 flex flex-wrap gap-2">{item.tags.map((tag) => <span key={tag} className="rounded-full bg-[var(--bg-surface)] px-3 py-1 text-xs text-[var(--text-secondary)]">#{tag}</span>)}</div>
+              {/* Why this appeared */}
+              <section className="border-b border-line py-4">
+                <h3 className="eyebrow">Why this appeared</h3>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {(item.recommendationReasons || item.curationReasons || ['Matches the current public feed']).map((reason) => (
+                    <span key={reason} className="rounded-full border border-line px-2.5 py-1 font-mono text-[10px] tracking-[0.02em] text-ink-2">
+                      {reason}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button onClick={() => feedback('more')} className="btn-secondary min-h-10 px-3 text-xs">
+                    <ThumbsUp size={13} strokeWidth={1.75} aria-hidden="true" /> More like this
+                  </button>
+                  <button onClick={() => feedback('less')} className="btn-secondary min-h-10 px-3 text-xs">
+                    <ThumbsDown size={13} strokeWidth={1.75} aria-hidden="true" /> Less like this
+                  </button>
+                </div>
+              </section>
+
+              {/* Mono metadata grid */}
+              <dl className="grid grid-cols-3 gap-px border-b border-line py-4">
+                {[
+                  ['Source', item.source],
+                  ['Posted', relativeTime(item.createdAt)],
+                  ['Duration', item.isVideo ? item.duration || 'Video' : 'Photo'],
+                  ['Views', formatMetric(item.views)],
+                  ['Likes', formatMetric(item.likes)],
+                  ['Signal', String(item.curationScore ?? '—')],
+                ].map(([label, value]) => (
+                  <div key={label} className="py-1.5">
+                    <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">{label}</dt>
+                    <dd className="mt-0.5 font-mono text-xs text-ink">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              {item.description && (
+                <p className="mt-4 text-sm leading-6 text-ink-2">{item.description}</p>
+              )}
+
+              {item.tags.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  {item.tags.map((tag) => (
+                    <span key={tag} className="rounded-full bg-sunken px-2.5 py-1 font-mono text-[10px] text-ink-2">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Related rail */}
+              {related.length > 0 && onNavigate && (
+                <section className="mt-6">
+                  <h3 className="eyebrow">More like this</h3>
+                  <div className="mt-3 flex gap-3 overflow-x-auto hide-scrollbar pb-1">
+                    {related.map((entry) => (
+                      <button
+                        key={entry.id}
+                        onClick={() => onNavigate(entry)}
+                        className="w-28 shrink-0 text-left tap-highlight-none"
+                        aria-label={`Open ${entry.title}`}
+                      >
+                        <span className="block aspect-[2/3] overflow-hidden rounded-md bg-sunken">
+                          <img src={entry.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
+                        </span>
+                        <span className="mt-1.5 block truncate font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">
+                          {entry.creator}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
-          </div>
-        </motion.div>
-      </div>}
+          </motion.div>
+        </div>
+      )}
     </AnimatePresence>
   )
 }
