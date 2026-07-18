@@ -345,19 +345,32 @@ export default function Home() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-ink">{item.title}</span>
                   <span className="mono-meta mt-0.5 block uppercase">
-                    {item.source} · {relativeTime(item.createdAt)} · @{item.creator}
+                    {item.source} · {relativeTime(item.createdAt)} · {item.isVideo ? item.duration || 'video' : 'photo'}
                   </span>
                 </span>
-                <Sparkles size={14} strokeWidth={1.75} className="shrink-0 text-ink-3" aria-hidden="true" />
+                <span className="mono-meta hidden shrink-0 sm:block">@{item.creator}</span>
               </button>
             ))}
             {hasMore && (
-              <div className="flex justify-center py-4">
+              <div className="flex justify-center py-5">
                 <button onClick={() => setVisibleCount((count) => count + VISIBLE_INCREMENT)} className="btn-secondary">
                   Show more ({filteredItems.length - visibleCount} remaining)
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Why these — explainable ordering, restyled as a mono strip */}
+        {visibleItems.length > 0 && (
+          <div className="mt-8 rounded-md border border-line p-4">
+            <p className="eyebrow flex items-center gap-1.5">
+              <Sparkles size={12} strokeWidth={1.75} aria-hidden="true" /> Why these
+            </p>
+            <p className="mt-2 text-[13px] leading-5 text-ink-2">
+              Ordered by public engagement signals and freshness from connected sources. No private
+              data leaves this device — your follows and likes only re-rank items locally.
+            </p>
           </div>
         )}
       </section>
@@ -366,7 +379,7 @@ export default function Home() {
         item={selectedItem}
         open={Boolean(selectedItem)}
         onClose={() => setSelectedItem(null)}
-        items={allItems}
+        items={filteredItems}
         onNavigate={setSelectedItem}
       />
       <CreatorDrawer creator={activeCreator} onClose={() => setActiveCreator(null)} />
