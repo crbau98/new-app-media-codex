@@ -346,11 +346,13 @@ class ResearchService:
         from app.sources import (
             build_session,
             collect_boyfriendtv_theme,
+            collect_coomer,
             collect_fansly_theme,
             collect_firecrawl_images,
             collect_images,
             collect_instagram_theme,
             collect_justforfans_theme,
+            collect_kemono,
             collect_lpsg,
             collect_reddit,
             collect_spankbang_theme,
@@ -378,6 +380,8 @@ class ResearchService:
                         "reddit": 0,
                         "x": 0,
                         "lpsg": 0,
+                        "kemono": 0,
+                        "coomer": 0,
                         "images": 0,
                         "spankbang": 0,
                         "boyfriendtv": 0,
@@ -394,6 +398,8 @@ class ResearchService:
                     ("reddit", collect_reddit),
                     ("x", collect_x),
                     ("lpsg", collect_lpsg),
+                    ("kemono", collect_kemono),
+                    ("coomer", collect_coomer),
                 ):
                     self._emit({"type": "source_start", "source": source_key, "theme": theme.slug})
                     social_tasks.append(
@@ -456,7 +462,7 @@ class ResearchService:
                                     },
                                 ),
                             )
-                        if source_key == "reddit":
+                        if source_key in {"reddit", "kemono", "coomer"}:
                             videos = item.metadata.get("videos") if isinstance(item.metadata, dict) else None
                             for video in videos or []:
                                 video_url = (video or {}).get("source_url")
