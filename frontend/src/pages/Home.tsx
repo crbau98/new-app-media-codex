@@ -253,7 +253,7 @@ export default function Home() {
               key={value}
               onClick={() => setFilter(value)}
               className={cn('chip', filter === value && 'chip-active')}
-              aria-pressed={value}
+              aria-pressed={filter === value}
             >
               {value === 'video' && <Play size={12} strokeWidth={1.75} aria-hidden="true" />}
               {value === 'photo' && <ImageIcon size={12} strokeWidth={1.75} aria-hidden="true" />}
