@@ -62,6 +62,8 @@ def app_client(test_db):
     minimal_app.include_router(performers_router)
 
     with TestClient(minimal_app, raise_server_exceptions=True) as client:
+        # Mutating endpoints are admin-gated (see tests/test_admin_auth.py).
+        client.headers.update({"X-Admin-Token": "test-token"})
         yield client
 
 

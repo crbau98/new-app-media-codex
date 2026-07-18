@@ -262,7 +262,7 @@ def test_collect_coomer_video_urls_match_cache_status_filter(
 ) -> None:
     """The cache-status endpoint's SQL only matches source_url endings
     .mp4/.webm/.mov; any video URL we emit must satisfy that filter or
-    precache_coomer.py will never see it."""
+    the admin cache-status view will never see it."""
     session = _FakeSession(
         {
             "/api/v1/creators.txt": _FakeResponse(status_code=200, text="ok"),
@@ -279,7 +279,7 @@ def test_coomer_video_row_is_visible_to_cache_status_query(tmp_path) -> None:
     """End-to-end: insert a coomer video row the same way service.py does,
     then re-run the exact SQL predicate from the cache-status handler at
     app/api/screenshots.py:977-979. The row must match — otherwise
-    precache_coomer.py cannot discover or pre-cache the video."""
+    the cache-status endpoint cannot discover or pre-cache the video."""
     from app.db import Database
 
     db = Database(tmp_path / "e2e.db", timeout_seconds=5, busy_timeout_ms=5000)
