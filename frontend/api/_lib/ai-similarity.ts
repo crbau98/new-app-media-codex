@@ -17,15 +17,39 @@ export type AiSimilarityResult = {
   state: 'model' | 'fallback' | 'not-requested'
   suggestions: Map<string, { score: number; reasons: string[] }>
   detail: string
+  cacheState?: 'hit' | 'miss'
 }
 
 const schema = z.object({
   suggestions: z.array(z.object({
     creatorId: z.string(),
     score: z.number().min(0).max(100),
-    reasons: z.array(z.string().max(100)).min(1).max(3),
+    reasons: z.array(z.string().max(140)).min(1).max(3),
   })).max(12),
 })
+
+// Known-good Vercel AI Gateway default. Override with AI_DISCOVERY_MODEL.
+const DEFAULT_MODEL = 'openai/gpt-4o-mini'
+const AI_TIMEOUT_MS = 8_000
+const RESULT_CACHE_TTL_MS = 6 * 60 * 60 * 1_000
+const MAX_RETRIES = 1
+
+const resultCache = new Map<string, { at: number; result: AiSimilarityResult }>()
+
+function cacheKey(seeds: AiCreatorInput[], candidates: AiCreatorInput[]): string {
+  const seedIds = seeds.map((creator) => creator.id).sort().join(',')
+  const candidateIds = candidates.map((creator) => creator.id).sort().join(',')
+  return `${seedIds}::${candidateIds}`
+}
+
+function isRetryable(error: unknown): boolean {
+  const message = error instanceof Error ? `${error.name} ${error.message}` : String(error)
+  return /429|too many|rate.?limit|5\d\d|internal|timeout|abort|overloaded|unavailable/i.test(message)
+}
+
+function truncate(value: string, max = 180): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`
+}
 
 export async function rankSimilarCreatorsWithAI(
   creators: AiCreatorInput[],
@@ -40,36 +64,60 @@ export async function rankSimilarCreatorsWithAI(
     }
   }
 
-  const model = (process.env.AI_DISCOVERY_MODEL || 'openai/gpt-5.4').trim()
-  try {
-    const { output } = await generateText({
-      model,
-      output: Output.object({ schema }),
-      maxOutputTokens: 900,
-      temperature: 0,
-      providerOptions: { gateway: { tags: ['feature:creator-discovery', 'data:public-metadata'], user: 'creator-radar-public', cacheControl: 's-maxage=21600' } },
-      prompt: [
-        'Rank public creator accounts by metadata similarity to the watched accounts.',
-        'Use only supplied public text tags, platform, and engagement. Do not infer appearance, body, gender, sexuality, ethnicity, age, identity, or private traits.',
-        'Return only candidate creatorId values. Prefer cross-source corroboration and specific shared tags. Scores are confidence in metadata similarity, not attractiveness.',
-        `WATCHED=${JSON.stringify(seeds)}`,
-        `CANDIDATES=${JSON.stringify(candidates)}`,
-      ].join('\n'),
-    })
-    const allowed = new Set(candidates.map((candidate) => candidate.id))
-    const suggestions = new Map<string, { score: number; reasons: string[] }>()
-    for (const item of output.suggestions) {
-      if (!allowed.has(item.creatorId) || item.score < 60) continue
-      suggestions.set(item.creatorId, {
-        score: Math.round(item.score),
-        reasons: item.reasons.map((reason) => reason.trim()).filter(Boolean).slice(0, 3),
+  const key = cacheKey(seeds, candidates)
+  const cached = resultCache.get(key)
+  if (cached && Date.now() - cached.at < RESULT_CACHE_TTL_MS) {
+    return { ...cached.result, cacheState: 'hit' }
+  }
+
+  const model = (process.env.AI_DISCOVERY_MODEL || DEFAULT_MODEL).trim()
+  let lastError: unknown = null
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    try {
+      const { output } = await generateText({
+        model,
+        output: Output.object({ schema }),
+        maxOutputTokens: 900,
+        temperature: 0,
+        abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
+        providerOptions: { gateway: { tags: ['feature:creator-discovery', 'data:public-metadata'], user: 'creator-radar-public' } },
+        prompt: [
+          'Rank public creator accounts by metadata similarity to the watched accounts.',
+          'Use only supplied public text tags, platform, and engagement. Do not infer appearance, body, gender, sexuality, ethnicity, age, identity, or private traits.',
+          'Return only candidate creatorId values. Prefer cross-source corroboration and specific shared tags. Scores are confidence in metadata similarity, not attractiveness.',
+          `WATCHED=${JSON.stringify(seeds)}`,
+          `CANDIDATES=${JSON.stringify(candidates)}`,
+        ].join('\n'),
       })
+      const allowed = new Set(candidates.map((candidate) => candidate.id))
+      const suggestions = new Map<string, { score: number; reasons: string[] }>()
+      for (const item of output.suggestions) {
+        if (!allowed.has(item.creatorId) || item.score < 60) continue
+        suggestions.set(item.creatorId, {
+          score: Math.round(item.score),
+          reasons: item.reasons.map((reason) => reason.trim()).filter(Boolean).slice(0, 3),
+        })
+      }
+      const result: AiSimilarityResult = {
+        model, state: 'model', suggestions, cacheState: 'miss',
+        detail: `AI Gateway metadata reranking completed with ${model}.`,
+      }
+      resultCache.set(key, { at: Date.now(), result })
+      if (resultCache.size > 128) resultCache.clear()
+      return result
+    } catch (error) {
+      lastError = error
+      if (attempt < MAX_RETRIES && isRetryable(error)) {
+        await new Promise((resolve) => setTimeout(resolve, 600))
+        continue
+      }
+      break
     }
-    return { model, state: 'model', suggestions, detail: 'AI Gateway metadata reranking completed.' }
-  } catch (error) {
-    return {
-      model: 'metadata-tfidf-v1', state: 'fallback', suggestions: new Map(),
-      detail: `AI Gateway unavailable; deterministic similarity remained active (${error instanceof Error ? error.name : 'request failed'}).`,
-    }
+  }
+
+  const message = lastError instanceof Error ? lastError.message : 'request failed'
+  return {
+    model: 'metadata-tfidf-v1', state: 'fallback', suggestions: new Map(),
+    detail: `AI Gateway unavailable; deterministic similarity remained active (${truncate(message)}).`,
   }
 }

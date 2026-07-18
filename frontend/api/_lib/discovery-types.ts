@@ -51,10 +51,26 @@ export type SourceStatus = {
   searchUrl?: string
 }
 
+export type DuckDuckGoLead = {
+  title: string
+  url: string
+  snippet?: string
+  kind: 'profile' | 'post' | 'video'
+  creatorKey?: string
+}
+
+export type DuckDuckGoSection = {
+  state: 'connected' | 'limited' | 'error'
+  detail: string
+  leads: DuckDuckGoLead[]
+  searchUrl: string
+}
+
 export type MultiSourceResult = {
   media: UnifiedMediaItem[]
   leads: CreatorLead[]
   statuses: SourceStatus[]
+  duckduckgo: DuckDuckGoSection
   requestsAttempted: number
   requestsSucceeded: number
 }
