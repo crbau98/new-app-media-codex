@@ -17,6 +17,11 @@ const NO_STORE_HEADERS = {
   "CDN-Cache-Control": "no-store",
   "Vercel-CDN-Cache-Control": "no-store",
 }
+const IMAGE_SHARED_CACHE_HEADERS = {
+  "Cache-Control": "public, max-age=300, s-maxage=86400, stale-while-revalidate=604800",
+  "CDN-Cache-Control": "public, max-age=300, s-maxage=86400, stale-while-revalidate=604800",
+  "Vercel-CDN-Cache-Control": "public, max-age=300, s-maxage=86400, stale-while-revalidate=604800",
+}
 
 const PRIVACY_HEADERS = {
   "Referrer-Policy": "no-referrer",
@@ -83,6 +88,12 @@ function buildUpstreamHeaders(target: URL, range: string | null): Headers {
   })
   if (range) h.set("Range", range)
   return h
+}
+
+function allowsSharedImageCaching(cacheControl: string | null): boolean {
+  if (!cacheControl) return true
+  const normalized = cacheControl.toLowerCase()
+  return !normalized.includes("no-store") && !normalized.includes("private")
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -178,6 +189,8 @@ export default async function handler(req: Request): Promise<Response> {
   out.append("Vary", "Range")
   if (contentType.startsWith("video/") || range) {
     for (const [name, value] of Object.entries(NO_STORE_HEADERS)) out.set(name, value)
+  } else if (upstream.ok && contentType.startsWith("image/") && allowsSharedImageCaching(upstream.headers.get("cache-control"))) {
+    for (const [name, value] of Object.entries(IMAGE_SHARED_CACHE_HEADERS)) out.set(name, value)
   } else if (upstream.ok && !out.has("cache-control")) {
     out.set("Cache-Control", "public, max-age=3600, s-maxage=86400")
   }
