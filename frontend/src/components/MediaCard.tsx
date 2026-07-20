@@ -10,13 +10,15 @@ interface MediaCardProps {
   aspectRatio?: string
   className?: string
   onSelect?: (id: string) => void
+  /** When true, loads the image eagerly with high fetch priority (use for first ~4 above-fold cards). */
+  priority?: boolean
 }
 
 /**
  * Archive media card: image, mono metadata row, title. Hover affordance is a
  * hairline + slight brightness — siblings dim via the parent `.media-grid`.
  */
-function MediaCard({ item, aspectRatio = '2/3', className, onSelect }: MediaCardProps) {
+function MediaCard({ item, aspectRatio = '2/3', className, onSelect, priority = false }: MediaCardProps) {
   const [error, setError] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
 
@@ -44,6 +46,8 @@ function MediaCard({ item, aspectRatio = '2/3', className, onSelect }: MediaCard
             sources={imageSources}
             alt=""
             retryToken={retryKey}
+            loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
             className="media-card-img absolute inset-0 h-full w-full object-cover transition-opacity duration-200"
             skeletonClassName="absolute inset-0"
             onExhausted={() => setError(true)}

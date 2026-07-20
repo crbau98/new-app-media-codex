@@ -1,5 +1,5 @@
-const SHELL_CACHE = 'media-codex-shell-v3'
-const IMAGE_CACHE = 'media-codex-images-v1'
+const SHELL_CACHE = 'media-codex-shell-v4'
+const IMAGE_CACHE = 'media-codex-images-v2'
 const IMAGE_CACHE_LIMIT = 120
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png']
 

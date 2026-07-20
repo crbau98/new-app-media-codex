@@ -339,6 +339,8 @@
     border-radius: var(--radius-md);
     border: 1px solid transparent;
     transition: border-color 0.2s ease;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 420px;
   }
   .media-card:hover { border-color: var(--line-strong); }
   .media-card:hover .media-card-img { filter: brightness(1.06); }
@@ -404,6 +406,14 @@
   @keyframes toast-progress {
     from { width: 100%; }
     to { width: 0%; }
+  }
+
+  .toast-enter {
+    animation: toast-enter 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes toast-enter {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   /* ────────────────────────────────────────────────
