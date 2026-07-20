@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
 import { ExternalLink, Play, RefreshCw } from 'lucide-react'
 import type { MediaItem } from '@/lib/types'
 import { formatMetric, relativeTime } from '@/lib/discovery'
@@ -20,7 +19,7 @@ interface HeroProps {
 /**
  * Cinematic rotating hero (brief §8): backdrop artwork + scrim + grain,
  * mono eyebrow, display headline, mono meta row, Play / Open-on-source,
- * mono slide index, 6s rotation.
+ * mono slide index, 6s rotation. CSS-only fade transition.
  */
 export default function Hero({ items, loading, error, onRetry, onSelect }: HeroProps) {
   const slides = useMemo(() => items.slice(0, SLIDE_COUNT), [items])
@@ -45,21 +44,18 @@ export default function Hero({ items, loading, error, onRetry, onSelect }: HeroP
       className="relative overflow-hidden rounded-lg border border-line bg-sunken"
     >
       <div className="relative min-h-[340px] md:min-h-[440px] lg:min-h-[480px]">
-        {/* Backdrop */}
-        <AnimatePresence mode="popLayout">
-          {current && (
-            <motion.img
-              key={current.id}
-              src={current.thumbnail}
-              alt=""
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.5 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.6, ease: 'linear' }}
-              className="absolute inset-0 h-full w-full object-cover"
-            />
-          )}
-        </AnimatePresence>
+        {/* Backdrop — keyed img with CSS fade */}
+        {slides.map((slide, slideIndex) => (
+          <img
+            key={slide.id}
+            src={slide.thumbnail}
+            alt=""
+            className={cn(
+              'absolute inset-0 h-full w-full object-cover transition-opacity duration-700',
+              slideIndex === safeIndex ? 'opacity-50' : 'opacity-0'
+            )}
+          />
+        ))}
         <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/40 to-canvas/10" aria-hidden="true" />
         <GrainOverlay />
 

@@ -150,27 +150,41 @@ export async function fetchLiveDiscovery(
   options: LiveDiscoveryOptions = {}
 ): Promise<LiveDiscoveryPayload> {
   const { forceFresh = false, query = '', sort = 'smart' } = options
-  const response = await fetchWithTimeout(
-    LIVE_MEDIA_URL,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(forceFresh ? { 'Cache-Control': 'no-cache' } : {}),
+  const isAnonymousDefault = watchlist.length === 0 && !query && !forceFresh && sort === 'smart'
+
+  let response: Response
+  if (isAnonymousDefault) {
+    // Anonymous default discovery: GET so the edge/CDN cache can serve repeat paints.
+    response = await fetchWithTimeout(
+      `${LIVE_MEDIA_URL}?count=100&pages=3&sort=smart`,
+      { method: 'GET' },
+      25000
+    )
+  } else {
+    // Personalized or force-fresh scan: POST with no-store to bypass CDN cache.
+    response = await fetchWithTimeout(
+      LIVE_MEDIA_URL,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(forceFresh ? { 'Cache-Control': 'no-cache' } : {}),
+        },
+        cache: 'no-store',
+        body: JSON.stringify({
+          count: 100,
+          pages: 3,
+          sort,
+          query,
+          watchlist: watchlist.slice(0, 8),
+          forceFresh,
+          useAI: forceFresh,
+        }),
       },
-      cache: 'no-store',
-      body: JSON.stringify({
-        count: 100,
-        pages: 3,
-        sort,
-        query,
-        watchlist: watchlist.slice(0, 8),
-        forceFresh,
-        useAI: forceFresh,
-      }),
-    },
-    forceFresh ? 45000 : 25000
-  )
+      forceFresh ? 45000 : 25000
+    )
+  }
+
   if (!response.ok) throw new Error(`Live discovery returned ${response.status}`)
   const payload = (await response.json()) as Partial<LiveDiscoveryPayload>
   const items = Array.isArray(payload.items) ? payload.items : []

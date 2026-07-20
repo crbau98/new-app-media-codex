@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -18,16 +18,18 @@ import { fetchLiveDiscovery } from '@/lib/api'
 import { relativeTime } from '@/lib/discovery'
 import { useAppStore, type GridDensity } from '@/store'
 import MediaCard from '@/components/MediaCard'
-import MediaDetail from '@/components/MediaDetail'
 import MediaImage from '@/components/MediaImage'
 import Hero from '@/components/Hero'
-import CreatorDrawer from '@/components/CreatorDrawer'
 import EmptyState from '@/components/EmptyState'
 import SkeletonGrid from '@/components/SkeletonGrid'
 import UpdatedChip from '@/components/UpdatedChip'
 import { cn } from '@/lib/utils'
 
+const MediaDetail = lazy(() => import('@/components/MediaDetail'))
+const CreatorDrawer = lazy(() => import('@/components/CreatorDrawer'))
+
 const VISIBLE_INCREMENT = 24
+const PRIORITY_CARD_COUNT = 4
 
 const densityCols: Record<GridDensity, string> = {
   compact: 'grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7',
@@ -51,11 +53,14 @@ export default function Home() {
   const addToast = useAppStore((s) => s.addToast)
   const navigate = useNavigate()
 
-  // Home is the ONLY surface that polls (every 2 minutes).
+  // Home is the ONLY surface that polls (every 2 minutes). placeholderData keeps
+  // the previous result visible while a background refetch is in flight.
   const discoveryQuery = useQuery({
     queryKey: ['live-discovery', creatorWatchlist],
     queryFn: () => fetchLiveDiscovery(creatorWatchlist),
     refetchInterval: 120000,
+    refetchOnWindowFocus: false,
+    placeholderData: (previousData) => previousData,
   })
   const discovery = discoveryQuery.data
 
@@ -319,8 +324,14 @@ export default function Home() {
         ) : viewMode === 'grid' ? (
           <>
             <div className={cn('media-grid grid gap-4', densityCols[gridDensity])}>
-              {visibleItems.map((item) => (
-                <MediaCard key={item.id} item={item} aspectRatio="2/3" onSelect={openDetail} />
+              {visibleItems.map((item, itemIndex) => (
+                <MediaCard
+                  key={item.id}
+                  item={item}
+                  aspectRatio="2/3"
+                  onSelect={openDetail}
+                  priority={itemIndex < PRIORITY_CARD_COUNT}
+                />
               ))}
             </div>
             {hasMore && (
@@ -381,14 +392,20 @@ export default function Home() {
         )}
       </section>
 
-      <MediaDetail
-        item={selectedItem}
-        open={Boolean(selectedItem)}
-        onClose={() => setSelectedItem(null)}
-        items={filteredItems}
-        onNavigate={setSelectedItem}
-      />
-      <CreatorDrawer creator={activeCreator} onClose={() => setActiveCreator(null)} />
+      <Suspense fallback={null}>
+        {selectedItem && (
+          <MediaDetail
+            item={selectedItem}
+            open={Boolean(selectedItem)}
+            onClose={() => setSelectedItem(null)}
+            items={filteredItems}
+            onNavigate={setSelectedItem}
+          />
+        )}
+        {activeCreator && (
+          <CreatorDrawer creator={activeCreator} onClose={() => setActiveCreator(null)} />
+        )}
+      </Suspense>
     </div>
   )
 }

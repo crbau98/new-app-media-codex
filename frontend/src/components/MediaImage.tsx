@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { resolvePublicUrl } from '@/lib/backendOrigin'
 import { cn } from '@/lib/utils'
+
+const CANDIDATE_TIMEOUT_MS = 7000
 
 interface MediaImageProps {
   /** Ordered image candidates. The first reachable URL wins; later URLs are fallbacks. */
@@ -9,6 +11,7 @@ interface MediaImageProps {
   className?: string
   skeletonClassName?: string
   loading?: 'lazy' | 'eager'
+  fetchPriority?: 'auto' | 'high' | 'low'
   decoding?: 'async' | 'auto' | 'sync'
   /** Increment to force the whole candidate waterfall to run again. */
   retryToken?: string | number
@@ -40,6 +43,7 @@ function MediaImageInner({
   className,
   skeletonClassName,
   loading = 'lazy',
+  fetchPriority = 'auto',
   decoding = 'async',
   onLoad,
   onExhausted,
@@ -48,10 +52,49 @@ function MediaImageInner({
   const [cycle, setCycle] = useState(0)
   const [loaded, setLoaded] = useState(false)
   const [exhausted, setExhausted] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const advanceCandidate = () => {
+    if (timeoutRef.current !== null) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+    setLoaded(false)
+    setIndex((value) => value + 1)
+  }
+
+  useEffect(() => {
+    if (exhausted || loaded) return
+    timeoutRef.current = setTimeout(() => {
+      if (index + 1 < candidates.length) {
+        advanceCandidate()
+      } else if (cycle < 1) {
+        if (timeoutRef.current !== null) clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+        setLoaded(false)
+        setIndex(0)
+        setCycle(1)
+      } else {
+        setExhausted(true)
+        onExhausted?.()
+      }
+    }, CANDIDATE_TIMEOUT_MS)
+    return () => {
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, cycle, loaded, exhausted, candidates.length])
 
   if (exhausted) return null
 
   const handleError = () => {
+    if (timeoutRef.current !== null) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
     if (index + 1 < candidates.length) {
       setLoaded(false)
       setIndex((value) => value + 1)
@@ -78,10 +121,15 @@ function MediaImageInner({
         alt={alt}
         className={cn(className, !hasExplicitOpacity && (loaded ? 'opacity-100' : 'opacity-0'))}
         loading={loading}
+        fetchPriority={fetchPriority}
         decoding={decoding}
         referrerPolicy="no-referrer"
         draggable={false}
         onLoad={() => {
+          if (timeoutRef.current !== null) {
+            clearTimeout(timeoutRef.current)
+            timeoutRef.current = null
+          }
           setLoaded(true)
           onLoad?.()
         }}
@@ -95,7 +143,8 @@ function MediaImageInner({
 /**
  * Robust image renderer for source media: walks thumbnail/full-size candidates,
  * remounts transient failures once, and reports exhaustion so callers can show
- * a retry affordance instead of leaving a blank tile.
+ * a retry affordance instead of leaving a blank tile. Per-candidate timeout
+ * (~7 s) advances to the next URL if a CDN connection hangs.
  */
 export default function MediaImage(props: MediaImageProps) {
   const candidates = useMemo(() => mediaImageCandidates(props.sources), [props.sources])
