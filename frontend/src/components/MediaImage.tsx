@@ -54,6 +54,13 @@ function MediaImageInner({
   const [exhausted, setExhausted] = useState(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Keep a stable ref to onExhausted so the timeout callback always calls the
+  // latest version without needing it in the effect dependency array.
+  const onExhaustedRef = useRef(onExhausted)
+  useEffect(() => {
+    onExhaustedRef.current = onExhausted
+  }, [onExhausted])
+
   const advanceCandidate = () => {
     if (timeoutRef.current !== null) {
       clearTimeout(timeoutRef.current)
@@ -76,7 +83,7 @@ function MediaImageInner({
         setCycle(1)
       } else {
         setExhausted(true)
-        onExhausted?.()
+        onExhaustedRef.current?.()
       }
     }, CANDIDATE_TIMEOUT_MS)
     return () => {
@@ -85,7 +92,6 @@ function MediaImageInner({
         timeoutRef.current = null
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, cycle, loaded, exhausted, candidates.length])
 
   if (exhausted) return null

@@ -47,7 +47,7 @@ function MediaCard({ item, aspectRatio = '2/3', className, onSelect, priority = 
             alt=""
             retryToken={retryKey}
             loading={priority ? 'eager' : 'lazy'}
-            fetchPriority={priority ? 'high' : 'low'}
+            fetchPriority={priority ? 'high' : 'auto'}
             className="media-card-img absolute inset-0 h-full w-full object-cover transition-opacity duration-200"
             skeletonClassName="absolute inset-0"
             onExhausted={() => setError(true)}

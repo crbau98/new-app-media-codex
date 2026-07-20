@@ -50,6 +50,7 @@ export default function Hero({ items, loading, error, onRetry, onSelect }: HeroP
             key={slide.id}
             src={slide.thumbnail}
             alt=""
+            loading={slideIndex === 0 ? 'eager' : 'lazy'}
             className={cn(
               'absolute inset-0 h-full w-full object-cover transition-opacity duration-700',
               slideIndex === safeIndex ? 'opacity-50' : 'opacity-0'
