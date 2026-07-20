@@ -2,7 +2,8 @@ import { collectDuckDuckGo } from './duckduckgo.js'
 import type { CreatorLead, MultiSourceResult, SourceStatus, UnifiedMediaItem } from './discovery-types.js'
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
-const PROVIDER_TIMEOUT_MS = 9_000
+const PROVIDER_TIMEOUT_MS = 6_500
+const OPTIONAL_DISCOVERY_BUDGET_MS = 2_500
 // Exclusion-only blocklist: strictly female/straight markers. Trans-related
 // terms were removed — trans men are in scope, and identity terms must never
 // be used as exclusion signals.
@@ -291,6 +292,21 @@ export function creatorFromUrl(value: string | undefined): { username: string; p
   }
 }
 
+function withTimeoutFallback<T>(promise: Promise<T>, fallback: T, timeoutMs: number): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), timeoutMs)
+    promise
+      .then((value) => {
+        clearTimeout(timer)
+        resolve(value)
+      })
+      .catch(() => {
+        clearTimeout(timer)
+        resolve(fallback)
+      })
+  })
+}
+
 async function collectGoogle(watchlist: string[]): Promise<{ leads: CreatorLead[]; status: SourceStatus; attempted: number; succeeded: number }> {
   const apiKey = (process.env.GOOGLE_CSE_API_KEY || '').trim()
   const cx = (process.env.GOOGLE_CSE_ID || '').trim()
@@ -346,12 +362,33 @@ async function collectGoogle(watchlist: string[]): Promise<{ leads: CreatorLead[
 }
 
 export async function collectAdditionalSources(watchlist: string[], opts: { query?: string } = {}): Promise<MultiSourceResult> {
-  const ddgOptions = { watchlist, query: opts.query, creatorFromUrl, watched }
+  const query = sanitize(opts.query || '')
+  const shouldRunDdg = Boolean(query) || watchlist.some((creator) => canonical(creator).length > 0)
+  const ddgFallback = {
+    section: {
+      state: 'limited' as const,
+      detail: shouldRunDdg
+        ? `DuckDuckGo discovery was deferred by the ${OPTIONAL_DISCOVERY_BUDGET_MS}ms optional budget so playable media can return first.`
+        : 'DuckDuckGo discovery skipped for the default feed (no query/watchlist).',
+      leads: [],
+      searchUrl: `https://duckduckgo.com/?q=${encodeURIComponent(query || 'gay male creator public profile')}`,
+    },
+    leads: [],
+    attempted: 0,
+    succeeded: 0,
+  }
+  const ddgPromise = shouldRunDdg
+    ? withTimeoutFallback(
+      collectDuckDuckGo({ watchlist, query: query || undefined, creatorFromUrl, watched }),
+      ddgFallback,
+      OPTIONAL_DISCOVERY_BUDGET_MS,
+    )
+    : Promise.resolve(ddgFallback)
   const [x, tumblr, google, ddg] = await Promise.all([
     collectX(watchlist),
     collectTumblr(watchlist),
     collectGoogle(watchlist),
-    collectDuckDuckGo(ddgOptions),
+    ddgPromise,
   ])
   const statuses: SourceStatus[] = [
     x.status,

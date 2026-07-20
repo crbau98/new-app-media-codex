@@ -26,7 +26,7 @@ const FEMALE_MARKERS = [
   'milf', 'femdom',
   'girls', 'chick', 'chicks', 'females',
 ]
-const PROVIDER_TIMEOUT_MS = 9_000
+const PROVIDER_TIMEOUT_MS = 6_500
 
 /* ── Redgifs token cache (module scope, single-flight, ~20min TTL) ── */
 const TOKEN_TTL_MS = 20 * 60 * 1_000
@@ -449,11 +449,15 @@ function mergeCreatorLeads(creators: BuiltCreator[], leads: CreatorLead[]): Buil
 }
 
 function corsHeaders(noStore = false): Record<string, string> {
+  const cacheControl = noStore ? 'private, no-store' : 'public, s-maxage=300, stale-while-revalidate=900'
+  const sharedCacheControl = noStore ? 'no-store' : cacheControl
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Cache-Control',
-    'Cache-Control': noStore ? 'private, no-store' : 'public, s-maxage=120, stale-while-revalidate=300',
+    'Cache-Control': cacheControl,
+    'CDN-Cache-Control': sharedCacheControl,
+    'Vercel-CDN-Cache-Control': sharedCacheControl,
     'Content-Type': 'application/json; charset=utf-8',
   }
 }
