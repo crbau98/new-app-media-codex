@@ -368,7 +368,7 @@ export async function collectAdditionalSources(watchlist: string[], opts: { quer
     section: {
       state: 'limited' as const,
       detail: shouldRunDdg
-        ? `DuckDuckGo discovery exceeded ${OPTIONAL_DISCOVERY_BUDGET_MS}ms budget; returning playable media first.`
+        ? `DuckDuckGo discovery was deferred by the ${OPTIONAL_DISCOVERY_BUDGET_MS}ms optional budget so playable media can return first.`
         : 'DuckDuckGo discovery skipped for the default feed (no query/watchlist).',
       leads: [],
       searchUrl: `https://duckduckgo.com/?q=${encodeURIComponent(query || 'gay male creator public profile')}`,
