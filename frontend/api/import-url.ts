@@ -9,11 +9,15 @@ const NO_STORE = {
   'Vercel-CDN-Cache-Control': 'no-store',
 }
 
+function isHostOrSubdomain(host: string, domain: string): boolean {
+  return host === domain || host.endsWith(`.${domain}`)
+}
+
 function hostSource(hostname: string): string {
   const host = hostname.toLowerCase()
-  if (host.includes('redgifs.com')) return 'redgifs'
-  if (host.includes('x.com') || host.includes('twitter.com')) return 'x'
-  if (host.includes('tumblr.com')) return 'tumblr'
+  if (isHostOrSubdomain(host, 'redgifs.com')) return 'redgifs'
+  if (isHostOrSubdomain(host, 'x.com') || isHostOrSubdomain(host, 'twitter.com')) return 'x'
+  if (isHostOrSubdomain(host, 'tumblr.com')) return 'tumblr'
   return 'rss'
 }
 
