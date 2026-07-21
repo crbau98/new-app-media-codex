@@ -52,7 +52,7 @@ async function readLimitedText(response: Response): Promise<string> {
 function firstMatch(block: string, patterns: RegExp[]): string | undefined {
   for (const pattern of patterns) {
     const match = block.match(pattern)
-    if (match?.[1]) return match[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim()
+    if (match?.[1]) return match[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim()
   }
   return undefined
 }
