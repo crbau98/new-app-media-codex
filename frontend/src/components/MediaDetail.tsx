@@ -19,9 +19,9 @@ import { apiUrl, resolveMediaAssetUrl, resolvePublicUrl } from '@/lib/backendOri
 import { creatorFollowId, formatMetric, relativeTime } from '@/lib/discovery'
 import { loadProgress, recordProgress } from '@/lib/collections'
 import { playbackIntent } from '@/lib/intent'
+import { orderPlaybackCandidates } from '@/lib/playback'
 import { useCollections } from '@/hooks/useCollections'
 import type { MediaItem } from '@/lib/types'
-import type { VideoQuality } from '@/store'
 import { useAppStore } from '@/store'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import MediaImage from '@/components/MediaImage'
@@ -29,18 +29,13 @@ import { cn } from '@/lib/utils'
 
 const easeOut = [0.16, 1, 0.3, 1] as [number, number, number, number]
 
-/**
- * Order stream candidates by the preferred quality. Provider URLs carry
- * resolution hints ('hd'/'1080' high, 'sd'/'720'/'mobile' low); when nothing
- * matches we keep the provider's own order.
- */
-function preferQuality(candidates: string[], quality: VideoQuality): string[] {
-  if (quality === 'auto' || candidates.length < 2) return candidates
-  const tokens = quality === '1080p' ? ['1080', 'hd'] : ['720', 'sd', 'mobile']
-  return candidates
-    .map((url, index) => ({ url, index, match: tokens.some((t) => url.toLowerCase().includes(t)) ? 1 : 0 }))
-    .sort((a, b) => b.match - a.match || a.index - b.index)
-    .map((entry) => entry.url)
+function prefersMobilePlayback(): boolean {
+  if (typeof window === 'undefined') return false
+  const compactOrTouch = window.matchMedia('(max-width: 767px), (pointer: coarse)').matches
+  const connection = (navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string }
+  }).connection
+  return compactOrTouch || connection?.saveData === true || ['slow-2g', '2g', '3g'].includes(connection?.effectiveType || '')
 }
 
 /**
@@ -79,7 +74,7 @@ function VideoPlayer({ item }: { item: MediaItem }) {
       .map(resolveMediaAssetUrl)
       .filter((url): url is string => Boolean(url))
       .filter((url, position, list) => list.indexOf(url) === position)
-    return preferQuality(normalized, quality)
+    return orderPlaybackCandidates(normalized, quality, quality === 'auto' && prefersMobilePlayback())
   }, [item.mediaUrl, item.streamCandidates, quality])
 
   const [candidates, setCandidates] = useState(initialCandidates)
@@ -156,7 +151,11 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     return clearWatchdog
   }, [armWatchdog, autoplay, candidates, clearWatchdog, failed, index])
 
-  const handleReady = useCallback(() => {
+  const handleUsable = useCallback(() => {
+    setFailed(false)
+  }, [])
+
+  const handlePlaying = useCallback(() => {
     clearWatchdog()
     setFailed(false)
   }, [clearWatchdog])
@@ -198,16 +197,30 @@ function VideoPlayer({ item }: { item: MediaItem }) {
 
   // Click-to-play UX: track paused state for the overlay; tap the video to toggle.
   const [paused, setPaused] = useState(true)
+  const requestPlay = useCallback(async (recoverOnFailure: boolean) => {
+    const node = videoRef.current
+    if (!node) return
+    try {
+      await node.play()
+    } catch (error) {
+      // Autoplay policy rejections are resolved by the user's next tap. Codec,
+      // transport, and provider failures should immediately try the next source
+      // instead of silently leaving a poster over a stalled player.
+      const name = error instanceof DOMException ? error.name : ''
+      if (recoverOnFailure && name !== 'NotAllowedError' && name !== 'AbortError') {
+        await recover()
+      }
+    }
+  }, [recover])
   const togglePlay = useCallback(() => {
     const node = videoRef.current
     if (!node) return
-    if (node.paused) void node.play().catch(() => {})
+    if (node.paused) void requestPlay(true)
     else node.pause()
-  }, [])
+  }, [requestPlay])
   const handlePlayEvent = useCallback(() => {
     setPaused(false)
-    handleReady()
-  }, [handleReady])
+  }, [])
   const handlePauseEvent = useCallback(() => {
     setPaused(true)
     saveProgressNow()
@@ -296,9 +309,9 @@ function VideoPlayer({ item }: { item: MediaItem }) {
         muted={muteOnStart}
         disablePictureInPicture={!pictureInPicture}
         crossOrigin={sameOrigin ? undefined : 'anonymous'}
-        onLoadedData={handleReady}
-        onCanPlay={handleReady}
-        onPlaying={handleReady}
+        onLoadedData={handleUsable}
+        onCanPlay={handleUsable}
+        onPlaying={handlePlaying}
         onPlay={handlePlayEvent}
         onLoadedMetadata={handleLoadedMetadata}
         onWaiting={handleBuffering}
@@ -308,7 +321,7 @@ function VideoPlayer({ item }: { item: MediaItem }) {
         onEnded={handlePauseEvent}
         onClick={togglePlay}
         onError={recover}
-        className="max-h-[62dvh] min-h-56 w-full object-contain"
+        className="aspect-video max-h-[58dvh] min-h-0 w-full object-contain sm:min-h-56 md:max-h-[62dvh]"
       >
         Your browser does not support video playback.
       </video>
@@ -530,10 +543,10 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.25, ease: easeOut }}
-            className="relative z-10 flex h-[94dvh] w-full flex-col overflow-hidden border-l border-line bg-elevated shadow-overlay outline-none md:h-full md:max-w-[480px]"
+            className="relative z-10 flex h-[100dvh] w-full flex-col overflow-hidden border-line bg-elevated shadow-overlay outline-none md:h-full md:max-w-[480px] md:border-l"
           >
             {/* Sheet header */}
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-3">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-4 sm:pt-3">
               <span className="mono-meta uppercase">Public source · {item.source}</span>
               <div className="flex items-center gap-1">
                 {items && onNavigate && (
@@ -566,7 +579,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 pb-10 pt-4 sm:px-5">
+            <div className="flex-1 overflow-y-auto overscroll-contain px-3 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:pt-4">
               {item.isVideo ? (
                 <VideoPlayer key={item.id} item={item} />
               ) : (
@@ -608,29 +621,29 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
               </div>
 
               {/* Actions */}
-              <div className="flex flex-wrap items-center gap-2 border-b border-line py-3">
+              <div className="grid grid-cols-2 items-center gap-2 border-b border-line py-3 sm:flex sm:flex-wrap">
                 {item.pageUrl && (
-                  <a href={item.pageUrl} target="_blank" rel="noreferrer" className="btn-primary">
+                  <a href={item.pageUrl} target="_blank" rel="noreferrer" className="btn-primary w-full sm:w-auto">
                     Watch on source <ExternalLink size={14} strokeWidth={1.75} />
                   </a>
                 )}
                 {!item.isVideo && item.mediaUrl && (
-                  <a href={resolveMediaAssetUrl(item.mediaUrl)} target="_blank" rel="noreferrer" className="btn-secondary">
+                  <a href={resolveMediaAssetUrl(item.mediaUrl)} target="_blank" rel="noreferrer" className="btn-secondary w-full sm:w-auto">
                     Full image <ExternalLink size={14} strokeWidth={1.75} />
                   </a>
                 )}
-                <button onClick={save} className="btn-secondary" aria-pressed={liked}>
+                <button onClick={save} className="btn-secondary w-full sm:w-auto" aria-pressed={liked}>
                   <Bookmark size={14} strokeWidth={1.75} className={liked ? 'fill-current' : ''} aria-hidden="true" />
                   {liked ? 'Saved' : 'Save'}
                 </button>
-                <button onClick={share} className="btn-secondary">
+                <button onClick={share} className="btn-secondary w-full sm:w-auto">
                   <Share2 size={14} strokeWidth={1.75} aria-hidden="true" />
                   Share
                 </button>
-                <div className="relative">
+                <div className="relative col-span-2 sm:col-span-1">
                   <button
                     onClick={() => setCollectOpen((value) => !value)}
-                    className="btn-secondary"
+                    className="btn-secondary w-full sm:w-auto"
                     aria-expanded={collectOpen}
                     aria-haspopup="dialog"
                   >
