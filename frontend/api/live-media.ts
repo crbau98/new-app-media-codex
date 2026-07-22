@@ -564,16 +564,27 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
       const providerCount = Math.min(80, Math.max(30, Math.ceil(count / pages * 1.7)))
-      const discoveryRequests: Array<Promise<RedgifsItem[]>> = Array.from({ length: pages }, (_, index) => {
-      const params = new URLSearchParams({
-        type: 'g',
-        tags: 'Gay',
-        count: String(providerCount),
-        page: String(startPage + index),
-        order: 'trending',
-      })
-      return fetchProvider('/gifs/search', params)
-      })
+      // Rotate across the provider's order lanes to deepen the catalog inside
+      // the same tag-scoped (scope-proofed) search: 'trending' favors velocity,
+      // 'top28' surfaces month-scale proven clips, 'recent' keeps the feed
+      // fresh. An unknown/unsupported order just fails its lane via
+      // Promise.allSettled without affecting the others.
+      const ORDER_LANES = ['trending', 'top28', 'recent'] as const
+      const laneCount = Math.min(ORDER_LANES.length, pages)
+      const perLanePages = Math.ceil(pages / laneCount)
+      const discoveryRequests: Array<Promise<RedgifsItem[]>> = []
+      for (let lane = 0; lane < laneCount; lane += 1) {
+        for (let pageIndex = 0; pageIndex < perLanePages; pageIndex += 1) {
+          const params = new URLSearchParams({
+            type: 'g',
+            tags: 'Gay',
+            count: String(providerCount),
+            page: String(startPage + pageIndex),
+            order: ORDER_LANES[lane],
+          })
+          discoveryRequests.push(fetchProvider('/gifs/search', params))
+        }
+      }
 
       if (query) {
         discoveryRequests.push(fetchProvider('/gifs/search', new URLSearchParams({
