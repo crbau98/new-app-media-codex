@@ -355,6 +355,11 @@ async function collectPeerTube(opts: { query?: string } = {}): Promise<{ media: 
         const pageUrl = safePublicUrl(video.url)
         const thumbnail = safePublicUrl(video.thumbnailUrl)
         if (!uuid || !pageUrl || !thumbnail || seen.has(uuid)) continue
+        // The archive is an adult app behind an 18+ gate. On a general-purpose
+        // federated index, token matching alone pulls in noise (people named
+        // Gay, SFW memes, podcasts). Requiring the publisher's own NSFW flag
+        // keeps this lane aligned with the archive's actual scope.
+        if (video.nsfw !== true) continue
         if (!peerTubeItemScope(video)) continue
         seen.add(uuid)
         const creator = sanitize(video.account?.displayName || video.account?.name || '') || 'PeerTube creator'
@@ -399,7 +404,7 @@ async function collectPeerTube(opts: { query?: string } = {}): Promise<{ media: 
       state,
       mediaFound: media.length,
       detail: succeeded
-        ? 'Public PeerTube federated index; thumbnails load from origin instances and playback stays on source.'
+        ? 'Public PeerTube federated index (publisher-flagged adult items only); playback stays on source.'
         : base.detail,
     },
     attempted,
