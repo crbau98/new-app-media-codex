@@ -1,13 +1,13 @@
 /**
  * Backend origin detection and URL helpers.
  *
- * Priority:
- *  1. VITE_BACKEND_ORIGIN env var
- *  2. Same-origin (if UI is served from the same domain as the API)
- *  3. Default Render deployment origin
+ * Browser API traffic stays same-origin on Vercel and is forwarded by the
+ * narrow /api/render gateway. Render remains the canonical backend and asset
+ * origin; provider secrets never enter the Vite bundle.
  */
 
 const DEFAULT_ORIGIN = 'https://codex-research-radar.onrender.com'
+const VERCEL_API_PREFIX = '/api/render'
 
 /**
  * Number of seconds to wait before aborting a fetch request.
@@ -18,25 +18,28 @@ export const FETCH_TIMEOUT_MS = 10000
  * Returns the detected backend origin URL (no trailing slash).
  */
 export function getBackendOrigin(): string {
-  // 1. explicit env override
+  const host = window.location.host
+
+  // Vercel always uses its same-origin gateway, even if a stale build-time
+  // VITE_BACKEND_ORIGIN remains in project settings.
+  if (host.endsWith('.vercel.app')) return VERCEL_API_PREFIX
+
+  // 1. explicit override for local/alternate hosts
   const env = import.meta.env.VITE_BACKEND_ORIGIN as string | undefined
   if (env && env.trim()) {
     return env.trim().replace(/\/$/, '')
   }
 
   // 2. same-origin detection
-  // If the UI is hosted on Render (same domain as backend), use same-origin
-  const host = window.location.host
-  if (
-    host.includes('localhost') ||
-    host.includes('127.0.0.1') ||
-    host === 'codex-research-radar.onrender.com'
-  ) {
+  if (host === 'codex-research-radar.onrender.com') {
     // Use same-origin (empty string prefix means same origin in fetch)
     return ''
   }
 
-  // 3. split deployment — UI hosted elsewhere (Vercel, Netlify, etc.)
+  // 3. Local Vite/Vercel development mirrors the production gateway path.
+  if (host.includes('localhost') || host.includes('127.0.0.1')) return VERCEL_API_PREFIX
+
+  // 4. Other split deployments can still talk to Render directly.
   return DEFAULT_ORIGIN
 }
 
@@ -59,12 +62,15 @@ export function resolvePublicUrl(path: string | null | undefined): string {
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path
   }
-  const origin = getBackendOrigin()
-  if (!origin) {
+  const apiOrigin = getBackendOrigin()
+  if (!apiOrigin) {
     // same-origin — prepend current origin
     return `${window.location.origin}${path.startsWith('/') ? '' : '/'}${path}`
   }
-  return `${origin}${path.startsWith('/') ? '' : '/'}${path}`
+  // The Vercel gateway is intentionally metadata-only; large media assets
+  // continue to stream from their canonical Render/provider origin.
+  const assetOrigin = apiOrigin === VERCEL_API_PREFIX ? DEFAULT_ORIGIN : apiOrigin
+  return `${assetOrigin}${path.startsWith('/') ? '' : '/'}${path}`
 }
 
 /**
@@ -83,7 +89,7 @@ export function resolveMediaAssetUrl(path: string | null | undefined): string {
  */
 export function getPublicOrigin(): string {
   const backend = getBackendOrigin()
-  return backend || window.location.origin
+  return backend === VERCEL_API_PREFIX ? DEFAULT_ORIGIN : backend || window.location.origin
 }
 
 /**
@@ -91,6 +97,9 @@ export function getPublicOrigin(): string {
  */
 export function crawlWebSocketUrl(): string {
   const origin = getBackendOrigin()
+  if (origin === VERCEL_API_PREFIX) {
+    return `${DEFAULT_ORIGIN.replace(/^http/, 'ws')}/ws/crawl`
+  }
   if (origin) {
     const wsOrigin = origin.replace(/^http/, 'ws')
     return `${wsOrigin}/ws/crawl`

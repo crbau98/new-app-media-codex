@@ -10,6 +10,14 @@ export default defineConfig(({ mode }) => ({
   plugins: [react(), ...(mode === 'development' ? [inspectAttr()] : [])],
   server: {
     port: 3000,
+    proxy: {
+      // Match the Vercel gateway path during local development.
+      '/api/render': {
+        target: process.env.RENDER_BACKEND_ORIGIN || 'https://codex-research-radar.onrender.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/render/, ''),
+      },
+    },
   },
   resolve: {
     alias: {

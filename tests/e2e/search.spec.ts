@@ -4,8 +4,9 @@ import { installAppFixture } from './fixtures'
 test('type in search and verify results update', async ({ page }) => {
   await installAppFixture(page)
   await page.goto('/search')
-  const searchInput = page.getByPlaceholder('Search a creator, tag, or description')
+  const searchInput = page.getByPlaceholder('Search — or filter: tag:jock')
   await searchInput.fill('Studio')
   await expect(searchInput).toHaveValue('Studio')
+  await searchInput.press('Enter')
   await expect(page.getByText('Studio signal').first()).toBeVisible()
 })

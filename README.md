@@ -1,6 +1,6 @@
 # Media Codex
 
-Media Codex is a private, responsive media-library and discovery app. Its primary product is a React/Vite client paired with Vercel edge APIs for browsing, playback, search, creator discovery, collections, and review. A FastAPI service remains available for legacy archived-item recovery.
+Media Codex is a private, responsive media-library and discovery app. Its React/Vite client and public aggregation run on Vercel; its persistent, credential-backed API runs on Render behind a same-origin Vercel gateway.
 
 The repository began as a research-radar prototype. Some research ingestion modules remain available for future, separately labelled work, but the shipped product contract is Media Codex; captured media is not presented as clinical evidence.
 
@@ -14,10 +14,10 @@ The repository began as a research-radar prototype. Some research ingestion modu
 
 ## Stack
 
-- Vercel edge APIs for live source aggregation, imports, federated search, and media delivery
-- FastAPI backend with SQLite persistence for legacy archived-item recovery
+- Vercel edge APIs for live source aggregation, imports, federated search, and browser-to-Render API forwarding
+- FastAPI backend with SQLite persistence and secret-backed provider integrations
 - React 19, TypeScript, Vite, TanStack Query, Zustand, Tailwind, and Framer Motion
-- Vercel deployment for the client and live edge APIs; Render deployment for the legacy backend
+- Vercel deployment for the client/gateway; Render deployment for the canonical persistent backend
 - PWA manifest and privacy-conscious offline shell
 
 ## Local development
@@ -39,7 +39,7 @@ npm ci
 npm run dev
 ```
 
-The live frontend routes use same-origin Vercel edge APIs. `VITE_BACKEND_ORIGIN` only selects the legacy FastAPI origin for archived-item operations.
+The browser uses same-origin Vercel routes. `/api/render/*` forwards safe API requests to Render, while `/api/live-media` combines public edge sources with normalized credential-backed results from Render. `VITE_BACKEND_ORIGIN` is only an override for non-Vercel split deployments.
 
 ## Production configuration
 
@@ -49,11 +49,11 @@ Required:
 - `DATABASE_PATH`: persistent SQLite path.
 - `IMAGE_DIR`: persistent image-cache path.
 
-Optional integrations include Vercel AI Gateway, `X_BEARER_TOKEN`, `TUMBLR_API_KEY`, existing-customer Google Programmable Search credentials, `OPENAI_API_KEY`, and Telegram credentials. Never commit secrets or place provider keys in `VITE_*` variables.
+Optional integrations include Vercel AI Gateway plus Render-side `X_BEARER_TOKEN`, `TUMBLR_API_KEY`, existing-customer Google Programmable Search credentials, `OPENAI_API_KEY`, and Telegram credentials. Never commit secrets, duplicate provider keys into Vercel, or place them in `VITE_*` variables.
 
 ### Public discovery operation
 
-The Vercel live endpoint refreshes public, source-attributed discovery media on demand with a short edge cache. Redgifs works without credentials; X and Tumblr activate through their official API credentials. PeerTube contributes publisher-labelled federated results, Google licensed-image search contributes canonical profile leads, and web discovery provides attributed source shortcuts.
+The Vercel live endpoint refreshes public, source-attributed discovery media on demand with a short edge cache. Redgifs works without credentials. X, Tumblr, and Google activate through Render's provider gateway using the keys already stored there; only normalized public metadata crosses to Vercel. PeerTube and web discovery remain keyless edge sources.
 
 `Scan now` asks Vercel AI Gateway to rerank cross-source creator candidates using public metadata only. The default is `openai/gpt-5.6-luna`, configurable through `AI_DISCOVERY_MODEL`. The model receives no images and is instructed not to infer appearance or sensitive traits. If Gateway is unavailable, deterministic TF-IDF tag similarity remains active.
 
@@ -64,6 +64,7 @@ Operational checks:
 ```text
 GET /healthz
 GET /api/live-media
+POST /api/discovery/providers
 ```
 
 Source availability, creator permission, rights, and takedown obligations remain the operator's responsibility.

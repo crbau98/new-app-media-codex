@@ -33,6 +33,16 @@ services:
         value: "false"
       - key: ADMIN_TOKEN
         generateValue: true
+      # Secret-backed public discovery stays on Render. Existing dashboard
+      # values are retained; new Blueprint installs prompt for them.
+      - key: X_BEARER_TOKEN
+        sync: false
+      - key: TUMBLR_API_KEY
+        sync: false
+      - key: GOOGLE_CSE_API_KEY
+        sync: false
+      - key: GOOGLE_CSE_ID
+        sync: false
       - key: SKIP_MEDIA_DOWNLOADS
         value: "true"
       # Explicit public UI origins for browser API/WebSocket/SSE access.

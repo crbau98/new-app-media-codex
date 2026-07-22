@@ -27,9 +27,10 @@ feeds, and federated sources into one payload: media items, creator directory en
 AI suggestions, and web-discovery leads. Additional edge routes handle attributed
 feed imports, direct PeerTube/Mastodon search, and same-origin media delivery.
 
-Deploy topology: the static client and the edge function deploy together on Vercel.
-The older FastAPI backend on Render is retained only for legacy archived-item stream
-recovery. New live discovery and source integrations belong in the Vercel edge layer.
+Deploy topology: the static client, public-source aggregation, and same-origin API
+gateway deploy together on Vercel. The FastAPI backend on Render owns persistence
+and credential-backed integrations. `/api/live-media` merges both tiers, while
+`/api/render/*` gives browser code one stable API origin.
 
 ## Develop
 

@@ -710,6 +710,15 @@ app.include_router(analytics_router)
 from app.api.assistant import router as assistant_router
 app.include_router(assistant_router)
 
+# Credential-backed public provider discovery. Vercel calls this server to
+# keep X/Tumblr/Google keys out of edge and browser environments.
+from app.api.discovery import router as discovery_router
+app.include_router(discovery_router)
+
+# Mount the versioned contract used by the typed frontend client.
+from app.api.v1 import v1_router
+app.include_router(v1_router)
+
 # SPA fallback — must be the last route
 @app.get("/{full_path:path}", response_class=HTMLResponse)
 def spa_fallback(full_path: str):
