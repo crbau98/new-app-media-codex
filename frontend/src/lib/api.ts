@@ -107,7 +107,7 @@ function normalizeAiDiscovery(raw: unknown): AiDiscovery {
   }
 }
 
-const SOURCE_STATES: SourceState[] = ['connected', 'not-configured', 'limited', 'error', 'blocked']
+const SOURCE_STATES: SourceState[] = ['connected', 'not-configured', 'limited', 'error']
 
 function normalizeSources(raw: unknown): SourceStatus[] {
   if (!Array.isArray(raw)) return []

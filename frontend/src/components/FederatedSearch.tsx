@@ -25,11 +25,7 @@ function formatDuration(totalSeconds: unknown): string | null {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-/**
- * Federated source search: explicit PeerTube / Mastodon instances chosen by
- * the user, queried through `/api/source-search`. Results are metadata-only
- * with attribution — playback and full viewing happen on the source itself.
- */
+/** Search the public API on a user-selected PeerTube or Mastodon instance. */
 export default function FederatedSearch() {
   const [source, setSource] = useState<FederatedSource>('peertube')
   const [instance, setInstance] = useState('')
@@ -86,11 +82,11 @@ export default function FederatedSearch() {
         <h2 className="eyebrow flex items-center gap-1.5">
           <Globe2 size={12} strokeWidth={1.75} aria-hidden="true" /> Federated web · PeerTube &amp; Mastodon
         </h2>
-        <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-ink-3">Metadata only · links out</span>
+        <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-ink-3">Direct instance search</span>
       </div>
       <p className="mt-2 max-w-2xl text-[13px] leading-5 text-ink-2">
-        Search public PeerTube videos or a public Mastodon hashtag on an instance you choose.
-        Results keep their source attribution and license; viewing happens on the origin site.
+        Search public PeerTube videos or a Mastodon hashtag directly on an instance you choose.
+        Results stay attributed and preserve publisher details such as licenses and content warnings.
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">

@@ -41,10 +41,10 @@ export type CreatorLead = {
 }
 
 export type SourceStatus = {
-  id: 'redgifs' | 'x' | 'tumblr' | 'google' | 'duckduckgo' | 'subscription-mirrors' | 'peertube'
+  id: 'redgifs' | 'x' | 'tumblr' | 'google' | 'duckduckgo' | 'peertube'
   name: string
-  mode: 'stream' | 'discovery' | 'blocked'
-  state: 'connected' | 'not-configured' | 'limited' | 'error' | 'blocked'
+  mode: 'stream' | 'discovery'
+  state: 'connected' | 'not-configured' | 'limited' | 'error'
   mediaFound: number
   creatorsFound: number
   detail: string

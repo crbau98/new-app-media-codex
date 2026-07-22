@@ -93,12 +93,12 @@ export interface CategoryDef {
    /api/live-media payload (shared edge contract)
    ────────────────────────────────────────────── */
 
-export type SourceState = 'connected' | 'not-configured' | 'limited' | 'error' | 'blocked'
+export type SourceState = 'connected' | 'not-configured' | 'limited' | 'error'
 
 export interface SourceStatus {
   id: 'redgifs' | 'x' | 'tumblr' | 'google' | 'duckduckgo' | string
   state: SourceState | (string & {})
-  /** Short human reason, e.g. "no credentials", "rate-limited". */
+  /** Short diagnostic detail for operators and backward-compatible payloads. */
   detail?: string
   items?: number
   leads?: number

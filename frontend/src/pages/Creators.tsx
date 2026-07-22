@@ -16,7 +16,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import type { Creator, LiveDiscoveryPayload, SourceState } from '@/lib/types'
+import type { Creator, LiveDiscoveryPayload } from '@/lib/types'
 import { fetchLiveDiscovery } from '@/lib/api'
 import { creatorFollowId, creatorKey, formatMetric, relativeTime } from '@/lib/discovery'
 import { useAppStore } from '@/store'
@@ -32,14 +32,6 @@ const sortLabels: Record<CreatorSort, string> = {
   newest: 'Newest',
   engagement: 'Top engagement',
   az: 'A–Z',
-}
-
-const stateTone: Record<SourceState | (string & {}), string> = {
-  connected: 'bg-success',
-  limited: 'bg-warning',
-  'not-configured': 'bg-ink-3',
-  error: 'bg-error',
-  blocked: 'bg-error',
 }
 
 function creatorPlatforms(creator: Creator): string[] {
@@ -188,6 +180,11 @@ export default function Creators() {
     return result
   }, [performers, platformFilter, tagFilter, debouncedQuery, sort])
 
+  const activeSources = useMemo(
+    () => (discovery?.sources ?? []).filter((source) => source.state === 'connected'),
+    [discovery]
+  )
+
   const addHandle = useCallback(() => {
     const value = handleDraft.trim()
     if (!value) return
@@ -261,8 +258,8 @@ export default function Creators() {
           <Radar size={16} strokeWidth={1.75} className="text-ink-3" aria-hidden="true" />
           <h2 className="font-mono text-xs font-medium uppercase tracking-[0.12em] text-ink">Your radar is empty</h2>
           <p className="max-w-md text-[13px] leading-5 text-ink-2">
-            Add up to 8 creator handles or names and the radar will scan Redgifs, X, Tumblr and the
-            open web for their public posts — with evidence for every match. Nothing is pre-seeded:
+            Add up to 8 creator handles or names and the radar will scan active public sources for
+            matching posts — with evidence for every match. Nothing is pre-seeded:
             this list is yours alone.
           </p>
           <div className="flex w-full max-w-sm items-center gap-2">
@@ -327,25 +324,19 @@ export default function Creators() {
         </section>
       )}
 
-      {/* Source health strip */}
-      {discovery && discovery.sources.length > 0 && (
-        <section aria-label="Source health">
-          <h2 className="eyebrow mb-3">Source health</h2>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {discovery.sources.map((source) => (
-              <div key={source.id} className="rounded-md border border-line p-3">
-                <div className="flex items-center gap-2">
-                  <span className={cn('h-1.5 w-1.5 rounded-full', stateTone[source.state] ?? 'bg-ink-3')} aria-hidden="true" />
-                  <span className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ink">{source.id}</span>
-                  <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">{source.state}</span>
-                </div>
-                <p className="mt-2 font-mono text-[10px] leading-4 text-ink-3">
-                  {source.detail || (source.state === 'connected' ? 'Responding normally' : 'No detail provided')}
-                  {typeof source.items === 'number' ? ` · ${source.items} items` : ''}
-                  {typeof source.leads === 'number' ? ` · ${source.leads} leads` : ''}
-                </p>
-              </div>
-            ))}
+      {activeSources.length > 0 && (
+        <section aria-label="Live source coverage">
+          <h2 className="eyebrow mb-3">Live coverage</h2>
+          <div className="flex flex-wrap gap-2">
+            {activeSources.map((source) => {
+              const count = source.mediaFound ?? source.items ?? source.creatorsFound ?? source.leads
+              return (
+                <span key={source.id} className="inline-flex min-h-9 items-center gap-2 rounded-full border border-line px-3 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+                  {source.name || source.id}{typeof count === 'number' ? ` · ${count}` : ''}
+                </span>
+              )
+            })}
           </div>
         </section>
       )}

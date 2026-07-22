@@ -49,8 +49,7 @@ export default async function handler(req: Request): Promise<Response> {
       }, { headers: NO_STORE })
     }
 
-    // Non-feed pages are classified without fetching page HTML: no crawling, no
-    // scraping, no JSON-LD extraction unless a later slice adds an explicit user-opened lane.
+    // Preserve a non-feed page as a direct, attributed source shortcut.
     return Response.json({
       mode: 'outbound',
       source: source?.id || 'external',
@@ -58,7 +57,7 @@ export default async function handler(req: Request): Promise<Response> {
       termsUrl: source?.termsUrl || 'about:blank',
       url: url.toString(),
       usableInApp: false,
-      reason: 'No official public API/feed detected for this URL. It stays outbound with attribution.',
+      reason: 'This URL is available as an attributed source link.',
     }, { headers: NO_STORE })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'import_failed'

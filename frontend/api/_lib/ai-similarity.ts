@@ -28,8 +28,8 @@ const schema = z.object({
   })).max(12),
 })
 
-// Known-good Vercel AI Gateway default. Override with AI_DISCOVERY_MODEL.
-const DEFAULT_MODEL = 'openai/gpt-4o-mini'
+// Current low-latency Vercel AI Gateway default. Override with AI_DISCOVERY_MODEL.
+const DEFAULT_MODEL = 'openai/gpt-5.6-luna'
 const AI_TIMEOUT_MS = 8_000
 const RESULT_CACHE_TTL_MS = 6 * 60 * 60 * 1_000
 const MAX_RETRIES = 1
@@ -37,9 +37,19 @@ const MAX_RETRIES = 1
 const resultCache = new Map<string, { at: number; result: AiSimilarityResult }>()
 
 function cacheKey(seeds: AiCreatorInput[], candidates: AiCreatorInput[]): string {
-  const seedIds = seeds.map((creator) => creator.id).sort().join(',')
-  const candidateIds = candidates.map((creator) => creator.id).sort().join(',')
-  return `${seedIds}::${candidateIds}`
+  const compact = (creator: AiCreatorInput) => ({
+    id: creator.id,
+    platform: creator.platform,
+    tags: [...creator.tags].sort(),
+    watched: creator.watched,
+    mediaCount: creator.mediaCount,
+    publicViews: Math.round(creator.publicViews),
+    deterministicScore: Math.round(creator.deterministicScore),
+  })
+  return JSON.stringify({
+    seeds: seeds.map(compact).sort((a, b) => a.id.localeCompare(b.id)),
+    candidates: candidates.map(compact).sort((a, b) => a.id.localeCompare(b.id)),
+  })
 }
 
 function isRetryable(error: unknown): boolean {

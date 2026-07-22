@@ -9,6 +9,7 @@
     "build:budget": "npm run build && node scripts/check-performance-budget.mjs",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
+    "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
     "test:e2e": "NODE_PATH=./node_modules playwright test --config=../playwright.config.ts",
     "preview": "vite preview"
   },

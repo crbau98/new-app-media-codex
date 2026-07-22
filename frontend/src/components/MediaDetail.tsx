@@ -15,7 +15,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react'
-import { apiUrl, resolvePublicUrl } from '@/lib/backendOrigin'
+import { apiUrl, resolveMediaAssetUrl, resolvePublicUrl } from '@/lib/backendOrigin'
 import { creatorFollowId, formatMetric, relativeTime } from '@/lib/discovery'
 import { loadProgress, recordProgress } from '@/lib/collections'
 import { playbackIntent } from '@/lib/intent'
@@ -62,14 +62,6 @@ function isSameOriginMediaUrl(url: string): boolean {
   return url.startsWith(window.location.origin)
 }
 
-function resolveProviderStreamUrl(url: string | null | undefined): string {
-  if (!url) return ''
-  // `/api/archiver-proxy` is a Vercel edge route owned by this SPA; resolving it
-  // through the separate backend origin would turn a same-origin stream into a 404.
-  if (url.startsWith('/api/archiver-proxy')) return url
-  return resolvePublicUrl(url)
-}
-
 function VideoPlayer({ item }: { item: MediaItem }) {
   const autoplay = useAppStore((state) => state.autoplayVideos)
   const muteOnStart = useAppStore((state) => state.muteOnStart)
@@ -84,7 +76,7 @@ function VideoPlayer({ item }: { item: MediaItem }) {
   const initialCandidates = useMemo(() => {
     const supplied = item.streamCandidates?.length ? item.streamCandidates : item.mediaUrl ? [item.mediaUrl] : []
     const normalized = supplied
-      .map(resolveProviderStreamUrl)
+      .map(resolveMediaAssetUrl)
       .filter((url): url is string => Boolean(url))
       .filter((url, position, list) => list.indexOf(url) === position)
     return preferQuality(normalized, quality)
@@ -253,8 +245,8 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     } catch {
       addToast({
         type: 'error',
-        title: 'Capture was blocked by the source',
-        message: 'Try the proxied fallback stream, or open the source link and follow its terms.',
+        title: 'Frame could not be captured',
+        message: 'Try again after playback starts, or save it from the original source if permitted.',
       })
     } finally {
       setCapturing(false)
@@ -275,7 +267,7 @@ function VideoPlayer({ item }: { item: MediaItem }) {
         <div className="relative z-10 max-w-xs px-5 py-10 text-center">
           <Play size={16} strokeWidth={1.75} className="mx-auto text-ink-2" aria-hidden="true" />
           <p className="mt-3 text-sm font-medium text-ink">
-            {externalOnly ? `${item.source} keeps playback on its own site.` : 'This stream is temporarily unavailable.'}
+            {externalOnly ? 'Open this item on its source to play.' : 'This stream is temporarily unavailable.'}
           </p>
           {item.pageUrl && (
             <a href={item.pageUrl} target="_blank" rel="noreferrer" className="btn-primary mt-4">
@@ -623,7 +615,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                   </a>
                 )}
                 {!item.isVideo && item.mediaUrl && (
-                  <a href={resolveProviderStreamUrl(item.mediaUrl)} target="_blank" rel="noreferrer" className="btn-secondary">
+                  <a href={resolveMediaAssetUrl(item.mediaUrl)} target="_blank" rel="noreferrer" className="btn-secondary">
                     Full image <ExternalLink size={14} strokeWidth={1.75} />
                   </a>
                 )}

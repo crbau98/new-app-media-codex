@@ -68,6 +68,16 @@ export function resolvePublicUrl(path: string | null | undefined): string {
 }
 
 /**
+ * Resolve media returned by either deployment without moving SPA-owned edge
+ * routes to the separate legacy backend origin.
+ */
+export function resolveMediaAssetUrl(path: string | null | undefined): string {
+  if (!path) return ''
+  if (path.startsWith('/api/archiver-proxy')) return path
+  return resolvePublicUrl(path)
+}
+
+/**
  * Get the public origin (for things like OG meta tags, direct links).
  * Returns the backend origin when available, otherwise current page origin.
  */

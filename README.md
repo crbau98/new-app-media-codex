@@ -1,6 +1,6 @@
 # Media Codex
 
-Media Codex is a private, responsive media-library and discovery app. It combines a FastAPI ingestion and media API with a React/Vite interface designed for browsing, playback, search, creator discovery, collections, and review.
+Media Codex is a private, responsive media-library and discovery app. Its primary product is a React/Vite client paired with Vercel edge APIs for browsing, playback, search, creator discovery, collections, and review. A FastAPI service remains available for legacy archived-item recovery.
 
 The repository began as a research-radar prototype. Some research ingestion modules remain available for future, separately labelled work, but the shipped product contract is Media Codex; captured media is not presented as clinical evidence.
 
@@ -14,9 +14,10 @@ The repository began as a research-radar prototype. Some research ingestion modu
 
 ## Stack
 
-- FastAPI backend with SQLite persistence
+- Vercel edge APIs for live source aggregation, imports, federated search, and media delivery
+- FastAPI backend with SQLite persistence for legacy archived-item recovery
 - React 19, TypeScript, Vite, TanStack Query, Zustand, Tailwind, and Framer Motion
-- Docker deployment on Render, with an optional separately hosted static frontend
+- Vercel deployment for the client and live edge APIs; Render deployment for the legacy backend
 - PWA manifest and privacy-conscious offline shell
 
 ## Local development
@@ -38,7 +39,7 @@ npm ci
 npm run dev
 ```
 
-The frontend uses `VITE_BACKEND_ORIGIN` when set and otherwise targets the production Render backend outside local development.
+The live frontend routes use same-origin Vercel edge APIs. `VITE_BACKEND_ORIGIN` only selects the legacy FastAPI origin for archived-item operations.
 
 ## Production configuration
 
@@ -52,11 +53,9 @@ Optional integrations include Vercel AI Gateway, `X_BEARER_TOKEN`, `TUMBLR_API_K
 
 ### Public discovery operation
 
-The Vercel live endpoint refreshes public, source-attributed discovery media on demand with a short edge cache. Redgifs works without credentials; X and Tumblr activate through their official API credentials. Google licensed-image search contributes canonical profile leads only. DuckDuckGo is an outbound private-search handoff because it has no supported general-search ingestion API.
+The Vercel live endpoint refreshes public, source-attributed discovery media on demand with a short edge cache. Redgifs works without credentials; X and Tumblr activate through their official API credentials. PeerTube contributes publisher-labelled federated results, Google licensed-image search contributes canonical profile leads, and web discovery provides attributed source shortcuts.
 
-`Scan now` asks AI Gateway to rerank cross-source creator candidates using public metadata only. The model receives no images and is instructed not to infer appearance or sensitive traits. High-confidence suggestions are added to the visible directory with their reasons and source attribution. If Gateway is unavailable, deterministic TF-IDF tag similarity remains active and the API reports the fallback state.
-
-The Render crawler is disabled by default (`ENABLE_EXTERNAL_CRAWLS=false`). It must only be enabled for creator-authorized integrations with a documented rights basis; it is not required for the live public discovery experience.
+`Scan now` asks Vercel AI Gateway to rerank cross-source creator candidates using public metadata only. The default is `openai/gpt-5.6-luna`, configurable through `AI_DISCOVERY_MODEL`. The model receives no images and is instructed not to infer appearance or sensitive traits. If Gateway is unavailable, deterministic TF-IDF tag similarity remains active.
 
 Media playback is source-attributed and linked back to the originating public post. The edge proxy supports range requests but does not persist media.
 
@@ -75,6 +74,7 @@ Source availability, creator permission, rights, and takedown obligations remain
 cd frontend
 npm run build
 npm run lint
+npm run test:unit
 
 cd ..
 python -m pytest -q
