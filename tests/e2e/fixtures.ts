@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test'
 const poster = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22500%22%3E%3Crect width=%22400%22 height=%22500%22 fill=%22%23181720%22/%3E%3Ccircle cx=%22200%22 cy=%22210%22 r=%2280%22 fill=%22%23e879a9%22 opacity=%22.35%22/%3E%3C/svg%3E'
 
 export async function installAppFixture(page: Page) {
-  await page.addInitScript(() => localStorage.setItem('media-codex-adult-confirmed', 'true'))
+  await page.addInitScript(() => localStorage.setItem('media-codex-adult-verified', '1'))
   await page.route('**/api/live-media*', async (route) => {
     await route.fulfill({
       status: 200,
