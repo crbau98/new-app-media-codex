@@ -11,13 +11,20 @@ type VitalSample = {
 const FLUSH_MS = 5000
 const MAX_SAMPLES = 40
 const samples: VitalSample[] = []
+const latestByName: Partial<Record<VitalName, number>> = {}
 let installed = false
 let flushTimer: number | null = null
 
 function push(sample: VitalSample) {
   samples.push(sample)
+  latestByName[sample.name] = sample.value
   if (samples.length >= MAX_SAMPLES) flush()
   else scheduleFlush()
+}
+
+/** Latest value per metric for the current session (Settings readout). */
+export function getSessionVitals(): Partial<Record<VitalName, number>> {
+  return { ...latestByName }
 }
 
 function scheduleFlush() {

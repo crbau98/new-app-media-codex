@@ -21,6 +21,9 @@ const PROGRESS_KEY = 'media-codex-progress-v1'
 /** Fired on window whenever watch progress is recorded, so rails can refresh. */
 export const PROGRESS_EVENT = 'media-codex:progress'
 
+/** Fired on window whenever collections change, so surfaces can refresh. */
+export const COLLECTIONS_EVENT = 'media-codex:collections'
+
 function durationToSeconds(duration: string): number {
   const parts = duration.split(':').map(Number)
   if (parts.some((part) => !Number.isFinite(part))) return 0
@@ -58,6 +61,27 @@ export function createCollection(name: string): MediaCollection {
 export function addToCollection(collection: MediaCollection, itemId: string): MediaCollection {
   if (collection.itemIds.includes(itemId)) return collection
   return { ...collection, itemIds: [itemId, ...collection.itemIds], updatedAt: Date.now() }
+}
+
+export function removeFromCollection(collection: MediaCollection, itemId: string): MediaCollection {
+  if (!collection.itemIds.includes(itemId)) return collection
+  return { ...collection, itemIds: collection.itemIds.filter((id) => id !== itemId), updatedAt: Date.now() }
+}
+
+export function renameCollection(collection: MediaCollection, name: string): MediaCollection {
+  const next = name.trim()
+  if (!next || next === collection.name) return collection
+  return { ...collection, name: next.slice(0, 60), updatedAt: Date.now() }
+}
+
+export function upsertCollection(collections: MediaCollection[], updated: MediaCollection): MediaCollection[] {
+  return collections.map((entry) => (entry.id === updated.id ? updated : entry))
+}
+
+/** Persist collections and notify open surfaces (rail, detail popover). */
+export function persistCollections(collections: MediaCollection[]) {
+  writeJson(COLLECTIONS_KEY, collections)
+  window.dispatchEvent(new CustomEvent(COLLECTIONS_EVENT))
 }
 
 export function loadProgress(): Record<string, ProgressEntry> {
