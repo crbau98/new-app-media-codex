@@ -7,5 +7,6 @@ test('type in search and verify results update', async ({ page }) => {
   const searchInput = page.getByPlaceholder('Search — or filter: tag:jock')
   await searchInput.fill('Studio')
   await expect(searchInput).toHaveValue('Studio')
+  await searchInput.press('Enter')
   await expect(page.getByText('Studio signal').first()).toBeVisible()
 })
