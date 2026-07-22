@@ -1,5 +1,5 @@
-import { getSource } from './_lib/sources/registry'
-import { assertPublicHttpUrl, fetchExplicitFeed } from './_lib/sources/rss'
+import { getSource } from './_lib/sources/registry.js'
+import { assertPublicHttpUrl, fetchExplicitFeed } from './_lib/sources/rss.js'
 
 export const config = { runtime: 'edge' }
 
