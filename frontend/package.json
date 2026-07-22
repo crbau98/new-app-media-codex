@@ -8,7 +8,7 @@
     "build": "tsc -b && npm run typecheck:api && vite build",
     "build:budget": "npm run build && node scripts/check-performance-budget.mjs",
     "typecheck": "tsc -b --pretty false",
-    "typecheck:api": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --lib ES2022,DOM --types node --skipLibCheck api/*.ts api/render/*.ts api/_lib/*.ts api/_lib/sources/*.ts",
+    "typecheck:api": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --lib ES2022,DOM --types node --skipLibCheck api/*.ts api/_lib/*.ts api/_lib/sources/*.ts",
     "lint": "eslint .",
     "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
     "test:e2e": "NODE_PATH=./node_modules playwright test --config=../playwright.config.ts",

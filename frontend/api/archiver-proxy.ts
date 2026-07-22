@@ -6,11 +6,12 @@
  * This file is the canonical, self-contained implementation (the repo-root
  * /api copy was removed — the Vercel project's root is frontend/).
  */
+import { normalizeMediaRange } from "./_lib/range.js"
+
 export const config = { runtime: "edge" }
 
 const ALLOWED = new Set(["media.redgifs.com"])
 const MAX_REDIRECTS = 2
-const MAX_EXPLICIT_RANGE_BYTES = 12 * 1024 * 1024
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "private, no-store",
@@ -53,27 +54,6 @@ function safeTarget(value: string): URL | null {
   } catch {
     return null
   }
-}
-
-function safeRange(value: string | null): string | null | false {
-  if (!value) return null
-  const match = /^bytes=(\d*)-(\d*)$/i.exec(value.trim())
-  if (!match || (!match[1] && !match[2])) return false
-  if (!match[1] && match[2]) {
-    const suffixLength = Number(match[2])
-    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0 || suffixLength > MAX_EXPLICIT_RANGE_BYTES) return false
-  }
-  if (match[1] && match[2]) {
-    const start = Number(match[1])
-    const end = Number(match[2])
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start || end - start + 1 > MAX_EXPLICIT_RANGE_BYTES) return false
-  }
-  if (match[1] && !match[2]) {
-    const start = Number(match[1])
-    if (!Number.isSafeInteger(start) || start > Number.MAX_SAFE_INTEGER - MAX_EXPLICIT_RANGE_BYTES + 1) return false
-    return `bytes=${start}-${start + MAX_EXPLICIT_RANGE_BYTES - 1}`
-  }
-  return value.trim()
 }
 
 function buildUpstreamHeaders(target: URL, range: string | null): Headers {
@@ -127,7 +107,7 @@ export default async function handler(req: Request): Promise<Response> {
     return jsonError("host_not_allowed", 403)
   }
 
-  const range = safeRange(req.headers.get("range"))
+  const range = normalizeMediaRange(req.headers.get("range"))
   if (range === false) {
     return jsonError("invalid_range", 416)
   }

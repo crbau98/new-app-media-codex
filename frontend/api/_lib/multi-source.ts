@@ -12,9 +12,9 @@ function canonical(value = ''): string {
   return value.trim().toLowerCase().replace(/^@/, '').replace(/[^a-z0-9_]+/g, '')
 }
 
-async function fetchJson(url: string, init: RequestInit = {}): Promise<unknown> {
+async function fetchJson(url: string, init: RequestInit = {}, timeoutMs = PROVIDER_TIMEOUT_MS): Promise<unknown> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(url, {
       ...init,
@@ -234,6 +234,7 @@ async function collectCredentialedSources(watchlist: string[], query: string): P
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ watchlist: watchlist.slice(0, 8), query }),
       },
+      15_000,
     ) as Partial<CredentialedDiscovery>
     return {
       media: Array.isArray(body.media) ? body.media : [],
