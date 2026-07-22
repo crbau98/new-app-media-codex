@@ -157,7 +157,7 @@ export async function fetchLiveDiscovery(
   if (isAnonymousDefault) {
     // Anonymous default discovery: GET so the edge/CDN cache can serve repeat paints.
     response = await fetchWithTimeout(
-      `${LIVE_MEDIA_URL}?count=72&pages=2&sort=smart`,
+      `${LIVE_MEDIA_URL}?count=96&pages=3&sort=smart`,
       { method: 'GET' },
       25000
     )
@@ -167,21 +167,19 @@ export async function fetchLiveDiscovery(
       LIVE_MEDIA_URL,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(forceFresh ? { 'Cache-Control': 'no-cache' } : {}),
-        },
-        cache: 'no-store',
-        body: JSON.stringify({
-          count: hasQuery ? 80 : 72,
-          pages: 2,
-          sort,
-          query,
-          watchlist: watchlist.slice(0, 8),
-          forceFresh,
-          useAI: forceFresh,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        ...(forceFresh ? { 'Cache-Control': 'no-cache' } : {}),
       },
+      cache: 'no-store',
+      body: JSON.stringify({
+        count: 96,
+        pages: 3,
+        sort,
+        query,
+        watchlist: watchlist.slice(0, 8),
+        forceFresh,
+        useAI: forceFresh,
+      }),
       forceFresh ? 45000 : 25000
     )
   }
@@ -297,8 +295,8 @@ async function fetchLiveMedia(
         : 'smart'
   const response = await postLiveMedia(
     {
-      count: 80,
-      pages: 2,
+      count: 96,
+      pages: 3,
       query: filters.search || filters.creator || filters.category || '',
       minViews: filters.minViews || 0,
       minLikes: filters.minLikes || 0,
