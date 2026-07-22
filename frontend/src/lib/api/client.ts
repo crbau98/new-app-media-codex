@@ -11,6 +11,7 @@
  */
 
 import type { CursorPage, ProblemDetails, QueryParams } from "./types";
+import { apiUrl } from "../backendOrigin";
 
 export class ApiProblem extends Error {
   readonly status: number;
@@ -56,14 +57,8 @@ export interface ApiRequestOptions {
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
-function resolveBaseUrl(): string {
-  // Vite injects import.meta.env; typed loosely so this file needs no vite types.
-  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
-  return (env.VITE_BACKEND_ORIGIN ?? "").replace(/\/$/, "");
-}
-
 function buildUrl(path: string, query?: QueryParams): string {
-  const url = new URL(`${resolveBaseUrl()}${path}`, window.location.origin);
+  const url = new URL(apiUrl(path), window.location.origin);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
