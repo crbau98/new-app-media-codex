@@ -1,7 +1,6 @@
 export const config = { runtime: 'edge', maxDuration: 30 }
 
 const DEFAULT_RENDER_ORIGIN = 'https://codex-research-radar.onrender.com'
-const GATEWAY_PREFIX = '/api/render'
 const SAFE_RESPONSE_HEADERS = new Set([
   'accept-ranges', 'cache-control', 'content-length', 'content-range',
   'content-type', 'etag', 'last-modified', 'x-request-id',
@@ -19,7 +18,7 @@ function backendOrigin(): string {
 }
 
 function backendPath(url: URL): string | null {
-  const raw = url.pathname.slice(GATEWAY_PREFIX.length) || '/'
+  const raw = url.searchParams.get('path') || '/'
   let decoded: string
   try {
     decoded = decodeURIComponent(raw)
@@ -33,8 +32,6 @@ function backendPath(url: URL): string | null {
 
 function methodAllowed(method: string, path: string): boolean {
   if (method === 'GET' || method === 'HEAD') {
-    // Large byte streams use their canonical Render/provider URLs instead of
-    // consuming Vercel function bandwidth.
     return ![
       /^\/api\/screenshots\/proxy-media$/,
       /^\/api\/screenshots\/cached-video\//,
@@ -42,7 +39,10 @@ function methodAllowed(method: string, path: string): boolean {
       /^\/api\/telegram\/media\/[^/]+\/stream$/,
     ].some((pattern) => pattern.test(path))
   }
-  return method === 'POST' && /^\/api\/screenshots\/[^/]+\/resolve-stream$/.test(path)
+  return method === 'POST' && (
+    path === '/api/discovery/providers' ||
+    /^\/api\/screenshots\/[^/]+\/resolve-stream$/.test(path)
+  )
 }
 
 export default async function handler(request: Request): Promise<Response> {
@@ -58,7 +58,9 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   const target = new URL(path, backendOrigin())
-  target.search = incoming.search
+  const query = new URLSearchParams(incoming.search)
+  query.delete('path')
+  target.search = query.toString()
   const headers = new Headers({ Accept: request.headers.get('accept') || 'application/json' })
   for (const name of ['content-type', 'if-none-match', 'range', 'x-request-id']) {
     const value = request.headers.get(name)
