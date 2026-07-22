@@ -260,10 +260,18 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'media-codex-store',
-      version: 3,
-      migrate: (persisted) => {
+      version: 4,
+      migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Partial<AppState>
-        return { ...state, creatorWatchlist: sanitizeCreatorWatchlist(state.creatorWatchlist) } as AppState
+        return {
+          ...state,
+          creatorWatchlist: sanitizeCreatorWatchlist(state.creatorWatchlist),
+          // v4: heal sessions that persisted the old autoplay-default-off value
+          // from before the default changed to on. Users can still disable
+          // autoplay in Settings afterwards; this only repairs stale state so
+          // videos actually start when a sheet is opened.
+          autoplayVideos: version < 4 ? true : (state.autoplayVideos ?? true),
+        } as AppState
       },
       partialize: (state) => ({
         theme: state.theme,
