@@ -14,10 +14,11 @@ import time
 from urllib.parse import urljoin, urlparse
 
 import requests as req
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from app.performer_identity import performer_identity_signature, score_candidate_identity
+from app.security import require_admin
 
 router = APIRouter(prefix="/api/performers", tags=["performers"])
 
@@ -60,6 +61,51 @@ def _invalidate_performers_cache(app_state) -> None:
     cache, lock = _performers_cache_bucket(app_state)
     with lock:
         cache.clear()
+
+
+def _captures_enabled(request: Request) -> bool:
+    """External capture is opt-in; record management remains available without it."""
+    settings = getattr(request.app.state, "settings", None)
+    return bool(getattr(settings, "enable_external_crawls", False))
+
+
+def _require_captures_enabled(request: Request) -> None:
+    if not _captures_enabled(request):
+        raise HTTPException(status_code=403, detail="External capture is not enabled")
+
+
+def _decorate_performer_provenance(db, performer: dict) -> dict:
+    """Attach one stable provenance shape to browse and recommendation payloads."""
+    item = dict(performer)
+    performer_id = int(item.get("id") or 0)
+    links = db.get_performer_links(performer_id) if performer_id else []
+    profile_links = [dict(link) for link in links]
+    profile_url = str(item.get("profile_url") or "").strip()
+    if profile_url and all(link.get("url") != profile_url for link in profile_links):
+        profile_links.insert(0, {
+            "platform": item.get("platform") or "profile",
+            "url": profile_url,
+            "username": item.get("username"),
+        })
+
+    aliases = {
+        str(value).strip()
+        for value in [
+            item.get("username"),
+            item.get("display_name"),
+            *(link.get("username") for link in profile_links),
+        ]
+        if str(value or "").strip()
+    }
+    evidence_count = int(item.get("screenshots_count") or 0) + int(item.get("media_count") or 0)
+    item.update({
+        "source_attribution": item.get("discovered_via") or "local_record",
+        "profile_links": profile_links,
+        "last_seen_at": item.get("last_checked_at") or item.get("first_seen_at") or item.get("created_at"),
+        "evidence_count": max(0, evidence_count),
+        "matched_aliases": sorted(aliases, key=str.lower),
+    })
+    return item
 
 
 # ── Request bodies ─────────────────────────────────────────────────────
@@ -340,7 +386,7 @@ def performer_analytics(request: Request):
 
 # ── Auto-link existing screenshots to performers ─────────────────────
 
-@router.post("/auto-link")
+@router.post("/auto-link", dependencies=[Depends(require_admin)])
 def auto_link_performers(request: Request):
     """Match existing screenshots to performers by strict identity evidence."""
     db = request.app.state.db
@@ -701,6 +747,15 @@ def _mine_local_creator_candidates(db, platform_hint: str | None) -> list[dict]:
             LIMIT 180
             """
         ).fetchall()
+        watchlist_rows = conn.execute(
+            """
+            SELECT username, display_name, platform, bio, tags
+            FROM performers
+            WHERE is_favorite = 1
+            ORDER BY COALESCE(last_checked_at, first_seen_at, created_at) DESC
+            LIMIT 80
+            """
+        ).fetchall()
 
     mined: list[dict] = []
     for row in rows:
@@ -727,8 +782,20 @@ def _mine_local_creator_candidates(db, platform_hint: str | None) -> list[dict]:
                 "tags": tags,
                 "_local_hits": hit_count,
                 "_source_context": row["sources_blob"] or "",
+                "_source": "local_library",
             }
         )
+    for row in watchlist_rows:
+        mined.append({
+            "username": row["username"],
+            "display_name": row["display_name"],
+            "platform": row["platform"],
+            "bio": row["bio"] or "Tracked creator",
+            "tags": _parse_tag_list(row["tags"]),
+            "_local_hits": 0,
+            "_source_context": "watchlist",
+            "_source": "watchlist",
+        })
     return mined
 
 
@@ -832,6 +899,7 @@ def _heuristic_discover_performers(
                     "tags": candidate_tags[:5],
                     "reason": ". ".join(reason_bits) or "Strong local match from your captured creator graph.",
                     "exists": existing_match is not None,
+                    "source": str(candidate.get("_source") or "local_library"),
                 },
             )
         )
@@ -839,7 +907,7 @@ def _heuristic_discover_performers(
     scored.sort(key=lambda item: (item[0], item[1], -item[2], -item[3], str(item[4]["username"]).lower()))
     return [item for _, _, _, _, item in scored[:limit]]
 
-@router.post("/discover")
+@router.post("/discover", dependencies=[Depends(require_admin)])
 def discover_performers(body: DiscoverBody, request: Request):
     """Use OpenAI to suggest male content creators based on a query or tracked creator seed."""
     from copy import copy as _copy
@@ -932,6 +1000,7 @@ def discover_performers(body: DiscoverBody, request: Request):
             "tags": normalized_tags[:5],
             "reason": str(suggestion.get("reason") or ""),
             "exists": existing_match is not None,
+            "source": str(suggestion.get("source") or "local_library"),
         }
         if existing_match is None:
             results_new.append(entry)
@@ -945,11 +1014,13 @@ def discover_performers(body: DiscoverBody, request: Request):
     if remaining > 0:
         results.extend(results_existing[:remaining])
     return {
+        "provider": "heuristic",
+        "ai_available": has_api_key,
         "suggestions": results,
     }
 
 
-@router.post("/discover/import")
+@router.post("/discover/import", dependencies=[Depends(require_admin)])
 def import_discovered_performers(body: ImportDiscoveredBody, request: Request):
     """Bulk add AI-discovered performers and enqueue capture for new or existing matches."""
     db = request.app.state.db
@@ -957,6 +1028,7 @@ def import_discovered_performers(body: ImportDiscoveredBody, request: Request):
     created: list[dict] = []
     existing: list[dict] = []
     skipped = 0
+    captures_enabled = _captures_enabled(request)
 
     for creator in body.creators:
         username = creator.username.strip().lstrip("@")
@@ -967,7 +1039,7 @@ def import_discovered_performers(body: ImportDiscoveredBody, request: Request):
         current = _find_existing_performer_match(username, creator.display_name, creator.platform, username_lookup, alias_lookup)
         if current:
             existing.append(current)
-            if body.capture_existing:
+            if body.capture_existing and captures_enabled:
                 db.enqueue_capture(current["id"])
             continue
 
@@ -980,7 +1052,8 @@ def import_discovered_performers(body: ImportDiscoveredBody, request: Request):
                 tags=creator.tags or [],
                 discovered_via="ai_discovery",
             )
-            db.enqueue_capture(performer["id"])
+            if captures_enabled:
+                db.enqueue_capture(performer["id"])
             created.append(performer)
             username_lookup[username.lower()] = performer
             for alias in (username, creator.display_name or ""):
@@ -998,12 +1071,13 @@ def import_discovered_performers(body: ImportDiscoveredBody, request: Request):
         "skipped": skipped,
         "performers": created,
         "existing_performers": existing,
+        "captures_enabled": captures_enabled,
     }
 
 
 # ── Import from URL ───────────────────────────────────────────────────
 
-@router.post("/import-url")
+@router.post("/import-url", dependencies=[Depends(require_admin)])
 def import_from_url(body: ImportUrlBody, request: Request):
     """Parse a social media profile URL and create a performer record."""
     db = request.app.state.db
@@ -1022,14 +1096,15 @@ def import_from_url(body: ImportUrlBody, request: Request):
         profile_url=body.url,
         discovered_via="url_import",
     )
-    db.enqueue_capture(performer["id"])
+    if _captures_enabled(request):
+        db.enqueue_capture(performer["id"])
     _invalidate_performers_cache(request.app.state)
     return performer
 
 
 # ── Bulk import ───────────────────────────────────────────────────────
 
-@router.post("/bulk-import")
+@router.post("/bulk-import", dependencies=[Depends(require_admin)])
 def bulk_import(body: BulkImportBody, request: Request):
     """Create multiple performers at once, skipping duplicates."""
     db = request.app.state.db
@@ -1050,7 +1125,8 @@ def bulk_import(body: BulkImportBody, request: Request):
                 platform=body.platform,
                 discovered_via="bulk_import",
             )
-            db.enqueue_capture(performer["id"])
+            if _captures_enabled(request):
+                db.enqueue_capture(performer["id"])
             created_performers.append(performer)
             created_count += 1
         except Exception:
@@ -1132,11 +1208,12 @@ def browse_performers(
     if performers:
         pids = [int(p["id"]) for p in performers if p.get("id")]
         engagement = db.get_performers_engagement(pids)
-        for p in performers:
+        for index, p in enumerate(performers):
             pid = int(p["id"])
             eng = engagement.get(pid, {})
             p["followers_count"] = eng.get("followers_count", 0)
             p["is_following"] = eng.get("is_following", False)
+            performers[index] = _decorate_performer_provenance(db, p)
 
     return payload
 
@@ -1149,7 +1226,7 @@ def get_capture_queue(request: Request):
     return {"queue": db.get_capture_queue()}
 
 
-@router.delete("/capture-queue/{entry_id}")
+@router.delete("/capture-queue/{entry_id}", dependencies=[Depends(require_admin)])
 def cancel_queue_entry(entry_id: int, request: Request):
     db = request.app.state.db
     ok = db.cancel_queue_entry(entry_id)
@@ -1160,7 +1237,7 @@ def cancel_queue_entry(entry_id: int, request: Request):
 
 # ── Create ─────────────────────────────────────────────────────────────
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_admin)])
 def add_performer(body: AddPerformerBody, request: Request):
     db = request.app.state.db
     existing = db.get_performer_by_username(body.username)
@@ -1177,7 +1254,8 @@ def add_performer(body: AddPerformerBody, request: Request):
             avatar_url=body.avatar_url,
             discovered_via=body.discovered_via,
         )
-        db.enqueue_capture(performer["id"])
+        if _captures_enabled(request):
+            db.enqueue_capture(performer["id"])
         _invalidate_performers_cache(request.app.state)
         return performer
     except Exception as e:
@@ -1186,21 +1264,23 @@ def add_performer(body: AddPerformerBody, request: Request):
 
 # ── Named routes (must precede /{performer_id} to avoid shadowing) ───
 
-@router.post("/capture-stale")
+@router.post("/capture-stale", dependencies=[Depends(require_admin)])
 def capture_stale(
     request: Request,
     stale_days: int = Query(7, ge=1, le=365),
 ):
     """Enqueue capture for all performers not checked in stale_days days."""
+    _require_captures_enabled(request)
     db = request.app.state.db
     ids = db.get_stale_performer_ids(stale_days)
     queued = sum(1 for pid in ids if db.enqueue_capture(pid) is not None)
     return {"queued": queued, "total_stale": len(ids)}
 
 
-@router.post("/capture-all")
+@router.post("/capture-all", dependencies=[Depends(require_admin)])
 def capture_all_performers(request: Request):
     """Enqueue capture for ALL active performers."""
+    _require_captures_enabled(request)
     db = request.app.state.db
     with db.connect() as conn:
         rows = conn.execute(
@@ -1211,9 +1291,10 @@ def capture_all_performers(request: Request):
     return {"status": "queued", "queued": queued}
 
 
-@router.post("/watchlist/capture-all")
+@router.post("/watchlist/capture-all", dependencies=[Depends(require_admin)])
 def capture_watchlist(request: Request):
     """Enqueue capture for all favorited performers."""
+    _require_captures_enabled(request)
     db = request.app.state.db
     with db.connect() as conn:
         rows = conn.execute(
@@ -1305,7 +1386,7 @@ def get_performer(performer_id: int, request: Request):
     return performer
 
 
-@router.patch("/{performer_id}")
+@router.patch("/{performer_id}", dependencies=[Depends(require_admin)])
 def update_performer(performer_id: int, body: UpdatePerformerBody, request: Request):
     db = request.app.state.db
     existing = db.get_performer(performer_id)
@@ -1324,7 +1405,7 @@ def update_performer(performer_id: int, body: UpdatePerformerBody, request: Requ
     return updated
 
 
-@router.delete("/{performer_id}")
+@router.delete("/{performer_id}", dependencies=[Depends(require_admin)])
 def delete_performer(performer_id: int, request: Request):
     db = request.app.state.db
     if not db.delete_performer(performer_id):
@@ -1335,7 +1416,7 @@ def delete_performer(performer_id: int, request: Request):
 
 # ── Links ──────────────────────────────────────────────────────────────
 
-@router.post("/{performer_id}/links")
+@router.post("/{performer_id}/links", dependencies=[Depends(require_admin)])
 def add_link(performer_id: int, body: AddLinkBody, request: Request):
     db = request.app.state.db
     if not db.get_performer(performer_id):
@@ -1350,7 +1431,7 @@ def add_link(performer_id: int, body: AddLinkBody, request: Request):
     return link
 
 
-@router.delete("/{performer_id}/links/{link_id}")
+@router.delete("/{performer_id}/links/{link_id}", dependencies=[Depends(require_admin)])
 def delete_link(performer_id: int, link_id: int, request: Request):
     db = request.app.state.db
     if not db.delete_performer_link(link_id):
@@ -1502,7 +1583,7 @@ def performer_activity(
     }
 
 
-@router.post("/{performer_id}/media")
+@router.post("/{performer_id}/media", dependencies=[Depends(require_admin)])
 def add_media(performer_id: int, body: AddMediaBody, request: Request):
     db = request.app.state.db
     if not db.get_performer(performer_id):
@@ -2221,9 +2302,10 @@ def _run_performer_capture(app_state, performer_id: int, username: str, platform
     return captured
 
 
-@router.post("/{performer_id}/capture")
+@router.post("/{performer_id}/capture", dependencies=[Depends(require_admin)])
 def capture_performer_content(performer_id: int, request: Request):
     """Enqueue a targeted capture for a specific performer."""
+    _require_captures_enabled(request)
     db = request.app.state.db
     performer = db.get_performer(performer_id)
     if not performer:
@@ -2234,7 +2316,7 @@ def capture_performer_content(performer_id: int, request: Request):
     return {"status": "queued", "performer_id": performer_id}
 
 
-@router.post("/enrich/{performer_id}")
+@router.post("/enrich/{performer_id}", dependencies=[Depends(require_admin)])
 def enrich_performer(performer_id: int, request: Request):
     """Attempt to discover a real creator avatar from official or social profile sources."""
     db = request.app.state.db
@@ -2294,7 +2376,7 @@ def find_similar_performers(performer_id: int, request: Request, limit: int = 8)
                     src_tags = {t.strip().lower() for t in source["tags"].split(",") if t.strip()}
 
             candidates = conn.execute(
-                "SELECT id, username, display_name, platform, avatar_url, avatar_local, tags, is_favorite, media_count, status, is_verified, profile_url "
+                "SELECT id, username, display_name, platform, avatar_url, avatar_local, tags, is_favorite, media_count, status, is_verified, profile_url, discovered_via, first_seen_at, last_checked_at, created_at "
                 "FROM performers WHERE id != ? LIMIT 200",
                 (performer_id,),
             ).fetchall()
@@ -2356,4 +2438,5 @@ def find_similar_performers(performer_id: int, request: Request, limit: int = 8)
             scored.sort(key=lambda x: (-x[0], -(x[1].get("media_count") or 0), x[1].get("username") or ""))
             return [item for _, item in scored[:limit]]
 
-    return _get_cached_performers_payload(request.app.state, cache_key, 60.0, build)
+    results = _get_cached_performers_payload(request.app.state, cache_key, 60.0, build)
+    return [_decorate_performer_provenance(db, item) for item in results]

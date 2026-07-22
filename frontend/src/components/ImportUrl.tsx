@@ -24,11 +24,7 @@ type ImportResponse = {
   error?: string
 }
 
-/**
- * URL import lane: the user pastes a link they want to bring in. Explicit
- * feeds (RSS/Atom/JSON Feed) parse inline with attribution; everything else is
- * classified outbound — no crawling, no scraping, no paywall workarounds.
- */
+/** Import a public feed or keep a source URL as a direct, attributed shortcut. */
 export default function ImportUrl() {
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
@@ -78,11 +74,11 @@ export default function ImportUrl() {
         <h2 className="eyebrow flex items-center gap-1.5">
           <Link2 size={12} strokeWidth={1.75} aria-hidden="true" /> Import a link
         </h2>
-        <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-ink-3">Feeds parse inline · everything else links out</span>
+        <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-ink-3">Public feeds + source links</span>
       </div>
       <p className="mt-2 max-w-2xl text-[13px] leading-5 text-ink-2">
-        Paste a public RSS/Atom/JSON feed to browse it here with attribution. Other links are
-        classified and open on their source — nothing is crawled or rehosted.
+        Paste a public RSS, Atom, or JSON feed to browse it with attribution, or add any public
+        profile and post URL as a clean source shortcut.
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -108,7 +104,7 @@ export default function ImportUrl() {
       {result?.mode === 'outbound' && result.url && (
         <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-line bg-sunken/40 p-3">
           <p className="min-w-0 flex-1 text-[13px] leading-5 text-ink-2">
-            <span className="font-medium text-ink">Opens on its source.</span> {result.reason}
+            <span className="font-medium text-ink">Ready to open on its source.</span>
           </p>
           <a href={result.url} target="_blank" rel="noreferrer" className="btn-primary min-h-9 shrink-0 px-3 text-xs">
             Open link <ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />
@@ -159,14 +155,7 @@ export default function ImportUrl() {
       {result && (
         <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] leading-4 text-ink-3">
           <ShieldCheck size={12} strokeWidth={1.75} className="shrink-0" aria-hidden="true" />
-          {result.attribution} ·
-          {result.termsUrl !== 'about:blank' ? (
-            <a href={result.termsUrl} target="_blank" rel="noreferrer" className="underline decoration-line-strong underline-offset-2 hover:text-ink">
-              Source terms
-            </a>
-          ) : (
-            <span>Source terms</span>
-          )}
+          {result.attribution}
         </p>
       )}
     </section>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { resolvePublicUrl } from '@/lib/backendOrigin'
+import { resolveMediaAssetUrl } from '@/lib/backendOrigin'
 import { cn } from '@/lib/utils'
 
 const CANDIDATE_TIMEOUT_MS = 7000
@@ -27,9 +27,7 @@ export function mediaImageCandidates(sources: Array<string | null | undefined>):
   const seen = new Set<string>()
   const output: string[] = []
   for (const source of sources) {
-    // The Vercel edge proxy is same-origin for this SPA and must stay root-relative;
-    // backend-hosted cache paths still resolve through the API origin helper.
-    const resolved = source && source.startsWith('/api/archiver-proxy') ? source : resolvePublicUrl(source)
+    const resolved = resolveMediaAssetUrl(source)
     if (!resolved || seen.has(resolved)) continue
     seen.add(resolved)
     output.push(resolved)

@@ -11,6 +11,7 @@ export const config = { runtime: 'edge', maxDuration: 30 }
 import { rankSimilarCreatorsWithAI } from './_lib/ai-similarity.js'
 import { collectAdditionalSources } from './_lib/multi-source.js'
 import type { CreatorLead, UnifiedMediaItem } from './_lib/discovery-types.js'
+import { selectQualityDiverse } from './_lib/source-quality.js'
 
 const REDGIFS_API = 'https://api.redgifs.com/v2'
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
@@ -245,26 +246,6 @@ function sortItems(items: LiveMediaItem[], sort: string): LiveMediaItem[] {
   if (sort === 'likes') return sorted.sort((a, b) => b.likes - a.likes || b.views - a.views)
   if (sort === 'newest') return sorted.sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))
   return sorted.sort((a, b) => b.curationScore - a.curationScore || b.views - a.views)
-}
-
-function diversifySources(items: LiveMediaItem[], count: number): LiveMediaItem[] {
-  const selected: LiveMediaItem[] = []
-  const seen = new Set<string>()
-  const sources = [...new Set(items.map((item) => item.source))]
-  for (const source of sources) {
-    for (const item of items.filter((candidate) => candidate.source === source).slice(0, 6)) {
-      if (selected.length >= count || seen.has(item.id)) continue
-      selected.push(item)
-      seen.add(item.id)
-    }
-  }
-  for (const item of items) {
-    if (selected.length >= count) break
-    if (seen.has(item.id)) continue
-    selected.push(item)
-    seen.add(item.id)
-  }
-  return selected.sort((a, b) => items.indexOf(a) - items.indexOf(b))
 }
 
 function creatorSimilarities(items: LiveMediaItem[]): Map<string, CreatorSimilarity> {
@@ -683,7 +664,7 @@ export default async function handler(req: Request): Promise<Response> {
       .filter((item, index, list) => list.findIndex((candidate) => candidate.id === item.id) === index)
     if (!combined.length) throw new Error('No connected public source returned playable media')
     const ranked = sortItems(rankCohort(combined).map((item) => ({ ...item, isTrending: item.curationScore >= 65 })), sort)
-    const items = diversifySources(ranked, count)
+    const items = selectQualityDiverse(ranked, count)
     const similarities = creatorSimilarities(ranked)
     const creatorPool = mergeCreatorLeads(buildCreators(ranked.slice(0, 240), similarities), additional.leads)
     const aiResult = await rankSimilarCreatorsWithAI(creatorPool.map((creator) => ({
@@ -732,7 +713,7 @@ export default async function handler(req: Request): Promise<Response> {
       counts: {
         received: received.length + additional.media.length + additional.leads.length,
         eligible: eligible.length + additional.media.length,
-        playable: items.length,
+        playable: items.filter((item) => Boolean(item.mediaUrl || item.streamCandidates?.length)).length,
         pagesScanned: basePagesScanned,
         providerRequestsSucceeded: redgifsRequestsSucceeded + additional.requestsSucceeded,
         providerRequestsAttempted: redgifsRequestsAttempted + additional.requestsAttempted,

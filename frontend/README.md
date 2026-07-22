@@ -18,19 +18,18 @@ stored **on the device** — nothing leaves the browser.
 
 ```
 frontend/
-├── src/               # this app (pages, components, store, lib)
-└── api/               # Vercel edge function: /api/live-media (separate scope)
+├── src/               # pages, components, store, and client utilities
+└── api/               # Vercel edge functions and source adapters
 ```
 
-The app is fed by a single edge function, `POST /api/live-media`, which aggregates
-public sources (Redgifs, X, Tumblr, DuckDuckGo) into one payload: media items,
-creator directory entries, per-source health, AI suggestions, and web-discovery
-leads. The client treats every field beyond `items`/`performers` as optional and
-renders source state honestly (connected / not-configured / limited / error / blocked).
+The app is fed by `GET|POST /api/live-media`, which aggregates active public APIs,
+feeds, and federated sources into one payload: media items, creator directory entries,
+AI suggestions, and web-discovery leads. Additional edge routes handle attributed
+feed imports, direct PeerTube/Mastodon search, and same-origin media delivery.
 
 Deploy topology: the static client and the edge function deploy together on Vercel.
-The older FastAPI backend on Render is only used as a stream-recovery fallback for
-cached items.
+The older FastAPI backend on Render is retained only for legacy archived-item stream
+recovery. New live discovery and source integrations belong in the Vercel edge layer.
 
 ## Develop
 
@@ -41,12 +40,13 @@ npm ci
 npx vercel dev        # serves the app AND /api/live-media locally
 ```
 
-Plain `npm run dev` (vite, port 3000) works for UI work, but `/api/live-media` will
-404 unless you proxy it to a deployed preview.
+Plain `npm run dev` (Vite, port 3000) works for UI-only work; use `vercel dev` when
+testing edge routes locally.
 
 ```bash
 npm run build         # tsc -b && vite build
 npm run lint          # eslint
+npm run test:unit     # source-quality and ranking regression tests
 ```
 
 ## Design

@@ -21,7 +21,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 import requests as http_requests
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPException, Query, Request, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse, Response
 from PIL import Image, ImageOps
 
@@ -974,22 +974,6 @@ async def serve_cached_video(shot_id: int, request: Request):
     )
 
 
-# ----------------------------------------------------------------------------
-# Pre-cache endpoints (used by scripts/precache_coomer.py run from a residential
-# network). Admin-token-protected.
-# ----------------------------------------------------------------------------
-
-def _require_admin(token: str | None) -> None:
-    from app.config import settings as _settings
-    if not _settings.admin_token:
-        # Fallback only in non-production to ease local testing.
-        if _settings.environment == "production":
-            raise HTTPException(500, "ADMIN_TOKEN not configured on server")
-        return
-    if token != _settings.admin_token:
-        raise HTTPException(401, "Missing or invalid admin token")
-
-
 def _video_source_kind(source_url: str, source: str) -> str:
     """Classify a screenshot's kind for pre-cache filtering."""
     s = (source or "").lower()
@@ -999,7 +983,7 @@ def _video_source_kind(source_url: str, source: str) -> str:
     return "other"
 
 
-@router.get("/cache-status")
+@router.get("/cache-status", dependencies=[Depends(require_admin)])
 async def cache_status(
     request: Request,
     source: str = Query(default="coomer", pattern=r"^[a-z0-9_-]{1,32}$"),
@@ -1069,13 +1053,12 @@ async def cache_status(
 _UPLOAD_VIDEO_MAX_BYTES = int(os.getenv("UPLOAD_VIDEO_MAX_MB", "500")) * 1024 * 1024
 
 
-@router.post("/{shot_id}/upload-cached-video")
+@router.post("/{shot_id}/upload-cached-video", dependencies=[Depends(require_admin)])
 async def upload_cached_video(
     shot_id: int,
     request: Request,
     file: UploadFile = File(...),
     overwrite: bool = Form(default=False),
-    x_admin_token: str | None = Header(default=None),
 ):
     """Accept a pre-downloaded video file and store it in the server disk cache.
 
@@ -1084,8 +1067,6 @@ async def upload_cached_video(
     Authenticated with the admin token. Streams the body directly to disk so we
     do not buffer 500+ MB in memory.
     """
-    _require_admin(x_admin_token)
-
     db: Database = request.app.state.db
     with db.connect() as conn:
         row = conn.execute(
@@ -1147,13 +1128,9 @@ async def upload_cached_video(
     })
 
 
-@router.post("/{shot_id}/evict-cached-video")
-async def evict_cached_video(
-    shot_id: int,
-    x_admin_token: str | None = Header(default=None),
-):
+@router.post("/{shot_id}/evict-cached-video", dependencies=[Depends(require_admin)])
+async def evict_cached_video(shot_id: int):
     """Delete a cached video from disk (admin only)."""
-    _require_admin(x_admin_token)
     path = _video_cache_path(shot_id)
 
     # Defensive validation: ensure resolved target remains within cache root.
@@ -2081,7 +2058,7 @@ def poster_status(request: Request):
     }
 
 
-@router.post("/generate-posters")
+@router.post("/generate-posters", dependencies=[Depends(require_admin)])
 async def generate_posters_bulk(request: Request, limit: int = Query(default=20, ge=1, le=100)):
     """Trigger background poster generation for up to `limit` uncached video screenshots."""
     db = request.app.state.db
@@ -2743,7 +2720,7 @@ def _run_capture(app_state):
     return captured
 
 
-@router.post("/capture")
+@router.post("/capture", dependencies=[Depends(require_admin)])
 async def trigger_capture(request: Request, background_tasks: BackgroundTasks):
     if getattr(request.app.state, "screenshot_running", False):
         return JSONResponse({"status": "already_running"}, status_code=409)
@@ -2760,11 +2737,8 @@ async def trigger_capture(request: Request, background_tasks: BackgroundTasks):
     return {"status": "started"}
 
 
-@router.delete("/clear-posters")
+@router.delete("/clear-posters", dependencies=[Depends(require_admin)])
 def clear_poster_cache(request: Request):
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Clear all cached poster thumbnails so they regenerate with current settings."""
     global _POSTER_DISK_CACHE, _POSTER_DISK_CACHE_LOADED
     cleared = 0
@@ -2778,11 +2752,8 @@ def clear_poster_cache(request: Request):
     return {"status": "cleared", "posters_cleared": cleared}
 
 
-@router.delete("/clear-all")
+@router.delete("/clear-all", dependencies=[Depends(require_admin)])
 def clear_all_captures(request: Request):
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Delete every screenshot row and clear related caches (video cache, posters)."""
     db = request.app.state.db
     with db.connect() as conn:
@@ -2934,11 +2905,8 @@ def _run_scan(app_state) -> dict:
     return {"removed": removed, "kept": skipped}
 
 
-@router.post("/scan")
+@router.post("/scan", dependencies=[Depends(require_admin)])
 async def trigger_scan(request: Request, background_tasks: BackgroundTasks):
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Run vision-based quality scan on all existing screenshots; delete non-qualifying ones."""
     if getattr(request.app.state, "screenshot_scan_running", False):
         return JSONResponse({"status": "already_running"}, status_code=409)
@@ -2963,11 +2931,8 @@ def scan_status(request: Request):
     return {"running": running, "last_result": result}
 
 
-@router.delete("/bulk")
+@router.delete("/bulk", dependencies=[Depends(require_admin)])
 async def bulk_delete_screenshots(request: Request, body: dict = Body(...)):
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Delete multiple screenshots by IDs."""
     ids = body.get("ids", [])
     if not ids:
@@ -3377,11 +3342,8 @@ def summarize_screenshot(screenshot_id: int, request: Request):
             Path(frame_tmp).unlink(missing_ok=True)
 
 
-@router.post("/batch-describe")
+@router.post("/batch-describe", dependencies=[Depends(require_admin)])
 async def batch_describe(request: Request, body: dict = Body(...)):
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Batch AI-describe multiple screenshots. Processes sequentially."""
     ids = body.get("ids", [])
     limit = body.get("limit", 10)
@@ -3531,11 +3493,8 @@ def _extract_tags_from_text(text: str) -> list[str]:
     return sorted(set(found))
 
 
-@router.post("/auto-tag")
+@router.post("/auto-tag", dependencies=[Depends(require_admin)])
 def auto_tag_screenshots(request: Request, body: dict = Body(default={})):
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Extract tags from ai_summary/ai_tags for screenshots that lack user_tags."""
     limit = body.get("limit", 50)
     min_confidence = body.get("min_confidence", 0.7)  # reserved for future scoring
@@ -3679,11 +3638,8 @@ def _resolve_redgifs_url(url: str) -> str | None:
     return None
 
 
-@router.post("/capture-url")
+@router.post("/capture-url", dependencies=[Depends(require_admin)])
 def capture_from_url(request: Request, body: dict = Body(...)):
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Download media from a URL and create a screenshot record."""
     url = body.get("url", "").strip()
     if not url:
@@ -3870,7 +3826,7 @@ def all_user_tags(request: Request):
     )
 
 
-@router.patch("/{screenshot_id}/tags")
+@router.patch("/{screenshot_id}/tags", dependencies=[Depends(require_admin)])
 def update_user_tags(screenshot_id: int, request: Request, body: dict = Body(...)):
     """Set user_tags on a screenshot."""
     tags = body.get("tags", [])
@@ -3886,11 +3842,8 @@ def update_user_tags(screenshot_id: int, request: Request, body: dict = Body(...
     return _decorate_screenshot_media(request.app.state, updated)
 
 
-@router.post("/purge-women")
+@router.post("/purge-women", dependencies=[Depends(require_admin)])
 async def purge_women(request: Request, background_tasks: BackgroundTasks) -> JSONResponse:
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Scan all existing screenshots for female content and delete any found.
 
     Uses a targeted vision check which also evaluates a representative frame for
@@ -3961,11 +3914,8 @@ async def purge_women(request: Request, background_tasks: BackgroundTasks) -> JS
     return JSONResponse({"status": "started", "to_scan": len(rows)})
 
 
-@router.post("/recover-videos")
+@router.post("/recover-videos", dependencies=[Depends(require_admin)])
 def recover_orphaned_videos(request: Request) -> JSONResponse:
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Scan screenshots directory for .mp4 files not registered in the DB and import them."""
     import re as _re
     db = request.app.state.db
@@ -4029,11 +3979,8 @@ def recover_orphaned_videos(request: Request) -> JSONResponse:
     return JSONResponse({"recovered": recovered, "skipped": skipped})
 
 
-@router.post("/capture-videos")
+@router.post("/capture-videos", dependencies=[Depends(require_admin)])
 async def capture_videos(request: Request, background_tasks: BackgroundTasks) -> JSONResponse:
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Trigger a video-only capture pass using yt-dlp across all configured terms."""
     from app.sources.screenshot import TERM_QUERIES, _search_ytdlp_videos
     from pathlib import Path as _Path
@@ -4078,7 +4025,7 @@ async def capture_videos(request: Request, background_tasks: BackgroundTasks) ->
     return JSONResponse({"status": "started", "terms": len(terms)})
 
 
-@router.delete("/{screenshot_id}")
+@router.delete("/{screenshot_id}", dependencies=[Depends(require_admin)])
 def delete_screenshot(screenshot_id: int, request: Request):
     db = request.app.state.db
     with db.connect() as conn:
@@ -4123,11 +4070,8 @@ def get_disk_usage(request: Request):
     return {"directories": dirs, "disk": disk}
 
 
-@router.post("/cleanup")
+@router.post("/cleanup", dependencies=[Depends(require_admin)])
 def cleanup_media(request: Request, max_age_days: int = Query(30, ge=1, le=365)):
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Delete screenshot files older than max_age_days to free disk space."""
     base = Path(request.app.state.settings.image_dir).parent / "screenshots"
     if not base.exists():
@@ -4152,11 +4096,8 @@ def cleanup_media(request: Request, max_age_days: int = Query(30, ge=1, le=365))
     return {"deleted": deleted, "freed_mb": round(freed / (1024**2), 1)}
 
 
-@router.post("/purge-archiver")
+@router.post("/purge-archiver", dependencies=[Depends(require_admin)])
 def purge_archiver_screenshots(request: Request) -> JSONResponse:
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Delete all coomer/kemono screenshots from the DB.
     These sources are permanently blocked by DDoS-Guard and their media is unplayable."""
     db = request.app.state.db
@@ -4172,11 +4113,8 @@ def purge_archiver_screenshots(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "removed": removed})
 
 
-@router.post("/backfill-performers")
+@router.post("/backfill-performers", dependencies=[Depends(require_admin)])
 def backfill_performer_links(request: Request) -> JSONResponse:
-    x_admin_token: str | None = Header(default=None)
-    _require_admin(x_admin_token)
-
     """Link unlinked screenshots to performers by matching term against performer aliases.
 
     Useful after adding new performers or renaming existing ones.

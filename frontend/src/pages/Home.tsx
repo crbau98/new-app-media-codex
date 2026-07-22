@@ -161,7 +161,7 @@ export default function Home() {
           <>
             <span>{allItems.length} items</span>
             <span>{creators.length} creators</span>
-            <span>{discovery.sources.filter((s) => s.state === 'connected').length}/{discovery.sources.length} sources connected</span>
+            <span>{discovery.sources.filter((s) => s.state === 'connected').length} live sources</span>
           </>
         )}
         {discoveryQuery.isFetching && !discoveryQuery.isLoading && (

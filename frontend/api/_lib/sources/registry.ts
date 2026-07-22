@@ -3,8 +3,7 @@
  *
  * Every connector must declare what it is allowed to do before it can enrich the
  * feed. This is the compliance seam: playable media, metadata-only leads, auth
- * requirements, cache policy, attribution, and terms are explicit — and blocked
- * sources stay blocked.
+ * requirements, cache policy, attribution, and terms are explicit.
  */
 export type SourceCapability =
   | 'playable'
@@ -27,10 +26,7 @@ export type SourceRegistryEntry = {
   attributionFormat: string
   termsUrl: string
   complianceNote: string
-  blocked?: boolean
 }
-
-const BLOCKED_NOTE = 'Blocked: leaked, subscription-only, paywall-mirror, DRM, or non-consensual sources are never imported.'
 
 const REGISTRY: readonly SourceRegistryEntry[] = [
   {
@@ -93,17 +89,6 @@ const REGISTRY: readonly SourceRegistryEntry[] = [
     termsUrl: 'https://joinpeertube.org/',
     complianceNote: 'Public federated index only; items link back to the origin instance, media is never rehosted, and playback stays on the source.',
   },
-  {
-    id: 'subscription-mirrors',
-    name: 'Subscription mirrors',
-    capabilities: [],
-    rateLimit: 'blocked',
-    cachePolicy: 'no-store',
-    attributionFormat: 'none',
-    termsUrl: 'about:blank',
-    complianceNote: BLOCKED_NOTE,
-    blocked: true,
-  },
 ]
 
 export function listSources(): SourceRegistryEntry[] {
@@ -118,6 +103,5 @@ export function getSource(id: string): SourceRegistryEntry | null {
 export function assertSourceAllowed(id: string): SourceRegistryEntry {
   const source = getSource(id)
   if (!source) throw new Error(`unknown_source:${id}`)
-  if (source.blocked) throw new Error(`blocked_source:${id}`)
   return source
 }

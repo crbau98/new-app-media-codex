@@ -1,5 +1,6 @@
 import { collectDuckDuckGo } from './duckduckgo.js'
 import type { CreatorLead, MultiSourceResult, SourceStatus, UnifiedMediaItem } from './discovery-types.js'
+import { isScopedAdultPeerTubeMetadata } from './source-quality.js'
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 const PROVIDER_TIMEOUT_MS = 6_500
@@ -307,16 +308,13 @@ function peerTubeSearchBase(): string {
 }
 
 function peerTubeItemScope(video: SepiaVideo): boolean {
-  const text = sanitize([
-    video.name || '',
-    video.description || '',
-    ...(video.tags || []),
-    video.account?.displayName || '',
-    video.channel?.displayName || '',
-  ].join(' ')).toLowerCase()
-  const tokens = new Set(text.split(/[^a-z0-9/]+/).filter(Boolean))
-  if ([...FEMALE_MARKERS].some((marker) => tokens.has(marker))) return false
-  return [...SCOPE_MARKERS].some((marker) => tokens.has(marker) || text.includes(marker))
+  return isScopedAdultPeerTubeMetadata({
+    name: sanitize(video.name || ''),
+    description: sanitize(video.description || ''),
+    tags: (video.tags || []).map((tag) => sanitize(tag)),
+    accountName: sanitize(video.account?.displayName || video.account?.name || ''),
+    channelName: sanitize(video.channel?.displayName || video.channel?.name || ''),
+  })
 }
 
 function safePublicUrl(value: string | undefined): string | undefined {
@@ -355,10 +353,8 @@ async function collectPeerTube(opts: { query?: string } = {}): Promise<{ media: 
         const pageUrl = safePublicUrl(video.url)
         const thumbnail = safePublicUrl(video.thumbnailUrl)
         if (!uuid || !pageUrl || !thumbnail || seen.has(uuid)) continue
-        // The archive is an adult app behind an 18+ gate. On a general-purpose
-        // federated index, token matching alone pulls in noise (people named
-        // Gay, SFW memes, podcasts). Requiring the publisher's own NSFW flag
-        // keeps this lane aligned with the archive's actual scope.
+        // A publisher NSFW flag alone is noisy on a general federated index.
+        // Pair it with explicit, publisher-provided scope metadata.
         if (video.nsfw !== true) continue
         if (!peerTubeItemScope(video)) continue
         seen.add(uuid)
@@ -404,7 +400,7 @@ async function collectPeerTube(opts: { query?: string } = {}): Promise<{ media: 
       state,
       mediaFound: media.length,
       detail: succeeded
-        ? 'Public PeerTube federated index (publisher-flagged adult items only); playback stays on source.'
+        ? 'Public PeerTube videos matched from explicit publisher metadata.'
         : base.detail,
     },
     attempted,
@@ -543,17 +539,13 @@ export async function collectAdditionalSources(watchlist: string[], opts: { quer
     tumblr.status,
     peertube.status,
     google.status,
-    {
+    ...(shouldRunDdg ? [{
       id: 'duckduckgo', name: 'DuckDuckGo', mode: 'discovery',
       state: ddg.section.state, mediaFound: 0, creatorsFound: ddg.leads.length,
       detail: ddg.section.detail,
       searchUrl: ddg.section.searchUrl,
-    },
-    {
-      id: 'subscription-mirrors', name: 'Subscription mirrors', mode: 'blocked', state: 'blocked', mediaFound: 0, creatorsFound: 0,
-      detail: 'Coomer/Kemono and other paywall mirrors are excluded. The app will not import leaked or subscription-only media.',
-    },
-  ]
+    } as SourceStatus] : []),
+  ].filter((source) => source.state !== 'not-configured')
   return {
     media: [...x.media, ...tumblr.media, ...peertube.media],
     leads: [...x.leads, ...tumblr.leads, ...google.leads, ...ddg.leads],

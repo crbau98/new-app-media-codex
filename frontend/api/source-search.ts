@@ -1,5 +1,5 @@
-import { fetchMastodonPublicTag } from './_lib/sources/activitypub'
-import { searchPeerTube } from './_lib/sources/peertube'
+import { fetchMastodonPublicTag } from './_lib/sources/activitypub.js'
+import { searchPeerTube } from './_lib/sources/peertube.js'
 
 export const config = { runtime: 'edge' }
 
