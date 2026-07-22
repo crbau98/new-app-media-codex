@@ -366,6 +366,14 @@
     .media-card:hover .media-card-overlay,
     .media-card:focus-visible .media-card-overlay { opacity: 1; }
   }
+  @media (hover: none), (pointer: coarse) {
+    .media-card-overlay { opacity: 1; }
+    .media-card-play { opacity: 0.82; }
+    .btn-primary,
+    .btn-secondary,
+    .btn-heat,
+    .chip { min-height: 44px; }
+  }
 
   /* Vertical rotated mono label — editorial archive gutter */
   .edge-label {
