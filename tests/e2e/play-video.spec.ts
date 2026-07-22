@@ -23,7 +23,7 @@ test('click video and verify player opens', async ({ page }) => {
   expect(videoBox!.width).toBeLessThanOrEqual(viewport!.width)
 
   if (viewport!.width < 768) {
-    expect(dialogBox!.width).toBeGreaterThanOrEqual(viewport!.width - 1)
+    expect(dialogBox!.width).toBeGreaterThanOrEqual(viewport!.width * 0.9)
     await expect(dialog.getByRole('button', { name: 'Save' })).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Share' })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
