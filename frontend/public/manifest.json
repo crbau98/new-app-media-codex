@@ -3,10 +3,13 @@
   "short_name": "MediaCodex",
   "description": "Private, explainable discovery across public creator sources",
   "start_url": "/media",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
   "background_color": "#0a0a0f",
   "theme_color": "#0a0a0f",
   "orientation": "any",
+  "categories": ["entertainment", "utilities"],
   "icons": [
     {
       "src": "/icon-192.png",
@@ -19,11 +22,22 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
-    { "name": "Discover", "url": "/media" },
-    { "name": "Search", "url": "/search" },
-    { "name": "Creators", "url": "/creators" }
-  ]
+    { "name": "Library", "url": "/media", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Search", "url": "/search", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Creators", "url": "/creators", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "share_target": {
+    "action": "/search",
+    "method": "GET",
+    "params": { "url": "url", "text": "q" }
+  }
 }
