@@ -23,6 +23,8 @@ import Hero from '@/components/Hero'
 import EmptyState from '@/components/EmptyState'
 import SkeletonGrid from '@/components/SkeletonGrid'
 import UpdatedChip from '@/components/UpdatedChip'
+import ForYouRail from '@/components/ForYouRail'
+import ContinueWatchingRail from '@/components/ContinueWatchingRail'
 import { cn } from '@/lib/utils'
 
 const MediaDetail = lazy(() => import('@/components/MediaDetail'))
@@ -203,6 +205,10 @@ export default function Home() {
           </div>
         </section>
       )}
+
+      {/* Private rails: resume + on-device recommendations. Render nothing without local signals. */}
+      <ContinueWatchingRail items={allItems} onSelect={setSelectedItem} />
+      <ForYouRail items={allItems} onSelect={setSelectedItem} />
 
       {/* Library */}
       <section aria-label="Media library">
