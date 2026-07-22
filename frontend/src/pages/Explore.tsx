@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Dice5, Library, RefreshCw, Sparkles } from 'lucide-react'
@@ -12,6 +12,8 @@ import EmptyState from '@/components/EmptyState'
 import SkeletonGrid from '@/components/SkeletonGrid'
 import UpdatedChip from '@/components/UpdatedChip'
 import { cn } from '@/lib/utils'
+
+const FederatedSearch = lazy(() => import('@/components/FederatedSearch'))
 
 const densityCols: Record<GridDensity, string> = {
   compact: 'grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7',
@@ -155,6 +157,11 @@ export default function Explore() {
           </p>
         </div>
       )}
+
+      {/* Federated web: explicit PeerTube/Mastodon instances, metadata-only with attribution */}
+      <Suspense fallback={null}>
+        <FederatedSearch />
+      </Suspense>
 
       <MediaDetail
         item={selectedItem}

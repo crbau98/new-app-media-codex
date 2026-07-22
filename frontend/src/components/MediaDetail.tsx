@@ -15,6 +15,8 @@ import {
 } from 'lucide-react'
 import { apiUrl, resolvePublicUrl } from '@/lib/backendOrigin'
 import { creatorFollowId, formatMetric, relativeTime } from '@/lib/discovery'
+import { recordProgress } from '@/lib/collections'
+import { playbackIntent } from '@/lib/intent'
 import type { MediaItem } from '@/lib/types'
 import type { VideoQuality } from '@/store'
 import { useAppStore } from '@/store'
@@ -163,6 +165,23 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     armWatchdog(9000)
   }, [armWatchdog])
 
+  // Private continue-watching: save position at most every 5s, plus on pause.
+  const lastSavedRef = useRef(0)
+  const saveProgress = useCallback(() => {
+    const node = videoRef.current
+    if (!node || node.currentTime < 1) return
+    const now = Date.now()
+    if (now - lastSavedRef.current < 5000) return
+    lastSavedRef.current = now
+    recordProgress(item, node.currentTime)
+  }, [item])
+  const saveProgressNow = useCallback(() => {
+    const node = videoRef.current
+    if (!node || node.currentTime < 1) return
+    lastSavedRef.current = Date.now()
+    recordProgress(item, node.currentTime)
+  }, [item])
+
   const captureFrame = useCallback(async () => {
     const node = videoRef.current
     if (!node || !node.videoWidth || !node.videoHeight) {
@@ -248,6 +267,9 @@ function VideoPlayer({ item }: { item: MediaItem }) {
         onPlaying={handleReady}
         onWaiting={handleBuffering}
         onStalled={handleBuffering}
+        onTimeUpdate={saveProgress}
+        onPause={saveProgressNow}
+        onEnded={saveProgressNow}
         onError={recover}
         className="max-h-[62dvh] min-h-56 w-full object-contain"
       >
@@ -366,10 +388,12 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
     [addToast, item, recordFeedback]
   )
 
-  // Record a view once per opened item
+  // Record a view once per opened item. Opening detail also cancels any queued
+  // hover-warm fetches so the real poster/stream gets the full bandwidth budget.
   useEffect(() => {
     if (!open || !item || viewedRef.current === item.id) return
     viewedRef.current = item.id
+    playbackIntent.cancelAll()
     addRecentlyViewed(item.id)
     recordFeedback(item, 'view')
   }, [addRecentlyViewed, item, open, recordFeedback])

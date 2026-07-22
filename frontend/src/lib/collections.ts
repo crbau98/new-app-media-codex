@@ -18,6 +18,9 @@ export type ProgressEntry = {
 const COLLECTIONS_KEY = 'media-codex-collections-v1'
 const PROGRESS_KEY = 'media-codex-progress-v1'
 
+/** Fired on window whenever watch progress is recorded, so rails can refresh. */
+export const PROGRESS_EVENT = 'media-codex:progress'
+
 function durationToSeconds(duration: string): number {
   const parts = duration.split(':').map(Number)
   if (parts.some((part) => !Number.isFinite(part))) return 0
@@ -57,11 +60,16 @@ export function addToCollection(collection: MediaCollection, itemId: string): Me
   return { ...collection, itemIds: [itemId, ...collection.itemIds], updatedAt: Date.now() }
 }
 
+export function loadProgress(): Record<string, ProgressEntry> {
+  return readJson<Record<string, ProgressEntry>>(PROGRESS_KEY, {})
+}
+
 export function recordProgress(item: MediaItem, seconds: number) {
   if (!item.isVideo) return
   const progress = readJson<Record<string, ProgressEntry>>(PROGRESS_KEY, {})
   progress[item.id] = { itemId: item.id, seconds: Math.max(0, Math.floor(seconds)), duration: durationToSeconds(item.duration), updatedAt: Date.now() }
   writeJson(PROGRESS_KEY, progress)
+  window.dispatchEvent(new CustomEvent(PROGRESS_EVENT))
 }
 
 export function continueWatching(limit = 12): ProgressEntry[] {

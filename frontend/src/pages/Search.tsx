@@ -5,6 +5,7 @@ import { Clock3, Grid3X3, List, RefreshCw, Search as SearchIcon, TrendingUp, X }
 import type { MediaItem } from '@/lib/types'
 import { fetchLiveDiscovery, searchMedia } from '@/lib/api'
 import { relativeTime } from '@/lib/discovery'
+import { filterMedia, parseProQuery } from '@/lib/proSearch'
 import { useAppStore, type GridDensity } from '@/store'
 import MediaCard from '@/components/MediaCard'
 import MediaDetail from '@/components/MediaDetail'
@@ -67,11 +68,27 @@ export default function Search() {
     )
   }
 
-  // Server-side search: the query term is sent to the edge function.
+  // Pro syntax: operators (tag:, creator:, source:, duration:, views:, quality:)
+  // are parsed out of the query. The free-text remainder goes to the server;
+  // structured filters apply client-side. Operator-only queries filter the
+  // already-loaded live feed instead of issuing a server search.
+  const structured = useMemo(() => parseProQuery(urlQuery), [urlQuery])
+  const hasOperators = Boolean(
+    structured.source ||
+      structured.creator ||
+      structured.tag ||
+      structured.minDuration !== undefined ||
+      structured.maxDuration !== undefined ||
+      structured.minViews !== undefined ||
+      structured.quality
+  )
+  const serverTerm = hasOperators ? structured.text : urlQuery.trim().toLowerCase()
+
+  // Server-side search: the free-text term is sent to the edge function.
   const searchQuery = useQuery({
-    queryKey: ['search-media', urlQuery, creatorWatchlist],
-    queryFn: () => searchMedia(urlQuery, { watchlist: creatorWatchlist }),
-    enabled: urlQuery.trim().length > 1,
+    queryKey: ['search-media', serverTerm, creatorWatchlist],
+    queryFn: () => searchMedia(serverTerm, { watchlist: creatorWatchlist }),
+    enabled: serverTerm.length > 1,
     placeholderData: (previous) => previous,
   })
 
@@ -96,15 +113,42 @@ export default function Search() {
   }, [searchQuery.data])
 
   const results = useMemo(() => {
-    const items = searchQuery.data?.items ?? []
-    if (!sourceFilter) return items
-    return items.filter((item) => item.source.toLowerCase() === sourceFilter.toLowerCase())
-  }, [searchQuery.data, sourceFilter])
+    let items = serverTerm.length > 1
+      ? (searchQuery.data?.items ?? [])
+      : hasOperators
+        ? (discoveryQuery.data?.items ?? [])
+        : []
+    if (hasOperators) items = filterMedia(items, structured)
+    if (sourceFilter) items = items.filter((item) => item.source.toLowerCase() === sourceFilter.toLowerCase())
+    return items
+  }, [discoveryQuery.data, hasOperators, searchQuery.data, serverTerm, sourceFilter, structured])
+
+  const removeOperator = (prefix: string) => {
+    const next = urlQuery
+      .split(/\s+/)
+      .filter((token) => !token.toLowerCase().startsWith(prefix))
+      .join(' ')
+    setDraft(next)
+    setQuery(next)
+  }
+
+  const operatorChips = useMemo(() => {
+    const chips: Array<{ label: string; prefix: string }> = []
+    if (structured.source) chips.push({ label: `source:${structured.source}`, prefix: 'source:' })
+    if (structured.creator) chips.push({ label: `creator:${structured.creator}`, prefix: 'creator:' })
+    if (structured.tag) chips.push({ label: `tag:${structured.tag}`, prefix: 'tag:' })
+    if (structured.minDuration !== undefined || structured.maxDuration !== undefined) chips.push({ label: 'duration filter', prefix: 'duration:' })
+    if (structured.minViews !== undefined) chips.push({ label: `views:>${structured.minViews}`, prefix: 'views:' })
+    if (structured.quality) chips.push({ label: `quality:${structured.quality}`, prefix: 'quality:' })
+    return chips
+  }, [structured])
 
   const visibleItems = results.slice(0, visibleCount)
   const hasMore = visibleCount < results.length
 
   const searching = urlQuery.trim().length > 1
+  const searchingServer = serverTerm.length > 1
+  const loading = searchingServer ? searchQuery.isLoading : discoveryQuery.isLoading
 
   return (
     <div className="animate-page-enter space-y-6">
@@ -125,7 +169,7 @@ export default function Search() {
           onKeyDown={(event) => {
             if (event.key === 'Enter') setQuery(draft)
           }}
-          placeholder="Search media and creators"
+          placeholder="Search — or filter: tag:jock duration:>2m views:>1000"
           aria-label="Search media and creators"
           className="h-12 w-full rounded-md border border-line bg-elevated pl-11 pr-12 text-sm text-ink outline-none transition-colors placeholder:text-ink-3 focus:border-line-strong"
         />
@@ -186,8 +230,19 @@ export default function Search() {
           {/* Meta + filters */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2">
-              {searchQuery.isLoading ? 'Searching…' : `${results.length} results for "${urlQuery}"`}
+              {loading ? 'Searching…' : `${results.length} results for "${urlQuery}"`}
             </span>
+            {operatorChips.map((chip) => (
+              <button
+                key={chip.prefix}
+                onClick={() => removeOperator(chip.prefix)}
+                className="chip chip-active"
+                aria-label={`Remove ${chip.label} filter`}
+                title="Remove filter"
+              >
+                {chip.label} <X size={11} strokeWidth={1.75} aria-hidden="true" />
+              </button>
+            ))}
             <UpdatedChip updatedAt={discoveryQuery.data?.updatedAt ?? null} />
             <div className="ml-auto flex items-center gap-1">
               <button
@@ -231,9 +286,9 @@ export default function Search() {
             </div>
           )}
 
-          {searchQuery.isLoading ? (
+          {loading ? (
             <SkeletonGrid count={8} />
-          ) : searchQuery.error ? (
+          ) : searchingServer && searchQuery.error ? (
             <EmptyState
               icon={RefreshCw}
               title="Search failed"
