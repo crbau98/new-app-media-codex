@@ -199,6 +199,23 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     }
   }, [item.id])
 
+  // Click-to-play UX: track paused state for the overlay; tap the video to toggle.
+  const [paused, setPaused] = useState(true)
+  const togglePlay = useCallback(() => {
+    const node = videoRef.current
+    if (!node) return
+    if (node.paused) void node.play().catch(() => {})
+    else node.pause()
+  }, [])
+  const handlePlayEvent = useCallback(() => {
+    setPaused(false)
+    handleReady()
+  }, [handleReady])
+  const handlePauseEvent = useCallback(() => {
+    setPaused(true)
+    saveProgressNow()
+  }, [saveProgressNow])
+
   const captureFrame = useCallback(async () => {
     const node = videoRef.current
     if (!node || !node.videoWidth || !node.videoHeight) {
@@ -282,17 +299,31 @@ function VideoPlayer({ item }: { item: MediaItem }) {
         onLoadedData={handleReady}
         onCanPlay={handleReady}
         onPlaying={handleReady}
+        onPlay={handlePlayEvent}
         onLoadedMetadata={handleLoadedMetadata}
         onWaiting={handleBuffering}
         onStalled={handleBuffering}
         onTimeUpdate={saveProgress}
-        onPause={saveProgressNow}
-        onEnded={saveProgressNow}
+        onPause={handlePauseEvent}
+        onEnded={handlePauseEvent}
+        onClick={togglePlay}
         onError={recover}
         className="max-h-[62dvh] min-h-56 w-full object-contain"
       >
         Your browser does not support video playback.
       </video>
+      {paused && (
+        <button
+          type="button"
+          onClick={togglePlay}
+          className="absolute inset-0 grid place-items-center bg-black/20"
+          aria-label="Play video"
+        >
+          <span className="grid h-14 w-14 place-items-center rounded-full bg-canvas/85">
+            <Play size={22} strokeWidth={1.75} className="ml-1 text-ink" fill="currentColor" />
+          </span>
+        </button>
+      )}
       <button
         type="button"
         onClick={captureFrame}
