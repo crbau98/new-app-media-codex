@@ -2,6 +2,7 @@ import { memo, useState, useCallback } from 'react'
 import { Play, RefreshCw } from 'lucide-react'
 import type { MediaItem } from '@/lib/types'
 import { relativeTime } from '@/lib/discovery'
+import { playbackIntent } from '@/lib/intent'
 import MediaImage from '@/components/MediaImage'
 import { cn } from '@/lib/utils'
 
@@ -38,6 +39,8 @@ function MediaCard({ item, aspectRatio = '2/3', className, onSelect, priority = 
       data-testid={item.isVideo ? 'video-tile' : 'media-tile'}
       className={cn('media-card group block w-full text-left tap-highlight-none', className)}
       onClick={() => (error ? handleRetry() : onSelect?.(item.id))}
+      onPointerEnter={() => playbackIntent.warmMetadata(item.thumbnail)}
+      onFocus={() => playbackIntent.warmMetadata(item.thumbnail)}
       aria-label={error ? `Retry loading ${item.title}` : `${item.isVideo ? 'Play' : 'View'} ${item.title} by ${item.creator}`}
     >
       <div className="relative overflow-hidden rounded-md bg-sunken" style={{ aspectRatio }}>
