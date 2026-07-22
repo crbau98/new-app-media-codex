@@ -167,19 +167,21 @@ export async function fetchLiveDiscovery(
       LIVE_MEDIA_URL,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        ...(forceFresh ? { 'Cache-Control': 'no-cache' } : {}),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(forceFresh ? { 'Cache-Control': 'no-cache' } : {}),
+        },
+        cache: 'no-store',
+        body: JSON.stringify({
+          count: 96,
+          pages: 3,
+          sort,
+          query,
+          watchlist: watchlist.slice(0, 8),
+          forceFresh,
+          useAI: forceFresh,
+        }),
       },
-      cache: 'no-store',
-      body: JSON.stringify({
-        count: 96,
-        pages: 3,
-        sort,
-        query,
-        watchlist: watchlist.slice(0, 8),
-        forceFresh,
-        useAI: forceFresh,
-      }),
       forceFresh ? 45000 : 25000
     )
   }
