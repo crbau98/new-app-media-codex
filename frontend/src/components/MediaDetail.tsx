@@ -262,6 +262,7 @@ function VideoPlayer({ item }: { item: MediaItem }) {
   }, [addToast, item.id])
 
   if (!candidates[index] || failed) {
+    const externalOnly = candidates.length === 0 && !failed
     return (
       <div className="relative grid min-h-64 place-items-center overflow-hidden rounded-lg bg-sunken">
         <MediaImage
@@ -273,7 +274,9 @@ function VideoPlayer({ item }: { item: MediaItem }) {
         />
         <div className="relative z-10 max-w-xs px-5 py-10 text-center">
           <Play size={16} strokeWidth={1.75} className="mx-auto text-ink-2" aria-hidden="true" />
-          <p className="mt-3 text-sm font-medium text-ink">This stream is temporarily unavailable.</p>
+          <p className="mt-3 text-sm font-medium text-ink">
+            {externalOnly ? `${item.source} keeps playback on its own site.` : 'This stream is temporarily unavailable.'}
+          </p>
           {item.pageUrl && (
             <a href={item.pageUrl} target="_blank" rel="noreferrer" className="btn-primary mt-4">
               Watch on source <ExternalLink size={14} strokeWidth={1.75} />

@@ -84,6 +84,16 @@ const REGISTRY: readonly SourceRegistryEntry[] = [
     complianceNote: 'Parse only explicitly supplied feeds; store metadata/provider URLs only.',
   },
   {
+    id: 'peertube',
+    name: 'PeerTube',
+    capabilities: ['metadataOnly', 'peertube'],
+    rateLimit: 'public sepiasearch index; bounded queries; 4s optional budget',
+    cachePolicy: 'no-store',
+    attributionFormat: 'video URL + account URL + origin instance host',
+    termsUrl: 'https://joinpeertube.org/',
+    complianceNote: 'Public federated index only; items link back to the origin instance, media is never rehosted, and playback stays on the source.',
+  },
+  {
     id: 'subscription-mirrors',
     name: 'Subscription mirrors',
     capabilities: [],

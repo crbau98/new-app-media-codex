@@ -276,6 +276,137 @@ async function collectTumblr(watchlist: string[]): Promise<{ media: UnifiedMedia
   }
 }
 
+type SepiaVideo = {
+  uuid?: string
+  name?: string
+  description?: string
+  duration?: number
+  tags?: string[]
+  thumbnailUrl?: string
+  url?: string
+  publishedAt?: string
+  views?: number
+  likes?: number
+  nsfw?: boolean
+  account?: { displayName?: string; name?: string; url?: string; host?: string }
+  channel?: { displayName?: string; name?: string }
+}
+
+const PEERTUBE_SCOPE_QUERIES = ['gay amateur', 'gay bareback', 'gay muscle', 'gay twink']
+
+function peerTubeSearchBase(): string {
+  const configured = (process.env.PEERTUBE_SEARCH_BASE || '').trim()
+  const base = configured || 'https://sepiasearch.org'
+  try {
+    const url = new URL(base)
+    if (url.protocol !== 'https:') return 'https://sepiasearch.org'
+    return url.origin
+  } catch {
+    return 'https://sepiasearch.org'
+  }
+}
+
+function peerTubeItemScope(video: SepiaVideo): boolean {
+  const text = sanitize([
+    video.name || '',
+    video.description || '',
+    ...(video.tags || []),
+    video.account?.displayName || '',
+    video.channel?.displayName || '',
+  ].join(' ')).toLowerCase()
+  const tokens = new Set(text.split(/[^a-z0-9/]+/).filter(Boolean))
+  if ([...FEMALE_MARKERS].some((marker) => tokens.has(marker))) return false
+  return [...SCOPE_MARKERS].some((marker) => tokens.has(marker) || text.includes(marker))
+}
+
+function safePublicUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.username || url.password) return undefined
+    return url.href
+  } catch {
+    return undefined
+  }
+}
+
+async function collectPeerTube(opts: { query?: string } = {}): Promise<{ media: UnifiedMediaItem[]; status: SourceStatus; attempted: number; succeeded: number }> {
+  const base: SourceStatus = {
+    id: 'peertube', name: 'PeerTube', mode: 'stream', state: 'error', mediaFound: 0, creatorsFound: 0,
+    detail: 'The public PeerTube index is temporarily unreachable.',
+    searchUrl: `https://sepiasearch.org/search?q=${encodeURIComponent(opts.query || 'gay')}`,
+  }
+  const queries = [...(opts.query ? [sanitize(opts.query).slice(0, 60)] : []), ...PEERTUBE_SCOPE_QUERIES]
+    .filter((value, index, list) => value && list.indexOf(value) === index)
+    .slice(0, 4)
+  const media: UnifiedMediaItem[] = []
+  const seen = new Set<string>()
+  let attempted = 0
+  let succeeded = 0
+  const baseUrl = peerTubeSearchBase()
+  await Promise.all(queries.map(async (query) => {
+    attempted += 1
+    try {
+      const params = new URLSearchParams({ search: query, count: '8', nsfw: 'both', resultType: 'videos' })
+      const body = await fetchJson(`${baseUrl}/api/v1/search/videos?${params}`) as { data?: SepiaVideo[] }
+      succeeded += 1
+      for (const video of (body.data || []).slice(0, 8)) {
+        const uuid = String(video.uuid || '')
+        const pageUrl = safePublicUrl(video.url)
+        const thumbnail = safePublicUrl(video.thumbnailUrl)
+        if (!uuid || !pageUrl || !thumbnail || seen.has(uuid)) continue
+        if (!peerTubeItemScope(video)) continue
+        seen.add(uuid)
+        const creator = sanitize(video.account?.displayName || video.account?.name || '') || 'PeerTube creator'
+        const host = video.account?.host || (() => { try { return new URL(pageUrl).hostname } catch { return '' } })()
+        const whole = Math.max(0, Math.floor(video.duration || 0))
+        media.push({
+          id: `pt-${uuid}`,
+          title: sanitize(video.name || '').slice(0, 96) || `PeerTube video by ${creator}`,
+          thumbnail,
+          source: 'PeerTube',
+          duration: `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`,
+          isVideo: true,
+          category: 'PeerTube federated',
+          creator,
+          tags: (video.tags || []).map((tag) => sanitize(tag)).filter(Boolean).slice(0, 8),
+          rating: 0,
+          createdAt: typeof video.publishedAt === 'string' ? video.publishedAt : new Date().toISOString(),
+          views: Math.max(0, video.views || 0),
+          streamCandidates: [],
+          pageUrl,
+          profileUrl: safePublicUrl(video.account?.url),
+          description: sanitize(video.description || '').slice(0, 400) || undefined,
+          likes: Math.max(0, video.likes || 0),
+          comments: 0,
+          isLiked: false,
+          isNew: false,
+          isTrending: false,
+          curationScore: 0,
+          curationReasons: [`federated public video on ${host || 'a PeerTube instance'}`],
+          isWatchedCreator: false,
+        })
+      }
+    } catch {
+      // One failed query never blocks the other lanes or sources.
+    }
+  }))
+  const state = succeeded ? 'connected' : 'error'
+  return {
+    media,
+    status: {
+      ...base,
+      state,
+      mediaFound: media.length,
+      detail: succeeded
+        ? 'Public PeerTube federated index; thumbnails load from origin instances and playback stays on source.'
+        : base.detail,
+    },
+    attempted,
+    succeeded,
+  }
+}
+
 export function creatorFromUrl(value: string | undefined): { username: string; platform: string; profileUrl: string } | null {
   if (!value) return null
   try {
@@ -384,15 +515,28 @@ export async function collectAdditionalSources(watchlist: string[], opts: { quer
       OPTIONAL_DISCOVERY_BUDGET_MS,
     )
     : Promise.resolve(ddgFallback)
-  const [x, tumblr, google, ddg] = await Promise.all([
+  const peerTubeFallback = {
+    media: [] as UnifiedMediaItem[],
+    status: {
+      id: 'peertube', name: 'PeerTube', mode: 'stream', state: 'limited',
+      mediaFound: 0, creatorsFound: 0,
+      detail: `PeerTube discovery was deferred by the optional budget so core sources return first.`,
+      searchUrl: 'https://sepiasearch.org/search?q=gay',
+    } as SourceStatus,
+    attempted: 0,
+    succeeded: 0,
+  }
+  const [x, tumblr, google, ddg, peertube] = await Promise.all([
     collectX(watchlist),
     collectTumblr(watchlist),
     collectGoogle(watchlist),
     ddgPromise,
+    withTimeoutFallback(collectPeerTube({ query: query || undefined }), peerTubeFallback, OPTIONAL_DISCOVERY_BUDGET_MS + 1500),
   ])
   const statuses: SourceStatus[] = [
     x.status,
     tumblr.status,
+    peertube.status,
     google.status,
     {
       id: 'duckduckgo', name: 'DuckDuckGo', mode: 'discovery',
@@ -406,11 +550,11 @@ export async function collectAdditionalSources(watchlist: string[], opts: { quer
     },
   ]
   return {
-    media: [...x.media, ...tumblr.media],
+    media: [...x.media, ...tumblr.media, ...peertube.media],
     leads: [...x.leads, ...tumblr.leads, ...google.leads, ...ddg.leads],
     statuses,
     duckduckgo: ddg.section,
-    requestsAttempted: x.attempted + tumblr.attempted + google.attempted + ddg.attempted,
-    requestsSucceeded: x.succeeded + tumblr.succeeded + google.succeeded + ddg.succeeded,
+    requestsAttempted: x.attempted + tumblr.attempted + google.attempted + ddg.attempted + peertube.attempted,
+    requestsSucceeded: x.succeeded + tumblr.succeeded + google.succeeded + ddg.succeeded + peertube.succeeded,
   }
 }
