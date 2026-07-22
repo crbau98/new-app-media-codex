@@ -18,6 +18,7 @@ interface MediaCardProps {
 /**
  * Archive media card: image, mono metadata row, title. Hover affordance is a
  * hairline + slight brightness — siblings dim via the parent `.media-grid`.
+ * The creator handle overlays the poster on hover/focus (bottom scrim).
  */
 function MediaCard({ item, aspectRatio = '2/3', className, onSelect, priority = false }: MediaCardProps) {
   const [error, setError] = useState(false)
@@ -77,6 +78,7 @@ function MediaCard({ item, aspectRatio = '2/3', className, onSelect, priority = 
             </span>
           </span>
         )}
+        <span className="media-card-overlay" aria-hidden="true">@{item.creator}</span>
       </div>
 
       <div className="mt-2 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">

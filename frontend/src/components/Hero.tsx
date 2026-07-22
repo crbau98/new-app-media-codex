@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { ExternalLink, Play, RefreshCw } from 'lucide-react'
 import type { MediaItem } from '@/lib/types'
 import { formatMetric, relativeTime } from '@/lib/discovery'
@@ -7,6 +7,35 @@ import { cn } from '@/lib/utils'
 
 const ROTATION_MS = 6000
 const SLIDE_COUNT = 5
+
+/**
+ * Display headline with a per-character entrance cascade. The heading remounts
+ * per slide (keyed by slide id) so the cascade replays on rotation. Words stay
+ * unbroken; the accessible name is the plain title string.
+ */
+function CascadeTitle({ text, slideKey }: { text: string; slideKey: string }) {
+  const words = text.split(/\s+/).filter(Boolean)
+  let charIndex = 0
+  return (
+    <h2 key={slideKey} aria-label={text} className="display-title mt-3 max-w-3xl text-4xl text-ink md:text-6xl">
+      {words.map((word, wordIndex) => (
+        <span key={wordIndex} aria-hidden="true" className="inline-block whitespace-nowrap">
+          {[...word].map((char) => {
+            // Cap the stagger so long titles don't delay the tail excessively.
+            const index = Math.min(charIndex, 36)
+            charIndex += 1
+            return (
+              <span key={charIndex} className="hero-char" style={{ '--char-index': index } as CSSProperties}>
+                {char}
+              </span>
+            )
+          })}
+          {wordIndex < words.length - 1 ? '\u00A0' : null}
+        </span>
+      ))}
+    </h2>
+  )
+}
 
 interface HeroProps {
   items: MediaItem[]
@@ -59,6 +88,9 @@ export default function Hero({ items, loading, error, onRetry, onSelect }: HeroP
         ))}
         <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/40 to-canvas/10" aria-hidden="true" />
         <GrainOverlay />
+        <span className="edge-label absolute left-3 top-1/2 z-20 hidden -translate-y-1/2 lg:block" aria-hidden="true">
+          Public archive · live feed
+        </span>
 
         {/* Content */}
         <div className="relative z-10 flex min-h-[340px] flex-col justify-end p-5 md:min-h-[440px] md:p-8 lg:min-h-[480px]">
@@ -86,9 +118,7 @@ export default function Hero({ items, loading, error, onRetry, onSelect }: HeroP
                 <span className="live-dot" aria-hidden="true" />
                 Live now · {current.source}
               </p>
-              <h2 className="display-title mt-3 max-w-3xl text-4xl text-ink md:text-6xl">
-                {current.title}
-              </h2>
+              <CascadeTitle text={current.title} slideKey={current.id} />
               <p className="mono-meta mt-3 uppercase">
                 @{current.creator}
                 {'  ·  '}
