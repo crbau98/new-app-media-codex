@@ -154,6 +154,9 @@ export default async function handler(req: Request): Promise<Response> {
   const out = new Headers(upstream.headers)
   out.delete("set-cookie")
   out.delete("content-disposition")
+  // The proxy is consumed same-origin. Forwarding a provider-specific ACAO
+  // value can cause inconsistent media retry behavior across browsers.
+  out.delete("access-control-allow-origin")
   out.set("Cross-Origin-Resource-Policy", "same-origin")
   const upstreamAcceptRanges = upstream.headers.get("accept-ranges")
   if (upstream.status === 206 || upstreamAcceptRanges) {

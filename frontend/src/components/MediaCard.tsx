@@ -72,7 +72,7 @@ function MediaCard({ item, aspectRatio = '2/3', className, onSelect, priority = 
           </span>
         )}
         {item.isVideo && (
-          <span className="absolute inset-0 grid place-items-center opacity-0 transition-opacity duration-200 group-hover:opacity-100" aria-hidden="true">
+          <span className="media-card-play absolute inset-0 grid place-items-center opacity-0 transition-opacity duration-200 group-hover:opacity-100" aria-hidden="true">
             <span className="grid h-10 w-10 place-items-center rounded-full bg-canvas/80">
               <Play size={16} strokeWidth={1.75} className="ml-0.5 text-ink" fill="currentColor" />
             </span>
