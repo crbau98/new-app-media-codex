@@ -156,8 +156,13 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     const node = videoRef.current
     armWatchdog(12000)
     node?.load()
+    // Opening the sheet is an explicit play intent. The autoPlay attribute can
+    // race candidate swaps on some browsers, so attempt playback directly too;
+    // a rejection (e.g. unmuted autoplay policy) just leaves the paused
+    // click-to-play overlay visible.
+    if (autoplay) void node?.play().catch(() => {})
     return clearWatchdog
-  }, [armWatchdog, candidates, clearWatchdog, failed, index])
+  }, [armWatchdog, autoplay, candidates, clearWatchdog, failed, index])
 
   const handleReady = useCallback(() => {
     clearWatchdog()
