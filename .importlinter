@@ -1,0 +1,36 @@
+[importlinter]
+root_package = app
+
+; The architecture's load-bearing rules (blueprint section 3). CI runs:
+;   lint-imports
+; Violations fail the build from Phase 3 onward.
+
+[importlinter:contract:1]
+name = core and domain stay framework-free
+type = forbidden
+source_modules =
+    app.core
+    app.domain
+forbidden_modules =
+    fastapi
+    sqlite3
+    httpx
+    sqlalchemy
+
+[importlinter:contract:2]
+name = domain depends on nothing above it
+type = independence
+modules =
+    app.domain
+    app.repositories
+    app.workers
+
+[importlinter:contract:3]
+name = SQL lives only in repositories
+type = forbidden
+source_modules =
+    app.api
+    app.services
+    app.workers
+forbidden_modules =
+    sqlite3
