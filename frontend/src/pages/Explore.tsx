@@ -14,6 +14,7 @@ import UpdatedChip from '@/components/UpdatedChip'
 import { cn } from '@/lib/utils'
 
 const FederatedSearch = lazy(() => import('@/components/FederatedSearch'))
+const ImportUrl = lazy(() => import('@/components/ImportUrl'))
 
 const densityCols: Record<GridDensity, string> = {
   compact: 'grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7',
@@ -160,6 +161,7 @@ export default function Explore() {
 
       {/* Federated web: explicit PeerTube/Mastodon instances, metadata-only with attribution */}
       <Suspense fallback={null}>
+        <ImportUrl />
         <FederatedSearch />
       </Suspense>
 

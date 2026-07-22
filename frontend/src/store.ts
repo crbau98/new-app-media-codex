@@ -154,7 +154,7 @@ function defaultDataState() {
     gridDensity: 'normal' as GridDensity,
     fontSize: 'default' as FontSize,
     reduceMotion: false,
-    autoplayVideos: false,
+    autoplayVideos: true,
     defaultQuality: 'auto' as VideoQuality,
     muteOnStart: true,
     pictureInPicture: true,

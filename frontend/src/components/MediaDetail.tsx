@@ -5,7 +5,9 @@ import {
   ArrowRight,
   Bookmark,
   Camera,
+  Check,
   ExternalLink,
+  FolderPlus,
   Play,
   Share2,
   ThumbsDown,
@@ -15,8 +17,9 @@ import {
 } from 'lucide-react'
 import { apiUrl, resolvePublicUrl } from '@/lib/backendOrigin'
 import { creatorFollowId, formatMetric, relativeTime } from '@/lib/discovery'
-import { recordProgress } from '@/lib/collections'
+import { loadProgress, recordProgress } from '@/lib/collections'
 import { playbackIntent } from '@/lib/intent'
+import { useCollections } from '@/hooks/useCollections'
 import type { MediaItem } from '@/lib/types'
 import type { VideoQuality } from '@/store'
 import { useAppStore } from '@/store'
@@ -182,6 +185,37 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     recordProgress(item, node.currentTime)
   }, [item])
 
+  // Resume-from-position: seek once per item when a saved position exists.
+  const resumedRef = useRef(false)
+  const [resumedAt, setResumedAt] = useState<number | null>(null)
+  const handleLoadedMetadata = useCallback(() => {
+    const node = videoRef.current
+    if (!node || resumedRef.current) return
+    resumedRef.current = true
+    const entry = loadProgress()[item.id]
+    if (entry && entry.seconds > 20 && entry.seconds < entry.duration * 0.92) {
+      node.currentTime = entry.seconds
+      setResumedAt(entry.seconds)
+    }
+  }, [item.id])
+
+  // Click-to-play UX: track paused state for the overlay; tap the video to toggle.
+  const [paused, setPaused] = useState(true)
+  const togglePlay = useCallback(() => {
+    const node = videoRef.current
+    if (!node) return
+    if (node.paused) void node.play().catch(() => {})
+    else node.pause()
+  }, [])
+  const handlePlayEvent = useCallback(() => {
+    setPaused(false)
+    handleReady()
+  }, [handleReady])
+  const handlePauseEvent = useCallback(() => {
+    setPaused(true)
+    saveProgressNow()
+  }, [saveProgressNow])
+
   const captureFrame = useCallback(async () => {
     const node = videoRef.current
     if (!node || !node.videoWidth || !node.videoHeight) {
@@ -265,16 +299,31 @@ function VideoPlayer({ item }: { item: MediaItem }) {
         onLoadedData={handleReady}
         onCanPlay={handleReady}
         onPlaying={handleReady}
+        onPlay={handlePlayEvent}
+        onLoadedMetadata={handleLoadedMetadata}
         onWaiting={handleBuffering}
         onStalled={handleBuffering}
         onTimeUpdate={saveProgress}
-        onPause={saveProgressNow}
-        onEnded={saveProgressNow}
+        onPause={handlePauseEvent}
+        onEnded={handlePauseEvent}
+        onClick={togglePlay}
         onError={recover}
         className="max-h-[62dvh] min-h-56 w-full object-contain"
       >
         Your browser does not support video playback.
       </video>
+      {paused && (
+        <button
+          type="button"
+          onClick={togglePlay}
+          className="absolute inset-0 grid place-items-center bg-black/20"
+          aria-label="Play video"
+        >
+          <span className="grid h-14 w-14 place-items-center rounded-full bg-canvas/85">
+            <Play size={22} strokeWidth={1.75} className="ml-1 text-ink" fill="currentColor" />
+          </span>
+        </button>
+      )}
       <button
         type="button"
         onClick={captureFrame}
@@ -288,6 +337,11 @@ function VideoPlayer({ item }: { item: MediaItem }) {
       {(recovering || index > 0) && (
         <div className="pointer-events-none absolute left-3 top-3 rounded-sm bg-canvas/85 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-ink">
           {recovering ? 'Finding another stream' : `Fallback ${index + 1} connected`}
+        </div>
+      )}
+      {resumedAt !== null && (
+        <div className="pointer-events-none absolute bottom-3 left-3 rounded-sm bg-canvas/85 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-ink">
+          Resumed at {Math.floor(resumedAt / 60)}:{String(Math.floor(resumedAt % 60)).padStart(2, '0')}
         </div>
       )}
     </div>
@@ -314,6 +368,9 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
   const addRecentlyViewed = useAppStore((state) => state.addRecentlyViewed)
   const recordFeedback = useAppStore((state) => state.recordDiscoveryFeedback)
   const addToast = useAppStore((state) => state.addToast)
+  const { collections, create: createCollection, addItem, removeItem } = useCollections()
+  const [collectOpen, setCollectOpen] = useState(false)
+  const [collectDraft, setCollectDraft] = useState('')
 
   const followId = item ? creatorFollowId(item.creator) : ''
   const liked = item ? Boolean(likeCache[item.id] ?? item.isLiked) : false
@@ -570,6 +627,79 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                   <Share2 size={14} strokeWidth={1.75} aria-hidden="true" />
                   Share
                 </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setCollectOpen((value) => !value)}
+                    className="btn-secondary"
+                    aria-expanded={collectOpen}
+                    aria-haspopup="dialog"
+                  >
+                    <FolderPlus size={14} strokeWidth={1.75} aria-hidden="true" />
+                    Collect
+                  </button>
+                  {collectOpen && (
+                    <>
+                      <button
+                        className="fixed inset-0 z-10 cursor-default bg-transparent"
+                        onClick={() => setCollectOpen(false)}
+                        aria-label="Close collections panel"
+                      />
+                      <div className="absolute left-0 top-full z-20 mt-1.5 w-64 rounded-md border border-line bg-elevated p-2 shadow-overlay" role="dialog" aria-label="Collections">
+                        {collections.length === 0 && (
+                          <p className="px-1.5 py-2 text-[12px] text-ink-3">No collections yet — create one below.</p>
+                        )}
+                        <ul className="max-h-44 overflow-y-auto">
+                          {collections.map((collection) => {
+                            const member = collection.itemIds.includes(item.id)
+                            return (
+                              <li key={collection.id}>
+                                <button
+                                  onClick={() => (member ? removeItem(collection.id, item.id) : addItem(collection.id, item.id))}
+                                  className="flex w-full items-center gap-2 rounded px-1.5 py-2 text-left text-[13px] text-ink hover:bg-sunken"
+                                  aria-pressed={member}
+                                >
+                                  <span className={cn('grid h-4 w-4 shrink-0 place-items-center rounded-sm border', member ? 'border-heat bg-heat text-canvas' : 'border-line-strong text-transparent')}>
+                                    <Check size={11} strokeWidth={2.5} aria-hidden="true" />
+                                  </span>
+                                  <span className="min-w-0 flex-1 truncate">{collection.name}</span>
+                                  <span className="font-mono text-[9px] text-ink-3">{collection.itemIds.length}</span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                        <div className="mt-1.5 flex items-center gap-1.5 border-t border-line pt-1.5">
+                          <input
+                            value={collectDraft}
+                            onChange={(event) => setCollectDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' && collectDraft.trim()) {
+                                const created = createCollection(collectDraft)
+                                addItem(created.id, item.id)
+                                setCollectDraft('')
+                              }
+                            }}
+                            placeholder="New collection"
+                            aria-label="New collection name"
+                            className="h-8 min-w-0 flex-1 rounded-md border border-line bg-transparent px-2 text-[12px] text-ink outline-none placeholder:text-ink-3 focus:border-line-strong"
+                          />
+                          <button
+                            onClick={() => {
+                              if (!collectDraft.trim()) return
+                              const created = createCollection(collectDraft)
+                              addItem(created.id, item.id)
+                              setCollectDraft('')
+                            }}
+                            disabled={!collectDraft.trim()}
+                            className="btn-secondary min-h-8 px-2.5 text-xs"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
 
               {/* Why this appeared */}

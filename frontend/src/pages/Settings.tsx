@@ -18,6 +18,8 @@ import {
 } from 'lucide-react'
 import { useAppStore, type FontSize, type GridDensity, type Theme, type VideoQuality } from '@/store'
 import type { DiscoveryMode } from '@/lib/discovery'
+import { clearPrivateMediaData } from '@/lib/collections'
+import { getSessionVitals } from '@/lib/vitals'
 import { cn } from '@/lib/utils'
 
 function Section({
@@ -141,6 +143,8 @@ export default function Settings() {
 
   const queryClient = useQueryClient()
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  // Snapshot on mount: Settings is a lazy route, so each visit re-reads the session.
+  const [sessionVitals] = useState(() => getSessionVitals())
 
   const stats = useMemo(
     () => ({
@@ -160,6 +164,11 @@ export default function Settings() {
   const clearSearchHistory = () => {
     setSearchQuery('')
     addToast({ type: 'success', title: 'Search history cleared' })
+  }
+
+  const clearRecommendations = () => {
+    clearPrivateMediaData()
+    addToast({ type: 'success', title: 'Recommendations & watch progress cleared', message: 'Collections and resume points were removed from this device.' })
   }
 
   const exportData = () => {
@@ -332,6 +341,11 @@ export default function Settings() {
             <EyeOff size={14} strokeWidth={1.75} aria-hidden="true" /> Clear
           </button>
         </Row>
+        <Row label="Clear recommendations & progress" hint="Removes collections, watch positions, and recommendation signals from this device.">
+          <button onClick={clearRecommendations} className="btn-secondary min-h-10">
+            <RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" /> Clear
+          </button>
+        </Row>
         <Row label="Export my data" hint="Downloads every locally stored preference and activity record as JSON.">
           <button onClick={exportData} className="btn-secondary min-h-10">
             <Download size={14} strokeWidth={1.75} aria-hidden="true" /> Export
@@ -349,6 +363,27 @@ export default function Settings() {
             {confirmingDelete ? 'Confirm wipe' : 'Delete account'}
           </button>
         </Row>
+      </Section>
+
+      {/* Session performance — local readout of this device's own metrics */}
+      <Section
+        icon={Zap}
+        title="Session performance"
+        description="This device's own Web Vitals for the current session. Anonymous samples go to diagnostics; nothing identifies you."
+      >
+        <div className="grid grid-cols-3 gap-px px-4 py-3">
+          {([
+            ['LCP', sessionVitals.LCP !== undefined ? `${(sessionVitals.LCP / 1000).toFixed(2)}s` : '—', 'Largest paint'],
+            ['INP', sessionVitals.INP !== undefined ? `${sessionVitals.INP}ms` : '—', 'Interaction latency'],
+            ['CLS', sessionVitals.CLS !== undefined ? (sessionVitals.CLS / 1000).toFixed(3) : '—', 'Layout shift'],
+          ] as const).map(([label, value, hint]) => (
+            <div key={label} className="py-1.5">
+              <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">{label}</p>
+              <p className="mt-0.5 font-mono text-sm text-ink">{value}</p>
+              <p className="mt-0.5 text-[11px] text-ink-3">{hint}</p>
+            </div>
+          ))}
+        </div>
       </Section>
 
       {/* Keyboard shortcuts — exactly what is implemented */}
