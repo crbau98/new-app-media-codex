@@ -1,6 +1,19 @@
 import type { VideoQuality } from '@/store'
 
-/** Keep provider fallback order stable while moving device-appropriate streams first. */
+function isProxiedPlaybackUrl(url: string): boolean {
+  try {
+    return new URL(url, 'https://media-codex.local').pathname === '/api/archiver-proxy'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Keep same-origin proxy candidates ahead of provider-direct URLs. Several
+ * provider CDNs return an HTML denial page when mobile Safari requests the
+ * video directly, so direct URLs are a final fallback rather than the next
+ * quality variant.
+ */
 export function orderPlaybackCandidates(
   candidates: string[],
   quality: VideoQuality,
@@ -12,10 +25,13 @@ export function orderPlaybackCandidates(
     : quality === '720p' || preferMobile
       ? ['mobile', 'sd', '720']
       : []
-  if (!tokens.length) return candidates
-
   return candidates
-    .map((url, index) => ({ url, index, match: tokens.some((token) => url.toLowerCase().includes(token)) ? 1 : 0 }))
-    .sort((a, b) => b.match - a.match || a.index - b.index)
+    .map((url, index) => ({
+      url,
+      index,
+      proxied: isProxiedPlaybackUrl(url) ? 1 : 0,
+      qualityMatch: tokens.some((token) => url.toLowerCase().includes(token)) ? 1 : 0,
+    }))
+    .sort((a, b) => b.proxied - a.proxied || b.qualityMatch - a.qualityMatch || a.index - b.index)
     .map((entry) => entry.url)
 }
