@@ -6,7 +6,7 @@
  * This file is the canonical, self-contained implementation (the repo-root
  * /api copy was removed — the Vercel project's root is frontend/).
  */
-import { normalizeMediaRange, partialContentLength } from "./_lib/range.js"
+import { MAX_MEDIA_RANGE_BYTES, normalizeMediaRange, partialContentLength } from "./_lib/range.js"
 
 export const config = { runtime: "edge" }
 
@@ -170,8 +170,9 @@ export default async function handler(req: Request): Promise<Response> {
   // can leave the media element on a black frame while waiting for the partial
   // response boundary, so provide the exact length already declared by
   // Content-Range when the payload is not content-encoded.
+  let partialLength: number | null = null
   if (upstream.status === 206 && !upstream.headers.get("content-encoding")) {
-    const partialLength = partialContentLength(upstream.headers.get("content-range"))
+    partialLength = partialContentLength(upstream.headers.get("content-range"))
     if (partialLength !== null) out.set("Content-Length", String(partialLength))
   }
   out.set("X-Content-Type-Options", "nosniff")
@@ -189,7 +190,27 @@ export default async function handler(req: Request): Promise<Response> {
     out.set("Cache-Control", "no-store")
   }
 
-  return new Response(upstream.body, {
+  let responseBody: BodyInit | null = req.method === "HEAD" ? null : upstream.body
+  // Vercel may remove Content-Length from a streamed Edge response. Buffering
+  // only the already-bounded partial chunk preserves the exact length mobile
+  // Safari needs without buffering an entire source video.
+  if (
+    req.method !== "HEAD"
+    && partialLength !== null
+    && partialLength <= MAX_MEDIA_RANGE_BYTES
+    && !upstream.headers.get("content-length")
+  ) {
+    try {
+      const buffered = await upstream.arrayBuffer()
+      if (buffered.byteLength !== partialLength) return jsonError("incomplete_partial_content", 502)
+      responseBody = buffered
+      out.set("Content-Length", String(buffered.byteLength))
+    } catch {
+      return jsonError("upstream_body_failed", 502)
+    }
+  }
+
+  return new Response(responseBody, {
     status: upstream.status,
     statusText: upstream.statusText,
     headers: out,
