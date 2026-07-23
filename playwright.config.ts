@@ -27,6 +27,14 @@ export default defineConfig({
       name: 'mobile-chromium',
       use: { ...devices['Pixel 7'] },
     },
+    {
+      name: 'mobile-webkit-portrait',
+      use: { ...devices['iPhone 13'] },
+    },
+    {
+      name: 'mobile-webkit-landscape',
+      use: { ...devices['iPhone 13 landscape'] },
+    },
   ],
   webServer: {
     command: 'cd frontend && npm run build && cd .. && uvicorn app.main:app --host 0.0.0.0 --port 8000',
