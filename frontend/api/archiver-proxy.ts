@@ -6,7 +6,7 @@
  * This file is the canonical, self-contained implementation (the repo-root
  * /api copy was removed — the Vercel project's root is frontend/).
  */
-import { normalizeMediaRange } from "./_lib/range.js"
+import { normalizeMediaRange, partialContentLength } from "./_lib/range.js"
 
 export const config = { runtime: "edge" }
 
@@ -165,6 +165,14 @@ export default async function handler(req: Request): Promise<Response> {
     // Do not advertise byte ranges when the provider ignored Range and sent a
     // full 200 body; otherwise browsers can wait on seeks that will never satisfy.
     out.delete("Accept-Ranges")
+  }
+  // Some provider responses omit Content-Length on a valid 206. Mobile Safari
+  // can leave the media element on a black frame while waiting for the partial
+  // response boundary, so provide the exact length already declared by
+  // Content-Range when the payload is not content-encoded.
+  if (upstream.status === 206 && !upstream.headers.get("content-encoding")) {
+    const partialLength = partialContentLength(upstream.headers.get("content-range"))
+    if (partialLength !== null) out.set("Content-Length", String(partialLength))
   }
   out.set("X-Content-Type-Options", "nosniff")
   out.set("Referrer-Policy", "no-referrer")
