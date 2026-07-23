@@ -8,6 +8,7 @@ import {
   Check,
   ExternalLink,
   FolderPlus,
+  LoaderCircle,
   Play,
   Share2,
   ThumbsDown,
@@ -51,12 +52,6 @@ function legacyScreenshotId(id: string): string | null {
   return value.match(/^(?:shot|screenshot)-(\d+)$/)?.[1] || null
 }
 
-function isSameOriginMediaUrl(url: string): boolean {
-  if (url.startsWith('/')) return true
-  if (typeof window === 'undefined') return false
-  return url.startsWith(window.location.origin)
-}
-
 function VideoPlayer({ item }: { item: MediaItem }) {
   const autoplay = useAppStore((state) => state.autoplayVideos)
   const muteOnStart = useAppStore((state) => state.muteOnStart)
@@ -66,6 +61,7 @@ function VideoPlayer({ item }: { item: MediaItem }) {
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const watchdogRef = useRef<number | null>(null)
+  const frameCallbackRef = useRef<number | null>(null)
   const recoveringRef = useRef(false)
 
   const initialCandidates = useMemo(() => {
@@ -82,6 +78,9 @@ function VideoPlayer({ item }: { item: MediaItem }) {
   const [recovering, setRecovering] = useState(false)
   const [failed, setFailed] = useState(false)
   const [capturing, setCapturing] = useState(false)
+  const [paused, setPaused] = useState(true)
+  const [buffering, setBuffering] = useState(false)
+  const [frameReady, setFrameReady] = useState(false)
 
   const clearWatchdog = useCallback(() => {
     if (watchdogRef.current !== null) {
@@ -90,8 +89,20 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     }
   }, [])
 
+  const clearFrameCallback = useCallback(() => {
+    const node = videoRef.current
+    if (frameCallbackRef.current !== null && node?.cancelVideoFrameCallback) {
+      node.cancelVideoFrameCallback(frameCallbackRef.current)
+    }
+    frameCallbackRef.current = null
+  }, [])
+
   const recover = useCallback(async () => {
     clearWatchdog()
+    clearFrameCallback()
+    setFrameReady(false)
+    setBuffering(false)
+    setPaused(true)
     if (index + 1 < candidates.length) {
       setIndex((value) => value + 1)
       return
@@ -119,7 +130,7 @@ function VideoPlayer({ item }: { item: MediaItem }) {
       recoveringRef.current = false
       setRecovering(false)
     }
-  }, [candidates.length, clearWatchdog, index, item.id])
+  }, [candidates.length, clearFrameCallback, clearWatchdog, index, item.id])
 
   const armWatchdog = useCallback((timeoutMs: number) => {
     clearWatchdog()
@@ -134,13 +145,23 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     setIndex(0)
     setFailed(false)
     setRecovering(false)
+    setPaused(true)
+    setBuffering(false)
+    setFrameReady(false)
   }, [initialCandidates])
 
-  useEffect(() => clearWatchdog, [clearWatchdog])
+  useEffect(() => () => {
+    clearWatchdog()
+    clearFrameCallback()
+  }, [clearFrameCallback, clearWatchdog])
 
   useEffect(() => {
     if (failed || !candidates[index]) return undefined
     const node = videoRef.current
+    clearFrameCallback()
+    setFrameReady(false)
+    setBuffering(true)
+    setPaused(true)
     armWatchdog(12000)
     node?.load()
     // Opening the sheet is an explicit play intent. The autoPlay attribute can
@@ -148,19 +169,37 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     // a rejection (e.g. unmuted autoplay policy) just leaves the paused
     // click-to-play overlay visible.
     if (autoplay) void node?.play().catch(() => {})
-    return clearWatchdog
-  }, [armWatchdog, autoplay, candidates, clearWatchdog, failed, index])
+    return () => {
+      clearWatchdog()
+      clearFrameCallback()
+    }
+  }, [armWatchdog, autoplay, candidates, clearFrameCallback, clearWatchdog, failed, index])
 
   const handleUsable = useCallback(() => {
     setFailed(false)
   }, [])
 
   const handlePlaying = useCallback(() => {
-    clearWatchdog()
     setFailed(false)
-  }, [clearWatchdog])
+    setPaused(false)
+    setBuffering(false)
+    const node = videoRef.current
+    if (node?.requestVideoFrameCallback) {
+      clearFrameCallback()
+      armWatchdog(7000)
+      frameCallbackRef.current = node.requestVideoFrameCallback(() => {
+        frameCallbackRef.current = null
+        setFrameReady(true)
+        clearWatchdog()
+      })
+      return
+    }
+    setFrameReady(true)
+    clearWatchdog()
+  }, [armWatchdog, clearFrameCallback, clearWatchdog])
 
   const handleBuffering = useCallback(() => {
+    setBuffering(true)
     armWatchdog(9000)
   }, [armWatchdog])
 
@@ -195,8 +234,17 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     }
   }, [item.id])
 
-  // Click-to-play UX: track paused state for the overlay; tap the video to toggle.
-  const [paused, setPaused] = useState(true)
+  const handleTimeUpdate = useCallback(() => {
+    const node = videoRef.current
+    if (node && node.currentTime > 0 && !frameReady) {
+      setFrameReady(true)
+      setBuffering(false)
+      clearWatchdog()
+    }
+    saveProgress()
+  }, [clearWatchdog, frameReady, saveProgress])
+
+  // Click-to-play UX: keep the poster until the browser paints a real frame.
   const requestPlay = useCallback(async (recoverOnFailure: boolean) => {
     const node = videoRef.current
     if (!node) return
@@ -218,11 +266,9 @@ function VideoPlayer({ item }: { item: MediaItem }) {
     if (node.paused) void requestPlay(true)
     else node.pause()
   }, [requestPlay])
-  const handlePlayEvent = useCallback(() => {
-    setPaused(false)
-  }, [])
   const handlePauseEvent = useCallback(() => {
     setPaused(true)
+    setBuffering(false)
     saveProgressNow()
   }, [saveProgressNow])
 
@@ -293,10 +339,8 @@ function VideoPlayer({ item }: { item: MediaItem }) {
   }
 
   const currentUrl = candidates[index]
-  const sameOrigin = isSameOriginMediaUrl(currentUrl)
-
   return (
-    <div className="relative overflow-hidden rounded-lg bg-black">
+    <div className="relative -mx-3 overflow-hidden bg-black sm:mx-0 sm:rounded-lg">
       <video
         key={currentUrl}
         ref={videoRef}
@@ -304,27 +348,34 @@ function VideoPlayer({ item }: { item: MediaItem }) {
         poster={item.thumbnail}
         controls
         playsInline
-        preload="metadata"
+        preload="auto"
         autoPlay={autoplay}
         muted={muteOnStart}
         disablePictureInPicture={!pictureInPicture}
-        crossOrigin={sameOrigin ? undefined : 'anonymous'}
         onLoadedData={handleUsable}
         onCanPlay={handleUsable}
         onPlaying={handlePlaying}
-        onPlay={handlePlayEvent}
         onLoadedMetadata={handleLoadedMetadata}
         onWaiting={handleBuffering}
         onStalled={handleBuffering}
-        onTimeUpdate={saveProgress}
+        onTimeUpdate={handleTimeUpdate}
         onPause={handlePauseEvent}
         onEnded={handlePauseEvent}
         onClick={togglePlay}
         onError={recover}
-        className="aspect-video max-h-[58dvh] min-h-0 w-full object-contain sm:min-h-56 md:max-h-[62dvh]"
+        className="aspect-video max-h-[52dvh] min-h-0 w-full object-contain landscape:max-h-[72dvh] sm:min-h-56 md:max-h-[62dvh]"
       >
         Your browser does not support video playback.
       </video>
+      {!frameReady && (
+        <MediaImage
+          sources={[item.thumbnail]}
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full bg-black object-contain"
+          skeletonClassName="pointer-events-none absolute inset-0"
+          loading="eager"
+        />
+      )}
       {paused && (
         <button
           type="button"
@@ -337,15 +388,27 @@ function VideoPlayer({ item }: { item: MediaItem }) {
           </span>
         </button>
       )}
+      {buffering && !paused && (
+        <div
+          className="pointer-events-none absolute inset-0 grid place-items-center bg-black/15"
+          role="status"
+          aria-label="Loading video"
+        >
+          <span className="inline-flex min-h-10 items-center gap-2 rounded-full bg-canvas/90 px-3 text-xs font-medium text-ink">
+            <LoaderCircle size={16} className="animate-spin" aria-hidden="true" />
+            Loading video
+          </span>
+        </div>
+      )}
       <button
         type="button"
         onClick={captureFrame}
-        disabled={capturing}
+        disabled={capturing || !frameReady}
         className="absolute right-3 top-3 inline-flex min-h-9 items-center gap-1.5 rounded-sm bg-canvas/85 px-2.5 font-mono text-[10px] uppercase tracking-[0.08em] text-ink transition-colors hover:bg-canvas disabled:opacity-60"
         aria-label="Capture current video frame"
       >
         <Camera size={13} strokeWidth={1.75} aria-hidden="true" />
-        {capturing ? 'Saving' : 'Capture'}
+        <span className="hidden sm:inline">{capturing ? 'Saving' : 'Capture'}</span>
       </button>
       {(recovering || index > 0) && (
         <div className="pointer-events-none absolute left-3 top-3 rounded-sm bg-canvas/85 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-ink">

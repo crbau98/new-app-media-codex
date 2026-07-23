@@ -12,6 +12,18 @@ test('click video and verify player opens', async ({ page }) => {
   await expect(dialog.getByRole('heading', { name: 'Studio signal' })).toBeVisible()
   const video = dialog.locator('video')
   await expect(video).toBeVisible()
+  const playVideo = dialog.getByRole('button', { name: 'Play video' })
+  if (await playVideo.isVisible()) await playVideo.click()
+  await expect.poll(async () => video.evaluate((node) => ({
+    currentTime: node.currentTime,
+    readyState: node.readyState,
+    videoWidth: node.videoWidth,
+  }))).toMatchObject({
+    readyState: 4,
+    videoWidth: 320,
+  })
+  await expect.poll(async () => video.evaluate((node) => node.currentTime)).toBeGreaterThan(0)
+  await expect(dialog.getByRole('status', { name: 'Loading video' })).toBeHidden()
 
   const viewport = page.viewportSize()
   const dialogBox = await dialog.boundingBox()
@@ -21,6 +33,7 @@ test('click video and verify player opens', async ({ page }) => {
   expect(videoBox).not.toBeNull()
   expect(dialogBox!.width).toBeLessThanOrEqual(viewport!.width)
   expect(videoBox!.width).toBeLessThanOrEqual(viewport!.width)
+  expect(videoBox!.height).toBeLessThanOrEqual(viewport!.height)
 
   if (viewport!.width < 768) {
     expect(dialogBox!.width).toBeGreaterThanOrEqual(viewport!.width * 0.9)

@@ -1,6 +1,9 @@
 import type { Page } from '@playwright/test'
+import { TINY_VIDEO_BASE64 } from './tiny-video'
 
 const poster = 'https://fixture.invalid/poster.svg'
+const proxyHd = '/api/archiver-proxy?url=https%3A%2F%2Fmedia.redgifs.com%2Ffixture-hd.mp4'
+const proxyMobile = '/api/archiver-proxy?url=https%3A%2F%2Fmedia.redgifs.com%2Ffixture-mobile.mp4'
 
 export async function installAppFixture(page: Page) {
   await page.addInitScript(() => localStorage.setItem('media-codex-adult-verified', '1'))
@@ -9,6 +12,18 @@ export async function installAppFixture(page: Page) {
       status: 200,
       contentType: 'image/svg+xml',
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500"><rect width="400" height="500" fill="#181720"/><circle cx="200" cy="210" r="80" fill="#e879a9" opacity=".35"/></svg>',
+    })
+  })
+  await page.route('**/api/archiver-proxy*', async (route) => {
+    const body = Buffer.from(TINY_VIDEO_BASE64, 'base64')
+    await route.fulfill({
+      status: 200,
+      contentType: 'video/mp4',
+      headers: {
+        'Accept-Ranges': 'bytes',
+        'Content-Length': String(body.byteLength),
+      },
+      body,
     })
   })
   await page.route('**/api/live-media*', async (route) => {
@@ -20,7 +35,7 @@ export async function installAppFixture(page: Page) {
           id: 'rg-signal-studio', title: 'Studio signal', thumbnail: poster, source: 'Public test source',
           duration: '0:12', isVideo: true, category: 'Featured', creator: 'Signal Studio', tags: ['Gay', 'Studio'],
           rating: 4.8, createdAt: new Date().toISOString(), views: 4200, likes: 320, comments: 12,
-          mediaUrl: 'https://media.redgifs.com/test.mp4', streamCandidates: ['https://media.redgifs.com/test.mp4'],
+          mediaUrl: proxyHd, streamCandidates: [proxyHd, proxyMobile],
           pageUrl: 'https://example.com/source', isNew: true, isTrending: true, curationScore: 88,
           curationReasons: ['Strong public engagement'],
         }],

@@ -76,7 +76,7 @@ jobs:
           cd frontend
           npm ci --legacy-peer-deps
       - name: Install Playwright browsers
-        run: frontend/node_modules/.bin/playwright install --with-deps chromium
+        run: frontend/node_modules/.bin/playwright install --with-deps chromium webkit
       - name: Run Playwright tests
         run: frontend/node_modules/.bin/playwright test --config=playwright.config.ts
         env:
