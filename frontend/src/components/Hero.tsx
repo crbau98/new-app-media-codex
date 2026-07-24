@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { ExternalLink, Play, RefreshCw } from 'lucide-react'
 import type { MediaItem } from '@/lib/types'
 import { formatMetric, relativeTime } from '@/lib/discovery'
@@ -17,21 +17,25 @@ function CascadeTitle({ text, slideKey }: { text: string; slideKey: string }) {
   const words = text.split(/\s+/).filter(Boolean)
   let charIndex = 0
   return (
-    <h2 key={slideKey} aria-label={text} className="display-title mt-3 max-w-3xl text-4xl text-ink md:text-6xl">
+    <h2 key={slideKey} aria-label={text} className="display-title mt-3 max-w-3xl text-3xl text-ink [overflow-wrap:anywhere] sm:text-4xl md:text-6xl">
       {words.map((word, wordIndex) => (
-        <span key={wordIndex} aria-hidden="true" className="inline-block whitespace-nowrap">
-          {[...word].map((char) => {
-            // Cap the stagger so long titles don't delay the tail excessively.
-            const index = Math.min(charIndex, 36)
-            charIndex += 1
-            return (
-              <span key={charIndex} className="hero-char" style={{ '--char-index': index } as CSSProperties}>
-                {char}
-              </span>
-            )
-          })}
-          {wordIndex < words.length - 1 ? '\u00A0' : null}
-        </span>
+        // max-w-full + overflow-wrap keeps words whole when they fit, but lets
+        // a pathological unbroken token wrap instead of clipping off-screen.
+        <Fragment key={wordIndex}>
+          <span aria-hidden="true" className="inline-block max-w-full [overflow-wrap:anywhere]">
+            {[...word].map((char) => {
+              // Cap the stagger so long titles don't delay the tail excessively.
+              const index = Math.min(charIndex, 36)
+              charIndex += 1
+              return (
+                <span key={charIndex} className="hero-char" style={{ '--char-index': index } as CSSProperties}>
+                  {char}
+                </span>
+              )
+            })}
+          </span>
+          {wordIndex < words.length - 1 ? ' ' : null}
+        </Fragment>
       ))}
     </h2>
   )
