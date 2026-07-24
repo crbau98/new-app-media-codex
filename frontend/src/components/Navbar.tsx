@@ -56,7 +56,13 @@ export default function Navbar({ onClose }: NavbarProps) {
 
   return (
     <nav
-      className={cn('sidebar-shell flex h-screen flex-col sticky top-0 z-50', collapsed && 'collapsed')}
+      className={cn(
+        'sidebar-shell flex flex-col sticky top-0 z-50',
+        // In the mobile drawer the container already reserves the safe-area
+        // insets, so the nav fills it; standalone it owns the full viewport.
+        onClose ? 'h-full' : 'h-dvh',
+        collapsed && 'collapsed'
+      )}
       aria-label="Main navigation"
     >
       {/* Wordmark */}
