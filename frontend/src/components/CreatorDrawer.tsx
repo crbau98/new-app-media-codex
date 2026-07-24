@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Check, ExternalLink, Radar, Sparkles, UserPlus, X } from 'lucide-react'
 import type { Creator, MediaItem } from '@/lib/types'
@@ -101,7 +102,9 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
 
   useFocusTrap(panelRef, Boolean(creator))
 
-  return (
+  // Portal to <body>: transformed ancestors (page enter animations) would
+  // otherwise trap this fixed overlay inside the page layout on mobile.
+  return createPortal(
     <AnimatePresence>
       {creator && (
         <div className="fixed inset-0 z-[150] flex justify-end">
@@ -121,7 +124,7 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.25, ease: easeOut }}
-            className="relative z-10 flex h-full w-full max-w-[480px] flex-col overflow-y-auto border-l border-line bg-canvas shadow-overlay outline-none"
+            className="relative z-10 flex h-full w-full max-w-[480px] flex-col overflow-y-auto overscroll-contain border-l border-line bg-canvas shadow-overlay outline-none"
             role="dialog"
             aria-modal="true"
             aria-label={`Creator ${creator.name}`}
@@ -139,14 +142,14 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
               <div className="absolute inset-0 bg-gradient-to-t from-canvas to-transparent" aria-hidden="true" />
               <button
                 onClick={onClose}
-                className="absolute right-3 top-3 grid h-10 w-10 place-items-center rounded-md bg-canvas/70 text-ink hover:bg-canvas"
+                className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] grid h-10 w-10 place-items-center rounded-md bg-canvas/70 text-ink hover:bg-canvas"
                 aria-label="Close creator profile"
               >
                 <X size={16} strokeWidth={1.75} />
               </button>
             </div>
 
-            <div className="px-5 pb-10">
+            <div className="px-5 pb-[max(2.5rem,calc(env(safe-area-inset-bottom)+1.5rem))]">
               <div className="-mt-8 flex items-end justify-between gap-3">
                 <AvatarTile creator={creator} size="lg" />
                 {creator.aiSuggested && (
@@ -309,6 +312,7 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
           />
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }
