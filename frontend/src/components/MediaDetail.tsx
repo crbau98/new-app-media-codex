@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   ArrowLeft,
@@ -348,7 +349,9 @@ function VideoPlayer({ item }: { item: MediaItem }) {
         poster={item.thumbnail}
         controls
         playsInline
-        preload="auto"
+        // Full preload is a desktop luxury: on cellular it burns data for
+        // every opened sheet. Metadata is enough to show the first frame.
+        preload={autoplay ? 'auto' : 'metadata'}
         autoPlay={autoplay}
         muted={muteOnStart}
         disablePictureInPicture={!pictureInPicture}
@@ -583,7 +586,10 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
 
   useFocusTrap(panelRef, open)
 
-  return (
+  // Portal to <body>: pages use transform-based enter animations, and any
+  // transformed ancestor becomes the containing block for position:fixed —
+  // on phones that pins the sheet to the page content instead of the screen.
+  return createPortal(
     <AnimatePresence>
       {open && item && (
         <div className="fixed inset-0 z-[200] flex items-end justify-end md:items-stretch">
@@ -606,7 +612,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.25, ease: easeOut }}
-            className="relative z-10 flex h-[100dvh] w-full flex-col overflow-hidden border-line bg-elevated shadow-overlay outline-none md:h-full md:max-w-[480px] md:border-l"
+            className="relative z-10 flex h-dvh w-full flex-col overflow-hidden border-line bg-elevated shadow-overlay outline-none md:h-full md:max-w-[480px] md:border-l"
           >
             {/* Sheet header */}
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-4 sm:pt-3">
@@ -861,6 +867,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }
