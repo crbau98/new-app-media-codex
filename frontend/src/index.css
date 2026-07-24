@@ -482,3 +482,26 @@
   .tap-highlight-none { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   .content-auto { content-visibility: auto; contain-intrinsic-size: auto 720px; }
 }
+
+/* ────────────────────────────────────────────────
+   iPhone / touch refinements.
+   Unlayered on purpose: these rules must beat
+   same-specificity Tailwind utilities in the cascade.
+   ──────────────────────────────────────────────── */
+
+/* Dynamic viewport units with a vh fallback for iOS < 15.4.
+   100dvh tracks Safari's collapsing toolbar, so full-height
+   surfaces (drawers, sheets, the app shell) never jump or crop. */
+.h-dvh { height: 100vh; height: 100dvh; }
+.min-h-dvh { min-height: 100vh; min-height: 100dvh; }
+
+/* iOS Safari zooms the whole page when a focused text field is set
+   below 16px, then never zooms back out. Force 16px on touch devices
+   so typing never disturbs the layout. Checkboxes/radios unaffected. */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='button']):not([type='submit']),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
