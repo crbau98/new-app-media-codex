@@ -65,7 +65,7 @@ export default function Layout({ children }: LayoutProps) {
   }, [mobileSidebarOpen])
 
   return (
-    <div className="min-h-[100dvh] flex shell-bg">
+    <div className="min-h-dvh flex shell-bg">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[500] focus:bg-heat focus:text-canvas focus:px-3 focus:py-2 focus:rounded-md focus:font-mono focus:text-xs"
@@ -79,7 +79,7 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Tablet collapsed rail */}
-      <div className="hidden md:block lg:hidden shrink-0 h-screen sticky top-0 z-50 sidebar-shell collapsed">
+      <div className="hidden md:block lg:hidden shrink-0 h-dvh sticky top-0 z-50 sidebar-shell collapsed">
         <Navbar />
       </div>
 
@@ -94,6 +94,7 @@ export default function Layout({ children }: LayoutProps) {
       <div
         className={cn(
           'fixed top-0 left-0 bottom-0 z-[100] md:hidden transition-transform duration-300 ease-out-expo',
+          'pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]',
           mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
         role="dialog"
@@ -123,7 +124,7 @@ export default function Layout({ children }: LayoutProps) {
           id="main-content"
           className="flex-1 pt-[calc(3.5rem+env(safe-area-inset-top))]"
         >
-          <div className="section-shell pb-24 md:pb-8">{children}</div>
+          <div className="section-shell pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:pb-8">{children}</div>
         </main>
 
         <Footer />
