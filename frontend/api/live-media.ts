@@ -667,6 +667,12 @@ export default async function handler(req: Request): Promise<Response> {
     const items = selectQualityDiverse(ranked, count)
     const similarities = creatorSimilarities(ranked)
     const creatorPool = mergeCreatorLeads(buildCreators(ranked.slice(0, 240), similarities), additional.leads)
+    const gatewayAuthToken = (
+      process.env.AI_GATEWAY_API_KEY
+      || req.headers.get('x-vercel-oidc-token')
+      || process.env.VERCEL_OIDC_TOKEN
+      || ''
+    ).trim()
     const aiResult = await rankSimilarCreatorsWithAI(creatorPool.map((creator) => ({
       id: creator.id,
       name: creator.name,
@@ -676,7 +682,7 @@ export default async function handler(req: Request): Promise<Response> {
       mediaCount: creator.mediaCount,
       publicViews: creator.viewCount,
       deterministicScore: creator.similarityScore || creator.discoveryConfidence || 0,
-    })), useAI)
+    })), useAI, watchlist, gatewayAuthToken)
     const performers = creatorPool
       .map((creator) => {
         const ai = aiResult.suggestions.get(creator.id)
@@ -684,7 +690,7 @@ export default async function handler(req: Request): Promise<Response> {
           ...creator,
           isSimilar: true,
           similarityScore: ai.score,
-          similarityMethod: 'ai',
+          similarityMethod: aiResult.state === 'model' ? 'ai' : 'metadata',
           discoveryReasons: ai.reasons,
           matchReasons: [...new Set([...(creator.matchReasons || creator.discoveryReasons || []), ...ai.reasons])].slice(0, 5),
           aiSuggested: aiResult.state === 'model',

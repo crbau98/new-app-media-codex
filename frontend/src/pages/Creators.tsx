@@ -110,7 +110,9 @@ export default function Creators() {
       const aiCount = payload.aiDiscovery.suggestedCreators
       const aiNote = payload.aiDiscovery.state === 'ok'
         ? `AI: ${aiCount} suggestion${aiCount === 1 ? '' : 's'}`
-        : `AI: ${payload.aiDiscovery.state}${payload.aiDiscovery.detail ? ` — ${payload.aiDiscovery.detail}` : ''}`
+        : payload.aiDiscovery.state === 'fallback'
+          ? `${aiCount} metadata suggestion${aiCount === 1 ? '' : 's'} · AI reranking will retry automatically`
+          : 'Metadata matching active'
       const summary = `${newCount} new creator${newCount === 1 ? '' : 's'} found · ${matched} matched your radar · ${aiNote}`
       setScanBanner(summary)
       addToast({ type: 'success', title: 'Scan complete', message: summary })
