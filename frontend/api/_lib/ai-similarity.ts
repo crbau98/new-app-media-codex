@@ -99,6 +99,45 @@ function truncate(value: string, max = 180): string {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`
 }
 
+/**
+ * Keep discovery useful when a model provider is unavailable. These scores are
+ * intentionally explainable and use only the public metadata already collected
+ * by the scanner. The model is an optional reranker, not a feature gate.
+ */
+export function rankCreatorMetadataFallback(
+  candidates: AiCreatorInput[],
+): Map<string, { score: number; reasons: string[] }> {
+  const ranked = candidates
+    .map((candidate) => {
+      const deterministic = Math.max(0, Math.min(100, candidate.deterministicScore || 0))
+      const mediaSignal = Math.min(10, Math.log2(Math.max(1, candidate.mediaCount) + 1) * 3)
+      const viewSignal = Math.min(8, Math.log10(Math.max(1, candidate.publicViews) + 1) * 1.5)
+      const metadataSignal = Math.min(6, candidate.tags.filter(Boolean).length)
+      const score = Math.round(Math.max(60, Math.min(88, 55 + deterministic * 0.25 + mediaSignal + viewSignal + metadataSignal)))
+      const reasons = [
+        deterministic >= 20 ? 'Strong public metadata similarity' : '',
+        candidate.tags.length ? `Public topic signals: ${candidate.tags.slice(0, 3).join(', ')}` : '',
+        candidate.mediaCount > 0 ? `${candidate.mediaCount} recent public media result${candidate.mediaCount === 1 ? '' : 's'}` : '',
+        candidate.publicViews > 0 ? 'Active public audience signal' : '',
+      ].filter(Boolean).slice(0, 3)
+      return {
+        candidate,
+        score,
+        reasons: reasons.length ? reasons : ['Discovered through connected public sources'],
+      }
+    })
+    .sort((a, b) => b.score - a.score
+      || b.candidate.deterministicScore - a.candidate.deterministicScore
+      || b.candidate.mediaCount - a.candidate.mediaCount
+      || b.candidate.publicViews - a.candidate.publicViews)
+    .slice(0, 12)
+
+  return new Map(ranked.map(({ candidate, score, reasons }) => [
+    candidate.id,
+    { score, reasons },
+  ]))
+}
+
 export async function rankSimilarCreatorsWithAI(
   creators: AiCreatorInput[],
   requested: boolean,
@@ -175,7 +214,9 @@ export async function rankSimilarCreatorsWithAI(
     error: truncate(message),
   })
   return {
-    model: 'metadata-tfidf-v1', state: 'fallback', suggestions: new Map(),
-    detail: 'AI reranking was temporarily unavailable; source discovery and metadata similarity completed normally.',
+    model: 'metadata-tfidf-v1',
+    state: 'fallback',
+    suggestions: rankCreatorMetadataFallback(candidates),
+    detail: 'Public-source discovery and explainable metadata ranking completed; model reranking was unavailable.',
   }
 }
