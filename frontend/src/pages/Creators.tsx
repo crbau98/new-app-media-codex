@@ -111,7 +111,7 @@ export default function Creators() {
       const aiNote = payload.aiDiscovery.state === 'ok'
         ? `AI: ${aiCount} suggestion${aiCount === 1 ? '' : 's'}`
         : payload.aiDiscovery.state === 'fallback'
-          ? 'Metadata matching active; AI reranking will retry automatically'
+          ? `${aiCount} metadata suggestion${aiCount === 1 ? '' : 's'} · AI reranking will retry automatically`
           : 'Metadata matching active'
       const summary = `${newCount} new creator${newCount === 1 ? '' : 's'} found · ${matched} matched your radar · ${aiNote}`
       setScanBanner(summary)
