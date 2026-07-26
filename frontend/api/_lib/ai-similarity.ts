@@ -1,4 +1,4 @@
-import { generateText, Output } from 'ai'
+import { createGateway, generateText, Output } from 'ai'
 import { z } from 'zod'
 
 export type AiCreatorInput = {
@@ -36,9 +36,47 @@ const MAX_RETRIES = 1
 
 const resultCache = new Map<string, { at: number; result: AiSimilarityResult }>()
 
+function canonicalCreator(value: string): string {
+  return value.trim().toLowerCase().replace(/^@/, '').replace(/[^a-z0-9_]+/g, '')
+}
+
+/**
+ * Preserve exact source matches as rich seeds, but also retain unmatched radar
+ * names. The latter lets AI discovery run while public providers are still
+ * locating an exact profile instead of reporting "not requested" forever.
+ */
+export function buildAiDiscoverySeeds(
+  creators: AiCreatorInput[],
+  requestedSeedNames: string[] = [],
+): AiCreatorInput[] {
+  const seeds = creators.filter((creator) => creator.watched)
+  const existing = new Set(seeds.flatMap((creator) => [
+    canonicalCreator(creator.id),
+    canonicalCreator(creator.name),
+  ]).filter(Boolean))
+  for (const rawName of requestedSeedNames) {
+    const name = rawName.trim().replace(/^@/, '').slice(0, 80)
+    const key = canonicalCreator(name)
+    if (!key || existing.has(key)) continue
+    existing.add(key)
+    seeds.push({
+      id: `radar-request-${key}`,
+      name,
+      platform: 'Radar request',
+      tags: [],
+      watched: true,
+      mediaCount: 0,
+      publicViews: 0,
+      deterministicScore: 0,
+    })
+  }
+  return seeds.slice(0, 12)
+}
+
 function cacheKey(seeds: AiCreatorInput[], candidates: AiCreatorInput[]): string {
   const compact = (creator: AiCreatorInput) => ({
     id: creator.id,
+    name: creator.name,
     platform: creator.platform,
     tags: [...creator.tags].sort(),
     watched: creator.watched,
@@ -64,8 +102,10 @@ function truncate(value: string, max = 180): string {
 export async function rankSimilarCreatorsWithAI(
   creators: AiCreatorInput[],
   requested: boolean,
+  requestedSeedNames: string[] = [],
+  gatewayAuthToken = '',
 ): Promise<AiSimilarityResult> {
-  const seeds = creators.filter((creator) => creator.watched)
+  const seeds = buildAiDiscoverySeeds(creators, requestedSeedNames)
   const candidates = creators.filter((creator) => !creator.watched).slice(0, 40)
   if (!requested || !seeds.length || !candidates.length) {
     return {
@@ -81,11 +121,14 @@ export async function rankSimilarCreatorsWithAI(
   }
 
   const model = (process.env.AI_DISCOVERY_MODEL || DEFAULT_MODEL).trim()
+  const modelProvider = gatewayAuthToken
+    ? createGateway({ apiKey: gatewayAuthToken })(model)
+    : model
   let lastError: unknown = null
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
     try {
       const { output } = await generateText({
-        model,
+        model: modelProvider,
         output: Output.object({ schema }),
         maxOutputTokens: 900,
         temperature: 0,
@@ -93,7 +136,7 @@ export async function rankSimilarCreatorsWithAI(
         providerOptions: { gateway: { tags: ['feature:creator-discovery', 'data:public-metadata'], user: 'creator-radar-public' } },
         prompt: [
           'Rank public creator accounts by metadata similarity to the watched accounts.',
-          'Use only supplied public text tags, platform, and engagement. Do not infer appearance, body, gender, sexuality, ethnicity, age, identity, or private traits.',
+          'Use only supplied public account names, text tags, platform, and engagement. Do not infer appearance, body, gender, sexuality, ethnicity, age, identity, or private traits.',
           'Return only candidate creatorId values. Prefer cross-source corroboration and specific shared tags. Scores are confidence in metadata similarity, not attractiveness.',
           `WATCHED=${JSON.stringify(seeds)}`,
           `CANDIDATES=${JSON.stringify(candidates)}`,
@@ -126,8 +169,13 @@ export async function rankSimilarCreatorsWithAI(
   }
 
   const message = lastError instanceof Error ? lastError.message : 'request failed'
+  console.warn('[ai-discovery] gateway reranking unavailable', {
+    model,
+    authentication: gatewayAuthToken ? 'vercel-oidc-or-api-key' : 'missing',
+    error: truncate(message),
+  })
   return {
     model: 'metadata-tfidf-v1', state: 'fallback', suggestions: new Map(),
-    detail: `AI Gateway unavailable; deterministic similarity remained active (${truncate(message)}).`,
+    detail: 'AI reranking was temporarily unavailable; source discovery and metadata similarity completed normally.',
   }
 }
