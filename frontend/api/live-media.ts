@@ -690,7 +690,7 @@ export default async function handler(req: Request): Promise<Response> {
           ...creator,
           isSimilar: true,
           similarityScore: ai.score,
-          similarityMethod: 'ai',
+          similarityMethod: aiResult.state === 'model' ? 'ai' : 'metadata',
           discoveryReasons: ai.reasons,
           matchReasons: [...new Set([...(creator.matchReasons || creator.discoveryReasons || []), ...ai.reasons])].slice(0, 5),
           aiSuggested: aiResult.state === 'model',
