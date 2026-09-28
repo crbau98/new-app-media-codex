@@ -51,6 +51,8 @@ export interface MediaItem {
   posterUrl?: string
   /** Sprite sheet of scrub thumbnails: url + grid geometry. */
   spriteUrl?: string
+  /** Short muted looping mp4 used for hover previews. */
+  previewUrl?: string
   spriteGrid?: { cols: number; rows: number; tileWidth: number; tileHeight: number; intervalSeconds: number }
   mimeType?: string
   codec?: string
