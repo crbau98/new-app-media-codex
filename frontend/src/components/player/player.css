@@ -1,0 +1,179 @@
+/* Media Codex player — supporting styles for things Tailwind utilities cannot express. */
+
+/* Ambient cinema glow: a blurred colour field behind the frame. --glow is written by useAmbientGlow. */
+.mc-glow {
+  position: absolute;
+  inset: -0.75rem;
+  z-index: 0;
+  border-radius: 2rem;
+  background-color: var(--glow, transparent);
+  filter: blur(46px) saturate(1.25);
+  opacity: 0.55;
+  transition: background-color 0.45s linear, opacity 0.4s ease;
+  pointer-events: none;
+  will-change: background-color;
+}
+
+.mc-player {
+  isolation: isolate;
+  contain: layout paint;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mc-player:fullscreen,
+.mc-player:-webkit-full-screen {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+  border-radius: 0 !important;
+}
+
+.mc-player[data-idle='true'] {
+  cursor: none;
+}
+
+/* Volume + generic range with a heat-coloured fill. */
+.mc-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  --fill: 100%;
+}
+.mc-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, rgb(var(--heat)) var(--fill), rgb(255 255 255 / 0.22) var(--fill));
+}
+.mc-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, rgb(var(--heat)) var(--fill), rgb(255 255 255 / 0.22) var(--fill));
+}
+.mc-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 13px;
+  width: 13px;
+  margin-top: -4.5px;
+  border-radius: 999px;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 0 0 3px rgb(var(--heat) / 0.35);
+}
+.mc-range::-moz-range-thumb {
+  height: 13px;
+  width: 13px;
+  border-radius: 999px;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 0 0 3px rgb(var(--heat) / 0.35);
+}
+
+/* Double-tap seek ripple. */
+@keyframes mc-ripple {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+.mc-ripple {
+  animation: mc-ripple 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Badges that fade themselves out without timers. */
+@keyframes mc-fade-out {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.mc-fade-out {
+  animation: mc-fade-out 4.2s ease forwards;
+}
+
+@keyframes mc-hud {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  12%,
+  70% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.mc-hud {
+  animation: mc-hud 0.9s ease forwards;
+}
+
+@keyframes mc-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mc-menu {
+  transform-origin: bottom right;
+  animation: mc-menu-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes mc-img-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+.mc-img-in {
+  animation: mc-img-in 0.35s ease-out;
+}
+
+/* Photo viewer surface: we own all pan/zoom gestures. */
+.mc-zoom-surface {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:root[data-reduce-motion='true'] .mc-img-in,
+:root[data-reduce-motion='true'] .mc-ripple,
+:root[data-reduce-motion='true'] .mc-hud,
+:root[data-reduce-motion='true'] .mc-menu {
+  animation-duration: 0.01ms;
+}
+:root[data-reduce-motion='true'] .mc-glow {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-glow,
+  .mc-controls {
+    transition: none !important;
+  }
+  .mc-ripple,
+  .mc-hud,
+  .mc-menu {
+    animation-duration: 0.01ms;
+  }
+}

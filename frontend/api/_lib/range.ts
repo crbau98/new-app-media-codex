@@ -39,3 +39,11 @@ export function normalizeMediaRange(value: string | null): string | null | false
   if (!Number.isSafeInteger(requestedEnd) || requestedEnd < start) return false
   return `bytes=${start}-${Math.min(requestedEnd, maximumEnd)}`
 }
+
+/**
+ * Content-Range value for a 416 response (RFC 9110 §14.4). `total` is the
+ * complete representation length when known, otherwise `*`.
+ */
+export function unsatisfiedRangeHeader(total?: number | null): string {
+  return typeof total === 'number' && Number.isSafeInteger(total) && total >= 0 ? `bytes */${total}` : 'bytes */*'
+}
