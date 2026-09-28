@@ -1605,6 +1605,55 @@ def _archiver_shard_candidates(target_url: str) -> list[str]:
     return out
 
 
+def _strip_www(host: str) -> str:
+    """Remove a leading ``www.`` label. (``str.lstrip("www.")`` would strip any
+    leading run of the characters w and ".", turning ``wx.com`` into ``x.com``
+    and letting look-alike hosts through the proxy allow-list.)"""
+    return host[4:] if host.startswith("www.") else host
+
+
+_PROXY_MAX_REDIRECTS = 5
+
+
+async def _assert_public_target(url: str, *, resolve_dns: bool = True) -> None:
+    """SSRF guard for server-side media fetches: refuse non-public targets
+    (literal private IPs, or hostnames that resolve to them)."""
+    from app.media_pipeline.netsafe import FetchError, UnsafeUrlError, resolve_public, validate_url
+
+    try:
+        safe = validate_url(url)
+        if resolve_dns:
+            try:
+                await asyncio.to_thread(resolve_public, safe.host, safe.port)
+            except FetchError:
+                pass  # unresolvable: let the real request fail with its own error
+    except UnsafeUrlError as exc:
+        raise HTTPException(403, f"Blocked media target ({exc.code})") from exc
+
+
+async def _guarded_send(client, url: str, headers: dict[str, str]):
+    """``client.send(GET, stream=True)`` that re-validates every redirect hop
+    against the SSRF policy instead of letting the HTTP client follow blindly."""
+    real_client = isinstance(client, httpx.AsyncClient)
+    current = url
+    for _hop in range(_PROXY_MAX_REDIRECTS + 1):
+        # Traffic through the archiver proxy resolves DNS remotely; validate syntax only.
+        via_proxy = real_client and client is _archiver_proxy_client
+        await _assert_public_target(current, resolve_dns=real_client and not via_proxy)
+        request_obj = client.build_request("GET", current, headers=headers)
+        if real_client:
+            resp = await client.send(request_obj, stream=True, follow_redirects=False)
+        else:  # test doubles
+            resp = await client.send(request_obj, stream=True)
+        location = resp.headers.get("location") if real_client else None
+        if real_client and resp.status_code in (301, 302, 303, 307, 308) and location:
+            await resp.aclose()
+            current = urljoin(current, location)
+            continue
+        return resp
+    raise httpx.TooManyRedirects("too many redirects", request=None)
+
+
 @router.get("/proxy-media")
 async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default=None, ge=1), request: Request = None):
     """Proxy a remote image/video URL via streaming to avoid CORS and hotlink issues."""
@@ -1612,9 +1661,11 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
         raise HTTPException(400, "Invalid URL")
     # Reject open-proxy abuse: only allow known media domains or URLs that exist in screenshots table
     parsed = urlparse(url)
-    netloc = (parsed.netloc or "").lower().lstrip("www.")
+    if parsed.username or parsed.password:
+        raise HTTPException(400, "Invalid URL")
+    netloc = _strip_www((parsed.hostname or "").lower())
     allowed = any(
-        netloc == a.lstrip("www.") or netloc.endswith("." + a.lstrip("www."))
+        netloc == _strip_www(a) or netloc.endswith("." + _strip_www(a))
         for a in _PROXY_MEDIA_ALLOWED_NETLOCS
     )
     if not allowed and shot_id is None:
@@ -1702,10 +1753,9 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
         client = _client_for(candidate_url)
         for _attempt in range(1, proxy_retry_budget + 1):
             try:
-                resp = await client.send(
-                    client.build_request("GET", candidate_url, headers=_build_request_headers(candidate_url)),
-                    stream=True,
-                )
+                resp = await _guarded_send(client, candidate_url, _build_request_headers(candidate_url))
+            except HTTPException:
+                raise  # SSRF guard verdict: never retried, never masked
             except httpx.TimeoutException as exc:
                 last_error = exc
                 _logger.warning("Upstream media request timed out for %s", candidate_url, exc_info=exc)
@@ -1753,10 +1803,9 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
             target_url = refreshed_url
             client = _client_for(target_url)
             try:
-                resp = await client.send(
-                    client.build_request("GET", target_url, headers=_build_request_headers(target_url)),
-                    stream=True,
-                )
+                resp = await _guarded_send(client, target_url, _build_request_headers(target_url))
+            except HTTPException:
+                raise
             except httpx.TimeoutException:
                 return JSONResponse(
                     status_code=502,
