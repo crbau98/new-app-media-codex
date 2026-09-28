@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type RefObject } from 'react'
 import { averageRgb, parseHexColor, rgbCss, type BufferedRange } from '@/lib/player/controls'
 import { readNetworkProfile, type NetworkProfile } from '@/lib/player/resilience'
-import { useAppStore } from '@/store'
 
 /* ── environment ───────────────────────────────────────────────── */
 
@@ -19,24 +18,7 @@ export function prefersMobilePlayback(): boolean {
   return compactOrTouch || network.saveData || network.slow
 }
 
-const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
-
-function subscribeReduced(callback: () => void) {
-  const query = window.matchMedia(REDUCED_QUERY)
-  query.addEventListener('change', callback)
-  return () => query.removeEventListener('change', callback)
-}
-
-/** True when decorative motion (springs, parallax, ambient glow) is welcome. */
-export function useMotionOk(): boolean {
-  const reduceSetting = useAppStore((state) => state.reduceMotion)
-  const osReduced = useSyncExternalStore(
-    subscribeReduced,
-    () => window.matchMedia(REDUCED_QUERY).matches,
-    () => false,
-  )
-  return !reduceSetting && !osReduced
-}
+export { useMotionOk } from '@/hooks/useMotionOk'
 
 /* ── <video> state as an external store ────────────────────────── */
 

@@ -23,7 +23,7 @@ import type { MediaItem } from '@/lib/types'
 import { useAppStore } from '@/store'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import MediaImage from '@/components/MediaImage'
-import ArtworkTilt from '@/components/player/ArtworkTilt'
+import Tilt3D from '@/components/three/Tilt3D'
 import PhotoViewer, { photoFrames } from '@/components/player/PhotoViewer'
 import VideoPlayer from '@/components/player/VideoPlayer'
 import { readNetwork, useMotionOk } from '@/components/player/hooks'
@@ -628,7 +628,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                 {/* Artwork card with 3D tilt (desktop) */}
                 {posterUrl && (
                   <div className="mb-5 hidden gap-4 lg:flex">
-                    <ArtworkTilt className="h-36 w-28 shrink-0" disabled={!motionOk}>
+                    <Tilt3D className="h-36 w-28 shrink-0 rounded-xl" max={10}>
                       <div className="relative h-full w-full overflow-hidden rounded-xl bg-sunken shadow-[0_18px_40px_-16px_rgb(0_0_0/0.85)] ring-1 ring-white/15">
                         <MediaImage
                           sources={[posterUrl, item.thumbnail]}
@@ -642,7 +642,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                           {item.isVideo ? item.duration || 'Video' : frameCount > 1 ? `${frameCount} photos` : 'Photo'}
                         </span>
                       </div>
-                    </ArtworkTilt>
+                    </Tilt3D>
                     <div className="min-w-0 flex-1 self-center">
                       <p className="eyebrow">Signal</p>
                       <p className="mt-1 font-mono text-3xl font-semibold tabular-nums text-ink">{item.curationScore ?? '—'}</p>
