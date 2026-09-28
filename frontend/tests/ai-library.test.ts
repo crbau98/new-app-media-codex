@@ -74,6 +74,10 @@ test('parser: intents', () => {
   assert.equal(nav.intent, 'navigate')
   assert.equal(nav.navigate, '/settings')
   assert.equal(parseNaturalQuery('why am i seeing this', { now: NOW }).intent, 'explain')
+  const tonight = parseNaturalQuery('plan tonight 30 minutes playful', { now: NOW })
+  assert.equal(tonight.intent, 'plan')
+  assert.equal(tonight.budgetMinutes, 30)
+  assert.deepEqual(tonight.moods, ['playful'])
 })
 
 test('parser: durations, ranges and sort words', () => {

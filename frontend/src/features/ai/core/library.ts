@@ -631,7 +631,7 @@ export function parseNaturalQuery(input: string, opts: { now?: number; vocab?: V
   take(/\b(?:plan|build|make|create|queue(?:\s+up)?)\s+(?:me\s+)?(?:a\s+|an\s+|my\s+)?(?:tonight(?:'|’)?s?\s+)?(?:watch\s?list|session|playlist|lineup|marathon)\b/, () => {
     q.intent = 'plan'; q.notes.push("Tonight's watchlist")
   })
-  if (q.intent === 'search') take(/\btonight(?:'|’)?s?\s+(?:watch\s?list|session|picks?|lineup)\b|\bwatch\s?list\s+for\b/, () => { q.intent = 'plan'; q.notes.push("Tonight's watchlist") })
+  if (q.intent === 'search') take(/\b(?:plan|queue(?:\s+up)?)\s+(?:me\s+)?(?:for\s+)?(?:tonight|the\s+night|an?\s+evening|my\s+night)\b|\btonight(?:'|’)?s?\s+(?:watch\s?list|session|picks?|lineup)\b|\bwatch\s?list\s+for\b/, () => { q.intent = 'plan'; q.notes.push("Tonight's watchlist") })
   if (q.intent === 'search') {
     take(/\b(?:smart\s+)?collection\s+(?:of|for|with)\b|\b(?:build|make|create)\s+(?:me\s+)?(?:a\s+)?(?:smart\s+)?collection\b/, () => { q.intent = 'collection'; q.notes.push('Smart collection') })
   }

@@ -371,7 +371,7 @@ function Message({ message, byId, onOpen, onAction, onRetry }: {
       )}
 
       {cards.length > 0 && (
-        <div className="hide-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1" role="list" aria-label="Results">
+        <div className="hide-scrollbar -mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-1" role="list" aria-label="Results">
           {cards.map((item) => (
             <div role="listitem" key={item.id}><MediaMiniCard item={item} reason={message.reasons?.[item.id]} onSelect={() => onOpen(item.id)} /></div>
           ))}
