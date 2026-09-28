@@ -505,6 +505,9 @@ class Database:
             conn.execute("PRAGMA journal_size_limit = 67108864")
             conn.executescript(SCHEMA)
             self._migrate(conn)
+            from app.repositories.ingest import ensure_ingest_schema
+
+            ensure_ingest_schema(conn)  # additive: ingest_jobs, media_assets, ...
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_review_status ON items(review_status)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_saved ON items(is_saved)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_first_seen ON items(first_seen_at DESC)")
@@ -2669,6 +2672,7 @@ class Database:
                 "OR LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) LIKE '%.webm' "
                 "OR LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) LIKE '%.mov' "
                 "OR LOWER(COALESCE(source, '')) IN ('redgifs', 'ytdlp')"
+                "OR EXISTS (SELECT 1 FROM media_assets ma WHERE ma.screenshot_id = screenshots.id AND ma.kind = 'video')"
                 ")"
             )
         elif media_type == "image":
@@ -2678,6 +2682,7 @@ class Database:
                 "AND LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) NOT LIKE '%.webm' "
                 "AND LOWER(COALESCE(NULLIF(local_path, ''), source_url, page_url, '')) NOT LIKE '%.mov' "
                 "AND LOWER(COALESCE(source, '')) NOT IN ('redgifs', 'ytdlp')"
+                "AND NOT EXISTS (SELECT 1 FROM media_assets ma WHERE ma.screenshot_id = screenshots.id AND ma.kind = 'video')"
                 ")"
             )
         if date_from:
@@ -2711,6 +2716,8 @@ class Database:
                 "("
                 "(source_url IS NOT NULL AND source_url != '' AND (source_url LIKE 'http://%' OR source_url LIKE 'https://%'))"
                 " OR (local_path IS NOT NULL AND local_path != '')"
+                " OR source_url LIKE '/ingested-media/%'"
+                " OR EXISTS (SELECT 1 FROM media_assets ma WHERE ma.screenshot_id = screenshots.id AND ma.status != 'deleted')"
                 ")"
             )
         clause = ("WHERE " + " AND ".join(where)) if where else ""

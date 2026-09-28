@@ -1,6 +1,8 @@
 import { collectDuckDuckGo } from './duckduckgo.js'
 import type { CreatorLead, MultiSourceResult, SourceStatus, UnifiedMediaItem } from './discovery-types.js'
 import { isScopedAdultPeerTubeMetadata } from './source-quality.js'
+import { isPrivateHost } from './net-safe.js'
+import { peerTubeStreams, withContract, type PeerTubeVideoDetail } from './media-normalize.js'
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 const PROVIDER_TIMEOUT_MS = 6_500
@@ -84,6 +86,27 @@ function safePublicUrl(value: string | undefined): string | undefined {
   }
 }
 
+/** Resolve real stream URLs for index results (bounded, best effort, in place). */
+async function resolvePeerTubeStreams(media: UnifiedMediaItem[]): Promise<void> {
+  const targets = media.filter((m) => m.id.startsWith('pt-') && !m.streamCandidates.length).slice(0, 16)
+  await Promise.all(targets.map(async (item) => {
+    try {
+      const page = new URL(item.pageUrl)
+      if (isPrivateHost(page.hostname)) return
+      const uuid = item.id.slice(3)
+      const detail = await fetchJson(`${page.origin}/api/v1/videos/${encodeURIComponent(uuid)}`, {}, 3500) as PeerTubeVideoDetail
+      const { streams, height } = peerTubeStreams(detail)
+      if (!streams.length) return
+      item.streamCandidates = streams
+      item.mediaUrl = streams[0]
+      if (height) item.height = height
+      if (detail.duration) item.durationSeconds = detail.duration
+    } catch {
+      // Unresolvable items stay stream-less and are pruned as unplayable.
+    }
+  }))
+}
+
 async function collectPeerTube(opts: { query?: string } = {}): Promise<{ media: UnifiedMediaItem[]; status: SourceStatus; attempted: number; succeeded: number }> {
   const base: SourceStatus = {
     id: 'peertube', name: 'PeerTube', mode: 'stream', state: 'error', mediaFound: 0, creatorsFound: 0,
@@ -148,9 +171,10 @@ async function collectPeerTube(opts: { query?: string } = {}): Promise<{ media: 
       // One failed query never blocks the other lanes or sources.
     }
   }))
+  await resolvePeerTubeStreams(media)
   const state = succeeded ? 'connected' : 'error'
   return {
-    media,
+    media: media.map((item) => withContract(item)),
     status: {
       ...base,
       state,

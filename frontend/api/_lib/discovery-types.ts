@@ -24,6 +24,18 @@ export type UnifiedMediaItem = {
   curationScore: number
   curationReasons: string[]
   isWatchedCreator: boolean
+  /* media-intelligence contract (optional; only when knowable) */
+  width?: number
+  height?: number
+  aspect?: number
+  durationSeconds?: number
+  posterUrl?: string
+  hlsUrl?: string
+  mimeType?: string
+  codec?: string
+  hasAudio?: boolean
+  dominantColor?: string
+  lqip?: string
 }
 
 export type CreatorLead = {

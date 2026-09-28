@@ -17,20 +17,8 @@ export type FeedParseResult = {
   items: ParsedFeedItem[]
 }
 
-function isPrivateHost(hostname: string): boolean {
-  const host = hostname.toLowerCase()
-  if (host === 'localhost' || host === '::1' || host.endsWith('.local')) return true
-  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host)) return true
-  const match = host.match(/^172\.(\d{1,3})\./)
-  return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31)
-}
-
-export function assertPublicHttpUrl(rawUrl: string): URL {
-  const url = new URL(rawUrl)
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('unsupported_protocol')
-  if (isPrivateHost(url.hostname)) throw new Error('private_host_blocked')
-  return url
-}
+export { assertPublicHttpUrl } from '../net-safe.js'
+import { assertPublicHttpUrl } from '../net-safe.js'
 
 async function readLimitedText(response: Response): Promise<string> {
   if (!response.body) return response.text()

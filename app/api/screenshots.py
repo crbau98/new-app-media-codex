@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import time
 import uuid
+from collections import OrderedDict
 from copy import deepcopy
 from queue import Empty, Full, Queue
 from pathlib import Path
@@ -35,9 +36,11 @@ _logger = logging.getLogger(__name__)
 # In-memory LRU byte cache for proxied *image* responses (not videos).
 # Max 500 MB total, 1-hour TTL per entry.
 # ---------------------------------------------------------------------------
-_PROXY_CACHE_MAX_BYTES = 500 * 1024 * 1024  # 500 MB
+_PROXY_CACHE_MAX_BYTES = int(float(os.getenv("PROXY_CACHE_MAX_MB", "64")) * 1024 * 1024)
+_PROXY_CACHE_ENTRY_MAX_BYTES = int(float(os.getenv("PROXY_CACHE_ENTRY_MAX_MB", "8")) * 1024 * 1024)
 _PROXY_CACHE_TTL = 7200  # 2 hours
-_proxy_cache: dict[str, tuple[float, str, bytes]] = {}  # url -> (expires_at, content_type, body)
+# url -> (expires_at, content_type, body); insertion/recency ordered (true LRU).
+_proxy_cache: "OrderedDict[str, tuple[float, str, bytes]]" = OrderedDict()
 _proxy_cache_size = 0  # current total bytes
 _PROXY_CACHE_LOCK = _ThreadLock()
 _IMAGE_CONTENT_PREFIXES = ("image/",)
@@ -53,7 +56,8 @@ _HLS_MANIFEST_CONTENT_TYPES = (
     "application/vnd.apple.mpegurl",
     "application/x-mpegurl",
 )
-_HLS_URI_ATTR_RE = re.compile(r'URI=(["\'])(.+?)\1')
+_HLS_URI_ATTR_RE = re.compile(r'(?<![A-Z0-9-])URI=(["\'])(.+?)\1')
+_HLS_MANIFEST_MAX_BYTES = 4 * 1024 * 1024
 
 # Sources / netloc suffixes where server-side proxying HURTS rather than helps.
 # Coomer/Kemono CDNs often block or refuse connections from cloud datacenters; the
@@ -188,7 +192,7 @@ _APP_DATA_ROOT = _resolve_app_data_root()
 # ---------------------------------------------------------------------------
 _VIDEO_CACHE_DIR = Path(os.getenv("VIDEO_CACHE_DIR") or (_APP_DATA_ROOT / "video_cache"))
 _VIDEO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-_VIDEO_CACHE_MAX_MB = 5000  # 5 GB max cache size
+_VIDEO_CACHE_MAX_MB = int(os.getenv("VIDEO_CACHE_MAX_MB", "5000"))  # default 5 GB
 _VIDEO_CACHE_LOCK = _ThreadLock()
 _VIDEO_CACHE_INFLIGHT: set[int] = set()
 
@@ -201,22 +205,61 @@ def _video_cache_path(shot_id: int) -> Path:
 def _is_video_cached(shot_id: int) -> bool:
     """Check if a video is already cached on disk."""
     p = _video_cache_path(shot_id)
-    return p.exists() and p.stat().st_size > 0
-
-
-def _evict_video_cache_if_needed():
-    """Evict oldest cached videos if total cache exceeds max size."""
     try:
-        files = sorted(_VIDEO_CACHE_DIR.glob("*.mp4"), key=lambda f: f.stat().st_mtime)
-        total = sum(f.stat().st_size for f in files)
-        max_bytes = _VIDEO_CACHE_MAX_MB * 1024 * 1024
-        while total > max_bytes and files:
-            oldest = files.pop(0)
-            total -= oldest.stat().st_size
-            oldest.unlink(missing_ok=True)
-            _logger.info("Evicted cached video: %s", oldest.name)
-    except Exception as e:
-        _logger.warning("Cache eviction error: %s", e)
+        return p.is_file() and p.stat().st_size > 0
+    except OSError:  # deleted between the two calls (eviction race)
+        return False
+
+
+_VIDEO_CACHE_PROTECT_SECONDS = 120  # never evict a file touched this recently
+
+
+def _cached_video_files() -> list[tuple[Path, float, int]]:
+    """Complete cached videos as (path, mtime, size). In-flight partials
+    ("<id>.tmp.mp4", "*.part", "*.upload.tmp") are never listed, so eviction can
+    not delete a file that a download/upload is still writing."""
+    entries: list[tuple[Path, float, int]] = []
+    try:
+        candidates = list(_VIDEO_CACHE_DIR.glob("*.mp4"))
+    except OSError:
+        return entries
+    for f in candidates:
+        if ".tmp" in f.name or f.name.endswith(".part"):
+            continue
+        try:
+            st = f.stat()  # may race with a concurrent delete
+        except OSError:
+            continue
+        entries.append((f, st.st_mtime, st.st_size))
+    return entries
+
+
+def _evict_video_cache_if_needed(reserve_bytes: int = 0):
+    """Evict least-recently-modified cached videos until the cache (plus
+    ``reserve_bytes`` about to be written) fits in the budget. Safe under
+    concurrent downloads/evictions: locked, tolerant of vanished files, and
+    it never removes very recent files."""
+    with _VIDEO_CACHE_LOCK:
+        try:
+            files = sorted(_cached_video_files(), key=lambda e: e[1])
+            total = sum(size for _, _, size in files)
+            max_bytes = _VIDEO_CACHE_MAX_MB * 1024 * 1024
+            now = time.time()
+            while total + reserve_bytes > max_bytes and files:
+                path, mtime, size = files.pop(0)
+                if now - mtime < _VIDEO_CACHE_PROTECT_SECONDS:
+                    continue
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    _logger.warning("Could not evict %s: %s", path.name, exc)
+                    continue
+                total -= size
+                _logger.info("Evicted cached video: %s", path.name)
+        except Exception as e:
+            _logger.warning("Cache eviction error: %s", e)
 
 
 def _download_video_with_ytdlp(page_url: str, shot_id: int) -> str | None:
@@ -347,6 +390,8 @@ def _download_video_direct(source_url: str, shot_id: int) -> str | None:
         proc = subprocess.run(
             [
                 "ffmpeg", "-y",
+                "-protocol_whitelist", "http,https,tcp,tls,crypto",
+                "-rw_timeout", "30000000",
                 "-headers", "User-Agent: Mozilla/5.0\r\n",
                 "-i", source_url,
                 "-c", "copy",
@@ -409,10 +454,12 @@ def _proxy_cache_get(url: str) -> tuple[str, bytes] | None:
         if time.monotonic() > expires_at:
             _proxy_cache_evict(url)
             return None
+        _proxy_cache.move_to_end(url)  # mark most-recently-used
         return content_type, body
 
 
 def _proxy_cache_evict(url: str) -> None:
+    """Remove one entry. Caller must hold _PROXY_CACHE_LOCK (or be single-threaded)."""
     global _proxy_cache_size
     entry = _proxy_cache.pop(url, None)
     if entry:
@@ -422,19 +469,18 @@ def _proxy_cache_evict(url: str) -> None:
 def _proxy_cache_put(url: str, content_type: str, body: bytes) -> None:
     global _proxy_cache_size
     size = len(body)
-    # Don't cache entries larger than 10 MB individually
-    if size > 10 * 1024 * 1024:
+    # Oversized entries are never cached (also guards an entry bigger than the whole budget).
+    if size > _PROXY_CACHE_ENTRY_MAX_BYTES or size > _PROXY_CACHE_MAX_BYTES:
         return
     with _PROXY_CACHE_LOCK:
-        # Evict expired entries first, then oldest until under budget
+        # Replacing an existing key must release its old bytes first, otherwise
+        # the running total drifts upward and eventually starves the cache.
+        _proxy_cache_evict(url)
         now = time.monotonic()
-        expired = [k for k, (exp, _, _) in _proxy_cache.items() if now > exp]
-        for k in expired:
-            _proxy_cache_evict(k)
-        # Evict oldest until we have room
+        for key in [k for k, (exp, _, _) in _proxy_cache.items() if now > exp]:
+            _proxy_cache_evict(key)
         while _proxy_cache_size + size > _PROXY_CACHE_MAX_BYTES and _proxy_cache:
-            oldest_key = next(iter(_proxy_cache))
-            _proxy_cache_evict(oldest_key)
+            _proxy_cache_evict(next(iter(_proxy_cache)))  # least recently used
         _proxy_cache[url] = (now + _PROXY_CACHE_TTL, content_type, body)
         _proxy_cache_size += size
 
@@ -496,21 +542,24 @@ def _absolutize_hls_manifest(manifest_text: str, base_url: str) -> tuple[str, in
         return f"URI={quote_char}{absolute_uri}{quote_char}"
 
     rewritten_lines: list[str] = []
-    for line in manifest_text.splitlines(keepends=True):
-        newline = "\n" if line.endswith("\n") else ""
-        body = line[:-1] if newline else line
+    # Split on "\n" only (not str.splitlines): U+2028 & friends may legally appear
+    # inside tag attributes and must not create phantom "URI lines". A trailing
+    # "\r" (CRLF playlists) stays attached to its line and is preserved.
+    for line in manifest_text.split("\n"):
+        cr = "\r" if line.endswith("\r") else ""
+        body = line[: len(line) - len(cr)]
         stripped = body.strip()
         if not stripped:
             rewritten_lines.append(line)
             continue
         if stripped.startswith("#"):
-            rewritten_lines.append(_HLS_URI_ATTR_RE.sub(_replace_uri_attr, body) + newline)
+            rewritten_lines.append(_HLS_URI_ATTR_RE.sub(_replace_uri_attr, body) + cr)
             continue
         absolute_uri = _absolutize_hls_uri(stripped, base_url)
         if absolute_uri != stripped:
             rewrites += 1
-        rewritten_lines.append(absolute_uri + newline)
-    return "".join(rewritten_lines), rewrites
+        rewritten_lines.append(absolute_uri + cr)
+    return "\n".join(rewritten_lines), rewrites
 
 
 def _is_refreshable_upstream_status(status_code: int) -> bool:
@@ -557,6 +606,13 @@ def _resolve_ytdlp_stream_url(page_url: str) -> tuple[str | None, str | None, bo
         # that aren't IP-bound.  Fall back to http when HLS isn't offered.
         "format": "bestvideo[height<=720][protocol^=m3u8]+bestaudio/best[height<=720][protocol^=m3u8]/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
         "hls_prefer_native": False,
+        # A hung extractor would otherwise pin a worker thread indefinitely.
+        "socket_timeout": 20,
+        "retries": 1,
+        "extractor_retries": 1,
+        "noplaylist": True,
+        "cachedir": False,
+        "skip_download": True,
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -663,45 +719,45 @@ def _probe_remote_media_kind(app_state, media_url: str) -> str | None:
         if cached and now < cached["expires_at"]:
             return cached["kind"]
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept": "image/webp,image/apng,image/*,video/*,*/*;q=0.8",
-    }
     kind: str | None = None
-    for method, extra_headers in (
-        ("HEAD", {}),
-        ("GET", {"Range": "bytes=0-0"}),
-    ):
-        response = None
+    # SSRF-safe: redirects are re-validated, private/link-local targets refused,
+    # and the total time is capped (a slow origin can no longer stall a request
+    # for 2 x (4 + 6) s per URL).
+    from app.media_pipeline.netsafe import safe_fetch
+
+    for method, extra_headers in (("HEAD", {}), ("GET", {"Range": "bytes=0-0"})):
         try:
-            response = http_requests.request(
-                method,
+            response = safe_fetch(
                 media_url,
-                headers={**headers, **extra_headers},
-                timeout=(4, 6),
-                allow_redirects=True,
-                stream=method == "GET",
+                method=method,
+                headers={"Accept": "image/webp,image/apng,image/*,video/*,*/*;q=0.8", **extra_headers},
+                max_bytes=1024,
+                timeout=4.0,
+                total_timeout=8.0,
             )
-            content_type = (response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+            content_type = response.content_type
             if content_type.startswith(_VIDEO_CONTENT_PREFIXES):
                 kind = "video"
             elif content_type.startswith(_IMAGE_CONTENT_PREFIXES):
                 kind = "image"
         except Exception:
             kind = None
-        finally:
-            if response is not None:
-                response.close()
         if kind is not None:
             break
 
     with lock:
+        if len(cache) > 5000:  # bounded: drop expired, then oldest
+            for key in [k for k, v in cache.items() if now >= v["expires_at"]] or list(cache)[:1000]:
+                cache.pop(key, None)
         cache[media_url] = {"kind": kind, "expires_at": now + _REMOTE_MEDIA_PROBE_TTL}
     return kind
 
 
 def _screenshot_is_video(record: dict) -> bool:
     source = str(record.get("source") or "").lower()
+    asset_kind = record.get("_asset_kind")
+    if asset_kind:  # authoritative: ingestion sniffed the real content
+        return asset_kind == "video"
     media_url = str(record.get("source_url") or record.get("local_url") or record.get("local_path") or record.get("page_url") or "")
     ext = Path(media_url.split("?")[0]).suffix.lower()
     return ext in _VIDEO_EXTS or source in {"redgifs", "ytdlp"}
@@ -733,8 +789,113 @@ def _is_video_proxy_url(url: str) -> bool:
     return False
 
 
-def _decorate_screenshot_media(app_state, record: dict) -> dict:
-    """Attach stream-first media URLs to a screenshot record."""
+_ASSET_CACHE_TTL = 10.0
+_NO_ASSET = object()
+
+
+def _asset_cache(app_state) -> dict:
+    cache = getattr(app_state, "_media_asset_cache", None)
+    if cache is None:
+        cache = {}
+        try:
+            app_state._media_asset_cache = cache
+        except Exception:
+            pass
+    return cache
+
+
+def _prefetch_assets(app_state, shot_ids: list[int]) -> None:
+    """Load ingestion assets for many screenshots in one query and cache them
+    briefly (also caching misses, so decorating a page costs one query)."""
+    db = getattr(app_state, "db", None)
+    ids = [int(i) for i in shot_ids if i]
+    if db is None or not ids:
+        return
+    cache = _asset_cache(app_state)
+    now = time.monotonic()
+    missing = [i for i in ids if i not in cache or cache[i][0] < now]
+    if not missing:
+        return
+    found: dict[int, dict] = {}
+    try:
+        with db.connect() as conn:
+            for start in range(0, len(missing), 500):
+                chunk = missing[start:start + 500]
+                rows = conn.execute(
+                    f"SELECT * FROM media_assets WHERE screenshot_id IN ({','.join('?' for _ in chunk)}) AND status != 'deleted'",
+                    chunk,
+                ).fetchall()
+                for r in rows:
+                    found[int(r["screenshot_id"])] = dict(r)
+    except Exception:  # table missing on a very old DB, or a transient lock: degrade to no assets
+        found = {}
+    expires = now + _ASSET_CACHE_TTL
+    if len(cache) > 20000:
+        cache.clear()
+    for i in missing:
+        cache[i] = (expires, found.get(i))
+
+
+def _asset_for(app_state, shot_id: int | None) -> dict | None:
+    if not shot_id:
+        return None
+    cache = _asset_cache(app_state)
+    entry = cache.get(int(shot_id))
+    if entry is None or entry[0] < time.monotonic():
+        _prefetch_assets(app_state, [int(shot_id)])
+        entry = cache.get(int(shot_id))
+    return entry[1] if entry else None
+
+
+def _apply_asset(shot: dict, asset: dict) -> dict:
+    """Overlay the media-intelligence contract (width/height/aspect/lqip/...)
+    and asset-hosted URLs onto a decorated screenshot record."""
+    from app.media_pipeline.contract import asset_contract, asset_url
+
+    contract = asset_contract(asset)
+    shot.update(contract)
+    shot["asset_id"] = asset["id"]
+    shot["media_type"] = "video" if asset.get("kind") == "video" else "image"
+    shot["is_video"] = shot["media_type"] == "video"
+    poster = contract.get("posterUrl")
+    if asset.get("media_path") and shot["media_type"] == "image":
+        url = asset_url(asset["id"], asset["media_path"])
+        shot["local_url"] = url
+        shot["stream_url"] = url
+        shot["source_url"] = shot.get("source_url") or url
+    if poster:
+        shot["preview_url"] = poster
+        shot["poster_url"] = poster
+    if contract.get("previewUrl"):
+        shot["preview_video_url"] = contract["previewUrl"]
+    if asset.get("dup_of"):
+        shot["dup_of"] = asset["dup_of"]
+    return shot
+
+
+def _decorate_screenshot_media(app_state, record: dict, asset=_NO_ASSET) -> dict:
+    """Attach stream-first media URLs (and, for ingested items, the
+    media-intelligence contract fields) to a screenshot record."""
+    if asset is _NO_ASSET:
+        try:
+            asset = _asset_for(app_state, int(record["id"])) if record.get("id") else None
+        except Exception:
+            asset = None
+    rec = dict(record)
+    if asset:
+        rec["_asset_kind"] = asset.get("kind")
+    shot = _decorate_screenshot_media_base(app_state, rec)
+    shot.pop("_asset_kind", None)
+    if asset:
+        try:
+            _apply_asset(shot, asset)
+        except Exception:
+            _logger.debug("asset overlay failed for shot %s", record.get("id"), exc_info=True)
+    return shot
+
+
+def _decorate_screenshot_media_base(app_state, record: dict) -> dict:
+    """Legacy decoration (source/local/proxied URLs)."""
     shot = dict(record)
     stream_only = bool(getattr(getattr(app_state, "settings", None), "stream_only_media", False))
     local_path = Path(shot.get("local_path", "") or "")
@@ -825,6 +986,7 @@ def _decorate_screenshot_media(app_state, record: dict) -> dict:
 
 
 def _decorate_rows(app_state, rows: list[dict]) -> list[dict]:
+    _prefetch_assets(app_state, [int(r["id"]) for r in rows if r.get("id")])
     return [_decorate_screenshot_media(app_state, row) for row in rows]
 
 
@@ -919,58 +1081,118 @@ async def _refresh_shot_media_url(request: Request, shot_id: int, failed_url: st
     return fresh_stream_url
 
 
+_RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+
+def _parse_byte_range(header: str | None, file_size: int) -> tuple[int, int] | None | str:
+    """Parse a single-range ``Range`` header.
+
+    Returns ``(start, end)`` (inclusive) for a satisfiable range, ``None`` when the
+    header should be ignored (absent, other unit, multi-range or malformed —
+    RFC 9110 lets a server answer 200 with the full body), or the string
+    ``"unsatisfiable"`` for a well-formed range outside the file (-> 416).
+    """
+    if not header:
+        return None
+    m = _RANGE_RE.match(header.strip().lower())
+    if not m:
+        return None
+    first, last = m.group(1), m.group(2)
+    if not first and not last:
+        return None
+    if not first:  # suffix range: last N bytes
+        n = int(last)
+        if n == 0:
+            return "unsatisfiable"
+        return max(0, file_size - n), file_size - 1
+    start = int(first)
+    end = int(last) if last else file_size - 1
+    if start >= file_size:
+        return "unsatisfiable"
+    if last and end < start:
+        return None  # malformed (first > last): ignore the header
+    return start, min(end, file_size - 1)
+
+
+def _sniff_video_media_type(path: Path) -> str:
+    """The cache holds whatever yt-dlp/ffmpeg produced under a ``.mp4`` name;
+    advertise the real container so browsers pick the right demuxer."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(4096)
+    except OSError:
+        return "video/mp4"
+    if head.startswith(b"\x1a\x45\xdf\xa3"):
+        return "video/webm" if b"webm" in head[:64].lower() else "video/x-matroska"
+    return "video/mp4"
+
+
 @router.get("/cached-video/{shot_id}")
 async def serve_cached_video(shot_id: int, request: Request):
-    """Serve a locally cached video file with Range request support."""
+    """Serve a locally cached video file with RFC 9110 Range support
+    (open-ended, suffix and bounded ranges; 416 when unsatisfiable), conditional
+    requests and correct ``Content-Type``."""
+    from starlette.responses import StreamingResponse
+
     path = _video_cache_path(shot_id)
-    if not path.exists():
+    try:
+        st = path.stat()
+    except OSError:
+        raise HTTPException(404, "Video not cached")
+    file_size = st.st_size
+    if file_size <= 0:
         raise HTTPException(404, "Video not cached")
 
-    from starlette.responses import FileResponse, StreamingResponse
+    media_type = _sniff_video_media_type(path)
+    etag = f'"{st.st_mtime_ns:x}-{file_size:x}"'
+    last_modified = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(st.st_mtime))
+    base_headers = {
+        "Accept-Ranges": "bytes",
+        "ETag": etag,
+        "Last-Modified": last_modified,
+        "Cache-Control": "public, max-age=3600",
+        "X-Content-Type-Options": "nosniff",
+        **_CROSS_ORIGIN_MEDIA_HEADERS,
+    }
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=base_headers)
 
-    file_size = path.stat().st_size
+    # If-Range: only honour the range when the validator still matches.
     range_header = request.headers.get("range")
+    if_range = request.headers.get("if-range")
+    if range_header and if_range and if_range.strip() not in {etag, last_modified}:
+        range_header = None
 
-    if range_header:
-        m = re.match(r"bytes=(\d+)-(\d*)", range_header)
-        if m:
-            start = int(m.group(1))
-            end = int(m.group(2)) if m.group(2) else file_size - 1
-            end = min(end, file_size - 1)
-            length = end - start + 1
+    parsed = _parse_byte_range(range_header, file_size)
+    if parsed == "unsatisfiable":
+        return Response(status_code=416, headers={**base_headers, "Content-Range": f"bytes */{file_size}"})
 
-            def _range_reader():
-                with open(path, "rb") as f:
-                    f.seek(start)
-                    remaining = length
-                    while remaining > 0:
-                        chunk = f.read(min(8192, remaining))
-                        if not chunk:
-                            break
-                        remaining -= len(chunk)
-                        yield chunk
+    def _reader(start: int, length: int):
+        try:
+            with open(path, "rb") as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(256 * 1024, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+        except OSError:
+            return  # evicted mid-stream: end the body; the client will retry
 
-            return StreamingResponse(
-                _range_reader(),
-                status_code=206,
-                media_type="video/mp4",
-                headers={
-                    "Content-Range": f"bytes {start}-{end}/{file_size}",
-                    "Content-Length": str(length),
-                    "Accept-Ranges": "bytes",
-                    **_CROSS_ORIGIN_MEDIA_HEADERS,
-                    "Cache-Control": "public, max-age=3600",
-                },
-            )
-
-    return FileResponse(
-        path,
-        media_type="video/mp4",
-        headers={
-            "Accept-Ranges": "bytes",
-            **_CROSS_ORIGIN_MEDIA_HEADERS,
-            "Cache-Control": "public, max-age=3600",
-        },
+    if isinstance(parsed, tuple):
+        start, end = parsed
+        length = end - start + 1
+        return StreamingResponse(
+            _reader(start, length),
+            status_code=206,
+            media_type=media_type,
+            headers={**base_headers, "Content-Range": f"bytes {start}-{end}/{file_size}", "Content-Length": str(length)},
+        )
+    return StreamingResponse(
+        _reader(0, file_size), status_code=200, media_type=media_type,
+        headers={**base_headers, "Content-Length": str(file_size)},
     )
 
 
@@ -1089,7 +1311,8 @@ async def upload_cached_video(
             "size_bytes": output_path.stat().st_size,
         })
 
-    temp_path = output_path.with_suffix(".upload.tmp")
+    # Unique temp name: concurrent uploads for one shot must not clobber each other.
+    temp_path = output_path.with_suffix(f".{uuid.uuid4().hex[:8]}.upload.tmp")
     total = 0
     _evict_video_cache_if_needed()
     try:
@@ -1104,6 +1327,11 @@ async def upload_cached_video(
                         413,
                         f"Upload exceeds limit ({_UPLOAD_VIDEO_MAX_BYTES} bytes)",
                     )
+                if total == len(chunk):  # first chunk: validate the real container
+                    from app.media_pipeline.sniff import sniff_bytes
+
+                    if sniff_bytes(chunk[:65536]).kind != "video":
+                        raise HTTPException(415, "Upload is not a video file")
                 out.write(chunk)
         if total == 0:
             raise HTTPException(400, "Empty upload")
@@ -1377,6 +1605,55 @@ def _archiver_shard_candidates(target_url: str) -> list[str]:
     return out
 
 
+def _strip_www(host: str) -> str:
+    """Remove a leading ``www.`` label. (``str.lstrip("www.")`` would strip any
+    leading run of the characters w and ".", turning ``wx.com`` into ``x.com``
+    and letting look-alike hosts through the proxy allow-list.)"""
+    return host[4:] if host.startswith("www.") else host
+
+
+_PROXY_MAX_REDIRECTS = 5
+
+
+async def _assert_public_target(url: str, *, resolve_dns: bool = True) -> None:
+    """SSRF guard for server-side media fetches: refuse non-public targets
+    (literal private IPs, or hostnames that resolve to them)."""
+    from app.media_pipeline.netsafe import FetchError, UnsafeUrlError, resolve_public, validate_url
+
+    try:
+        safe = validate_url(url)
+        if resolve_dns:
+            try:
+                await asyncio.to_thread(resolve_public, safe.host, safe.port)
+            except FetchError:
+                pass  # unresolvable: let the real request fail with its own error
+    except UnsafeUrlError as exc:
+        raise HTTPException(403, f"Blocked media target ({exc.code})") from exc
+
+
+async def _guarded_send(client, url: str, headers: dict[str, str]):
+    """``client.send(GET, stream=True)`` that re-validates every redirect hop
+    against the SSRF policy instead of letting the HTTP client follow blindly."""
+    real_client = isinstance(client, httpx.AsyncClient)
+    current = url
+    for _hop in range(_PROXY_MAX_REDIRECTS + 1):
+        # Traffic through the archiver proxy resolves DNS remotely; validate syntax only.
+        via_proxy = real_client and client is _archiver_proxy_client
+        await _assert_public_target(current, resolve_dns=real_client and not via_proxy)
+        request_obj = client.build_request("GET", current, headers=headers)
+        if real_client:
+            resp = await client.send(request_obj, stream=True, follow_redirects=False)
+        else:  # test doubles
+            resp = await client.send(request_obj, stream=True)
+        location = resp.headers.get("location") if real_client else None
+        if real_client and resp.status_code in (301, 302, 303, 307, 308) and location:
+            await resp.aclose()
+            current = urljoin(current, location)
+            continue
+        return resp
+    raise httpx.TooManyRedirects("too many redirects", request=None)
+
+
 @router.get("/proxy-media")
 async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default=None, ge=1), request: Request = None):
     """Proxy a remote image/video URL via streaming to avoid CORS and hotlink issues."""
@@ -1384,9 +1661,11 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
         raise HTTPException(400, "Invalid URL")
     # Reject open-proxy abuse: only allow known media domains or URLs that exist in screenshots table
     parsed = urlparse(url)
-    netloc = (parsed.netloc or "").lower().lstrip("www.")
+    if parsed.username or parsed.password:
+        raise HTTPException(400, "Invalid URL")
+    netloc = _strip_www((parsed.hostname or "").lower())
     allowed = any(
-        netloc == a.lstrip("www.") or netloc.endswith("." + a.lstrip("www."))
+        netloc == _strip_www(a) or netloc.endswith("." + _strip_www(a))
         for a in _PROXY_MEDIA_ALLOWED_NETLOCS
     )
     if not allowed and shot_id is None:
@@ -1403,6 +1682,9 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
     from starlette.responses import StreamingResponse
 
     range_header = request.headers.get("range") if request else None
+    # A partial manifest is useless (and cannot be rewritten): fetch playlists whole.
+    if range_header and urlparse(url).path.lower().endswith(".m3u8"):
+        range_header = None
     # For coomer/kemono images, datacenter IPs cannot reach n*.coomer — use the
     # `img.*` thumbnail mirror which serves the same image path from a reachable
     # host. Only rewrite image extensions; videos still go through the original
@@ -1471,10 +1753,9 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
         client = _client_for(candidate_url)
         for _attempt in range(1, proxy_retry_budget + 1):
             try:
-                resp = await client.send(
-                    client.build_request("GET", candidate_url, headers=_build_request_headers(candidate_url)),
-                    stream=True,
-                )
+                resp = await _guarded_send(client, candidate_url, _build_request_headers(candidate_url))
+            except HTTPException:
+                raise  # SSRF guard verdict: never retried, never masked
             except httpx.TimeoutException as exc:
                 last_error = exc
                 _logger.warning("Upstream media request timed out for %s", candidate_url, exc_info=exc)
@@ -1522,10 +1803,9 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
             target_url = refreshed_url
             client = _client_for(target_url)
             try:
-                resp = await client.send(
-                    client.build_request("GET", target_url, headers=_build_request_headers(target_url)),
-                    stream=True,
-                )
+                resp = await _guarded_send(client, target_url, _build_request_headers(target_url))
+            except HTTPException:
+                raise
             except httpx.TimeoutException:
                 return JSONResponse(
                     status_code=502,
@@ -1569,11 +1849,22 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
     is_video = content_type.startswith(_VIDEO_CONTENT_PREFIXES)
     is_hls_manifest = _is_hls_manifest_response(content_type, target_url)
 
-    if is_hls_manifest and not range_header:
-        raw_manifest = await resp.aread()
-        await resp.aclose()
-        decoded_manifest = raw_manifest.decode("utf-8", errors="replace")
-        rewritten_text, rewritten_uri_count = _absolutize_hls_manifest(decoded_manifest, target_url)
+    if is_hls_manifest:
+        # Bound the read: a hostile/broken origin must not be able to make us
+        # buffer an arbitrarily large "playlist" in memory.
+        raw = bytearray()
+        try:
+            async for chunk in resp.aiter_bytes(chunk_size=65536):
+                raw.extend(chunk)
+                if len(raw) > _HLS_MANIFEST_MAX_BYTES:
+                    raise HTTPException(502, "Upstream playlist is too large")
+        finally:
+            await resp.aclose()
+        decoded_manifest = bytes(raw).decode("utf-8", errors="replace")
+        # Relative URIs resolve against the FINAL url (after upstream redirects),
+        # not the URL we originally requested.
+        manifest_base = str(resp.url) if getattr(resp, "url", None) else target_url
+        rewritten_text, rewritten_uri_count = _absolutize_hls_manifest(decoded_manifest, manifest_base)
         rewritten_manifest = rewritten_text.encode("utf-8")
         _logger.debug(
             "Rewrote proxied HLS manifest URIs",
@@ -1582,12 +1873,15 @@ async def proxy_media(url: str = Query(...), shot_id: int | None = Query(default
                 "rewritten_uri_count": rewritten_uri_count,
             },
         )
+        # VOD playlists are immutable; live/event playlists must never be cached.
+        is_vod = "#EXT-X-ENDLIST" in decoded_manifest
         return Response(
             content=rewritten_manifest,
-            media_type=(content_type or "application/vnd.apple.mpegurl"),
+            # Players (Safari/hls.js) key off this type; CDNs often send text/plain.
+            media_type="application/vnd.apple.mpegurl",
             headers={
                 **_CROSS_ORIGIN_MEDIA_HEADERS,
-                "Cache-Control": "public, max-age=86400",
+                "Cache-Control": "public, max-age=3600" if is_vod else "no-store",
                 "Content-Length": str(len(rewritten_manifest)),
                 "Content-Encoding": "identity",
             },
@@ -1843,6 +2137,10 @@ async def _poster_via_ffmpeg(source_url: str, poster_path: Path, port: str) -> b
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y",
+            # Only network protocols: a hostile playlist must not be able to make
+            # ffmpeg read local files (file:, concat:, ...).
+            "-protocol_whitelist", "http,https,tcp,tls,crypto",
+            "-rw_timeout", "10000000",
             "-headers", "User-Agent: Mozilla/5.0\r\n",
             "-probesize", "3000000",
             "-analyzeduration", "0",
@@ -1860,6 +2158,7 @@ async def _poster_via_ffmpeg(source_url: str, poster_path: Path, port: str) -> b
             _, stderr_data = await asyncio.wait_for(proc.communicate(), timeout=12)
         except asyncio.TimeoutError:
             proc.kill()
+            await proc.wait()  # reap: no zombie ffmpeg processes
             _logger.warning("poster ffmpeg timeout for %s", source_url[:80])
             return False
         ok = proc.returncode == 0 and poster_path.exists() and poster_path.stat().st_size > 0
@@ -1891,6 +2190,7 @@ async def _poster_via_ffmpeg_local(local_path: str, poster_path: Path) -> bool:
             await asyncio.wait_for(proc.communicate(), timeout=10)
         except asyncio.TimeoutError:
             proc.kill()
+            await proc.wait()
             return False
         return proc.returncode == 0 and poster_path.exists() and poster_path.stat().st_size > 0
     except Exception:
@@ -2445,11 +2745,18 @@ def browse_screenshots(
                 raw_has_more = False
                 break
             inspected = 0
+            _prefetch_assets(request.app.state, [int(r["id"]) for r in rows if r.get("id")])
             for _s_cached in rows:
                 # Create a fresh copy so mutations here never corrupt the DB cache.
                 s = dict(_s_cached)
                 inspected += 1
                 scanned_rows += 1
+                if str(s.get("source_url") or "").startswith("/ingested-media/") or s.get("source") == "upload":
+                    # Ingested/uploaded item: hosted by this server, decorated from its asset.
+                    valid.append(_decorate_screenshot_media(request.app.state, s))
+                    if len(valid) >= effective_limit:
+                        break
+                    continue
                 # Female content filter is now in SQL — no Python re-check needed
                 local = Path(s.get("local_path", "") or "")
                 if _allow_local_media(request.app.state) and local.name and _cached_local_media_exists(request.app.state, local):
@@ -3682,34 +3989,33 @@ def capture_from_url(request: Request, body: dict = Body(...)):
     local_path: str | None = None
     out_path: Path | None = None
     if not stream_only:
-        # Download the file to disk for legacy cache mode
-        try:
-            resp = http_requests.get(
-                download_url,
-                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
-                timeout=30,
-                stream=True,
-            )
-            resp.raise_for_status()
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Download failed: {exc}")
+        # Download to disk (legacy cache mode) through the SSRF-safe streaming
+        # downloader: redirects are re-validated, the size is capped, and the
+        # file type comes from magic bytes, not from the server's headers.
+        from app.media_pipeline.netsafe import FetchError, UnsafeUrlError, safe_download
+        from app.media_pipeline.sniff import sniff_bytes
 
-        # Determine extension
-        ct = resp.headers.get("Content-Type", "")
-        ext = _guess_ext_from_content_type(ct) or _guess_ext_from_url(download_url)
-        if ext not in _ALLOWED_EXTS:
-            ext = ".jpg"
-
-        # Generate filename
         slug = re.sub(r"[^a-z0-9]", "_", (term or "url").lower())[:30]
-        short_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-        filename = f"{slug}_{short_hash}{ext}"
-        out_path = image_dir / filename
-
-        # Write file
-        with open(out_path, "wb") as f:
-            for chunk in resp.iter_content(8192):
-                f.write(chunk)
+        short_hash = hashlib.sha256(url.encode()).hexdigest()[:8]
+        tmp_dest = image_dir / f"{slug}_{short_hash}.dl"
+        try:
+            dl = safe_download(
+                download_url,
+                str(tmp_dest),
+                max_bytes=_UPLOAD_VIDEO_MAX_BYTES,
+                timeout=15.0,
+                total_timeout=300.0,
+            )
+        except UnsafeUrlError as exc:
+            raise HTTPException(status_code=422, detail=f"Unsafe URL: {exc.code}")
+        except FetchError as exc:
+            raise HTTPException(status_code=413 if exc.code == "too_large" else 502, detail=f"Download failed: {exc.code}")
+        sniffed = sniff_bytes(dl.head)
+        if not sniffed.is_media or sniffed.ext not in _ALLOWED_EXTS:
+            tmp_dest.unlink(missing_ok=True)
+            raise HTTPException(status_code=422, detail="The URL did not serve a supported image or video")
+        out_path = image_dir / f"{slug}_{short_hash}{sniffed.ext}"
+        os.replace(tmp_dest, out_path)
         local_path = str(out_path)
 
     # Insert DB record

@@ -183,6 +183,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     asyncio.create_task(_bg_poster_cache())
 
+    try:
+        from app.media_pipeline.runtime import start_runtime
+
+        await asyncio.to_thread(start_runtime, app)
+    except Exception as exc:  # ingestion must never block app boot
+        _main_logger.warning("ingest worker failed to start: %s", exc)
+
     service_start_task = asyncio.create_task(asyncio.to_thread(service.start))
     telegram_start_task: asyncio.Task[None] | None = None
     app.state.telegram_client = None
@@ -201,6 +208,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception:
                 pass
         service.stop()
+        try:
+            from app.media_pipeline.runtime import stop_runtime
+
+            stop_runtime(app)
+        except Exception:
+            pass
         if telegram_start_task and not telegram_start_task.done():
             telegram_start_task.cancel()
             try:
@@ -415,6 +428,27 @@ app.mount(
         cache_control="public, max-age=86400, stale-while-revalidate=3600",
     ),
     name="cached-screenshots",
+)
+
+class IngestedStaticFiles(CacheControlStaticFiles):
+    """Ingested assets are immutable (content-addressed by asset id) and are
+    embedded cross-origin by the SPA."""
+
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+
+from app.media_pipeline.ingest import resolve_ingest_root as _resolve_ingest_root
+
+_ingested_dir = _resolve_ingest_root() / "assets"
+_ingested_dir.mkdir(parents=True, exist_ok=True)
+app.mount(
+    "/ingested-media",
+    IngestedStaticFiles(directory=str(_ingested_dir), cache_control="public, max-age=31536000, immutable"),
+    name="ingested-media",
 )
 
 _previews_dir = Path(settings.image_dir).parent / "previews"
