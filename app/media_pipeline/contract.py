@@ -33,7 +33,13 @@ def asset_contract(asset: dict[str, Any], prefix: str = PUBLIC_PREFIX) -> dict[s
         return asset_url(aid, asset.get(key), prefix)
 
     gallery_items = _loads(asset.get("gallery_json")) or []
-    gallery = [asset_url(aid, g.get("full"), prefix) for g in gallery_items if isinstance(g, dict) and g.get("full")]
+    gallery = [
+        {k: v for k, v in {
+            "url": asset_url(aid, g.get("full"), prefix), "thumbnail": asset_url(aid, g.get("thumb"), prefix),
+            "width": g.get("width"), "height": g.get("height"),
+        }.items() if v is not None}
+        for g in gallery_items if isinstance(g, dict) and g.get("full")
+    ]
     hls = asset.get("hls_path")
     has_audio = asset.get("has_audio")
     contract: dict[str, Any] = {

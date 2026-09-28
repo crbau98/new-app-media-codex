@@ -406,3 +406,17 @@ def test_iso_duration():
     assert manifests.parse_iso_duration("PT45.5S") == 45.5
     assert manifests.parse_iso_duration("bogus") is None
     assert manifests.parse_iso_duration(None) is None
+
+
+def test_safe_download_streams_caps_and_cleans(local_server, monkeypatch, tmp_path):
+    monkeypatch.setenv("MEDIA_INGEST_ALLOW_PRIVATE", "1")
+    dest = tmp_path / "f.bin"
+    res = netsafe.safe_download(local_server + "/big", str(dest), max_bytes=1_000_000)
+    assert res.size == 200_000 and dest.stat().st_size == 200_000 and not (tmp_path / "f.bin.part").exists()
+    dest2 = tmp_path / "g.bin"
+    with pytest.raises(netsafe.FetchError) as err:
+        netsafe.safe_download(local_server + "/big", str(dest2), max_bytes=1000)
+    assert err.value.code == "too_large" and not dest2.exists() and not (tmp_path / "g.bin.part").exists()
+    with pytest.raises(netsafe.FetchError) as err:
+        netsafe.safe_download(local_server + "/big", str(dest2), max_bytes=10**7, should_cancel=lambda: True)
+    assert err.value.code == "cancelled" and not (tmp_path / "g.bin.part").exists()

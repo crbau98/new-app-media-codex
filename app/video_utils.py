@@ -63,8 +63,8 @@ def extract_video_frame(video_path: str, time_offset: float = 1.0, *, smart: boo
             if frame.ok and frame.stdout and video.is_blank_frame(frame.stdout):
                 meta = None
                 if tc.can_probe:
-                    _step, meta = video.probe_video(str(src), tc=tc)
-                better, _samples = video.choose_poster(str(src), meta, tc=tc)
+                    _step, meta = video.probe_video(str(src), tc=tc, runner=ffmpeg.run)
+                better, _samples = video.choose_poster(str(src), meta, tc=tc, runner=ffmpeg.run)
                 if better is not None:
                     ts = better
         if not _grab(tc, str(src), ts, out, 8):

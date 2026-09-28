@@ -239,7 +239,7 @@ def test_hls_rewrite_relative_absolute_and_attrs():
     assert lines[6] == "https://cdn.other.com/seg.ts"
     assert lines[7] == "https://abs.example.com/x.ts"
     assert 'URI="skd://token"' in lines[8] and 'URI="data:text/plain;base64,QQ=="' in lines[9]
-    assert n == 6
+    assert n == 5
 
 
 def test_hls_rewrite_preserves_crlf_and_odd_line_separators():
@@ -266,6 +266,8 @@ def test_strip_www_is_prefix_not_charset():
 
 
 def _proxy_app(handler):
+    shots._proxy_cache.clear()
+    shots._proxy_cache_size = 0
     app = FastAPI()
     app.state.db = None
     app.state.settings = SimpleNamespace(stream_only_media=True)

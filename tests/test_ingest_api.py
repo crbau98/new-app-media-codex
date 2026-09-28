@@ -424,7 +424,7 @@ def test_upload_duplicate_and_gallery_grouping(env):
     assert len(r3.json()["jobs"]) == 1
     env.rt.worker.drain()
     res = env.client.get(f"/api/v1/ingest/jobs/{r3.json()['jobs'][0]['id']}", headers=ADMIN).json()["result"]
-    assert res["kind"] == "gallery" and len(res["gallery"]) == 3
+    assert res["kind"] == "gallery" and len(res["gallery"]) == 3 and res["gallery"][0]["url"].startswith("/ingested-media/")
 
     # ungrouped -> one job per file
     r4 = _upload(env, [("files", (f"h{i}.png", _png(30 + i, 30, (i * 40, 9, 9)), "image/png")) for i in range(2)])

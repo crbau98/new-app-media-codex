@@ -60,6 +60,14 @@ def get_runtime(app: Any) -> IngestRuntime:
 
 def start_runtime(app: Any) -> IngestRuntime:
     runtime = get_runtime(app)
+    try:  # drop orphaned temp uploads (> 24h old)
+        import time as _t
+
+        for f in runtime.service.config.incoming_dir.iterdir():
+            if f.is_file() and f.stat().st_mtime < _t.time() - 86400:
+                f.unlink(missing_ok=True)
+    except OSError:
+        pass
     runtime.worker.start()
     logger.info("ingest worker started (%d threads)", runtime.worker.concurrency)
     return runtime
