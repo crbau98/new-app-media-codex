@@ -1,17 +1,24 @@
 import { Link } from 'react-router'
 import { Compass } from 'lucide-react'
+import '@/styles/discovery.css'
 
 export default function NotFound() {
   return (
-    <div className="empty-state-panel mt-16">
-      <Compass size={16} strokeWidth={1.75} className="text-ink-3" aria-hidden="true" />
-      <h1 className="font-mono text-xs font-medium uppercase tracking-[0.12em] text-ink">404 — reel not found</h1>
-      <p className="max-w-md text-[13px] leading-5 text-ink-2">
-        This page is not in the archive. Head back to the library.
-      </p>
-      <Link to="/media" className="btn-primary mt-1">
-        Back to the library
-      </Link>
+    <div className="d-state mx-auto mt-12 max-w-xl animate-page-enter" role="status">
+      <span className="d-state-halo" aria-hidden="true">
+        <Compass size={24} strokeWidth={1.5} />
+      </span>
+      <p className="d-eyebrow">Error 404</p>
+      <h1 className="d-state-title">Reel not found</h1>
+      <p className="d-state-desc">This page is not in the archive. Head back to the library.</p>
+      <div className="d-state-actions">
+        <Link to="/media" className="btn-primary">
+          Back to the library
+        </Link>
+        <Link to="/search" className="btn-secondary">
+          Search instead
+        </Link>
+      </div>
     </div>
   )
 }
