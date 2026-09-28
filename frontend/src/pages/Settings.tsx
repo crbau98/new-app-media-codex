@@ -23,6 +23,7 @@ import { clearPrivateMediaData } from '@/lib/collections'
 import { getSessionVitals } from '@/lib/vitals'
 import { Segmented } from '@/components/discovery/Controls'
 import { useHoverPreviewPref } from '@/components/discovery/prefs'
+import { exportTasteProfile, importTasteProfile, isTasteLearningEnabled, resetTasteProfile, setTasteLearningEnabled } from '@/features/ai/taste/storage'
 import { cn } from '@/lib/utils'
 import '@/styles/discovery.css'
 
@@ -158,6 +159,7 @@ export default function Settings() {
   const discoveryMode = useAppStore((s) => s.discoveryMode)
   const setDiscoveryMode = useAppStore((s) => s.setDiscoveryMode)
   const resetDiscoveryProfile = useAppStore((s) => s.resetDiscoveryProfile)
+  const [tasteLearning, setTasteLearning] = useState(() => isTasteLearningEnabled())
   const tagPreferences = useAppStore((s) => s.tagPreferences)
   const creatorPreferences = useAppStore((s) => s.creatorPreferences)
   const hiddenMedia = useAppStore((s) => s.hiddenMedia)
@@ -358,10 +360,50 @@ export default function Settings() {
             <RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" /> Reset
           </button>
         </Row>
-        <Row label="Taste profile" hint="Export or reset your on-device taste profile. Available once taste profiles ship.">
-          <button className="btn-secondary" disabled aria-disabled="true" data-integration="taste-profile">
-            <Sparkles size={14} strokeWidth={1.75} aria-hidden="true" /> Coming soon
-          </button>
+        <Row label="Learn from my activity" hint="Builds an on-device taste profile from likes, watch time and skips. Never leaves this device.">
+          <Toggle checked={tasteLearning} onChange={(value) => { setTasteLearningEnabled(value); setTasteLearning(value) }} label="Learn from my activity" />
+        </Row>
+        <Row label="Taste profile" hint="Export a JSON backup, import one, or wipe the profile plus AI search and concierge history.">
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                const blob = new Blob([exportTasteProfile()], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = 'media-codex-taste.json'
+                a.click()
+                window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+              }}
+            >
+              <Sparkles size={14} strokeWidth={1.75} aria-hidden="true" /> Export
+            </button>
+            <label className="btn-secondary cursor-pointer">
+              Import
+              <input
+                type="file"
+                accept="application/json"
+                className="sr-only"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (!file) return
+                  const ok = importTasteProfile(await file.text())
+                  addToast({ type: ok ? 'success' : 'error', title: ok ? 'Taste profile imported' : 'Not a valid taste profile' })
+                }}
+              />
+            </label>
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                resetTasteProfile()
+                addToast({ type: 'success', title: 'Taste profile erased' })
+              }}
+            >
+              <RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" /> Erase
+            </button>
+          </div>
         </Row>
       </Section>
 
