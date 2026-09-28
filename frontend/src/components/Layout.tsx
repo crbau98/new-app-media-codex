@@ -5,6 +5,7 @@ import Navbar from './Navbar'
 import TopBar from './TopBar'
 import Footer from './Footer'
 import BottomTabBar from './BottomTabBar'
+import AuroraBackground from './three/AuroraBackground'
 import { cn } from '@/lib/utils'
 
 function subscribeOnline(callback: () => void) {
@@ -65,7 +66,9 @@ export default function Layout({ children }: LayoutProps) {
   }, [mobileSidebarOpen])
 
   return (
-    <div className="min-h-dvh flex shell-bg">
+    <div className="relative isolate min-h-dvh flex shell-bg">
+      {/* Ambient aurora — fixed, decorative, lazy WebGL over a static gradient */}
+      <AuroraBackground fixed className="-z-10" intensity={0.5} resolution={0.35} fps={24} />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[500] focus:bg-heat focus:text-canvas focus:px-3 focus:py-2 focus:rounded-md focus:font-mono focus:text-xs"
@@ -79,8 +82,8 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Tablet collapsed rail */}
-      <div className="hidden md:block lg:hidden shrink-0 h-dvh sticky top-0 z-50 sidebar-shell collapsed">
-        <Navbar />
+      <div className="hidden md:block lg:hidden shrink-0">
+        <Navbar forceCollapsed />
       </div>
 
       {/* Mobile sidebar overlay + drawer */}
@@ -112,7 +115,7 @@ export default function Layout({ children }: LayoutProps) {
         {!online && (
           <div
             role="status"
-            className="fixed top-[calc(3.5rem+env(safe-area-inset-top))] left-0 right-0 z-40 flex items-center justify-center gap-2 border-b border-line bg-sunken px-4 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-2"
+            className="fixed top-[calc(4rem+env(safe-area-inset-top))] left-0 right-0 z-40 flex items-center justify-center gap-2 glass border-x-0 border-t-0 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-2"
             style={{ left: 'var(--sidebar-width, 0px)' }}
           >
             <CloudOff size={14} aria-hidden="true" />
@@ -122,9 +125,9 @@ export default function Layout({ children }: LayoutProps) {
 
         <main
           id="main-content"
-          className="flex-1 pt-[calc(3.5rem+env(safe-area-inset-top))]"
+          className="flex-1 pt-[calc(4rem+env(safe-area-inset-top))]"
         >
-          <div className="section-shell pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:pb-8">{children}</div>
+          <div className="section-shell pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-10">{children}</div>
         </main>
 
         <Footer />

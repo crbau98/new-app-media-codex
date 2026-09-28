@@ -17,7 +17,7 @@ export default function UpdatedChip({ updatedAt, className }: { updatedAt?: stri
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5',
+        'glass inline-flex items-center gap-2 rounded-full px-3.5 py-1.5',
         'font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3',
         className
       )}
