@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLink, Globe2, Loader2, ShieldCheck } from 'lucide-react'
 import MediaImage from '@/components/MediaImage'
 import { cn } from '@/lib/utils'
-
-type FederatedSource = 'peertube' | 'mastodon'
+import { interpretFederatedTerm, rankFederatedItems, type FederatedSource } from '@/features/ai/federated'
 
 type FederatedResponse = {
   source: FederatedSource
@@ -31,6 +30,7 @@ export default function FederatedSearch() {
   const [instance, setInstance] = useState('')
   const [term, setTerm] = useState('')
   const [includeNsfw, setIncludeNsfw] = useState(false)
+  const [understood, setUnderstood] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<FederatedResponse | null>(null)
@@ -40,8 +40,15 @@ export default function FederatedSearch() {
 
   const runSearch = useCallback(async () => {
     const cleanedInstance = instance.trim()
-    const cleanedTerm = term.trim().replace(/^#/, '')
+    const interpreted = interpretFederatedTerm(term, source)
+    const cleanedTerm = interpreted.term
+    if (interpreted.refused) {
+      setResult(null)
+      setError(interpreted.refused)
+      return
+    }
     if (!cleanedInstance || !cleanedTerm || loading) return
+    setUnderstood(interpreted.understood ?? null)
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -74,7 +81,7 @@ export default function FederatedSearch() {
     }
   }, [includeNsfw, instance, loading, source, term])
 
-  const items = result?.items ?? []
+  const items = useMemo(() => rankFederatedItems(result?.items ?? [], understood ?? term.trim()), [result, understood, term])
 
   return (
     <section aria-label="Federated source search" className="rounded-md border border-line p-4 content-auto">
@@ -140,7 +147,12 @@ export default function FederatedSearch() {
         </button>
       </div>
 
-      {error && <p className="mt-3 text-[13px] text-heat">{error}</p>}
+      {understood && !error && (
+        <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">
+          Understood as “{understood}” · results ordered by relevance
+        </p>
+      )}
+      {error && <p className="mt-3 text-[13px] text-heat" role="alert">{error}</p>}
 
       {result && (
         <div className="mt-4">

@@ -1,0 +1,125 @@
+/*
+ * AI surfaces (command bar + concierge) — "Midnight Velvet" accents.
+ *
+ * Structure and colour come from the app's design tokens (elevated / sunken /
+ * ink / line). Only the champagne-gold hairline and the restrained pride
+ * spectrum are defined here. `--gold` (if the design system provides it) wins;
+ * otherwise a champagne fallback is used.
+ */
+
+.ai-scope {
+  --ai-gold: var(--gold, 214 190 140);
+}
+[data-theme='light'] .ai-scope {
+  --ai-gold: var(--gold, 150 112 48);
+}
+
+/* Elevated glass panel with a thin spectrum light along the top edge. */
+.ai-panel {
+  position: relative;
+  background: rgb(var(--elevated));
+  border: 1px solid rgb(var(--ai-gold) / 0.22);
+  box-shadow: var(--shadow-overlay), inset 0 1px 0 rgb(var(--ai-gold) / 0.08);
+}
+.ai-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 12px auto 12px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(232 121 169 / 0.5) 14%,
+    rgb(240 176 96 / 0.55) 30%,
+    rgb(var(--ai-gold) / 0.75) 48%,
+    rgb(96 190 140 / 0.5) 64%,
+    rgb(96 156 232 / 0.55) 80%,
+    rgb(160 112 232 / 0.5) 92%,
+    transparent
+  );
+  opacity: 0.85;
+}
+.ai-panel[data-busy='true']::before {
+  background-size: 220% 100%;
+  animation: ai-spectrum 2.4s linear infinite;
+}
+
+.ai-hairline { border-color: rgb(var(--ai-gold) / 0.2); }
+.ai-gold-text { color: rgb(var(--ai-gold)); }
+.ai-gold-bg { background: rgb(var(--ai-gold) / 0.12); }
+
+.ai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--ai-gold) / 0.28);
+  background: rgb(var(--ai-gold) / 0.08);
+  color: rgb(var(--ink));
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.ai-chip-button {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: rgb(var(--ink-2));
+  font-size: 12.5px;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.ai-chip-button:hover,
+.ai-chip-button:focus-visible {
+  border-color: rgb(var(--ai-gold) / 0.5);
+  background: rgb(var(--ai-gold) / 0.08);
+  color: rgb(var(--ink));
+}
+
+.ai-row-active {
+  background: linear-gradient(90deg, rgb(var(--ai-gold) / 0.1), transparent 70%);
+  box-shadow: inset 2px 0 0 rgb(var(--ai-gold) / 0.85);
+}
+
+.ai-skeleton {
+  background: linear-gradient(90deg, rgb(var(--sunken)) 0%, rgb(var(--ai-gold) / 0.1) 50%, rgb(var(--sunken)) 100%);
+  background-size: 220% 100%;
+  animation: ai-shimmer 1.6s ease-in-out infinite;
+}
+
+.ai-caret::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: rgb(var(--ai-gold));
+  animation: ai-blink 1s steps(2, start) infinite;
+}
+
+.ai-orb {
+  background:
+    radial-gradient(circle at 30% 25%, rgb(var(--ai-gold) / 0.55), transparent 55%),
+    conic-gradient(from 210deg, rgb(232 121 169 / 0.55), rgb(240 176 96 / 0.6), rgb(96 190 140 / 0.5), rgb(96 156 232 / 0.55), rgb(160 112 232 / 0.55), rgb(232 121 169 / 0.55));
+  box-shadow: 0 0 0 1px rgb(var(--ai-gold) / 0.4), 0 8px 28px rgb(0 0 0 / 0.45);
+}
+
+.ai-safe-bottom { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.ai-safe-top { padding-top: max(12px, env(safe-area-inset-top)); }
+
+@keyframes ai-shimmer { 0% { background-position: 120% 0; } 100% { background-position: -120% 0; } }
+@keyframes ai-spectrum { 0% { background-position: 0% 0; } 100% { background-position: 220% 0; } }
+@keyframes ai-blink { to { visibility: hidden; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-skeleton, .ai-caret::after, .ai-panel[data-busy='true']::before { animation: none; }
+}
+html[data-reduce-motion='true'] .ai-skeleton,
+html[data-reduce-motion='true'] .ai-caret::after,
+html[data-reduce-motion='true'] .ai-panel[data-busy='true']::before { animation: none; }
