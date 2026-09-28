@@ -321,7 +321,7 @@ async def apply_response_headers(request: Request, call_next):
         "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: blob: https://*.redgifs.com https://*.twimg.com https://*.media.tumblr.com https://codex-research-radar.onrender.com; "
-        "media-src 'self' https://*.redgifs.com https://*.twimg.com https://*.media.tumblr.com https://codex-research-radar.onrender.com; "
+        "media-src 'self' blob: https://*.redgifs.com https://*.twimg.com https://*.media.tumblr.com https://codex-research-radar.onrender.com; "
         "connect-src 'self'; "
         "frame-ancestors 'none'",
     )

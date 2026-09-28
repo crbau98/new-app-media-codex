@@ -59,7 +59,7 @@ export function apiUrl(path: string): string {
  */
 export function resolvePublicUrl(path: string | null | undefined): string {
   if (!path) return ''
-  if (path.startsWith('http://') || path.startsWith('https://')) {
+  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:') || path.startsWith('blob:')) {
     return path
   }
   const apiOrigin = getBackendOrigin()

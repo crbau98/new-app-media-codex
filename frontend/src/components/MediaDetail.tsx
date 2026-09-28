@@ -511,7 +511,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                 {/* Actions */}
                 <div className="mt-3 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
                   {item.pageUrl && (
-                    <a href={item.pageUrl} target="_blank" rel="noreferrer" className="btn-primary w-full sm:w-auto">
+                    <a href={item.pageUrl} target="_blank" rel="noreferrer" className="btn-primary col-span-2 w-full sm:col-span-1 sm:w-auto">
                       Watch on source <ExternalLink size={14} strokeWidth={1.75} />
                     </a>
                   )}

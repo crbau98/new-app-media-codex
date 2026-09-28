@@ -56,7 +56,10 @@ test('custom controls: scrubber, settings menu, keyboard seek and mute', async (
   const viewport = page.viewportSize()!
   const desktop = viewport.width >= 768
   if (desktop) await page.mouse.move(viewport.width / 2, viewport.height / 2)
-  else await video.tap()
+  else {
+    const box = (await video.boundingBox())!
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2)
+  }
   const seek = dialog.getByRole('slider', { name: 'Seek' })
   await expect(seek).toBeVisible()
   await expect(seek).toHaveAttribute('aria-valuemin', '0')
@@ -72,7 +75,8 @@ test('custom controls: scrubber, settings menu, keyboard seek and mute', async (
     await video.evaluate((node) => { node.pause(); node.currentTime = 1 })
     await page.keyboard.press('l')
     await expect.poll(async () => video.evaluate((node) => node.currentTime)).toBeGreaterThan(1.5)
+    const wasMuted = await video.evaluate((node) => node.muted)
     await page.keyboard.press('m')
-    await expect.poll(async () => video.evaluate((node) => node.muted)).toBe(true)
+    await expect.poll(async () => video.evaluate((node) => node.muted)).toBe(!wasMuted)
   }
 })
