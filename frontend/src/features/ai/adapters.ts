@@ -11,7 +11,7 @@ export function toLite(item: MediaItem): MediaLite {
     creator: item.creator || '',
     source: item.source || '',
     tags: Array.isArray(item.tags) ? item.tags : [],
-    duration: item.isVideo ? parseDurationString(item.duration) : 0,
+    duration: item.isVideo ? (item.durationSeconds ?? parseDurationString(item.duration)) : 0,
     isVideo: Boolean(item.isVideo),
     views: item.views || 0,
     likes: item.likes || 0,

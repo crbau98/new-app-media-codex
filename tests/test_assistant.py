@@ -58,6 +58,50 @@ def test_chat_requires_admin_token(assistant_client):
     assert resp.status_code == 401
 
 
+@pytest.mark.parametrize("message", ["who is this guy in the video", "find teen videos", "his home address"])
+def test_chat_refuses_unsafe_requests_before_any_model_call(assistant_client, monkeypatch, message):
+    monkeypatch.setattr("app.api.assistant.settings", _FakeSettingsWithKey())
+
+    def _never(*args, **kwargs):
+        raise AssertionError("model must not be called")
+
+    monkeypatch.setattr("app.api.assistant._load_openai_module", _never)
+    resp = assistant_client.post("/api/assistant/chat", json={"message": message})
+    assert resp.status_code == 200
+    assert '"refused": true' in resp.text
+    assert "[DONE]" in resp.text
+
+
+def test_chat_redacts_pii_before_sending(assistant_client, monkeypatch):
+    monkeypatch.setattr("app.api.assistant.settings", _FakeSettingsWithKey())
+    seen = {}
+
+    class FakeStream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def __iter__(self):
+            return iter([])
+
+    class FakeCompletions:
+        def stream(self, **kwargs):
+            seen.update(kwargs)
+            return FakeStream()
+
+    client_obj = type("C", (), {"chat": type("Chat", (), {"completions": FakeCompletions()})()})()
+    monkeypatch.setattr(
+        "app.api.assistant._load_openai_module",
+        lambda: SimpleNamespace(OpenAI=lambda **kw: client_obj),
+    )
+    assistant_client.post("/api/assistant/chat", json={"message": "mail me at bob@example.com about solo clips"})
+    sent = seen["messages"][1]["content"]
+    assert "bob@example.com" not in sent and "solo clips" in sent
+    assert "public metadata" in seen["messages"][0]["content"]
+
+
 def test_chat_rejects_overlong_message(assistant_client):
     resp = assistant_client.post(
         "/api/assistant/chat", json={"message": "x" * 4001}
