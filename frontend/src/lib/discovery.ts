@@ -1,4 +1,8 @@
-import type { MediaItem } from './types'
+import type { MediaItem } from './types.ts'
+import { itemSimilarity } from '../features/ai/core/library.ts'
+import { toLite } from '../features/ai/adapters.ts'
+import { explainBreakdown, scoreItem as tasteScore, type ScoreBreakdown, type TasteProfile } from '../features/ai/taste/engine.ts'
+import { getCachedTasteProfile } from '../features/ai/taste/storage.ts'
 
 export type DiscoveryMode = 'balanced' | 'familiar' | 'adventurous'
 
@@ -50,7 +54,7 @@ function affinityReasons(item: MediaItem, profile: DiscoveryProfile): string[] {
   return reasons.slice(0, 3)
 }
 
-function scoreItem(item: MediaItem, profile: DiscoveryProfile): number {
+function scoreItem(item: MediaItem, profile: DiscoveryProfile, taste: ScoreBreakdown | null): number {
   const key = creatorKey(item.creator)
   const tagAffinity = item.tags.reduce((sum, tag) => sum + (profile.tagPreferences[creatorKey(tag)] || 0), 0)
   const creatorAffinity = profile.creatorPreferences[key] || 0
@@ -70,36 +74,72 @@ function scoreItem(item: MediaItem, profile: DiscoveryProfile): number {
     + liked * 10
     + noveltyBoost
     - seen * 9
+    // Persistent on-device taste (decayed likes/follows/dwell/skips); 0 when there is no history.
+    + (taste ? (taste.score - 50) * 0.5 : 0)
+}
+
+export interface RankOptions {
+  /** Persistent taste profile. `undefined` = use the cached on-device profile, `null` = disable. */
+  taste?: TasteProfile | null
+  now?: number
 }
 
 /**
  * Explainable, on-device recommendation ranking. It learns only from explicit
- * local feedback, follows, likes, and viewing history. It does not inspect
- * bodies/faces or send a private taste profile to a model provider.
+ * local feedback, follows, likes, dwell time and viewing history. It does not
+ * inspect bodies/faces or send a private taste profile to a model provider.
+ *
+ * Backward compatible: the third argument is optional. When the on-device
+ * taste engine has history, its decayed affinities and "why" reasons are
+ * blended in; the head of the list is diversified by tag/creator similarity
+ * (MMR-style) so one cluster can never own the feed.
  */
-export function rankForYou(items: MediaItem[], profile: DiscoveryProfile): MediaItem[] {
+export function rankForYou(items: MediaItem[], profile: DiscoveryProfile, options: RankOptions = {}): MediaItem[] {
   const hidden = new Set(profile.hiddenMedia)
+  const now = options.now ?? Date.now()
+  const taste = options.taste === undefined ? getCachedTasteProfile() : options.taste
+  const followed = new Set(Object.entries(profile.followCache).filter(([, on]) => on).map(([id]) => id.replace(/^creator-/, '')))
+  const lites = new Map<string, ReturnType<typeof toLite>>()
   const candidates = items
     .filter((item) => !hidden.has(item.id))
-    .map((item) => ({
-      ...item,
-      personalizedScore: Math.round(scoreItem(item, profile) * 10) / 10,
-      recommendationReasons: affinityReasons(item, profile),
-    }))
+    .map((item) => {
+      const lite = toLite(item)
+      lites.set(item.id, lite)
+      const breakdown = taste
+        ? tasteScore(lite, taste, {
+            now, followed, hidden, mode: profile.mode,
+            priorTags: profile.tagPreferences, priorCreators: profile.creatorPreferences,
+          })
+        : null
+      const base = affinityReasons(item, profile)
+      const reasons = breakdown && (breakdown.creator > 0.3 || breakdown.topTags.length || breakdown.daypart > 0.15)
+        ? [...new Set([...explainBreakdown(lite, breakdown, { now, profile: taste ?? undefined }), ...base])].slice(0, 3)
+        : base
+      return {
+        ...item,
+        personalizedScore: Math.round(scoreItem(item, profile, breakdown) * 10) / 10,
+        recommendationReasons: reasons,
+      }
+    })
     .sort((a, b) => (b.personalizedScore || 0) - (a.personalizedScore || 0))
 
-  // Greedy diversification keeps one prolific creator from consuming the feed.
+  // Greedy diversification keeps one prolific creator / tag cluster from consuming the feed.
   const ranked: MediaItem[] = []
   const creatorCount = new Map<string, number>()
   const remaining = [...candidates]
+  const window = 60
   while (remaining.length) {
     let bestIndex = 0
     let bestAdjusted = Number.NEGATIVE_INFINITY
-    for (let index = 0; index < remaining.length; index += 1) {
+    const scan = Math.min(remaining.length, window)
+    for (let index = 0; index < scan; index += 1) {
       const item = remaining[index]
       const repeats = creatorCount.get(creatorKey(item.creator)) || 0
       const penalty = repeats * (profile.mode === 'familiar' ? 5 : 14)
-      const adjusted = (item.personalizedScore || 0) - penalty
+      let similar = 0
+      const lite = lites.get(item.id)
+      if (lite) for (const prev of ranked.slice(-5)) { const other = lites.get(prev.id); if (other) similar = Math.max(similar, itemSimilarity(lite, other)) }
+      const adjusted = (item.personalizedScore || 0) - penalty - similar * (profile.mode === 'familiar' ? 4 : 10)
       if (adjusted > bestAdjusted) {
         bestAdjusted = adjusted
         bestIndex = index
