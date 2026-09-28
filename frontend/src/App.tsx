@@ -16,6 +16,8 @@ const Creators = lazy(() => import('@/pages/Creators'))
 const Settings = lazy(() => import('@/pages/Settings'))
 const NotFound = lazy(() => import('@/pages/NotFound'))
 const CommandPalette = lazy(() => import('@/components/CommandPalette'))
+const ConciergeLauncher = lazy(() => import('@/features/ai/ConciergeLauncher'))
+const GlobalMediaHost = lazy(() => import('@/components/GlobalMediaHost'))
 
 const routeTitles: Record<string, string> = {
   '/media': 'Library',
@@ -163,7 +165,10 @@ function AppShell() {
       <AppErrorBoundary>
         <AnimatedRoutes />
       </AppErrorBoundary>
-      {/* integration: <ConciergeLauncher/> */}
+      <Suspense fallback={null}>
+        <ConciergeLauncher />
+        <GlobalMediaHost />
+      </Suspense>
       {shouldMount && (
         <Suspense fallback={null}>
           <CommandPalette />
