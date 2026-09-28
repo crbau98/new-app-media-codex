@@ -1,5 +1,4 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import { useAppStore } from '@/store'
 
 /** Subscribes to a CSS media query without a setState-in-effect. */
 export function useMediaQuery(query: string): boolean {
@@ -19,12 +18,7 @@ export function useMediaQuery(query: string): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, () => false)
 }
 
-/** True when neither the OS nor the in-app setting asks for reduced motion. */
-export function useMotionOk(): boolean {
-  const reduceApp = useAppStore((state) => state.reduceMotion)
-  const reduceOs = useMediaQuery('(prefers-reduced-motion: reduce)')
-  return !reduceApp && !reduceOs
-}
+export { useMotionOk } from '@/hooks/useMotionOk'
 
 /** Desktop-class pointer: hover available and precise. */
 export function useFinePointer(): boolean {

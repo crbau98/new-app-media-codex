@@ -7,7 +7,7 @@ import { resolveMediaAssetUrl } from '@/lib/backendOrigin'
 import MediaImage from '@/components/MediaImage'
 import HoverPreviewVideo from '@/components/discovery/HoverPreviewVideo'
 import { useFinePointer, useMotionOk } from '@/components/discovery/motion'
-import { useDepthTilt } from '@/components/discovery/useDepthTilt'
+import Tilt3D from '@/components/three/Tilt3D'
 import { hueFor, isFresh, previewSource, readMediaMeta } from '@/components/discovery/mediaMeta'
 import { PREVIEW_DWELL_MS, previewAllowed, previewController } from '@/components/discovery/hoverPreview'
 import { cn } from '@/lib/utils'
@@ -61,13 +61,11 @@ function MediaCard({
   const [loaded, setLoaded] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [previewReady, setPreviewReady] = useState(false)
-  const rootRef = useRef<HTMLButtonElement>(null)
   const dwellTimer = useRef<number | null>(null)
 
   const motionOk = useMotionOk()
   const finePointer = useFinePointer()
   const tiltOn = motionOk && finePointer && !flat
-  useDepthTilt(rootRef, tiltOn, 7)
 
   const meta = useMemo(() => readMediaMeta(item), [item])
   const hue = useMemo(() => hueFor(item.id), [item.id])
@@ -123,8 +121,8 @@ function MediaCard({
 
   return (
     <div className={cn('d-cardbox', className)} style={wrapperStyle}>
+      <Tilt3D className="d-tilt-fill" max={7} scale={1.018} glare={tiltOn}>
       <button
-        ref={rootRef}
         type="button"
         data-testid={item.isVideo ? 'video-tile' : 'media-tile'}
         data-dcard=""
@@ -132,8 +130,9 @@ function MediaCard({
         data-loaded={loaded ? 'true' : 'false'}
         data-previewing={previewReady ? 'true' : 'false'}
         data-kind={item.isVideo ? 'video' : 'photo'}
+        data-tilt={tiltOn ? 'on' : undefined}
         tabIndex={tabIndex}
-        className="d-card d-tilt tap-highlight-none"
+        className="d-card tap-highlight-none"
         style={surface}
         onClick={() => (error ? handleRetry() : onSelect?.(item.id))}
         onPointerEnter={onPointerEnter}
@@ -172,8 +171,6 @@ function MediaCard({
             </span>
           )}
         </span>
-
-        <span className="d-glare" aria-hidden="true" />
 
         <span className="d-top" aria-hidden="true">
           <span className="d-badges">
@@ -228,6 +225,7 @@ function MediaCard({
           </span>
         </span>
       </button>
+      </Tilt3D>
     </div>
   )
 }
