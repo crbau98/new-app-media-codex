@@ -71,12 +71,26 @@ export default function PhotoViewer({ item, index, direction, onIndexChange, can
   const motionOk = useMotionOk()
   const addToast = useAppStore((state) => state.addToast)
   const frames = useMemo(() => photoFrames(item), [item])
-  const zoomRef = useRef<ZoomHandle>(null)
+  const handles = useRef(new Map<string, ZoomHandle>())
+  const activeKey = useRef('')
+  const zoomRef = useMemo(
+    () => ({
+      get current() {
+        return handles.current.get(activeKey.current) ?? null
+      },
+    }),
+    [],
+  )
+  const [aspects, setAspects] = useState<Record<string, number>>({})
   const [zoomed, setZoomed] = useState(false)
   const [downloading, setDownloading] = useState(false)
 
   const safeIndex = Math.min(Math.max(index, 0), Math.max(0, frames.length - 1))
   const frame = frames[safeIndex]
+  const frameKey = `${item.id}:${safeIndex}`
+  useEffect(() => {
+    activeKey.current = frameKey
+  }, [frameKey])
 
   const canSwipe = useCallback(
     (dir: -1 | 1) => {
@@ -122,7 +136,7 @@ export default function PhotoViewer({ item, index, direction, onIndexChange, can
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [frames.length])
+  }, [frames.length, zoomRef])
 
   const download = useCallback(async () => {
     if (!frame || downloading) return
@@ -150,12 +164,18 @@ export default function PhotoViewer({ item, index, direction, onIndexChange, can
   if (!frame) return null
   const canDownload = isSameOrigin(frame.url)
   const color = safeColor(frame.dominantColor)
+  const stageAspect = Math.min(2.4, Math.max(0.5, aspects[frame.url] ?? frame.aspect ?? 0)) || 0
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       <div
-        className="group/photo relative h-[min(62dvh,720px)] min-h-[260px] w-full overflow-hidden rounded-2xl bg-black/70 ring-1 ring-white/10 sm:shadow-[0_24px_70px_-24px_rgb(0_0_0/0.85)]"
-        style={{ backgroundColor: color }}
+        className="group/photo relative mx-auto min-h-[220px] overflow-hidden rounded-2xl bg-black/70 ring-1 ring-white/10 sm:shadow-[0_24px_70px_-24px_rgb(0_0_0/0.85)]"
+        style={{
+          backgroundColor: color,
+          ...(stageAspect
+            ? { aspectRatio: String(stageAspect), width: `min(100%, calc(min(62dvh, 720px) * ${stageAspect}))` }
+            : { height: 'min(62dvh, 720px)', width: '100%' }),
+        }}
       >
         <AnimatePresence initial={false} custom={direction} mode="popLayout">
           <motion.div
@@ -168,7 +188,10 @@ export default function PhotoViewer({ item, index, direction, onIndexChange, can
             transition={{ type: 'spring', stiffness: 380, damping: 38, mass: 0.9 }}
           >
             <ZoomImage
-              ref={zoomRef}
+              ref={(handle) => {
+                if (handle) handles.current.set(`${item.id}:${safeIndex}`, handle)
+                else handles.current.delete(`${item.id}:${safeIndex}`)
+              }}
               sources={[frame.url, item.thumbnail ? resolveMediaAssetUrl(item.thumbnail) : ''].filter(Boolean)}
               placeholderSrc={item.thumbnail ? resolveMediaAssetUrl(item.thumbnail) : undefined}
               lqip={frame.lqip}
@@ -178,6 +201,7 @@ export default function PhotoViewer({ item, index, direction, onIndexChange, can
               canSwipe={canSwipe}
               onSwipe={move}
               onZoomChange={setZoomed}
+              onLoaded={(ratio) => setAspects((current) => (current[frame.url] === ratio ? current : { ...current, [frame.url]: ratio }))}
             />
           </motion.div>
         </AnimatePresence>

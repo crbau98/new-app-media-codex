@@ -37,7 +37,7 @@ interface ZoomImageProps {
   canSwipe: (direction: -1 | 1) => boolean
   onSwipe: (direction: -1 | 1) => void
   onZoomChange?: (zoomed: boolean) => void
-  onLoaded?: () => void
+  onLoaded?: (aspect: number) => void
   ref?: Ref<ZoomHandle>
 }
 
@@ -95,7 +95,7 @@ export default function ZoomImage({
       if (result) {
         aspectRef.current = result.aspect
         setState({ phase: 'ready', src: result.src, aspect: result.aspect })
-        onLoaded?.()
+        onLoaded?.(result.aspect)
       } else {
         setState({ phase: 'error' })
       }

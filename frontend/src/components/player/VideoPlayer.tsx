@@ -561,7 +561,9 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
           backgroundColor: safeColor(intel.dominantColor),
         }}
         data-idle={idleCursor ? 'true' : 'false'}
-        onPointerEnter={poke}
+        onPointerEnter={(event) => {
+          if (event.pointerType === 'mouse') poke()
+        }}
         onFocusCapture={poke}
       >
         <video
