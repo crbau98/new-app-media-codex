@@ -102,7 +102,7 @@ export function sniffBytes(b: Uint8Array): Sniff {
   }
   if (startsWith(b, 'FLV')) return { kind: 'video', mime: 'video/x-flv' }
   if (startsWith(b, 'OggS')) return { kind: 'video', mime: 'video/ogg' }
-  const text = new TextDecoder().decode(b.subarray(0, Math.min(b.length, 1024))).replace(/^﻿/, '').trimStart().toLowerCase()
+  const text = new TextDecoder().decode(b.subarray(0, Math.min(b.length, 1024))).replace(/^\uFEFF/, '').trimStart().toLowerCase()
   if (text.startsWith('#extm3u')) return { kind: 'hls', mime: 'application/vnd.apple.mpegurl' }
   if (text.includes('<mpd')) return { kind: 'dash', mime: 'application/dash+xml' }
   if (/^<!doctype html|^<html|^<head|<html[\s>]/.test(text)) return { kind: 'html', mime: 'text/html' }
@@ -274,11 +274,11 @@ const feedKind = (url?: string, mime?: string): FeedItem['kind'] => {
 export function parseFeed(text: string, feedUrl: string): { title: string; items: FeedItem[] } {
   const t = text.trim()
   if (t.startsWith('{')) {
-    const d = JSON.parse(t) as { title?: string; items?: Array<Record<string, any>> }
+    const d = JSON.parse(t) as { title?: string; items?: Array<{ id?: string; url?: string; external_url?: string; title?: string; image?: string; date_published?: string; attachments?: Array<{ url?: string; title?: string; mime_type?: string }> }> }
     return {
       title: d.title || 'JSON Feed',
       items: (d.items || []).slice(0, 60).map((i, n) => {
-        const att = (i.attachments || []).find((a: any) => a.url)
+        const att = (i.attachments || []).find((a) => a.url)
         const media = att?.url || i.image
         const url = i.url || i.external_url || feedUrl
         return { id: String(i.id || `${url}#${n}`), title: i.title || att?.title || 'Feed item', url, publishedAt: i.date_published, mediaUrl: media, thumbnail: i.image, kind: feedKind(media, att?.mime_type) }
@@ -391,7 +391,7 @@ export async function classifyUrl(rawUrl: string, fetcher: Fetcher = (u, o) => s
     if (!cands.some((c) => c.kind !== 'image') && meta.oembedUrls[0]) {
       try {
         const r = await fetcher(meta.oembedUrls[0], { maxBytes: 128 * 1024 })
-        const d = JSON.parse(text(r.body)) as Record<string, any>
+        const d = JSON.parse(text(r.body)) as { title?: string; provider_name?: string; thumbnail_url?: unknown; html?: unknown }
         out.title = out.title || d.title
         out.siteName = out.siteName || d.provider_name
         if (typeof d.thumbnail_url === 'string') cands.push({ ...mk(d.thumbnail_url, 'oembed:thumbnail'), kind: 'image', protocol: 'progressive' })
