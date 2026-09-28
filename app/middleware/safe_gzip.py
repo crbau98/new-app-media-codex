@@ -24,7 +24,10 @@ DEFAULT_EXCLUDED_CONTENT_TYPES = ("text/event-stream",)
 
 def _is_non_compressible_media(content_type: str) -> bool:
     ct = (content_type or "").split(";", 1)[0].strip().lower()
-    return ct.startswith(DEFAULT_EXCLUDED_CONTENT_TYPES) or ct.startswith(("video/", "audio/"))
+    if ct == "image/svg+xml":
+        return False
+    # Already-compressed media: gzip only burns CPU (and breaks media elements).
+    return ct.startswith(DEFAULT_EXCLUDED_CONTENT_TYPES) or ct.startswith(("video/", "audio/", "image/"))
 
 
 class GZipMiddleware:
