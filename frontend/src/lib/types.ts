@@ -33,6 +33,34 @@ export interface MediaItem {
   curationScore?: number
   /** Short, source-derived explanation for why the item is surfaced. */
   curationReasons?: string[]
+  /* ── Media-intelligence contract (produced by ingestion, consumed by player/cards/AI) ── */
+  /** Intrinsic pixel size when known; lets grids reserve space and avoid layout shift. */
+  width?: number
+  height?: number
+  /** width / height when known (e.g. 1.777 for 16:9, 0.5625 for 9:16). */
+  aspect?: number
+  /** Precise duration in seconds (the `duration` string is display-only). */
+  durationSeconds?: number
+  /** Dominant colour as `#rrggbb`, used for placeholders and ambient glow. */
+  dominantColor?: string
+  /** Tiny (<= 32px wide) inline data-URL blur placeholder. */
+  lqip?: string
+  /** HLS master playlist when an adaptive rendition exists. */
+  hlsUrl?: string
+  /** Poster frame distinct from the grid thumbnail (full-size). */
+  posterUrl?: string
+  /** Sprite sheet of scrub thumbnails: url + grid geometry. */
+  spriteUrl?: string
+  spriteGrid?: { cols: number; rows: number; tileWidth: number; tileHeight: number; intervalSeconds: number }
+  mimeType?: string
+  codec?: string
+  hasAudio?: boolean
+  /** Photos: additional frames of the same set, in order. */
+  gallery?: { url: string; thumbnail?: string; width?: number; height?: number }[]
+  /** Metadata-derived tags/summary from the AI layer (never inferred from faces/bodies). */
+  aiTags?: string[]
+  aiSummary?: string
+  aiMood?: string
   /** On-device recommendation score derived from the user's local feedback. */
   personalizedScore?: number
   /** Human-readable explanation of the recommendation. */
