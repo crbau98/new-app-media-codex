@@ -12,6 +12,7 @@ import { rankSimilarCreatorsWithAI } from './_lib/ai-similarity.js'
 import { collectAdditionalSources } from './_lib/multi-source.js'
 import type { CreatorLead, UnifiedMediaItem } from './_lib/discovery-types.js'
 import { selectQualityDiverse } from './_lib/source-quality.js'
+import { dedupeItems, orderStreamCandidates, pruneUnplayable, withContract } from './_lib/media-normalize.js'
 
 const REDGIFS_API = 'https://api.redgifs.com/v2'
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
@@ -69,6 +70,9 @@ type RedgifsItem = {
   tags?: string[]
   niches?: Array<string | { name?: string }>
   duration?: number
+  width?: number
+  height?: number
+  hasAudio?: boolean
   likes?: number
   views?: number
   createDate?: number
@@ -615,10 +619,10 @@ export default async function handler(req: Request): Promise<Response> {
         const isWatchedCreator = creatorIsWatched(creator, watchlist)
         const createdAt = toIsoDate(item.createDate)
         const directCandidates = [safeProviderMediaUrl(item.urls?.hd), safeProviderMediaUrl(item.urls?.sd)].filter((url): url is string => Boolean(url))
-        const streamCandidates = [...directCandidates.map(proxiedMediaUrl), ...directCandidates]
-          .filter((url): url is string => Boolean(url))
-          .filter((url, index, list) => list.indexOf(url) === index)
-        return {
+        const streamCandidates = orderStreamCandidates(
+          [...directCandidates.map(proxiedMediaUrl), ...directCandidates].filter((url): url is string => Boolean(url)),
+        )
+        const base: LiveMediaItem = {
           id: `rg-${item.id}`,
           title: item.description?.trim() || tags.slice(0, 3).join(' · ') || `Video by ${creator}`,
           thumbnail: proxiedMediaUrl(safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail)),
@@ -645,6 +649,10 @@ export default async function handler(req: Request): Promise<Response> {
           curationReasons: [],
           isWatchedCreator,
         }
+        return withContract(base, {
+          width: item.width, height: item.height, durationSeconds: item.duration, hasAudio: item.hasAudio,
+          mimeType: 'video/mp4', posterUrl: proxiedMediaUrl(safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail)),
+        })
       })
       .filter((item) => matchesQuery({
         userName: item.creator,
@@ -660,8 +668,9 @@ export default async function handler(req: Request): Promise<Response> {
     const additionalFiltered = additional.media
       .filter((item) => !query || [item.creator, item.title, item.description || '', ...item.tags].join(' ').toLowerCase().includes(query.toLowerCase()))
       .filter((item) => item.views >= minViews && item.likes >= minLikes)
-    const combined = [...mapped, ...additionalFiltered]
-      .filter((item, index, list) => list.findIndex((candidate) => candidate.id === item.id) === index)
+    const normalizedAdditional = additionalFiltered.map((item) => withContract(item))
+    const pruned = pruneUnplayable(dedupeItems([...mapped, ...normalizedAdditional]))
+    const combined = pruned.items
     if (!combined.length) throw new Error('No connected public source returned playable media')
     const ranked = sortItems(rankCohort(combined).map((item) => ({ ...item, isTrending: item.curationScore >= 65 })), sort)
     const items = selectQualityDiverse(ranked, count)
@@ -720,6 +729,7 @@ export default async function handler(req: Request): Promise<Response> {
         received: received.length + additional.media.length + additional.leads.length,
         eligible: eligible.length + additional.media.length,
         playable: items.filter((item) => Boolean(item.mediaUrl || item.streamCandidates?.length)).length,
+        unplayableDropped: pruned.dropped,
         pagesScanned: basePagesScanned,
         providerRequestsSucceeded: redgifsRequestsSucceeded + additional.requestsSucceeded,
         providerRequestsAttempted: redgifsRequestsAttempted + additional.requestsAttempted,

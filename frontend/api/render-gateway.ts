@@ -39,6 +39,7 @@ function methodAllowed(method: string, path: string): boolean {
       /^\/api\/telegram\/media\/[^/]+\/stream$/,
     ].some((pattern) => pattern.test(path))
   }
+  if (/^\/api\/v1\/ingest\/(classify|jobs(\/[a-f0-9]{8,64}\/(cancel|retry))?)$/.test(path)) return method === 'POST'
   return method === 'POST' && (
     path === '/api/discovery/providers' ||
     /^\/api\/screenshots\/[^/]+\/resolve-stream$/.test(path)
@@ -62,7 +63,7 @@ export default async function handler(request: Request): Promise<Response> {
   query.delete('path')
   target.search = query.toString()
   const headers = new Headers({ Accept: request.headers.get('accept') || 'application/json' })
-  for (const name of ['content-type', 'if-none-match', 'range', 'x-request-id']) {
+  for (const name of ['content-type', 'if-none-match', 'range', 'x-request-id', 'x-admin-token', 'idempotency-key']) {
     const value = request.headers.get(name)
     if (value) headers.set(name, value)
   }
