@@ -145,11 +145,15 @@ export function mapRedgifsItem(item: RedgifsItem, isWatchedCreator = false): Uni
   const streamCandidates = orderStreamCandidates(
     [...directCandidates.map(proxiedMediaUrl), ...directCandidates].filter((url): url is string => Boolean(url)),
   )
+  // Grids and avatars use the provider's small thumbnail; the full-size poster rides in
+  // `posterUrl` for the detail sheet and player. Decoding a full poster per card is what
+  // exhausts memory on phones.
   const poster = proxiedMediaUrl(safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail))
+  const thumb = proxiedMediaUrl(safeProviderMediaUrl(item.urls?.thumbnail)) || poster
   const base: UnifiedMediaItem = {
     id: `rg-${item.id}`,
     title: item.description?.trim() || tags.slice(0, 3).join(' · ') || `Video by ${creator}`,
-    thumbnail: poster || '',
+    thumbnail: thumb || '',
     source: 'Redgifs',
     duration: durationLabel(item.duration),
     isVideo: true,

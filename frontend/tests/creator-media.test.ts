@@ -81,6 +81,15 @@ test('creator catalog validates input and reports provider failures', async () =
   } finally { globalThis.fetch = original }
 })
 
+test('cards get the small thumbnail; the full-size poster is kept separately', () => {
+  const item = mapRedgifsItem(gif('t') as never) as { thumbnail: string; posterUrl?: string }
+  assert.ok(decodeURIComponent(item.thumbnail).endsWith('t-thumb.jpg'))
+  assert.ok(item.posterUrl && decodeURIComponent(item.posterUrl).endsWith('t-poster.jpg'))
+  // No thumbnail from the provider: fall back to the poster rather than an empty card.
+  const noThumb = mapRedgifsItem(gif('u', { urls: { hd: 'https://media.redgifs.com/u.mp4', poster: 'https://media.redgifs.com/u-poster.jpg' } }) as never)
+  assert.ok(decodeURIComponent(noThumb.thumbnail).endsWith('u-poster.jpg'))
+})
+
 test('shared mapper marks watched creators and keeps eligibility rules', () => {
   const item = mapRedgifsItem(gif('z') as never, true)
   assert.equal(item.isWatchedCreator, true)

@@ -6,6 +6,12 @@ import { cn } from '@/lib/utils'
 
 const CANDIDATE_TIMEOUT_MS = 7000
 const DEFAULT_MAX_RETRIES = 2
+// Decoded bitmaps are the dominant memory cost of a media grid (a 1080x1920 poster is
+// ~8 MB decoded) and phone browsers kill the tab long before desktop ones would. Loaded
+// images that scroll this far away are swapped for a 1x1 pixel so their bitmaps can be
+// freed; they reload (from the HTTP cache) when they come back near the viewport.
+const EVICT_MARGIN = '1400px 700px'
+const BLANK_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
 interface MediaImageProps {
   /** Ordered image candidates. The first reachable URL wins; later URLs are fallbacks. */
@@ -66,6 +72,8 @@ function MediaImageInner({
   const [loaded, setLoaded] = useState(false)
   const [exhausted, setExhausted] = useState(false)
   const [waiting, setWaiting] = useState(false)
+  const [evicted, setEvicted] = useState(false)
+  const evictedRef = useRef(false)
   // Lazy images only start their failure timers once near the viewport, so an
   // off-screen tile the browser has deliberately not fetched never "fails".
   const [visible, setVisible] = useState(() => loading === 'eager' || typeof IntersectionObserver === 'undefined')
@@ -116,6 +124,7 @@ function MediaImageInner({
 
   /** Next candidate → next pass (with exponential backoff) → exhausted. */
   const advance = useCallback(() => {
+    if (evictedRef.current) return
     clearTimers()
     setLoaded(false)
     if (index + 1 < candidates.length) {
@@ -143,14 +152,46 @@ function MediaImageInner({
   }, [advance])
 
   useEffect(() => {
-    if (exhausted || loaded || waiting || !visible) return undefined
+    if (exhausted || loaded || waiting || !visible || evicted) return undefined
     timeoutRef.current = setTimeout(() => advanceRef.current(), CANDIDATE_TIMEOUT_MS)
     return clearTimers
-  }, [index, cycle, loaded, exhausted, waiting, visible, clearTimers])
+  }, [index, cycle, loaded, exhausted, waiting, visible, evicted, clearTimers])
+
+  // Free decoded bitmaps of far-offscreen tiles (only for tiles whose size does not depend on the image).
+  const evictable = loading !== 'eager' && /(^|\s)absolute(\s|$)/.test(className || '') && /(^|\s)inset-0(\s|$)/.test(className || '')
+  useEffect(() => {
+    if (!evictable || !loaded || typeof IntersectionObserver === 'undefined') return undefined
+    const node = imgRef.current
+    if (!node) return undefined
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[entries.length - 1]
+      if (!entry || entry.isIntersecting) return
+      evictedRef.current = true
+      setEvicted(true)
+      setLoaded(false)
+    }, { rootMargin: EVICT_MARGIN })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [evictable, loaded, index, cycle])
+
+  useEffect(() => {
+    if (!evicted) return undefined
+    const node = imgRef.current
+    if (!node || typeof IntersectionObserver === 'undefined') return undefined
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        evictedRef.current = false
+        setEvicted(false)
+      }
+    }, { rootMargin: EVICT_MARGIN })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [evicted])
 
   if (exhausted) return null
 
   const handleLoad = () => {
+    if (evictedRef.current) return
     clearTimers()
     const node = imgRef.current
     const reveal = () => {
@@ -173,7 +214,7 @@ function MediaImageInner({
       <img
         key={`${cycle}:${index}:${candidates[index]}`}
         ref={imgRef}
-        src={candidates[index]}
+        src={evicted ? BLANK_PIXEL : candidates[index]}
         alt={alt}
         className={cn(className, !hasExplicitOpacity && (loaded ? 'opacity-100' : 'opacity-0'), !hasExplicitOpacity && 'transition-opacity duration-300')}
         style={aspect && aspect > 0 ? { aspectRatio: String(aspect) } : undefined}
