@@ -283,6 +283,52 @@ async function run(options: DuckDuckGoOptions): Promise<DuckDuckGoResult> {
   }
 }
 
+/**
+ * Creator-profile lead extraction (metadata only, additive). Fetches the public
+ * DuckDuckGo HTML results page for `query` and returns outbound result links
+ * (title + real target URL). Callers decide which URLs are creator profiles.
+ * Soft-fails to []; honors `signal`; never fetches the result pages themselves.
+ */
+export async function searchDuckDuckGoLinks(
+  query: string,
+  opts: { signal?: AbortSignal; limit?: number; timeoutMs?: number } = {},
+): Promise<Array<{ title: string; url: string }>> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 4_000)
+  const onAbort = () => controller.abort()
+  if (opts.signal?.aborted) controller.abort()
+  else opts.signal?.addEventListener('abort', onAbort, { once: true })
+  try {
+    const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+      headers: { 'User-Agent': DDG_UA, Accept: 'text/html' },
+      signal: controller.signal,
+      cache: 'no-store',
+      redirect: 'follow',
+    })
+    if (!response.ok) return []
+    const html = await response.text()
+    const out: Array<{ title: string; url: string }> = []
+    const seen = new Set<string>()
+    const anchor = /<a\b[^>]*class="[^"]*result__a[^"]*"[^>]*>/gi
+    for (const match of html.matchAll(anchor)) {
+      const tag = match[0]
+      const href = /href="([^"]+)"/i.exec(tag)?.[1]?.replace(/&amp;/g, '&')
+      const url = unwrapDuckLink(href)
+      if (!url || seen.has(url)) continue
+      seen.add(url)
+      const after = html.slice((match.index || 0) + tag.length, (match.index || 0) + tag.length + 300)
+      out.push({ title: clean(after.split('</a>')[0] || '').slice(0, 140) || hostLabel(url), url })
+      if (out.length >= (opts.limit ?? 20)) break
+    }
+    return out
+  } catch {
+    return []
+  } finally {
+    clearTimeout(timer)
+    opts.signal?.removeEventListener('abort', onAbort)
+  }
+}
+
 export async function collectDuckDuckGo(options: DuckDuckGoOptions): Promise<DuckDuckGoResult> {
   const key = `${options.watchlist.map(canonical).filter(Boolean).sort().join(',')}|${canonical(options.query || '')}`
   const cached = responseCache.get(key)
