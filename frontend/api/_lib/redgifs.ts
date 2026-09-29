@@ -230,13 +230,14 @@ export async function fetchCreatorCatalogPage(
   page: number,
   count: number,
   order: 'recent' | 'top' | 'trending' = 'recent',
+  timeoutMs = PROVIDER_TIMEOUT_MS,
 ): Promise<CreatorCatalogPage> {
   const token = await getRedgifsToken()
   const params = new URLSearchParams({ count: String(count), page: String(page), order })
   const result = await fetchWithTimeout(`${REDGIFS_API}/users/${encodeURIComponent(handle)}/search?${params}`, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}`, 'User-Agent': 'MediaCodex/1.0' },
     cache: 'no-store',
-  })
+  }, timeoutMs)
   if (result.status === 404) return { gifs: [], page, pages: 0, total: 0 }
   if (!result.ok) throw new Error(`Public provider returned ${result.status}`)
   const body = await result.json() as { gifs?: RedgifsItem[]; page?: number; pages?: number; total?: number }
@@ -247,4 +248,118 @@ export async function fetchCreatorCatalogPage(
     pages: Number(body.pages) || (gifs.length >= count ? page + 1 : page),
     total: Number(body.total) || gifs.length,
   }
+}
+
+/* ── Creator resolution helpers (additive) ── */
+
+/** Per-call ceiling for resolver provider calls. */
+export const RESOLVE_CALL_TIMEOUT_MS = 5_000
+
+export type UserProbe = {
+  handle: string
+  exists: boolean
+  /** Catalog size reported by the provider (0 when absent). */
+  total: number
+  /** Provider-cased username from the first hit. */
+  userName?: string
+  /** Proxied small thumbnail of an eligible first item, when available. */
+  avatar?: string
+  /** Set when the provider errored (distinct from "does not exist"). */
+  error?: string
+}
+
+/** Does this exact provider username have public posts? Never throws. */
+export async function probeUser(handle: string, timeoutMs = RESOLVE_CALL_TIMEOUT_MS): Promise<UserProbe> {
+  try {
+    const page = await fetchCreatorCatalogPage(handle, 1, 8, 'top', timeoutMs)
+    const gifs = page.gifs.map(sanitizeProviderItem)
+    const wanted = canonicalCreator(handle)
+    const own = gifs.filter((g) => canonicalCreator(g.userName || '') === wanted)
+    const exists = own.length > 0
+    const first = own.find((g) => isEligibleScopedItem(g) && safeProviderMediaUrl(g.urls?.thumbnail || g.urls?.poster))
+    return {
+      handle,
+      exists,
+      total: exists ? Math.max(page.total, own.length) : 0,
+      userName: exists ? own[0].userName : undefined,
+      avatar: first ? proxiedMediaUrl(safeProviderMediaUrl(first.urls?.thumbnail || first.urls?.poster)) : undefined,
+    }
+  } catch (error) {
+    return { handle, exists: false, total: 0, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/** Provider gif search by free text (names/handles appear in tags and descriptions). Throws on provider failure. */
+export async function searchGifsByText(
+  text: string,
+  count = 40,
+  order: 'top' | 'latest' | 'trending' = 'top',
+  timeoutMs = RESOLVE_CALL_TIMEOUT_MS,
+): Promise<RedgifsItem[]> {
+  const token = await getRedgifsToken()
+  const params = new URLSearchParams({ search_text: text, order, count: String(Math.min(80, Math.max(1, count))) })
+  const res = await fetchWithTimeout(`${REDGIFS_API}/gifs/search?${params}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}`, 'User-Agent': 'MediaCodex/1.0' },
+    cache: 'no-store',
+  }, timeoutMs)
+  if (!res.ok) throw new Error(`Public provider returned ${res.status}`)
+  const body = await res.json() as { gifs?: RedgifsItem[] }
+  return (body.gifs || []).map(sanitizeProviderItem)
+}
+
+export type UserNameCount = { userName: string; count: number }
+
+/** Distinct usernames in a set of hits with counts, most frequent first. */
+export function aggregateUserNames(gifs: RedgifsItem[]): UserNameCount[] {
+  const counts = new Map<string, UserNameCount>()
+  for (const gif of gifs) {
+    const name = (gif.userName || '').trim()
+    if (!name || name === 'Public creator') continue
+    const key = canonicalCreator(name)
+    if (!key) continue
+    const entry = counts.get(key)
+    if (entry) entry.count += 1
+    else counts.set(key, { userName: name, count: 1 })
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count)
+}
+
+/**
+ * Best-effort creator directory search. The endpoint shape is NOT verified against the
+ * live provider (sandbox cannot reach it); every unknown response shape or error yields [].
+ */
+export async function searchCreatorsEndpoint(
+  text: string,
+  timeoutMs = RESOLVE_CALL_TIMEOUT_MS,
+): Promise<Array<{ userName: string; followers?: number }>> {
+  let token: string
+  try { token = await getRedgifsToken() } catch { return [] }
+  const urls = [
+    `${REDGIFS_API.replace('/v2', '/v1')}/creators/search?${new URLSearchParams({ query: text, page: '1', order: 'top' })}`,
+    `${REDGIFS_API}/creators/search?${new URLSearchParams({ query: text })}`,
+  ]
+  const settled = await Promise.allSettled(urls.map(async (url) => {
+    const res = await fetchWithTimeout(url, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}`, 'User-Agent': 'MediaCodex/1.0' },
+      cache: 'no-store',
+    }, timeoutMs)
+    if (!res.ok) return []
+    const body = await res.json() as Record<string, unknown>
+    const rows = [body.items, body.creators, body.users].find(Array.isArray) as Array<Record<string, unknown>> | undefined
+    return (rows || []).flatMap((row) => {
+      const name = String(row.username ?? row.userName ?? '').trim()
+      const followers = Number(row.followers)
+      return name ? [{ userName: name, followers: Number.isFinite(followers) ? followers : undefined }] : []
+    })
+  }))
+  const seen = new Set<string>()
+  const out: Array<{ userName: string; followers?: number }> = []
+  for (const r of settled) {
+    if (r.status !== 'fulfilled') continue
+    for (const row of r.value) {
+      const key = canonicalCreator(row.userName)
+      if (key && !seen.has(key)) { seen.add(key); out.push(row) }
+    }
+  }
+  return out.slice(0, 20)
 }
