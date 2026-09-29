@@ -325,3 +325,32 @@ export async function searchMedia(
 }
 
 export type { Creator, MediaItem }
+
+/* ───────────────────────────────────────────────
+   Per-creator full catalog (`/api/creator-media`)
+   ────────────────────────────────────────────── */
+
+export interface CreatorMediaPage {
+  creator: string
+  items: MediaItem[]
+  page: number
+  pages: number
+  total: number
+  hasMore: boolean
+}
+
+/** One page of a creator's complete public catalog (not just the feed sample). */
+export async function fetchCreatorMediaPage(creator: string, page = 1, count = 40): Promise<CreatorMediaPage> {
+  const params = new URLSearchParams({ creator, page: String(page), count: String(count) })
+  const response = await fetchWithTimeout(`/api/creator-media?${params}`, { method: 'GET' }, 20000)
+  if (!response.ok) throw new Error(`Creator media returned ${response.status}`)
+  const payload = (await response.json()) as Partial<CreatorMediaPage>
+  return {
+    creator: payload.creator || creator,
+    items: Array.isArray(payload.items) ? payload.items : [],
+    page: payload.page || page,
+    pages: payload.pages || page,
+    total: payload.total ?? 0,
+    hasMore: Boolean(payload.hasMore),
+  }
+}

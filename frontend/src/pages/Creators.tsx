@@ -18,6 +18,7 @@ import { fetchLiveDiscovery } from '@/lib/api'
 import { creatorFollowId, creatorKey } from '@/lib/discovery'
 import { useAppStore } from '@/store'
 import CreatorDrawer from '@/components/CreatorDrawer'
+import { prefetchCreatorMedia } from '@/features/creators/useCreatorMedia'
 import UpdatedChip from '@/components/UpdatedChip'
 import Rail from '@/components/discovery/Rail'
 import SectionHeader from '@/components/discovery/SectionHeader'
@@ -209,7 +210,10 @@ export default function Creators() {
     [addToast, followCache, toggleFollow]
   )
 
-  const openCreator = useCallback((creator: Creator) => setActiveCreator(creator), [])
+  const openCreator = useCallback((creator: Creator) => {
+    prefetchCreatorMedia(queryClient, creator)
+    setActiveCreator(creator)
+  }, [queryClient])
 
   const ddg = discovery?.ddg
   const aiOk = discovery?.aiDiscovery.state === 'ok'

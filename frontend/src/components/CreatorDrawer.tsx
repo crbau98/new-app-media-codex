@@ -9,6 +9,7 @@ import { useFocusTrap } from '@/hooks/useFocusTrap'
 import MediaDetail from './MediaDetail'
 import MediaImage from './MediaImage'
 import MediaGrid from '@/components/discovery/MediaGrid'
+import { useCreatorMedia } from '@/features/creators/useCreatorMedia'
 import { CreatorAvatar } from '@/components/discovery/CreatorParts'
 import { hueFor } from '@/components/discovery/mediaMeta'
 import { cn } from '@/lib/utils'
@@ -31,7 +32,9 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
   const addCreatorToWatchlist = useAppStore((state) => state.addCreatorToWatchlist)
   const removeCreatorFromWatchlist = useAppStore((state) => state.removeCreatorFromWatchlist)
 
-  const media = creator?.media ?? []
+  const catalog = useCreatorMedia(creator)
+  const media = catalog.items
+  const sentinelRef = useRef<HTMLDivElement>(null)
   const followId = creator ? creatorFollowId(creator.name) : ''
   const followed = Boolean(followId && followCache[followId])
   const onRadar = creator ? creatorWatchlist.some((entry) => creatorKey(entry) === creatorKey(creator.name)) : false
@@ -78,6 +81,17 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
       document.body.style.overflow = ''
     }
   }, [creator])
+
+  const { hasMore, fetchMore } = catalog
+  useEffect(() => {
+    const node = sentinelRef.current
+    if (!creator || !node || !hasMore || typeof IntersectionObserver === 'undefined') return undefined
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) fetchMore()
+    }, { root: panelRef.current, rootMargin: '600px 0px' })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [creator, hasMore, fetchMore, media.length])
 
   useFocusTrap(panelRef, Boolean(creator))
 
@@ -157,8 +171,8 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
                   </div>
                 )}
                 <div>
-                  <dt>Evidence</dt>
-                  <dd>{creator.evidenceCount ?? creator.mediaCount ?? media.length}</dd>
+                  <dt>Posts</dt>
+                  <dd>{catalog.total || creator.evidenceCount || creator.mediaCount || media.length}</dd>
                 </div>
                 <div>
                   <dt>Last seen</dt>
@@ -202,7 +216,7 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
               )}
 
               {/* Match reasons */}
-              {(creator.matchReasons?.length || creator.discoveryReasons?.length) && (
+              {((creator.matchReasons?.length ?? 0) > 0 || (creator.discoveryReasons?.length ?? 0) > 0) && (
                 <section className="mt-5">
                   <h3 className="eyebrow">Why this account matches</h3>
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -216,7 +230,7 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
               )}
 
               {/* Profile links — always attributed */}
-              {(creator.profileLinks?.length || creator.profileUrl) && (
+              {((creator.profileLinks?.length ?? 0) > 0 || Boolean(creator.profileUrl)) && (
                 <section className="mt-5">
                   <h3 className="eyebrow">Source links</h3>
                   <ul className="mt-2.5 divide-y divide-line overflow-hidden rounded-2xl border border-line">
@@ -254,7 +268,12 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
 
               {/* Media */}
               <section className="mt-6">
-                <h3 className="eyebrow">Latest public posts</h3>
+                <h3 className="eyebrow flex items-baseline justify-between gap-3">
+                  <span>{catalog.total > media.length || catalog.hasMore ? 'All public posts' : 'Public posts'}</span>
+                  {media.length > 0 && (
+                    <span className="mono-meta normal-case">{media.length} of {Math.max(catalog.total, media.length)} loaded</span>
+                  )}
+                </h3>
                 {media.length ? (
                   <div className="mt-3">
                     <MediaGrid
@@ -267,7 +286,35 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
                       pageSize={18}
                       priorityCount={2}
                     />
+                    <div ref={sentinelRef} aria-hidden="true" className="h-px" />
+                    {catalog.hasMore && (
+                      <button
+                        type="button"
+                        onClick={catalog.fetchMore}
+                        disabled={catalog.isFetchingMore}
+                        className="btn-secondary mx-auto mt-4 flex min-h-11"
+                      >
+                        {catalog.isFetchingMore ? 'Loading more…' : 'Load more posts'}
+                      </button>
+                    )}
+                    {catalog.error && (
+                      <p role="alert" className="mt-3 text-center font-mono text-[11px] text-ink-3">
+                        Couldn&apos;t load the full catalog.{' '}
+                        <button type="button" onClick={catalog.retry} className="underline">Retry</button>
+                      </p>
+                    )}
                   </div>
+                ) : catalog.isLoading ? (
+                  <div className="mt-3 grid grid-cols-3 gap-2" aria-busy="true" aria-label="Loading posts">
+                    {Array.from({ length: 6 }).map((_, index) => (
+                      <div key={index} className="d-skel d-skel-block" style={{ height: 150 }} />
+                    ))}
+                  </div>
+                ) : catalog.error ? (
+                  <p className="mt-3 rounded-2xl border border-dashed border-line-strong p-5 text-center text-[13px] text-ink-2">
+                    Couldn&apos;t load this creator&apos;s posts.{' '}
+                    <button type="button" onClick={catalog.retry} className="underline">Retry</button>
+                  </p>
                 ) : (
                   <p className="mt-3 rounded-2xl border border-dashed border-line-strong p-5 text-center text-[13px] text-ink-2">
                     The creator was observed, but the source did not return playable public media.

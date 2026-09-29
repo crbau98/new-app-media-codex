@@ -12,28 +12,14 @@ import { rankSimilarCreatorsWithAI } from './_lib/ai-similarity.js'
 import { collectAdditionalSources } from './_lib/multi-source.js'
 import type { CreatorLead, UnifiedMediaItem } from './_lib/discovery-types.js'
 import { selectQualityDiverse } from './_lib/source-quality.js'
-import { dedupeItems, orderStreamCandidates, pruneUnplayable, withContract } from './_lib/media-normalize.js'
+import { dedupeItems, pruneUnplayable, withContract } from './_lib/media-normalize.js'
+import {
+  REDGIFS_API, canonicalCreator, fetchWithTimeout, getRedgifsToken, hasPlayableUrls, isEligibleScopedItem,
+  mapRedgifsItem, providerHandle, redactEmails, sanitizeProviderItem, textFor, type RedgifsItem,
+} from './_lib/redgifs.js'
 
-const REDGIFS_API = 'https://api.redgifs.com/v2'
-const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 const EMAIL_TEST = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
 const GENERIC_SIMILARITY_TAGS = new Set(['gay', 'male', 'men', 'man', 'video', 'verified'])
-// Exclusion-only blocklist: strictly female/straight markers. Trans-related
-// terms were removed — trans men are in scope, and identity terms must never
-// be used as exclusion signals.
-const FEMALE_MARKERS = [
-  'female', 'woman', 'women', 'girl', 'lesbian', 'straight', 'pussy',
-  'vagina', 'hetero',
-  'girlfriend', 'wife', 'b/g', 'm/f', 'boob', 'breast', 'tits',
-  'milf', 'femdom',
-  'girls', 'chick', 'chicks', 'females',
-]
-const PROVIDER_TIMEOUT_MS = 6_500
-
-/* ── Redgifs token cache (module scope, single-flight, ~20min TTL) ── */
-const TOKEN_TTL_MS = 20 * 60 * 1_000
-let redgifsTokenCache: { token: string; expiresAt: number } | null = null
-let redgifsTokenPromise: Promise<string> | null = null
 
 /* ── Best-effort edge rate limiting for expensive scans ──
    In-memory per-IP bucket: 6 AI/forced scans per 5 minutes. Edge isolates are
@@ -63,100 +49,11 @@ function clientIp(req: Request): string {
   return chain[chain.length - 1] || req.headers.get('x-real-ip') || 'unknown'
 }
 
-type RedgifsItem = {
-  id?: string
-  userName?: string
-  description?: string
-  tags?: string[]
-  niches?: Array<string | { name?: string }>
-  duration?: number
-  width?: number
-  height?: number
-  hasAudio?: boolean
-  likes?: number
-  views?: number
-  createDate?: number
-  urls?: {
-    hd?: string
-    sd?: string
-    poster?: string
-    thumbnail?: string
-  }
-}
-
 type LiveMediaItem = UnifiedMediaItem
 
 type CreatorSimilarity = {
   score: number
   reasons: string[]
-}
-
-function redactEmails(value = ''): string {
-  return value
-    .replace(EMAIL_PATTERN, '')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/\s+([,.;:!?])/g, '$1')
-    .trim()
-}
-
-function sanitizeProviderItem(item: RedgifsItem): RedgifsItem {
-  const creator = redactEmails(item.userName || '') || 'Public creator'
-  return {
-    ...item,
-    userName: creator,
-    description: redactEmails(item.description || '') || undefined,
-    tags: (item.tags || []).map(redactEmails).filter(Boolean),
-    niches: (item.niches || []).map((niche) => {
-      if (typeof niche === 'string') return redactEmails(niche)
-      return { ...niche, name: redactEmails(niche.name || '') }
-    }).filter((niche) => typeof niche === 'string' ? Boolean(niche) : Boolean(niche.name)),
-  }
-}
-
-function textFor(item: RedgifsItem): string {
-  const niches = (item.niches || []).map((niche) =>
-    typeof niche === 'string' ? niche : niche.name || ''
-  )
-  return [item.userName || '', ...(item.tags || []), ...niches, item.description || '']
-    .join(' ')
-    .toLowerCase()
-}
-
-function isEligibleScopedItem(item: RedgifsItem): boolean {
-  // Provider tag-scoped searches (tags=Gay) and exact creator-profile lookups
-  // are scope-proofed by the provider query itself; only exclusion markers are
-  // applied here. We never infer identity, body, gender, or orientation.
-  const tokens = new Set(textFor(item).split(/[^a-z0-9/]+/).filter(Boolean))
-  return !FEMALE_MARKERS.some((marker) => tokens.has(marker))
-}
-
-function safeProviderMediaUrl(value?: string): string | undefined {
-  if (!value) return undefined
-  try {
-    const url = new URL(value)
-    if (url.protocol !== 'https:' || url.username || url.password || url.port) return undefined
-    if (!/^(?:media|thumbs\d*)\.redgifs\.com$/i.test(url.hostname)) return undefined
-    return url.href
-  } catch {
-    return undefined
-  }
-}
-
-function durationLabel(seconds = 0): string {
-  const whole = Math.max(0, Math.floor(seconds))
-  const minutes = Math.floor(whole / 60)
-  return `${minutes}:${String(whole % 60).padStart(2, '0')}`
-}
-
-function toIsoDate(value?: number): string {
-  if (!value || !Number.isFinite(value)) return ''
-  const milliseconds = value > 1_000_000_000_000 ? value : value * 1000
-  const date = new Date(milliseconds)
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
-}
-
-function proxiedMediaUrl(url?: string): string | undefined {
-  return url ? `/api/archiver-proxy?url=${encodeURIComponent(url)}` : undefined
 }
 
 function percentile(value: number, cohort: number[]): number {
@@ -195,10 +92,6 @@ function parseBoundedInt(value: string | null, fallback: number, maximum: number
 
 function boundedQuery(value: string): string {
   return redactEmails(value).replace(/\s+/g, ' ').slice(0, 80)
-}
-
-function canonicalCreator(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
 function hostLabel(value: string): string {
@@ -447,37 +340,6 @@ function corsHeaders(noStore = false): Record<string, string> {
   }
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS)
-  try {
-    return await fetch(url, { ...init, signal: controller.signal })
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-async function getRedgifsToken(): Promise<string> {
-  if (redgifsTokenCache && redgifsTokenCache.expiresAt > Date.now() + 60_000) {
-    return redgifsTokenCache.token
-  }
-  if (redgifsTokenPromise) return redgifsTokenPromise
-  redgifsTokenPromise = (async () => {
-    const auth = await fetchWithTimeout(`${REDGIFS_API}/auth/temporary`, {
-      headers: { Accept: 'application/json', 'User-Agent': 'MediaCodex/1.0' },
-      cache: 'no-store',
-    })
-    if (!auth.ok) throw new Error(`Redgifs auth returned ${auth.status}`)
-    const token = String((await auth.json() as { token?: string }).token || '')
-    if (!token) throw new Error('Redgifs did not return a temporary token')
-    redgifsTokenCache = { token, expiresAt: Date.now() + TOKEN_TTL_MS }
-    return token
-  })().finally(() => {
-    redgifsTokenPromise = null
-  })
-  return redgifsTokenPromise
-}
-
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders() })
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -591,7 +453,7 @@ export default async function handler(req: Request): Promise<Response> {
 
       for (const creator of expandWatchlist ? watchlist : []) {
         const handle = canonicalCreator(creator)
-        discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(handle)}/search`, new URLSearchParams({
+        discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(providerHandle(creator) || handle)}/search`, new URLSearchParams({
         count: '30',
         page: '1',
         order: 'recent',
@@ -612,48 +474,8 @@ export default async function handler(req: Request): Promise<Response> {
       received = [...deduplicated.values()]
       eligible = received.filter(isEligibleScopedItem)
       mapped = eligible
-      .filter((item) => item.id && safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail) && (safeProviderMediaUrl(item.urls?.hd) || safeProviderMediaUrl(item.urls?.sd)))
-      .map((item): LiveMediaItem => {
-        const tags = (item.tags || []).filter(Boolean).slice(0, 12)
-        const creator = item.userName || 'Redgifs creator'
-        const isWatchedCreator = creatorIsWatched(creator, watchlist)
-        const createdAt = toIsoDate(item.createDate)
-        const directCandidates = [safeProviderMediaUrl(item.urls?.hd), safeProviderMediaUrl(item.urls?.sd)].filter((url): url is string => Boolean(url))
-        const streamCandidates = orderStreamCandidates(
-          [...directCandidates.map(proxiedMediaUrl), ...directCandidates].filter((url): url is string => Boolean(url)),
-        )
-        const base: LiveMediaItem = {
-          id: `rg-${item.id}`,
-          title: item.description?.trim() || tags.slice(0, 3).join(' · ') || `Video by ${creator}`,
-          thumbnail: proxiedMediaUrl(safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail)),
-          source: 'Redgifs',
-          duration: durationLabel(item.duration),
-          isVideo: true,
-          category: tags[0] || 'gay male',
-          creator,
-          tags,
-          rating: 0,
-          createdAt,
-          views: Math.max(0, item.views || 0),
-          mediaUrl: proxiedMediaUrl(directCandidates[0]),
-          streamCandidates,
-          pageUrl: `https://www.redgifs.com/watch/${item.id}`,
-          profileUrl: `https://www.redgifs.com/users/${encodeURIComponent(creator)}`,
-          description: item.description || undefined,
-          likes: Math.max(0, item.likes || 0),
-          comments: 0,
-          isLiked: false,
-          isNew: Boolean(createdAt) && Date.now() - Date.parse(createdAt) < 86_400_000,
-          isTrending: false,
-          curationScore: 0,
-          curationReasons: [],
-          isWatchedCreator,
-        }
-        return withContract(base, {
-          width: item.width, height: item.height, durationSeconds: item.duration, hasAudio: item.hasAudio,
-          mimeType: 'video/mp4', posterUrl: proxiedMediaUrl(safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail)),
-        })
-      })
+      .filter(hasPlayableUrls)
+      .map((item): LiveMediaItem => mapRedgifsItem(item, creatorIsWatched(item.userName || 'Redgifs creator', watchlist)))
       .filter((item) => matchesQuery({
         userName: item.creator,
         description: item.description,
