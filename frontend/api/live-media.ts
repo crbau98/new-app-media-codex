@@ -541,7 +541,7 @@ export default async function handler(req: Request): Promise<Response> {
       || process.env.VERCEL_OIDC_TOKEN
       || ''
     ).trim()
-    const aiResult = await rankSimilarCreatorsWithAI(creatorPool.map((creator) => ({
+    const aiResult = await rankSimilarCreatorsWithAI(creatorPool.slice(0, 120).map((creator) => ({
       id: creator.id,
       name: creator.name,
       platform: creator.platform,
