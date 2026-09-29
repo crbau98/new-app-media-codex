@@ -8,34 +8,13 @@ import { useAppStore } from '@/store'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import MediaDetail from './MediaDetail'
 import MediaImage from './MediaImage'
+import MediaGrid from '@/components/discovery/MediaGrid'
+import { CreatorAvatar } from '@/components/discovery/CreatorParts'
+import { hueFor } from '@/components/discovery/mediaMeta'
 import { cn } from '@/lib/utils'
+import '@/styles/discovery.css'
 
 const easeOut = [0.16, 1, 0.3, 1] as [number, number, number, number]
-
-function AvatarTile({ creator, size = 'md' }: { creator: Creator; size?: 'md' | 'lg' }) {
-  const media = creator.media ?? []
-  const src = creator.avatar || media[0]?.thumbnail || ''
-  const [failed, setFailed] = useState(false)
-  const dims = size === 'lg' ? 'h-20 w-20 text-2xl' : 'h-14 w-14 text-base'
-
-  if (!src || failed) {
-    // Non-explicit fallback tile: platform initial on a matte surface.
-    return (
-      <span className={cn('grid shrink-0 place-items-center rounded-md bg-sunken font-mono font-medium text-ink-2', dims)} aria-hidden="true">
-        {creator.name.charAt(0).toUpperCase()}
-      </span>
-    )
-  }
-  return (
-    <img
-      src={src}
-      alt=""
-      loading="lazy"
-      onError={() => setFailed(true)}
-      className={cn('shrink-0 rounded-md bg-sunken object-cover', dims)}
-    />
-  )
-}
 
 interface CreatorDrawerProps {
   creator: Creator | null
@@ -124,34 +103,39 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.25, ease: easeOut }}
-            className="relative z-10 flex h-full w-full max-w-[480px] flex-col overflow-y-auto overscroll-contain border-l border-line bg-canvas shadow-overlay outline-none"
+            className="relative z-10 flex h-full w-full max-w-[500px] flex-col overflow-y-auto overscroll-contain border-l border-line bg-canvas shadow-overlay outline-none"
             role="dialog"
             aria-modal="true"
             aria-label={`Creator ${creator.name}`}
           >
             {/* Cover */}
-            <div className="relative h-36 shrink-0 overflow-hidden bg-sunken">
+            <div
+              className="d-drawer-cover"
+              style={{ ['--h' as string]: hueFor(creator.name) }}
+            >
               {media[0] && (
                 <MediaImage
                   sources={media[0].isVideo ? [media[0].thumbnail] : [media[0].thumbnail, media[0].mediaUrl]}
                   alt=""
-                  className="h-full w-full object-cover opacity-40"
-                  skeletonClassName="h-full w-full"
+                  className="d-drawer-cover-img h-full w-full object-cover transition-opacity duration-700"
+                  skeletonClassName="h-full w-full !bg-transparent !animate-none opacity-0"
                 />
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-canvas to-transparent" aria-hidden="true" />
+              <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/40 to-transparent" aria-hidden="true" />
               <button
                 onClick={onClose}
-                className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] grid h-10 w-10 place-items-center rounded-md bg-canvas/70 text-ink hover:bg-canvas"
+                className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] grid h-11 w-11 place-items-center rounded-full bg-canvas/70 text-ink backdrop-blur transition-colors hover:bg-canvas"
                 aria-label="Close creator profile"
               >
-                <X size={16} strokeWidth={1.75} />
+                <X size={18} strokeWidth={1.75} />
               </button>
             </div>
 
             <div className="px-5 pb-[max(2.5rem,calc(env(safe-area-inset-bottom)+1.5rem))]">
-              <div className="-mt-8 flex items-end justify-between gap-3">
-                <AvatarTile creator={creator} size="lg" />
+              <div className="-mt-12 flex items-end justify-between gap-3">
+                <span className="d-drawer-ring">
+                  <CreatorAvatar creator={creator} className="d-drawer-avatar" />
+                </span>
                 {creator.aiSuggested && (
                   <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-heat-dim px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-heat">
                     <Sparkles size={12} strokeWidth={1.75} aria-hidden="true" /> AI suggested
@@ -165,32 +149,32 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
               </p>
 
               {/* Mono stat grid */}
-              <dl className="mt-5 grid grid-cols-3 gap-y-4 border-y border-line py-4">
+              <dl className="d-drawer-stats mt-5">
                 {creator.followers != null && (
                   <div>
-                    <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">Followers</dt>
-                    <dd className="mt-0.5 font-mono text-sm text-ink">{formatMetric(creator.followers)}</dd>
+                    <dt>Followers</dt>
+                    <dd>{formatMetric(creator.followers)}</dd>
                   </div>
                 )}
                 <div>
-                  <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">Evidence</dt>
-                  <dd className="mt-0.5 font-mono text-sm text-ink">{creator.evidenceCount ?? creator.mediaCount ?? media.length}</dd>
+                  <dt>Evidence</dt>
+                  <dd>{creator.evidenceCount ?? creator.mediaCount ?? media.length}</dd>
                 </div>
                 <div>
-                  <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">Last seen</dt>
-                  <dd className="mt-0.5 font-mono text-sm text-ink">{relativeTime(creator.lastSeenAt ?? creator.observedAt)}</dd>
+                  <dt>Last seen</dt>
+                  <dd>{relativeTime(creator.lastSeenAt ?? creator.observedAt)}</dd>
                 </div>
                 <div>
-                  <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">Views</dt>
-                  <dd className="mt-0.5 font-mono text-sm text-ink">{formatMetric(creator.viewCount)}</dd>
+                  <dt>Views</dt>
+                  <dd>{formatMetric(creator.viewCount)}</dd>
                 </div>
                 <div>
-                  <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">Likes</dt>
-                  <dd className="mt-0.5 font-mono text-sm text-ink">{formatMetric(creator.likeCount)}</dd>
+                  <dt>Likes</dt>
+                  <dd>{formatMetric(creator.likeCount)}</dd>
                 </div>
                 <div>
-                  <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">Signal</dt>
-                  <dd className="mt-0.5 font-mono text-sm text-ink">{creator.curationScore ?? '—'}</dd>
+                  <dt>Signal</dt>
+                  <dd>{creator.curationScore ?? '—'}</dd>
                 </div>
               </dl>
 
@@ -198,12 +182,12 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   onClick={follow}
-                  className={cn('min-h-10', followed ? 'btn-secondary' : 'btn-heat')}
+                  className={cn('min-h-11', followed ? 'btn-secondary' : 'btn-heat')}
                   aria-pressed={followed}
                 >
                   {followed ? <><Check size={14} strokeWidth={1.75} /> Following</> : <><UserPlus size={14} strokeWidth={1.75} /> Follow</>}
                 </button>
-                <button onClick={toggleRadar} className="btn-secondary min-h-10" aria-pressed={onRadar}>
+                <button onClick={toggleRadar} className="btn-secondary min-h-11" aria-pressed={onRadar}>
                   <Radar size={14} strokeWidth={1.75} aria-hidden="true" />
                   {onRadar ? 'On your radar' : 'Add to radar'}
                 </button>
@@ -211,7 +195,7 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
 
               {/* AI reason */}
               {creator.aiSuggested && creator.aiReason && (
-                <section className="mt-5 rounded-md border border-line bg-elevated p-4">
+                <section className="d-panel mt-5">
                   <h3 className="eyebrow flex items-center gap-1.5 text-heat"><Sparkles size={12} strokeWidth={1.75} /> Why the AI suggested this account</h3>
                   <p className="mt-2 text-[13px] leading-5 text-ink-2">{creator.aiReason}</p>
                 </section>
@@ -235,7 +219,7 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
               {(creator.profileLinks?.length || creator.profileUrl) && (
                 <section className="mt-5">
                   <h3 className="eyebrow">Source links</h3>
-                  <ul className="mt-2.5 divide-y divide-line rounded-md border border-line">
+                  <ul className="mt-2.5 divide-y divide-line overflow-hidden rounded-2xl border border-line">
                     {(creator.profileLinks?.length
                       ? creator.profileLinks
                       : [{ label: creator.platform || 'Source profile', url: creator.profileUrl! }]
@@ -245,7 +229,7 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
                           href={link.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex min-h-11 items-center justify-between gap-3 px-3 text-[13px] text-ink hover:bg-sunken"
+                          className="flex min-h-12 items-center justify-between gap-3 px-4 text-[13px] text-ink transition-colors hover:bg-sunken"
                         >
                           <span className="truncate">{link.label}</span>
                           <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">
@@ -272,30 +256,20 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
               <section className="mt-6">
                 <h3 className="eyebrow">Latest public posts</h3>
                 {media.length ? (
-                  <div className="media-grid mt-3 grid grid-cols-2 gap-3">
-                    {media.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => setSelectedMedia(item)}
-                        className="block text-left tap-highlight-none"
-                        aria-label={`Open ${item.title}`}
-                      >
-                        <span className="relative block aspect-[2/3] overflow-hidden rounded-md border border-line bg-sunken">
-                          <MediaImage
-                            sources={item.isVideo ? [item.thumbnail] : [item.thumbnail, item.mediaUrl]}
-                            alt=""
-                            className="absolute inset-0 h-full w-full object-cover"
-                            skeletonClassName="absolute inset-0"
-                          />
-                        </span>
-                        <span className="mt-1.5 block truncate font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">
-                          {item.source} · {relativeTime(item.createdAt)}
-                        </span>
-                      </button>
-                    ))}
+                  <div className="mt-3">
+                    <MediaGrid
+                      items={media}
+                      layout="cinema"
+                      density="normal"
+                      onSelect={(id) => setSelectedMedia(media.find((entry) => entry.id === id) ?? null)}
+                      ariaLabel={`Posts by ${creator.name}`}
+                      hideCreator
+                      pageSize={18}
+                      priorityCount={2}
+                    />
                   </div>
                 ) : (
-                  <p className="mt-3 rounded-md border border-dashed border-line-strong p-5 text-center text-[13px] text-ink-2">
+                  <p className="mt-3 rounded-2xl border border-dashed border-line-strong p-5 text-center text-[13px] text-ink-2">
                     The creator was observed, but the source did not return playable public media.
                   </p>
                 )}

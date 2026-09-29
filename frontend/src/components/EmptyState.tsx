@@ -12,8 +12,8 @@ interface EmptyStateProps {
 }
 
 /**
- * Dashed-hairline panel with mono heading and one action — the honest
- * empty state used across every surface.
+ * Velvet empty state: a gold-haloed icon medallion, mono heading, one action.
+ * The honest empty state used across every surface.
  */
 export default function EmptyState({
   icon: Icon = Search,
@@ -25,13 +25,16 @@ export default function EmptyState({
 }: EmptyStateProps) {
   return (
     <div className={cn('empty-state-panel', className)} role="status">
-      <Icon size={16} strokeWidth={1.75} className="text-ink-3" aria-hidden="true" />
-      <h3 className="font-mono text-xs font-medium uppercase tracking-[0.12em] text-ink">{title}</h3>
+      <span className="relative grid h-14 w-14 place-items-center rounded-full glass hairline-gold" aria-hidden="true">
+        <span className="absolute inset-0 rounded-full bg-gradient-to-b from-gold/20 to-transparent blur-md" />
+        <Icon size={20} strokeWidth={1.5} className="relative text-gold-ink" />
+      </span>
+      <h3 className="font-display text-xl font-normal tracking-[-0.01em] text-ink">{title}</h3>
       {description && (
-        <p className="max-w-md text-[13px] leading-5 text-ink-2">{description}</p>
+        <p className="max-w-md text-[13px] leading-6 text-ink-2">{description}</p>
       )}
       {actionLabel && onAction && (
-        <button onClick={onAction} className="btn-primary mt-1">
+        <button onClick={onAction} className="btn-primary mt-2">
           {actionLabel}
         </button>
       )}

@@ -42,3 +42,41 @@ test('click video and verify player opens', async ({ page }) => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   }
 })
+
+test('custom controls: scrubber, settings menu, keyboard seek and mute', async ({ page }) => {
+  await installAppFixture(page)
+  await page.goto('/media')
+  await page.getByRole('button', { name: 'Play', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  const video = dialog.locator('video')
+  await expect(video).toBeVisible()
+  await expect.poll(async () => video.evaluate((node) => node.readyState)).toBeGreaterThanOrEqual(3)
+  // The native control UI is replaced by ours.
+  expect(await video.evaluate((node) => node.controls)).toBe(false)
+  const viewport = page.viewportSize()!
+  const desktop = viewport.width >= 768
+  if (desktop) await page.mouse.move(viewport.width / 2, viewport.height / 2)
+  else {
+    const box = (await video.boundingBox())!
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2)
+  }
+  const seek = dialog.getByRole('slider', { name: 'Seek' })
+  await expect(seek).toBeVisible()
+  await expect(seek).toHaveAttribute('aria-valuemin', '0')
+  await dialog.getByRole('button', { name: 'Settings' }).click()
+  const menu = dialog.getByRole('menu', { name: 'Player settings' })
+  await expect(menu).toBeVisible()
+  await menu.getByRole('menuitemradio', { name: '1.5×' }).click()
+  await expect.poll(async () => video.evaluate((node) => node.playbackRate)).toBe(1.5)
+  await page.keyboard.press('Escape')
+  await expect(menu).toBeHidden()
+  await expect(dialog).toBeVisible()
+  if (desktop) {
+    await video.evaluate((node) => { node.pause(); node.currentTime = 1 })
+    await page.keyboard.press('l')
+    await expect.poll(async () => video.evaluate((node) => node.currentTime)).toBeGreaterThan(1.5)
+    const wasMuted = await video.evaluate((node) => node.muted)
+    await page.keyboard.press('m')
+    await expect.poll(async () => video.evaluate((node) => node.muted)).toBe(!wasMuted)
+  }
+})

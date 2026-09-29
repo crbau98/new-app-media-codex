@@ -1,16 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   Download,
   Eye,
   EyeOff,
+  Fingerprint,
   History,
   Keyboard,
-  LayoutGrid,
   Monitor,
   Moon,
   Play,
   RotateCcw,
+  Sparkles,
   Sun,
   Trash2,
   Type,
@@ -20,65 +21,61 @@ import { useAppStore, type FontSize, type GridDensity, type Theme, type VideoQua
 import type { DiscoveryMode } from '@/lib/discovery'
 import { clearPrivateMediaData } from '@/lib/collections'
 import { getSessionVitals } from '@/lib/vitals'
+import { Segmented } from '@/components/discovery/Controls'
+import { useHoverPreviewPref } from '@/components/discovery/prefs'
+import { exportTasteProfile, importTasteProfile, isTasteLearningEnabled, resetTasteProfile, setTasteLearningEnabled } from '@/features/ai/taste/storage'
 import { cn } from '@/lib/utils'
+import '@/styles/discovery.css'
 
 function Section({
   icon: Icon,
   title,
   description,
   children,
+  badge,
 }: {
   icon: typeof Sun
   title: string
   description?: string
-  children: React.ReactNode
+  children: ReactNode
+  badge?: string
 }) {
   return (
-    <section className="rounded-md border border-line">
-      <header className="flex items-start gap-3 border-b border-line px-4 py-3">
-        <Icon size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-ink-3" aria-hidden="true" />
-        <div>
-          <h2 className="font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-ink">{title}</h2>
-          {description && <p className="mt-1 text-[13px] leading-5 text-ink-2">{description}</p>}
+    <section className="d-set" aria-label={title}>
+      <header className="d-set-head">
+        <span className="d-set-icon" aria-hidden="true">
+          <Icon size={17} strokeWidth={1.75} />
+        </span>
+        <div className="min-w-0">
+          <h2 className="d-set-title">
+            {title}
+            {badge && <span className="d-placeholder-tag">{badge}</span>}
+          </h2>
+          {description && <p className="d-set-desc">{description}</p>}
         </div>
       </header>
-      <div className="divide-y divide-line">{children}</div>
+      <div>{children}</div>
     </section>
   )
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <div className="flex min-h-[56px] flex-wrap items-center justify-between gap-3 px-4 py-3">
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-ink">{label}</p>
-        {hint && <p className="mt-0.5 text-xs leading-4 text-ink-3">{hint}</p>}
+    <div className="d-set-row">
+      <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
+        <p className="d-set-label">{label}</p>
+        {hint && <p className="d-set-hint">{hint}</p>}
       </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">{children}</div>
     </div>
   )
 }
 
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
   return (
-    <button
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'relative h-6 w-11 rounded-full border transition-colors',
-        checked ? 'border-heat bg-heat' : 'border-line-strong bg-sunken'
-      )}
-    >
-      <span
-        className={cn(
-          'absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-ink transition-all',
-          checked ? 'left-[calc(100%-1.25rem)] bg-canvas' : 'left-1 bg-ink-2'
-        )}
-        aria-hidden="true"
-      />
-    </button>
+    <span className="d-switch-wrap">
+      <button role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)} className="d-switch" />
+    </span>
   )
 }
 
@@ -94,14 +91,14 @@ function OptionChips<T extends string>({
   ariaLabel: string
 }) {
   return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label={ariaLabel}>
+    <div className="d-chips" style={{ flexWrap: 'wrap' }} role="group" aria-label={ariaLabel}>
       {options.map((option) => {
         const Icon = option.icon
         return (
           <button
             key={option.value}
             onClick={() => onChange(option.value)}
-            className={cn('chip !min-h-10 !px-3', value === option.value && 'chip-active')}
+            className={cn('chip', value === option.value && 'chip-active')}
             aria-pressed={value === option.value}
           >
             {Icon && <Icon size={12} strokeWidth={1.75} aria-hidden="true" />}
@@ -110,6 +107,43 @@ function OptionChips<T extends string>({
         )
       })}
     </div>
+  )
+}
+
+/** Big preview tiles: picking one applies it live, so the page itself is the preview. */
+function ChoiceCards<T extends string>({
+  value,
+  onChange,
+  ariaLabel,
+  options,
+}: {
+  value: T
+  onChange: (value: T) => void
+  ariaLabel: string
+  options: { value: T; label: string; preview: ReactNode; icon?: ReactNode }[]
+}) {
+  return (
+    <div className="d-choices" role="group" aria-label={ariaLabel}>
+      {options.map((option) => (
+        <button key={option.value} type="button" className="d-choice" aria-pressed={value === option.value} onClick={() => onChange(option.value)}>
+          {option.preview}
+          <span>
+            {option.icon}
+            {option.label}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function MiniGrid({ columns, rows }: { columns: number; rows: number }) {
+  return (
+    <span className="d-mini d-mini-grid" aria-hidden="true" style={{ gridTemplateColumns: `repeat(${columns}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)` }}>
+      {Array.from({ length: columns * rows }).map((_, index) => (
+        <i key={index} />
+      ))}
+    </span>
   )
 }
 
@@ -125,6 +159,10 @@ export default function Settings() {
   const discoveryMode = useAppStore((s) => s.discoveryMode)
   const setDiscoveryMode = useAppStore((s) => s.setDiscoveryMode)
   const resetDiscoveryProfile = useAppStore((s) => s.resetDiscoveryProfile)
+  const [tasteLearning, setTasteLearning] = useState(() => isTasteLearningEnabled())
+  const tagPreferences = useAppStore((s) => s.tagPreferences)
+  const creatorPreferences = useAppStore((s) => s.creatorPreferences)
+  const hiddenMedia = useAppStore((s) => s.hiddenMedia)
   const autoplayVideos = useAppStore((s) => s.autoplayVideos)
   const setAutoplayVideos = useAppStore((s) => s.setAutoplayVideos)
   const defaultQuality = useAppStore((s) => s.defaultQuality)
@@ -140,6 +178,7 @@ export default function Settings() {
   const setSearchQuery = useAppStore((s) => s.setSearchQuery)
   const wipeLocalData = useAppStore((s) => s.wipeLocalData)
   const addToast = useAppStore((s) => s.addToast)
+  const [hoverPreview, setHoverPreview] = useHoverPreviewPref()
 
   const queryClient = useQueryClient()
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -154,6 +193,15 @@ export default function Settings() {
       radar: creatorWatchlist.length,
     }),
     [creatorWatchlist, followCache, likeCache, recentlyViewed]
+  )
+
+  const feedback = useMemo(
+    () => ({
+      tags: Object.keys(tagPreferences).length,
+      creators: Object.keys(creatorPreferences).length,
+      hidden: hiddenMedia.length,
+    }),
+    [creatorPreferences, hiddenMedia, tagPreferences]
   )
 
   const clearRecentlyViewed = () => {
@@ -217,38 +265,43 @@ export default function Settings() {
   }
 
   return (
-    <div className="animate-page-enter mx-auto max-w-2xl space-y-6">
-      <div className="border-b border-line pb-5">
-        <p className="eyebrow">Settings</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-[-0.03em] text-ink">Settings</h1>
-        <p className="mt-1.5 text-[13px] text-ink-2">
-          Everything here is stored locally on this device. Nothing is synced anywhere.
-        </p>
+    <div className="animate-page-enter d-page mx-auto w-full" style={{ maxWidth: 780 }}>
+      <div className="d-hero">
+        <div className="d-hero-row">
+          <div className="min-w-0">
+            <p className="d-eyebrow">Settings</p>
+            <h1 className="d-page-title">Make it yours</h1>
+            <p className="d-hero-desc">Everything here is stored locally on this device. Nothing is synced anywhere.</p>
+          </div>
+          <div className="d-motion-demo" data-off={reduceMotion} aria-hidden="true">
+            <span />
+          </div>
+        </div>
       </div>
 
       {/* Appearance */}
-      <Section icon={Sun} title="Appearance">
+      <Section icon={Sun} title="Appearance" description="Changes apply instantly — this page is the live preview.">
         <Row label="Theme" hint="Auto follows your system setting.">
-          <OptionChips<Theme>
+          <ChoiceCards<Theme>
             ariaLabel="Theme"
             value={theme}
             onChange={setTheme}
             options={[
-              { value: 'dark', label: 'Dark', icon: Moon },
-              { value: 'light', label: 'Light', icon: Sun },
-              { value: 'auto', label: 'Auto', icon: Monitor },
+              { value: 'dark', label: 'Dark', icon: <Moon size={12} strokeWidth={1.75} aria-hidden="true" />, preview: <span className="d-mini d-mini-dark" aria-hidden="true"><i /><i /><i /></span> },
+              { value: 'light', label: 'Light', icon: <Sun size={12} strokeWidth={1.75} aria-hidden="true" />, preview: <span className="d-mini d-mini-light" aria-hidden="true"><i /><i /><i /></span> },
+              { value: 'auto', label: 'Auto', icon: <Monitor size={12} strokeWidth={1.75} aria-hidden="true" />, preview: <span className="d-mini d-mini-auto" aria-hidden="true"><i /><i /><i /></span> },
             ]}
           />
         </Row>
         <Row label="Grid density" hint="Applies to every media grid in the app.">
-          <OptionChips<GridDensity>
+          <ChoiceCards<GridDensity>
             ariaLabel="Grid density"
             value={gridDensity}
             onChange={setGridDensity}
             options={[
-              { value: 'compact', label: 'Compact', icon: LayoutGrid },
-              { value: 'normal', label: 'Normal' },
-              { value: 'spacious', label: 'Spacious' },
+              { value: 'compact', label: 'Compact', preview: <MiniGrid columns={5} rows={3} /> },
+              { value: 'normal', label: 'Comfortable', preview: <MiniGrid columns={3} rows={2} /> },
+              { value: 'spacious', label: 'Large', preview: <MiniGrid columns={2} rows={1} /> },
             ]}
           />
         </Row>
@@ -264,19 +317,18 @@ export default function Settings() {
             ]}
           />
         </Row>
-        <Row label="Reduce motion" hint="Disables animation beyond essential fades.">
+        <Row label="Reduce motion" hint="Turns off 3D tilt, parallax and hover previews' motion; keeps essential fades.">
           <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" />
+        </Row>
+        <Row label="Hover previews" hint="Desktop only: muted looping preview after hovering a video. Off on touch and Data Saver.">
+          <Toggle checked={hoverPreview} onChange={setHoverPreview} label="Hover previews" />
         </Row>
       </Section>
 
       {/* Discovery */}
-      <Section
-        icon={Zap}
-        title="Discovery"
-        description="Your recommendation profile is computed on this device from your follows, likes, and views."
-      >
+      <Section icon={Zap} title="Discovery" description="Your recommendation profile is computed on this device from your follows, likes, and views.">
         <Row label="Discovery balance" hint="How adventurous your For You mix should be.">
-          <OptionChips<DiscoveryMode>
+          <Segmented<DiscoveryMode>
             ariaLabel="Discovery balance"
             value={discoveryMode}
             onChange={setDiscoveryMode}
@@ -287,16 +339,71 @@ export default function Settings() {
             ]}
           />
         </Row>
-        <Row label="Reset recommendations" hint="Clears your learned tag and creator preferences.">
+      </Section>
+
+      {/* Personalization — INTEGRATION POINT
+          The AI stream will export taste-profile reset/export helpers; wire them into the two
+          rows below. Until then this section only uses existing store data and is otherwise inert. */}
+      <Section
+        icon={Fingerprint}
+        title="Personalization"
+        description={`Learned locally: ${feedback.tags} tags · ${feedback.creators} creators · ${feedback.hidden} hidden items.`}
+      >
+        <Row label="Clear feedback history" hint="Forgets what you liked, disliked or hid, and resets the discovery balance. Recommendations start fresh.">
           <button
             onClick={() => {
               resetDiscoveryProfile()
               addToast({ type: 'success', title: 'Recommendations reset', message: 'Your mix starts fresh.' })
             }}
-            className="btn-secondary min-h-10"
+            className="btn-secondary"
           >
             <RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" /> Reset
           </button>
+        </Row>
+        <Row label="Learn from my activity" hint="Builds an on-device taste profile from likes, watch time and skips. Never leaves this device.">
+          <Toggle checked={tasteLearning} onChange={(value) => { setTasteLearningEnabled(value); setTasteLearning(value) }} label="Learn from my activity" />
+        </Row>
+        <Row label="Taste profile" hint="Export a JSON backup, import one, or wipe the profile plus AI search and concierge history.">
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                const blob = new Blob([exportTasteProfile()], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = 'media-codex-taste.json'
+                a.click()
+                window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+              }}
+            >
+              <Sparkles size={14} strokeWidth={1.75} aria-hidden="true" /> Export
+            </button>
+            <label className="btn-secondary cursor-pointer">
+              Import
+              <input
+                type="file"
+                accept="application/json"
+                className="sr-only"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (!file) return
+                  const ok = importTasteProfile(await file.text())
+                  addToast({ type: ok ? 'success' : 'error', title: ok ? 'Taste profile imported' : 'Not a valid taste profile' })
+                }}
+              />
+            </label>
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                resetTasteProfile()
+                addToast({ type: 'success', title: 'Taste profile erased' })
+              }}
+            >
+              <RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" /> Erase
+            </button>
+          </div>
         </Row>
       </Section>
 
@@ -332,33 +439,27 @@ export default function Settings() {
         description={`On this device: ${stats.viewed} viewed · ${stats.likes} liked · ${stats.follows} followed · ${stats.radar} on radar.`}
       >
         <Row label="Clear recently viewed" hint={`${stats.viewed} entries stored locally.`}>
-          <button onClick={clearRecentlyViewed} className="btn-secondary min-h-10">
+          <button onClick={clearRecentlyViewed} className="btn-secondary">
             <History size={14} strokeWidth={1.75} aria-hidden="true" /> Clear
           </button>
         </Row>
         <Row label="Clear search history" hint="Removes the persisted search query from this device.">
-          <button onClick={clearSearchHistory} className="btn-secondary min-h-10">
+          <button onClick={clearSearchHistory} className="btn-secondary">
             <EyeOff size={14} strokeWidth={1.75} aria-hidden="true" /> Clear
           </button>
         </Row>
         <Row label="Clear recommendations & progress" hint="Removes collections, watch positions, and recommendation signals from this device.">
-          <button onClick={clearRecommendations} className="btn-secondary min-h-10">
+          <button onClick={clearRecommendations} className="btn-secondary">
             <RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" /> Clear
           </button>
         </Row>
         <Row label="Export my data" hint="Downloads every locally stored preference and activity record as JSON.">
-          <button onClick={exportData} className="btn-secondary min-h-10">
+          <button onClick={exportData} className="btn-secondary">
             <Download size={14} strokeWidth={1.75} aria-hidden="true" /> Export
           </button>
         </Row>
-        <Row
-          label="Delete account"
-          hint="Wipes all local data — preferences, follows, likes, history — and reloads the app."
-        >
-          <button
-            onClick={deleteAccount}
-            className={cn('min-h-10', confirmingDelete ? 'btn-heat' : 'btn-secondary')}
-          >
+        <Row label="Delete account" hint="Wipes all local data — preferences, follows, likes, history — and reloads the app.">
+          <button onClick={deleteAccount} className={confirmingDelete ? 'btn-heat' : 'btn-secondary'}>
             <Trash2 size={14} strokeWidth={1.75} aria-hidden="true" />
             {confirmingDelete ? 'Confirm wipe' : 'Delete account'}
           </button>
@@ -371,16 +472,16 @@ export default function Settings() {
         title="Session performance"
         description="This device's own Web Vitals for the current session. Anonymous samples go to diagnostics; nothing identifies you."
       >
-        <div className="grid grid-cols-3 gap-px px-4 py-3">
+        <div className="d-vitals">
           {([
             ['LCP', sessionVitals.LCP !== undefined ? `${(sessionVitals.LCP / 1000).toFixed(2)}s` : '—', 'Largest paint'],
             ['INP', sessionVitals.INP !== undefined ? `${sessionVitals.INP}ms` : '—', 'Interaction latency'],
             ['CLS', sessionVitals.CLS !== undefined ? (sessionVitals.CLS / 1000).toFixed(3) : '—', 'Layout shift'],
           ] as const).map(([label, value, hint]) => (
-            <div key={label} className="py-1.5">
-              <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">{label}</p>
-              <p className="mt-0.5 font-mono text-sm text-ink">{value}</p>
-              <p className="mt-0.5 text-[11px] text-ink-3">{hint}</p>
+            <div key={label}>
+              <p>{label}</p>
+              <p>{value}</p>
+              <p>{hint}</p>
             </div>
           ))}
         </div>
@@ -388,17 +489,19 @@ export default function Settings() {
 
       {/* Keyboard shortcuts — exactly what is implemented */}
       <Section icon={Keyboard} title="Keyboard shortcuts">
-        <div className="grid grid-cols-1 gap-x-6 px-4 py-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-8 px-5 py-2 sm:grid-cols-2">
           {[
             ['⌘K', 'Command palette'],
             ['/', 'Focus search'],
             ['T', 'Toggle theme'],
+            ['← ↑ → ↓', 'Move between cards in a grid'],
+            ['Home / End', 'Jump to first / last card in a row'],
             ['← / →  or  K / J', 'Previous / next item (detail sheet)'],
             ['F', 'Follow creator (detail sheet)'],
             ['S', 'Save item (detail sheet)'],
             ['Esc', 'Close sheet / palette / menu'],
           ].map(([keys, action]) => (
-            <div key={keys} className="flex items-center justify-between gap-4 border-b border-line py-2.5 last:border-0">
+            <div key={keys} className="flex items-center justify-between gap-4 border-b border-line py-3 last:border-0">
               <span className="text-[13px] text-ink-2">{action}</span>
               <kbd className="kbd shrink-0">{keys}</kbd>
             </div>
@@ -408,7 +511,7 @@ export default function Settings() {
 
       {/* About */}
       <Section icon={Monitor} title="About">
-        <div className="space-y-3 px-4 py-4">
+        <div className="space-y-3 px-5 py-4">
           <p className="text-[13px] leading-5 text-ink-2">
             Media Codex is an after-hours cinema archive: an 18+ media discovery client that indexes
             public, source-attributed content and links back to the origin for every item. It hosts
@@ -421,7 +524,7 @@ export default function Settings() {
             href="https://github.com/crbau98/new-app-media-codex"
             target="_blank"
             rel="noreferrer"
-            className="inline-flex min-h-10 items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2 underline-offset-4 hover:text-ink hover:underline"
+            className="d-link"
           >
             Source on GitHub
           </a>

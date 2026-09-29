@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0" stop-color="#2a1b3f"/>
+      <stop offset="0.6" stop-color="#150e20"/>
+      <stop offset="1" stop-color="#0c0912"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="96" y1="72" x2="416" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f0d9a6"/>
+      <stop offset="0.5" stop-color="#d6b270"/>
+      <stop offset="1" stop-color="#b38f4f"/>
+    </linearGradient>
+    <linearGradient id="spec" x1="170" y1="170" x2="342" y2="342" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff5e7a"/>
+      <stop offset="0.3" stop-color="#ffa85c"/>
+      <stop offset="0.55" stop-color="#5cd6aa"/>
+      <stop offset="0.8" stop-color="#5a9cff"/>
+      <stop offset="1" stop-color="#b06eff"/>
+    </linearGradient>
+    <clipPath id="clip"><path d="M256 76 436 256 256 436 76 256Z"/></clipPath>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#d6b270" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#d6b270" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="230" fill="url(#halo)"/>
+  <path d="M256 76 436 256 256 436 76 256Z" fill="#15101e" stroke="url(#gold)" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M256 76V436M76 256H436" stroke="url(#gold)" stroke-width="3" opacity="0.35"/>
+  <path d="M256 158 354 256 256 354 158 256Z" fill="none" stroke="url(#spec)" stroke-width="16" stroke-linejoin="round"/>
+  <circle cx="256" cy="256" r="26" fill="#ff6a7a"/>
+  <g clip-path="url(#clip)"><rect x="110" y="40" width="70" height="440" fill="#fff" opacity="0.12" transform="rotate(24 256 256)"/></g>
+</svg>

@@ -1,58 +1,45 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import {
-  Dice5,
-  RefreshCw,
-  Search,
-  Grid3X3,
-  List,
-  Play,
-  Image as ImageIcon,
-  X,
-  ArrowRight,
-  Sparkles,
-} from 'lucide-react'
+import { Camera, Dice5, Flame, RefreshCw, Search, Sparkles, Users, X } from 'lucide-react'
 import type { Creator, MediaItem } from '@/lib/types'
 import { fetchLiveDiscovery } from '@/lib/api'
-import { relativeTime } from '@/lib/discovery'
-import { useAppStore, type GridDensity } from '@/store'
-import MediaCard from '@/components/MediaCard'
-import MediaImage from '@/components/MediaImage'
+import { creatorFollowId } from '@/lib/discovery'
+import { useAppStore } from '@/store'
 import Hero from '@/components/Hero'
-import EmptyState from '@/components/EmptyState'
-import SkeletonGrid from '@/components/SkeletonGrid'
 import UpdatedChip from '@/components/UpdatedChip'
 import ForYouRail from '@/components/ForYouRail'
 import ContinueWatchingRail from '@/components/ContinueWatchingRail'
 import CollectionsRail from '@/components/CollectionsRail'
+import MediaBrowser from '@/components/discovery/MediaBrowser'
+import MediaRail from '@/components/discovery/MediaRail'
+import TopPicksShelf from '@/components/discovery/TopPicksShelf'
+import Rail from '@/components/discovery/Rail'
+import SectionHeader from '@/components/discovery/SectionHeader'
+import StatePanel from '@/components/discovery/StatePanel'
+import { StoryRing } from '@/components/discovery/CreatorParts'
+import { DensityToggle, FacetToggle, LayoutToggle, type MediaFacet } from '@/components/discovery/Controls'
+import { useLayoutMode } from '@/components/discovery/prefs'
 import { cn } from '@/lib/utils'
+import '@/styles/discovery.css'
 
 const MediaDetail = lazy(() => import('@/components/MediaDetail'))
 const CreatorDrawer = lazy(() => import('@/components/CreatorDrawer'))
 
-const VISIBLE_INCREMENT = 24
-const PRIORITY_CARD_COUNT = 4
-
-const densityCols: Record<GridDensity, string> = {
-  compact: 'grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7',
-  normal: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6',
-  spacious: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5',
-}
-
 export default function Home() {
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null)
   const [activeCreator, setActiveCreator] = useState<Creator | null>(null)
-  const [filter, setFilter] = useState<'all' | 'video' | 'photo'>('all')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
-  const [visibleCount, setVisibleCount] = useState(VISIBLE_INCREMENT)
+  const [facet, setFacet] = useState<MediaFacet>('all')
   const [homeQuery, setHomeQuery] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
   const category = searchParams.get('category')
+  const [layout, setLayout] = useLayoutMode()
 
   const creatorWatchlist = useAppStore((s) => s.creatorWatchlist)
   const likeCache = useAppStore((s) => s.likeCache)
+  const followCache = useAppStore((s) => s.followCache)
   const gridDensity = useAppStore((s) => s.gridDensity)
+  const setGridDensity = useAppStore((s) => s.setGridDensity)
   const addToast = useAppStore((s) => s.addToast)
   const navigate = useNavigate()
 
@@ -78,18 +65,21 @@ export default function Home() {
     return [...counts.entries()]
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 8)
+      .slice(0, 10)
   }, [allItems])
 
-  const heroItems = useMemo(
-    () => [...allItems].sort((a, b) => (b.curationScore || 0) - (a.curationScore || 0)).slice(0, 5),
+  const byScore = useMemo(() => [...allItems].sort((a, b) => (b.curationScore || 0) - (a.curationScore || 0)), [allItems])
+  const heroItems = useMemo(() => byScore.slice(0, 5), [byScore])
+  const topPicks = useMemo(() => (byScore.length >= 12 ? byScore.slice(5, 15) : byScore.slice(0, 10)), [byScore])
+  const trending = useMemo(
+    () => allItems.filter((item) => item.isTrending).sort((a, b) => b.views - a.views).slice(0, 14),
     [allItems]
   )
+  const photoSets = useMemo(() => allItems.filter((item) => !item.isVideo).slice(0, 14), [allItems])
 
-  const filteredItems = useMemo(() => {
+  // Facet counts respect the category + text filters so the numbers match what the grid would show.
+  const scopedItems = useMemo(() => {
     let result = allItems.map((item) => (likeCache[item.id] !== undefined ? { ...item, isLiked: likeCache[item.id] } : item))
-    if (filter === 'video') result = result.filter((item) => item.isVideo)
-    else if (filter === 'photo') result = result.filter((item) => !item.isVideo)
     if (category) result = result.filter((item) => item.category === category || item.tags.includes(category))
     const needle = homeQuery.trim().toLowerCase()
     if (needle) {
@@ -101,31 +91,33 @@ export default function Home() {
       )
     }
     return result
-  }, [allItems, category, filter, homeQuery, likeCache])
+  }, [allItems, category, homeQuery, likeCache])
 
-  // Reset pagination whenever the filter context changes (render-phase adjustment)
-  const filterKey = `${filter}|${category ?? ''}|${homeQuery}`
-  const [lastFilterKey, setLastFilterKey] = useState(filterKey)
-  if (lastFilterKey !== filterKey) {
-    setLastFilterKey(filterKey)
-    setVisibleCount(VISIBLE_INCREMENT)
-  }
+  const facetCounts = useMemo(() => {
+    const video = scopedItems.filter((item) => item.isVideo).length
+    return { all: scopedItems.length, video, photo: scopedItems.length - video }
+  }, [scopedItems])
 
-  const visibleItems = useMemo(() => filteredItems.slice(0, visibleCount), [filteredItems, visibleCount])
-  const hasMore = visibleCount < filteredItems.length
+  const filteredItems = useMemo(() => {
+    if (facet === 'video') return scopedItems.filter((item) => item.isVideo)
+    if (facet === 'photo') return scopedItems.filter((item) => !item.isVideo)
+    return scopedItems
+  }, [facet, scopedItems])
 
-  const openDetail = useCallback((id: string) => {
-    const item = allItems.find((entry) => entry.id === id)
-    if (item) setSelectedItem(item)
-  }, [allItems])
+  const openDetail = useCallback(
+    (id: string) => {
+      const item = allItems.find((entry) => entry.id === id)
+      if (item) setSelectedItem(item)
+    },
+    [allItems]
+  )
 
   const surprise = useCallback(() => {
     if (!filteredItems.length) {
       addToast({ type: 'info', title: 'Nothing to surprise you with yet', message: 'Try clearing filters or check back shortly.' })
       return
     }
-    const pick = filteredItems[Math.floor(Math.random() * filteredItems.length)]
-    setSelectedItem(pick)
+    setSelectedItem(filteredItems[Math.floor(Math.random() * filteredItems.length)])
   }, [addToast, filteredItems])
 
   const setCategory = useCallback(
@@ -143,8 +135,19 @@ export default function Home() {
     [setSearchParams]
   )
 
+  const clearFilters = useCallback(() => {
+    setCategory(null)
+    setFacet('all')
+    setHomeQuery('')
+  }, [setCategory])
+
+  const filtersActive = Boolean(category || facet !== 'all' || homeQuery)
+  const resetKey = `${facet}|${category ?? ''}|${homeQuery}`
+  const selectItem = useCallback((item: MediaItem) => setSelectedItem(item), [])
+  const openCreator = useCallback((creator: Creator) => setActiveCreator(creator), [])
+
   return (
-    <div className="animate-page-enter space-y-8">
+    <div className="animate-page-enter d-page">
       {/* Cinematic hero */}
       <Hero
         items={heroItems}
@@ -155,13 +158,13 @@ export default function Home() {
       />
 
       {/* Status strip: real counts only */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] uppercase tracking-[0.1em] text-ink-3">
+      <div className="d-strip" style={{ marginTop: -16 }}>
         <UpdatedChip updatedAt={discovery?.updatedAt ?? null} />
         {discovery && (
           <>
-            <span>{allItems.length} items</span>
-            <span>{creators.length} creators</span>
-            <span>{discovery.sources.filter((s) => s.state === 'connected').length} live sources</span>
+            <span><b>{allItems.length}</b> items</span>
+            <span><b>{creators.length}</b> creators</span>
+            <span><b>{discovery.sources.filter((s) => s.state === 'connected').length}</b> live sources</span>
           </>
         )}
         {discoveryQuery.isFetching && !discoveryQuery.isLoading && (
@@ -174,72 +177,62 @@ export default function Home() {
       {/* Creators rail → opens the creator's drawer */}
       {creators.length > 0 && (
         <section aria-label="Creators on the feed">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="eyebrow">On the feed</h2>
-            <button
-              onClick={() => navigate('/creators')}
-              className="inline-flex min-h-10 items-center gap-1 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2 hover:text-ink"
-            >
-              All creators <ArrowRight size={12} strokeWidth={1.75} aria-hidden="true" />
-            </button>
-          </div>
-          <div className="hide-scrollbar -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
-            {creators.slice(0, 14).map((creator) => (
-              <button
+          <SectionHeader
+            title="On the feed"
+            eyebrow="Creators"
+            icon={<Users size={12} strokeWidth={1.75} aria-hidden="true" />}
+            actionLabel="All creators"
+            onAction={() => navigate('/creators')}
+          />
+          <Rail ariaLabel="Creators on the feed">
+            {creators.slice(0, 16).map((creator) => (
+              <StoryRing
                 key={creator.id}
-                onClick={() => setActiveCreator(creator)}
-                className="flex w-16 shrink-0 flex-col items-center gap-2 tap-highlight-none"
-                aria-label={`Open creator ${creator.name}`}
-              >
-                <span className="grid h-14 w-14 place-items-center overflow-hidden rounded-full border border-line bg-sunken transition-colors hover:border-line-strong">
-                  {creator.avatar ? (
-                    <img src={creator.avatar} alt="" loading="lazy" className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="font-mono text-sm text-ink-2">{creator.name.charAt(0).toUpperCase()}</span>
-                  )}
-                </span>
-                <span className="w-full truncate text-center font-mono text-[9px] uppercase tracking-[0.04em] text-ink-3">
-                  {creator.username || creator.name}
-                </span>
-              </button>
+                creator={creator}
+                followed={Boolean(followCache[creatorFollowId(creator.name)])}
+                onOpen={openCreator}
+              />
             ))}
-          </div>
+          </Rail>
         </section>
       )}
+
+      {/* 3D depth-stacked shelf */}
+      <TopPicksShelf items={topPicks} onSelect={selectItem} />
 
       {/* Private rails: resume + on-device recommendations. Render nothing without local signals. */}
       <ContinueWatchingRail items={allItems} onSelect={setSelectedItem} />
       <ForYouRail items={allItems} onSelect={setSelectedItem} />
+      {trending.length >= 4 && (
+        <MediaRail
+          title="Trending now"
+          eyebrow="Rising on public sources"
+          icon={<Flame size={12} strokeWidth={1.75} aria-hidden="true" />}
+          items={trending}
+          onSelect={selectItem}
+          variant="wide"
+        />
+      )}
+      {photoSets.length >= 4 && (
+        <MediaRail
+          title="Photo sets"
+          eyebrow="Stills & galleries"
+          icon={<Camera size={12} strokeWidth={1.75} aria-hidden="true" />}
+          items={photoSets}
+          onSelect={selectItem}
+          actionLabel="All photos"
+          onAction={() => setFacet('photo')}
+        />
+      )}
       <CollectionsRail items={allItems} onSelect={setSelectedItem} />
 
       {/* Library */}
       <section aria-label="Media library">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="eyebrow">Library</h2>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={cn('grid h-10 w-10 place-items-center rounded-md transition-colors', viewMode === 'grid' ? 'bg-sunken text-ink' : 'text-ink-3 hover:text-ink')}
-              aria-label="Grid view"
-              aria-pressed={viewMode === 'grid'}
-            >
-              <Grid3X3 size={16} strokeWidth={1.75} />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={cn('grid h-10 w-10 place-items-center rounded-md transition-colors', viewMode === 'list' ? 'bg-sunken text-ink' : 'text-ink-3 hover:text-ink')}
-              aria-label="List view"
-              aria-pressed={viewMode === 'list'}
-            >
-              <List size={16} strokeWidth={1.75} />
-            </button>
-          </div>
-        </div>
+        <SectionHeader title="Library" eyebrow="Everything, filterable" />
 
-        {/* Filter row */}
-        <div className="mb-5 flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search size={14} strokeWidth={1.75} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden="true" />
+        <div className="d-toolbar">
+          <div className="d-field">
+            <Search size={16} strokeWidth={1.75} aria-hidden="true" />
             <input
               value={homeQuery}
               onChange={(event) => setHomeQuery(event.target.value)}
@@ -248,148 +241,80 @@ export default function Home() {
               }}
               placeholder="Filter this feed"
               aria-label="Filter media on this page"
-              className="h-10 w-52 rounded-md border border-line bg-transparent pl-9 pr-8 text-[13px] text-ink outline-none transition-colors placeholder:text-ink-3 focus:border-line-strong"
+              className="d-input"
             />
             {homeQuery && (
-              <button
-                onClick={() => setHomeQuery('')}
-                className="absolute right-1.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded text-ink-3 hover:text-ink"
-                aria-label="Clear filter"
-              >
-                <X size={13} strokeWidth={1.75} />
+              <button onClick={() => setHomeQuery('')} className="d-field-clear" aria-label="Clear filter">
+                <X size={14} strokeWidth={1.75} />
               </button>
             )}
           </div>
 
-          {(['all', 'video', 'photo'] as const).map((value) => (
-            <button
-              key={value}
-              onClick={() => setFilter(value)}
-              className={cn('chip', filter === value && 'chip-active')}
-              aria-pressed={filter === value}
-            >
-              {value === 'video' && <Play size={12} strokeWidth={1.75} aria-hidden="true" />}
-              {value === 'photo' && <ImageIcon size={12} strokeWidth={1.75} aria-hidden="true" />}
-              {value}
-            </button>
-          ))}
+          <FacetToggle value={facet} onChange={setFacet} counts={facetCounts} />
 
-          {categories.map(({ name }) => (
-            <button
-              key={name}
-              onClick={() => setCategory(category === name ? null : name)}
-              className={cn('chip', category === name && 'chip-active')}
-              aria-pressed={category === name}
-            >
-              {name}
-            </button>
-          ))}
+          <span className="d-toolbar-spacer" />
 
-          {(category || filter !== 'all' || homeQuery) && (
-            <button
-              onClick={() => {
-                setCategory(null)
-                setFilter('all')
-                setHomeQuery('')
-              }}
-              className="inline-flex min-h-10 items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2 hover:text-ink"
-            >
-              <X size={12} strokeWidth={1.75} aria-hidden="true" /> Clear
-            </button>
+          <LayoutToggle value={layout} onChange={setLayout} />
+          {layout !== 'list' && <DensityToggle value={gridDensity} onChange={setGridDensity} />}
+          <button onClick={surprise} className="btn-secondary" aria-label="Surprise me">
+            <Dice5 size={15} strokeWidth={1.75} aria-hidden="true" />
+            <span className="hidden sm:inline">Surprise</span>
+          </button>
+
+          {(categories.length > 0 || filtersActive) && (
+            <div className="d-chips" style={{ flexBasis: '100%' }}>
+              {categories.map(({ name }) => (
+                <button
+                  key={name}
+                  onClick={() => setCategory(category === name ? null : name)}
+                  className={cn('chip', category === name && 'chip-active')}
+                  aria-pressed={category === name}
+                >
+                  {name}
+                </button>
+              ))}
+              {filtersActive && (
+                <button onClick={clearFilters} className="chip">
+                  <X size={12} strokeWidth={1.75} aria-hidden="true" /> Clear
+                </button>
+              )}
+            </div>
           )}
-
-          <div className="ml-auto flex items-center gap-1">
-            <button onClick={surprise} className="btn-secondary min-h-10 px-3" aria-label="Surprise me">
-              <Dice5 size={14} strokeWidth={1.75} aria-hidden="true" />
-              <span className="hidden sm:inline">Surprise</span>
-            </button>
-          </div>
         </div>
 
-        {/* Grid / list */}
-        {discoveryQuery.isLoading ? (
-          <SkeletonGrid count={12} />
-        ) : discoveryQuery.error ? (
-          <EmptyState
+        {discoveryQuery.error && !discovery ? (
+          <StatePanel
+            tone="error"
             icon={RefreshCw}
             title="The live archive could not be reached"
             description="Check your connection and try again. Nothing here is cached client-side."
             actionLabel="Retry"
             onAction={() => discoveryQuery.refetch()}
           />
-        ) : visibleItems.length === 0 ? (
-          <EmptyState
+        ) : !discoveryQuery.isLoading && filteredItems.length === 0 ? (
+          <StatePanel
             icon={Search}
             title="No media matches"
             description="Try removing a filter or category to widen the archive view."
             actionLabel="Clear filters"
-            onAction={() => {
-              setCategory(null)
-              setFilter('all')
-              setHomeQuery('')
-            }}
+            onAction={clearFilters}
           />
-        ) : viewMode === 'grid' ? (
-          <>
-            <div className={cn('media-grid grid gap-4', densityCols[gridDensity])}>
-              {visibleItems.map((item, itemIndex) => (
-                <MediaCard
-                  key={item.id}
-                  item={item}
-                  aspectRatio="2/3"
-                  onSelect={openDetail}
-                  priority={itemIndex < PRIORITY_CARD_COUNT}
-                />
-              ))}
-            </div>
-            {hasMore && (
-              <div className="mt-8 flex justify-center">
-                <button onClick={() => setVisibleCount((count) => count + VISIBLE_INCREMENT)} className="btn-secondary">
-                  Show more ({filteredItems.length - visibleCount} remaining)
-                </button>
-              </div>
-            )}
-          </>
         ) : (
-          <div className="divide-y divide-line border-y border-line">
-            {visibleItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => openDetail(item.id)}
-                className="flex w-full items-center gap-4 py-3 text-left transition-colors hover:bg-sunken/50"
-                aria-label={`Open ${item.title}`}
-              >
-                <span className="relative h-16 w-12 shrink-0 overflow-hidden rounded-sm bg-sunken">
-                  <MediaImage
-                    sources={item.isVideo ? [item.thumbnail] : [item.thumbnail, item.mediaUrl]}
-                    alt=""
-                    className="absolute inset-0 h-full w-full object-cover"
-                    skeletonClassName="absolute inset-0"
-                  />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-ink">{item.title}</span>
-                  <span className="mono-meta mt-0.5 block uppercase">
-                    {item.source} · {relativeTime(item.createdAt)} · {item.isVideo ? item.duration || 'video' : 'photo'}
-                  </span>
-                </span>
-                <span className="mono-meta hidden shrink-0 sm:block">@{item.creator}</span>
-              </button>
-            ))}
-            {hasMore && (
-              <div className="flex justify-center py-5">
-                <button onClick={() => setVisibleCount((count) => count + VISIBLE_INCREMENT)} className="btn-secondary">
-                  Show more ({filteredItems.length - visibleCount} remaining)
-                </button>
-              </div>
-            )}
-          </div>
+          <MediaBrowser
+            items={filteredItems}
+            layout={layout}
+            density={gridDensity}
+            onSelect={openDetail}
+            loading={discoveryQuery.isLoading}
+            resetKey={resetKey}
+            ariaLabel="Media library"
+          />
         )}
 
-        {/* Why these — explainable ordering, restyled as a mono strip */}
-        {visibleItems.length > 0 && (
-          <div className="mt-8 rounded-md border border-line p-4">
-            <p className="eyebrow flex items-center gap-1.5">
+        {/* Why these — explainable ordering */}
+        {filteredItems.length > 0 && (
+          <div className="d-panel mt-10">
+            <p className="d-eyebrow">
               <Sparkles size={12} strokeWidth={1.75} aria-hidden="true" /> Why these
             </p>
             <p className="mt-2 text-[13px] leading-5 text-ink-2">

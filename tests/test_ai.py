@@ -10,6 +10,15 @@ import requests
 from app import ai
 
 
+@pytest.fixture(autouse=True)
+def _closed_breaker():
+    from app.utils.circuit_breaker import CircuitState
+
+    ai.model_breaker._state = CircuitState.CLOSED
+    ai.model_breaker._failure_count = 0
+    yield
+
+
 def _settings():
     return SimpleNamespace(
         openai_api_key="sk-test",
