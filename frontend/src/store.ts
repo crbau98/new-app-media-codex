@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { creatorKey, type DiscoveryMode } from '@/lib/discovery'
+import { RADAR_CAP, sanitizeRadarList } from '@/features/creators/creatorLogic'
 
 export type Theme = 'dark' | 'light' | 'auto'
 export type GridDensity = 'compact' | 'normal' | 'spacious'
@@ -35,16 +36,7 @@ function containsEmail(value: string): boolean {
 }
 
 export function sanitizeCreatorWatchlist(values: unknown): string[] {
-  if (!Array.isArray(values)) return []
-  const unique = new Map<string, string>()
-  for (const raw of values) {
-    if (typeof raw !== 'string' || containsEmail(raw)) continue
-    const display = raw.trim().replace(/^@/, '').replace(/\s+/g, ' ').slice(0, 50)
-    const key = creatorKey(display)
-    if (key.length >= 2 && !unique.has(key)) unique.set(key, display)
-    if (unique.size >= 8) break
-  }
-  return [...unique.values()]
+  return sanitizeRadarList(values, RADAR_CAP)
 }
 
 interface AppState {
@@ -213,7 +205,7 @@ export const useAppStore = create<AppState>()(
         if (containsEmail(creator)) return state
         const display = creator.trim().replace(/^@/, '').replace(/\s+/g, ' ').slice(0, 50)
         const key = creatorKey(display)
-        if (key.length < 2 || state.creatorWatchlist.some((item) => creatorKey(item) === key) || state.creatorWatchlist.length >= 8) return state
+        if (key.length < 2 || state.creatorWatchlist.some((item) => creatorKey(item) === key) || state.creatorWatchlist.length >= RADAR_CAP) return state
         return { creatorWatchlist: [...state.creatorWatchlist, display] }
       }),
       removeCreatorFromWatchlist: (creator) => set((state) => ({

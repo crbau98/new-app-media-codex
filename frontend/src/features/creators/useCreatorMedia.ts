@@ -2,29 +2,27 @@ import { useMemo } from 'react'
 import { useInfiniteQuery, type QueryClient } from '@tanstack/react-query'
 import { fetchCreatorMediaPage, type CreatorMediaPage } from '@/lib/api'
 import type { Creator, MediaItem } from '@/lib/types'
+import { creatorHandle, isCatalogPlatform } from './creatorLogic'
 
 /** Only providers with a per-creator catalog endpoint can be expanded. */
 export function hasCreatorCatalog(creator: Creator | null | undefined): boolean {
   if (!creator) return false
-  const platforms = [creator.platform, ...(creator.platforms ?? []), creator.sourceAttribution]
-    .filter(Boolean)
-    .map((value) => String(value).toLowerCase())
-  const profileHost = (() => {
-    try { return new URL(creator.profileUrl || '').hostname } catch { return '' }
-  })()
-  return platforms.some((value) => value.includes('redgifs')) || /(^|\.)redgifs\.com$/i.test(profileHost)
+  const platforms = [creator.platform, ...(creator.platforms ?? []), creator.sourceAttribution].filter(Boolean)
+  return platforms.some((value) => isCatalogPlatform(String(value))) || isCatalogPlatform(undefined, creator.profileUrl)
 }
 
-export const creatorMediaKey = (handle: string) => ['creator-media', handle.toLowerCase()] as const
+export const creatorMediaKey = (handle: string) => ['creator-media', handle.toLowerCase(), 'explicit'] as const
 
-const handleFor = (creator: Creator) => creator.username || creator.name
+/** Explicitly opened creators are always requested with `strict=0` so nothing is hidden. */
+const fetchExplicitPage = (handle: string, page: number) => fetchCreatorMediaPage(handle, page, 40, { strict: false })
 
 /** Warm the first page (used on card hover/focus so the drawer opens populated). */
 export function prefetchCreatorMedia(queryClient: QueryClient, creator: Creator) {
   if (!hasCreatorCatalog(creator)) return
+  const handle = creatorHandle(creator)
   void queryClient.prefetchInfiniteQuery({
-    queryKey: creatorMediaKey(handleFor(creator)),
-    queryFn: ({ pageParam }) => fetchCreatorMediaPage(handleFor(creator), pageParam),
+    queryKey: creatorMediaKey(handle),
+    queryFn: ({ pageParam }) => fetchExplicitPage(handle, pageParam),
     initialPageParam: 1,
     getNextPageParam: (last: CreatorMediaPage) => (last.hasMore ? last.page + 1 : undefined),
     staleTime: 5 * 60_000,
@@ -37,6 +35,10 @@ export interface CreatorMediaState {
   items: MediaItem[]
   /** Provider-reported total for the creator's catalog, or the merged count when unknown. */
   total: number
+  /** True when a catalog endpoint exists for this creator (false = link-only lead). */
+  catalogAvailable: boolean
+  /** Provider handle the endpoint resolved the request to, when it differs from what was asked. */
+  resolvedHandle: string | null
   isLoading: boolean
   isFetchingMore: boolean
   hasMore: boolean
@@ -47,10 +49,10 @@ export interface CreatorMediaState {
 
 export function useCreatorMedia(creator: Creator | null): CreatorMediaState {
   const enabled = hasCreatorCatalog(creator)
-  const handle = creator ? handleFor(creator) : ''
+  const handle = creator ? creatorHandle(creator) : ''
   const query = useInfiniteQuery({
     queryKey: creatorMediaKey(handle),
-    queryFn: ({ pageParam }) => fetchCreatorMediaPage(handle, pageParam),
+    queryFn: ({ pageParam }) => fetchExplicitPage(handle, pageParam),
     initialPageParam: 1,
     getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
     enabled: enabled && Boolean(handle),
@@ -71,9 +73,12 @@ export function useCreatorMedia(creator: Creator | null): CreatorMediaState {
   }, [sample, query.data])
 
   const providerTotal = query.data?.pages[0]?.total ?? 0
+  const resolved = query.data?.pages[0]?.resolvedHandle ?? null
   return {
     items,
     total: Math.max(providerTotal, items.length),
+    catalogAvailable: enabled,
+    resolvedHandle: resolved && resolved.toLowerCase() !== handle.toLowerCase() ? resolved : null,
     isLoading: enabled && query.isLoading,
     isFetchingMore: query.isFetchingNextPage,
     hasMore: Boolean(query.hasNextPage),
