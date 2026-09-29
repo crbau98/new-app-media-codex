@@ -31,8 +31,20 @@
   ],
   "crons": [
     {
-      "path": "/api/live-media?count=100&pages=3&sort=newest&scheduled=1&ai=1",
+      "path": "/api/live-media?count=100&pages=3&sort=newest&scheduled=1&ai=1&lane=0",
       "schedule": "17 6 * * *"
+    },
+    {
+      "path": "/api/live-media?count=100&pages=3&sort=newest&scheduled=1&lane=4&page=2",
+      "schedule": "23 12 * * *"
+    },
+    {
+      "path": "/api/live-media?count=100&pages=3&sort=newest&scheduled=1&lane=8&page=3",
+      "schedule": "29 18 * * *"
+    },
+    {
+      "path": "/api/live-media?count=100&pages=3&sort=newest&scheduled=1&lane=12&page=1",
+      "schedule": "41 0 * * *"
     }
   ]
 }
