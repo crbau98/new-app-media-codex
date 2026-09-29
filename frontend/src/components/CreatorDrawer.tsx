@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, ExternalLink, Radar, Sparkles, UserPlus, X } from 'lucide-react'
+import { Check, ExternalLink, Library, Radar, Sparkles, UserPlus, X } from 'lucide-react'
 import type { Creator, MediaItem } from '@/lib/types'
 import { creatorFollowId, creatorKey, formatMetric, relativeTime } from '@/lib/discovery'
 import { useAppStore } from '@/store'
@@ -10,6 +10,7 @@ import MediaDetail from './MediaDetail'
 import MediaImage from './MediaImage'
 import MediaGrid from '@/components/discovery/MediaGrid'
 import { useCreatorMedia } from '@/features/creators/useCreatorMedia'
+import { creatorHandle, followName, handleKey, RADAR_CAP } from '@/features/creators/creatorLogic'
 import { CreatorAvatar } from '@/components/discovery/CreatorParts'
 import { hueFor } from '@/components/discovery/mediaMeta'
 import { cn } from '@/lib/utils'
@@ -35,9 +36,10 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
   const catalog = useCreatorMedia(creator)
   const media = catalog.items
   const sentinelRef = useRef<HTMLDivElement>(null)
-  const followId = creator ? creatorFollowId(creator.name) : ''
+  const handle = creator ? creatorHandle(creator) : ''
+  const followId = creator ? creatorFollowId(followName(creator)) : ''
   const followed = Boolean(followId && followCache[followId])
-  const onRadar = creator ? creatorWatchlist.some((entry) => creatorKey(entry) === creatorKey(creator.name)) : false
+  const onRadar = creator ? creatorWatchlist.some((entry) => creatorKey(entry) === handleKey(handle)) : false
 
   const follow = useCallback(() => {
     if (!creator) return
@@ -53,13 +55,15 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
   const toggleRadar = useCallback(() => {
     if (!creator) return
     if (onRadar) {
-      removeCreatorFromWatchlist(creator.name)
-      addToast({ type: 'info', title: `Removed @${creator.name} from your radar` })
+      removeCreatorFromWatchlist(handle)
+      addToast({ type: 'info', title: `Removed @${handle} from your radar` })
+    } else if (creatorWatchlist.length >= RADAR_CAP) {
+      addToast({ type: 'error', title: 'Radar is full', message: `Remove a handle first — the radar holds up to ${RADAR_CAP}.` })
     } else {
-      addCreatorToWatchlist(creator.name)
-      addToast({ type: 'success', title: `Radar is scanning for @${creator.name}` })
+      addCreatorToWatchlist(handle)
+      addToast({ type: 'success', title: `Radar is scanning for @${handle}` })
     }
-  }, [addCreatorToWatchlist, addToast, creator, onRadar, removeCreatorFromWatchlist])
+  }, [addCreatorToWatchlist, addToast, creator, creatorWatchlist.length, handle, onRadar, removeCreatorFromWatchlist])
 
   // Escape close (focus trap handles Tab cycling)
   useEffect(() => {
@@ -161,6 +165,16 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
               <p className="mono-meta mt-1 uppercase">
                 @{creator.username || creator.name.replace(/\s+/g, '').toLowerCase()} · {creator.sourceAttribution || creator.platform || 'Public source'}
               </p>
+              {catalog.resolvedHandle && (
+                <p className="mono-meta mt-1" data-testid="resolved-as">
+                  resolved as <strong className="text-ink">@{catalog.resolvedHandle}</strong>
+                </p>
+              )}
+              {catalog.catalogAvailable && (
+                <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-2">
+                  <Library size={12} strokeWidth={1.75} aria-hidden="true" /> Full catalog
+                </p>
+              )}
 
               {/* Mono stat grid */}
               <dl className="d-drawer-stats mt-5">
@@ -172,7 +186,7 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
                 )}
                 <div>
                   <dt>Posts</dt>
-                  <dd>{catalog.total || creator.evidenceCount || creator.mediaCount || media.length}</dd>
+                  <dd>{catalog.total || creator.mediaCount || creator.evidenceCount || media.length}</dd>
                 </div>
                 <div>
                   <dt>Last seen</dt>
@@ -180,11 +194,11 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
                 </div>
                 <div>
                   <dt>Views</dt>
-                  <dd>{formatMetric(creator.viewCount)}</dd>
+                  <dd>{creator.viewCount != null ? formatMetric(creator.viewCount) : "—"}</dd>
                 </div>
                 <div>
                   <dt>Likes</dt>
-                  <dd>{formatMetric(creator.likeCount)}</dd>
+                  <dd>{creator.likeCount != null ? formatMetric(creator.likeCount) : "—"}</dd>
                 </div>
                 <div>
                   <dt>Signal</dt>
@@ -267,6 +281,20 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
               )}
 
               {/* Media */}
+              {!catalog.catalogAvailable && media.length === 0 ? (
+                <section className="d-panel mt-6" data-testid="link-only">
+                  <h3 className="eyebrow">Profile link — opens on the source</h3>
+                  <p className="mt-2 text-[13px] leading-5 text-ink-2">
+                    This platform has no public catalog Media Codex can browse. Nothing is embedded or imported —
+                    the profile opens on the source site.
+                  </p>
+                  {creator.profileUrl && (
+                    <a href={creator.profileUrl} target="_blank" rel="noreferrer" className="btn-secondary mt-3 inline-flex min-h-11">
+                      Open on {creator.platform || 'source'} <ExternalLink size={13} strokeWidth={1.75} aria-hidden="true" />
+                    </a>
+                  )}
+                </section>
+              ) : (
               <section className="mt-6">
                 <h3 className="eyebrow flex items-baseline justify-between gap-3">
                   <span>{catalog.total > media.length || catalog.hasMore ? 'All public posts' : 'Public posts'}</span>
@@ -321,6 +349,7 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
                   </p>
                 )}
               </section>
+              )}
             </div>
           </motion.aside>
 
