@@ -14,9 +14,21 @@ import type { CreatorLead, UnifiedMediaItem } from './_lib/discovery-types.js'
 import { selectQualityDiverse } from './_lib/source-quality.js'
 import { dedupeItems, pruneUnplayable, withContract } from './_lib/media-normalize.js'
 import {
-  REDGIFS_API, canonicalCreator, fetchWithTimeout, getRedgifsToken, hasPlayableUrls, isEligibleScopedItem,
+  REDGIFS_API, canonicalCreator, fetchWithTimeout, getRedgifsToken, hasPlayableUrls,
   mapRedgifsItem, providerHandle, redactEmails, sanitizeProviderItem, textFor, type RedgifsItem,
 } from './_lib/redgifs.js'
+import { isEligibleCreatorItem, laneForTag, rotateLanes, runBounded } from './_lib/discovery-lanes.js'
+
+/** Watchlist ceiling (was 8). Lookups are batched with bounded parallelism. */
+const WATCHLIST_CAP = 40
+const DISCOVERY_CONCURRENCY = 8
+/** Wall-clock budget for provider discovery inside the 30s function limit. */
+const DISCOVERY_BUDGET_MS = 14_000
+/** Non-primary lanes added to each feed request (rotating). */
+const EXTRA_LANES = 4
+/** Creator pool (was 240) and how many of those keep the full media list. */
+const CREATOR_POOL = 480 // creators (items considered: 3x)
+const FULL_MEDIA_CREATORS = 240
 
 const EMAIL_TEST = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
 const GENERIC_SIMILARITY_TAGS = new Set(['gay', 'male', 'men', 'man', 'video', 'verified'])
@@ -110,7 +122,7 @@ function parseWatchlistCandidates(candidates: string[]): string[] {
     const key = canonicalCreator(display)
     if (key.length < 2 || unique.has(key)) continue
     unique.set(key, display)
-    if (unique.size >= 8) break
+    if (unique.size >= WATCHLIST_CAP) break
   }
   return [...unique.values()]
 }
@@ -216,7 +228,7 @@ function buildCreators(items: LiveMediaItem[], similarities: Map<string, Creator
   }
 
   return [...grouped.entries()]
-    .map(([key, creatorItems]) => {
+    .map(([key, creatorItems], poolIndex) => {
       const ranked = sortItems(creatorItems, 'smart')
       const first = ranked[0]
       const views = creatorItems.reduce((sum, item) => sum + item.views, 0)
@@ -256,7 +268,7 @@ function buildCreators(items: LiveMediaItem[], similarities: Map<string, Creator
         aiSuggested: false,
         discoveryConfidence: similarity?.score || 0,
         discoveryTags,
-        media: ranked.slice(0, 12),
+        media: ranked.slice(0, poolIndex < FULL_MEDIA_CREATORS ? 12 : 6),
       }
     })
     .sort((a, b) => Number(b.isWatched) - Number(a.isWatched) || (b.similarityScore - a.similarityScore) || (b.curationScore - a.curationScore) || (b.viewCount - a.viewCount))
@@ -365,6 +377,7 @@ export default async function handler(req: Request): Promise<Response> {
     const suppliedWatchlist = Array.isArray(body.watchlist)
       ? parseWatchlistCandidates(body.watchlist.filter((item): item is string => typeof item === 'string'))
       : parseWatchlist(requestUrl)
+    const laneParam = (value('lane') || '').trim().slice(0, 40)
     const scheduled = requestUrl.searchParams.get('scheduled') === '1'
     // Scheduled (cron) scans warm provider tokens, the edge cache, and the AI
     // result cache. They never substitute a server-side watchlist — radar
@@ -383,7 +396,7 @@ export default async function handler(req: Request): Promise<Response> {
         detail: 'AI and forced scans are limited to 6 per 5 minutes per client. Cached results remain available without these flags.',
       }), { status: 429, headers: { ...corsHeaders(true), 'Retry-After': '60' } })
     }
-    const additionalSourcesPromise = collectAdditionalSources(watchlist, { query })
+    const additionalSourcesPromise = collectAdditionalSources(watchlist.slice(0, 8), { query })
 
     let received: RedgifsItem[] = []
     let eligible: RedgifsItem[] = []
@@ -414,12 +427,12 @@ export default async function handler(req: Request): Promise<Response> {
       // Rotate across the provider's order lanes to deepen the catalog inside
       // the same tag-scoped (scope-proofed) search: 'trending' favors velocity,
       // 'top28' surfaces month-scale proven clips, 'recent' keeps the feed
-      // fresh. An unknown/unsupported order just fails its lane via
-      // Promise.allSettled without affecting the others.
+      // fresh. An unknown/unsupported order just fails its lane without
+      // affecting the others.
       const ORDER_LANES = ['trending', 'top28', 'recent'] as const
       const laneCount = Math.min(ORDER_LANES.length, pages)
       const perLanePages = Math.ceil(pages / laneCount)
-      const discoveryRequests: Array<Promise<RedgifsItem[]>> = []
+      const discoveryRequests: Array<() => Promise<RedgifsItem[]>> = []
       for (let lane = 0; lane < laneCount; lane += 1) {
         for (let pageIndex = 0; pageIndex < perLanePages; pageIndex += 1) {
           const params = new URLSearchParams({
@@ -429,12 +442,32 @@ export default async function handler(req: Request): Promise<Response> {
             page: String(startPage + pageIndex),
             order: ORDER_LANES[lane],
           })
-          discoveryRequests.push(fetchProvider('/gifs/search', params))
+          discoveryRequests.push(() => fetchProvider('/gifs/search', params))
+        }
+      }
+      const primaryRequestCount = discoveryRequests.length
+
+      // Broad coverage: a rotating subset of the curated niche lanes (see
+      // _lib/discovery-lanes.ts). The cron passes different `lane` seeds so each
+      // scheduled run warms different lanes; `lane=<Tag>` pins one lane. Each extra
+      // lane is scanned in two orders on the requested page and fails soft.
+      if (!query) {
+        const numericSeed = laneParam !== '' && Number.isFinite(Number(laneParam)) ? Number(laneParam) : null
+        const pinned = laneParam !== '' && numericSeed === null ? laneForTag(laneParam) : null
+        const seed = numericSeed ?? Math.floor(Date.now() / (6 * 3_600_000))
+        const extra = pinned ? [pinned] : rotateLanes(seed, EXTRA_LANES)
+        for (const lane of extra) {
+          for (const order of ['trending', 'top28'] as const) {
+            const params = new URLSearchParams({
+              type: 'g', tags: lane.tag, count: String(Math.min(80, providerCount)), page: String(startPage), order,
+            })
+            discoveryRequests.push(() => fetchProvider('/gifs/search', params))
+          }
         }
       }
 
       if (query) {
-        discoveryRequests.push(fetchProvider('/gifs/search', new URLSearchParams({
+        discoveryRequests.push(() => fetchProvider('/gifs/search', new URLSearchParams({
         type: 'g',
         tags: query,
         count: String(Math.min(60, providerCount)),
@@ -443,7 +476,8 @@ export default async function handler(req: Request): Promise<Response> {
         })))
         const possibleHandle = canonicalCreator(query)
         if (possibleHandle.length >= 2) {
-          discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(possibleHandle)}/search`, new URLSearchParams({
+          const rawHandle = providerHandle(query) || possibleHandle
+          discoveryRequests.push(() => fetchProvider(`/users/${encodeURIComponent(rawHandle)}/search`, new URLSearchParams({
           count: '40',
           page: '1',
           order: 'recent',
@@ -451,18 +485,21 @@ export default async function handler(req: Request): Promise<Response> {
         }
       }
 
+      // Watchlist expansion: raw provider handle (`_ . -` preserved) for the lookup,
+      // canonical form only for matching. Batched under DISCOVERY_CONCURRENCY.
       for (const creator of expandWatchlist ? watchlist : []) {
         const handle = canonicalCreator(creator)
-        discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(providerHandle(creator) || handle)}/search`, new URLSearchParams({
+        const rawHandle = providerHandle(creator) || handle
+        discoveryRequests.push(() => fetchProvider(`/users/${encodeURIComponent(rawHandle)}/search`, new URLSearchParams({
         count: '30',
         page: '1',
         order: 'recent',
         })).then((items) => items.filter((item) => canonicalCreator(item.userName || '') === handle)))
       }
 
-      const pageResults = await Promise.allSettled(discoveryRequests)
+      const pageResults = await runBounded(discoveryRequests, DISCOVERY_CONCURRENCY, Date.now() + DISCOVERY_BUDGET_MS)
       const successfulPages = pageResults.filter((result): result is PromiseFulfilledResult<RedgifsItem[]> => result.status === 'fulfilled')
-      basePagesScanned = pageResults.slice(0, pages).filter((result) => result.status === 'fulfilled').length
+      basePagesScanned = pageResults.slice(0, Math.min(pages, primaryRequestCount)).filter((result) => result.status === 'fulfilled').length
       redgifsRequestsAttempted = discoveryRequests.length
       redgifsRequestsSucceeded = successfulPages.length
       if (!successfulPages.length) throw new Error('Public provider search is temporarily unavailable')
@@ -472,7 +509,7 @@ export default async function handler(req: Request): Promise<Response> {
         if (sanitized.id) deduplicated.set(sanitized.id, sanitized)
       }
       received = [...deduplicated.values()]
-      eligible = received.filter(isEligibleScopedItem)
+      eligible = received.filter(isEligibleCreatorItem)
       mapped = eligible
       .filter(hasPlayableUrls)
       .map((item): LiveMediaItem => mapRedgifsItem(item, creatorIsWatched(item.userName || 'Redgifs creator', watchlist)))
@@ -497,7 +534,7 @@ export default async function handler(req: Request): Promise<Response> {
     const ranked = sortItems(rankCohort(combined).map((item) => ({ ...item, isTrending: item.curationScore >= 65 })), sort)
     const items = selectQualityDiverse(ranked, count)
     const similarities = creatorSimilarities(ranked)
-    const creatorPool = mergeCreatorLeads(buildCreators(ranked.slice(0, 240), similarities), additional.leads)
+    const creatorPool = mergeCreatorLeads(buildCreators(ranked.slice(0, CREATOR_POOL * 3), similarities).slice(0, CREATOR_POOL), additional.leads)
     const gatewayAuthToken = (
       process.env.AI_GATEWAY_API_KEY
       || req.headers.get('x-vercel-oidc-token')
