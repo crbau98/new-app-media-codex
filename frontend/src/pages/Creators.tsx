@@ -264,6 +264,9 @@ export default function Creators() {
         </div>
       </div>
 
+      {/* Primary action: find a creator by name, @handle or profile link */}
+      <CreatorFinder onOpen={openCreator} />
+
       {/* Scan progress */}
       {scanning && (
         <div role="status" className="d-panel flex items-center gap-3">
@@ -299,8 +302,6 @@ export default function Creators() {
           </Rail>
         </section>
       )}
-
-      <CreatorFinder onOpen={openCreator} />
 
       <RadarPanel onRunScan={runScan} scanning={scanning} />
 
