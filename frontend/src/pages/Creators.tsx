@@ -185,6 +185,25 @@ export default function Creators() {
     return result
   }, [performers, platformFilter, tagFilter, debouncedQuery, sort])
 
+  // Render the directory incrementally: 50+ creator cards (each with a cover and an avatar
+  // image) mounted at once is what exhausts memory on phones.
+  const PAGE = 12
+  const [visibleCount, setVisibleCount] = useState(PAGE)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const filterSignature = `${platformFilter}|${tagFilter}|${debouncedQuery}|${sort}`
+  useEffect(() => setVisibleCount(PAGE), [filterSignature])
+  const hasMoreCreators = filteredCreators.length > visibleCount
+  const showMoreCreators = useCallback(() => setVisibleCount((count) => count + PAGE), [])
+  useEffect(() => {
+    const node = sentinelRef.current
+    if (!node || !hasMoreCreators || typeof IntersectionObserver === 'undefined') return undefined
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) showMoreCreators()
+    }, { rootMargin: '500px 0px' })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [hasMoreCreators, showMoreCreators, visibleCount])
+
   const activeSources = useMemo(
     () => (discovery?.sources ?? []).filter((source) => source.state === 'connected'),
     [discovery]
@@ -492,13 +511,22 @@ export default function Creators() {
             }}
           />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredCreators.map((creator, index) => (
-              <div key={creator.id} className="d-reveal" style={{ ['--d' as string]: Math.min(index, 8) }}>
-                <CreatorCard creator={creator} followed={followedFor(creator)} aiOk={aiOk} onOpen={openCreator} onFollow={follow} />
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredCreators.slice(0, visibleCount).map((creator, index) => (
+                <div key={creator.id} className="d-reveal" style={{ ['--d' as string]: Math.min(index % PAGE, 8) }}>
+                  <CreatorCard creator={creator} followed={followedFor(creator)} aiOk={aiOk} onOpen={openCreator} onFollow={follow} />
+                </div>
+              ))}
+            </div>
+            {hasMoreCreators && (
+              <div ref={sentinelRef} className="mt-6 flex justify-center">
+                <button type="button" onClick={showMoreCreators} className="btn-secondary min-h-11">
+                  Show more creators · {filteredCreators.length - visibleCount} left
+                </button>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </section>
 
