@@ -86,3 +86,19 @@ export type MultiSourceResult = {
   requestsAttempted: number
   requestsSucceeded: number
 }
+
+/** A creator/channel/account found by searching a public source by name or handle. */
+export type SourceCreatorHit = {
+  /** Provider-native handle used to address the creator on `platform` (e.g. Redgifs username). */
+  handle: string
+  displayName: string
+  platform: string
+  profileUrl: string
+  avatar?: string
+  followers?: number | null
+  mediaCount?: number | null
+  /** 0..1 — how sure we are this is the creator that was searched for. */
+  confidence: number
+  matchedBy: 'exact' | 'variant' | 'alias' | 'search'
+  sourceAttribution: string
+}
