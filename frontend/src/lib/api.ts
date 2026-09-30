@@ -8,6 +8,7 @@
  */
 
 import { FETCH_TIMEOUT_MS } from './backendOrigin'
+import { normalizeCandidates, type CreatorCandidate } from '../features/creators/creatorLogic'
 import type {
   AiDiscovery,
   AiDiscoveryState,
@@ -177,7 +178,7 @@ export async function fetchLiveDiscovery(
           pages: 3,
           sort,
           query,
-          watchlist: watchlist.slice(0, 8),
+          watchlist: watchlist.slice(0, 40),
           forceFresh,
           useAI: forceFresh,
         }),
@@ -325,3 +326,107 @@ export async function searchMedia(
 }
 
 export type { Creator, MediaItem }
+
+/* ───────────────────────────────────────────────
+   Per-creator full catalog (`/api/creator-media`)
+   ────────────────────────────────────────────── */
+
+export interface CreatorMediaPage {
+  creator: string
+  items: MediaItem[]
+  page: number
+  pages: number
+  total: number
+  hasMore: boolean
+  /** Present when the endpoint resolved the requested name to a different provider handle. */
+  resolvedHandle?: string
+}
+
+/** One page of a creator's complete public catalog (not just the feed sample). `strict: false` sends `strict=0` for explicit lookups. */
+export async function fetchCreatorMediaPage(
+  creator: string,
+  page = 1,
+  count = 40,
+  options: { strict?: boolean } = {}
+): Promise<CreatorMediaPage> {
+  const params = new URLSearchParams({ creator, page: String(page), count: String(count) })
+  if (options.strict === false) params.set('strict', '0')
+  const response = await fetchWithTimeout(`/api/creator-media?${params}`, { method: 'GET' }, 20000)
+  if (!response.ok) throw new Error(`Creator media returned ${response.status}`)
+  const payload = (await response.json()) as Partial<CreatorMediaPage>
+  return {
+    creator: payload.creator || creator,
+    items: Array.isArray(payload.items) ? payload.items : [],
+    page: payload.page || page,
+    pages: payload.pages || page,
+    total: payload.total ?? 0,
+    hasMore: Boolean(payload.hasMore),
+    resolvedHandle: typeof payload.resolvedHandle === 'string' && payload.resolvedHandle ? payload.resolvedHandle : undefined,
+  }
+}
+
+/* ───────────────────────────────────────────────
+   Creator resolver + directory (see docs/CREATOR_COVERAGE.md)
+   ────────────────────────────────────────────── */
+
+export type { CreatorCandidate }
+
+export interface CreatorResolution {
+  query: string
+  candidates: CreatorCandidate[]
+  tried: string[]
+  updatedAt?: string
+}
+
+/** Resolve a name, @handle or pasted profile URL to public creator profiles. */
+export async function resolveCreators(q: string, limit = 8): Promise<CreatorResolution> {
+  const params = new URLSearchParams({ q: q.trim(), limit: String(limit) })
+  const response = await fetchWithTimeout(`/api/creator-resolve?${params}`, { method: 'GET' }, 20000)
+  if (!response.ok) throw new Error(`Creator resolver returned ${response.status}`)
+  const payload = (await response.json()) as Record<string, unknown>
+  return {
+    query: typeof payload.query === 'string' ? payload.query : q,
+    candidates: normalizeCandidates(payload),
+    tried: Array.isArray(payload.tried) ? payload.tried.filter((v): v is string => typeof v === 'string') : [],
+    updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : undefined,
+  }
+}
+
+export type DirectorySort = 'smart' | 'newest' | 'popular'
+
+export interface CreatorDirectoryLane {
+  tag: string
+  pagesScanned?: number
+}
+
+export interface CreatorDirectoryPage {
+  creators: Creator[]
+  nextCursor: string | null
+  total: number | null
+  lanes: CreatorDirectoryLane[]
+  updatedAt?: string
+}
+
+export interface CreatorDirectoryParams {
+  cursor?: string | null
+  limit?: number
+  tag?: string | null
+  sort?: DirectorySort
+}
+
+/** One page of the cross-lane creator directory. */
+export async function fetchCreatorDirectory(params: CreatorDirectoryParams = {}): Promise<CreatorDirectoryPage> {
+  const search = new URLSearchParams({ limit: String(params.limit ?? 48), sort: params.sort ?? 'smart' })
+  if (params.cursor) search.set('cursor', params.cursor)
+  if (params.tag) search.set('tag', params.tag)
+  const response = await fetchWithTimeout(`/api/creator-directory?${search}`, { method: 'GET' }, 25000)
+  if (!response.ok) throw new Error(`Creator directory returned ${response.status}`)
+  const payload = (await response.json()) as Partial<CreatorDirectoryPage>
+  return {
+    creators: Array.isArray(payload.creators) ? payload.creators : [],
+    nextCursor: typeof payload.nextCursor === 'string' && payload.nextCursor ? payload.nextCursor : null,
+    total: typeof payload.total === 'number' ? payload.total : null,
+    lanes: Array.isArray(payload.lanes) ? payload.lanes.filter((lane) => lane && typeof lane.tag === 'string') : [],
+    updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : undefined,
+  }
+}
