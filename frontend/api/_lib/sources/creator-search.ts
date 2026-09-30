@@ -1,6 +1,6 @@
 /**
  * Cross-source creator search (non-Redgifs public sources): PeerTube channels/
- * accounts, ActivityPub/Mastodon-compatible accounts (+ WebFinger), and
+ * accounts, Bluesky actors, ActivityPub/Mastodon-compatible accounts (+ WebFinger), and
  * metadata-only web leads for creator profile URLs. Owned by the sources stream.
  * The resolver (`api/creator-resolve.ts`) calls this alongside its Redgifs lookups.
  *
@@ -15,6 +15,7 @@ import type { SourceCreatorHit } from '../discovery-types.js'
 import { searchCreatorWebLeads } from '../creator-web-leads.js'
 import { searchActivityPubCreators } from './activitypub-creators.js'
 import { searchPeerTubeCreators } from './peertube-creators.js'
+import { searchBlueskyCreators } from './bluesky.js'
 
 export const CREATOR_SEARCH_BUDGET_MS = 7000
 const DEFAULT_LIMIT = 8
@@ -175,6 +176,7 @@ export async function runCreatorSearch(
         Promise.all([
           run(searchPeerTubeCreators(clean, { signal, onHits })),
           run(searchActivityPubCreators(clean, { signal, onHits })),
+          run(searchBlueskyCreators(clean, { signal, onHits })),
           run(searchCreatorWebLeads(clean, { signal })),
         ]),
         budget,

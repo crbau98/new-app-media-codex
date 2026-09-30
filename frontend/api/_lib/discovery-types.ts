@@ -53,7 +53,7 @@ export type CreatorLead = {
 }
 
 export type SourceStatus = {
-  id: 'redgifs' | 'x' | 'tumblr' | 'google' | 'duckduckgo' | 'peertube'
+  id: 'redgifs' | 'x' | 'tumblr' | 'google' | 'duckduckgo' | 'peertube' | 'bluesky' | 'mastodon' | 'lemmy'
   name: string
   mode: 'stream' | 'discovery'
   state: 'connected' | 'not-configured' | 'limited' | 'error'
