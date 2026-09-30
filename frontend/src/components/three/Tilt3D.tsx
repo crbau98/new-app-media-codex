@@ -70,18 +70,18 @@ export default function Tilt3D({
       onPointerLeave={onLeave}
       className={cn('tilt-3d', className)}
       style={{
-        perspective: `${perspective}px`,
+        // Inert (touch / reduced motion / lite): no 3D context, no compositor layer.
+        ...(motionOk ? { perspective: `${perspective}px` } : null),
         ...style,
       }}
     >
       <div
         className="tilt-3d-inner relative h-full w-full"
-        style={{
+        style={motionOk ? {
           transform: 'rotateX(var(--tilt-rx, 0deg)) rotateY(var(--tilt-ry, 0deg)) scale(var(--tilt-s, 1))',
           transformStyle: 'preserve-3d',
           transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1)',
-          willChange: motionOk ? 'transform' : undefined,
-        }}
+        } : undefined}
       >
         {children}
         {glare && motionOk && (

@@ -1,11 +1,12 @@
 import { memo, useRef, useState } from 'react'
-import { Check, Plus, Sparkles } from 'lucide-react'
+import { Check, ExternalLink, Library, Plus, Sparkles } from 'lucide-react'
 import type { Creator } from '@/lib/types'
 import { formatMetric, relativeTime } from '@/lib/discovery'
 import MediaImage from '@/components/MediaImage'
 import { useFinePointer, useMotionOk } from './motion'
 import { hueFor } from './mediaMeta'
 import { useDepthTilt } from './useDepthTilt'
+import { hasCreatorCatalog } from '@/features/creators/useCreatorMedia'
 import { cn } from '@/lib/utils'
 import '@/styles/discovery.css'
 
@@ -83,17 +84,41 @@ interface CreatorCardProps {
   aiOk: boolean
   onOpen: (creator: Creator) => void
   onFollow: (creator: Creator) => void
+  /** Render the cover image (off for far-down cards so image count stays bounded on phones). */
+  showCover?: boolean
+}
+
+/** Platform badge + catalog/link-only affordance shared by cards and search results. */
+export function CreatorBadges({ creator }: { creator: Creator }) {
+  const catalog = hasCreatorCatalog(creator)
+  const platform = creator.platform || creator.platforms?.[0]
+  return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      {platform && (
+        <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-2">{platform}</span>
+      )}
+      {catalog ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-heat-dim px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-heat">
+          <Library size={10} strokeWidth={1.75} aria-hidden="true" /> Full catalog
+        </span>
+      ) : !creator.media?.length ? (
+        <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-line-strong px-2 py-0.5 font-mono text-[10px] tracking-[0.04em] text-ink-3">
+          <ExternalLink size={10} strokeWidth={1.75} aria-hidden="true" /> Profile link — opens on the source
+        </span>
+      ) : null}
+    </span>
+  )
 }
 
 /** Creator directory card with pointer-tilt depth, cover collage and follow control. */
-export const CreatorCard = memo(function CreatorCard({ creator, followed, aiOk, onOpen, onFollow }: CreatorCardProps) {
+export const CreatorCard = memo(function CreatorCard({ creator, followed, aiOk, onOpen, onFollow, showCover = true }: CreatorCardProps) {
   const ref = useRef<HTMLElement>(null)
   const motionOk = useMotionOk()
   const fine = useFinePointer()
   useDepthTilt(ref, motionOk && fine, 4)
-  const cover = creator.media?.[0]
+  const cover = showCover ? creator.media?.[0] : undefined
   const reasons = (creator.matchReasons ?? creator.discoveryReasons ?? []).slice(0, 3)
-  const platforms = (creator.platforms ?? [creator.platform]).filter(Boolean).slice(0, 2).join(' · ') || creator.sourceAttribution || 'public source'
+  const handle = creator.username || creator.name
 
   return (
     <article ref={ref} className="d-ccard d-tilt-soft" data-followed={followed}>
@@ -124,7 +149,7 @@ export const CreatorCard = memo(function CreatorCard({ creator, followed, aiOk, 
                 </span>
               )}
             </span>
-            <span className="d-ccard-sub">{platforms}</span>
+            <span className="d-ccard-sub">@{handle.replace(/^@/, '')}</span>
           </span>
         </button>
         <button
@@ -141,6 +166,9 @@ export const CreatorCard = memo(function CreatorCard({ creator, followed, aiOk, 
           {followed ? 'Following' : 'Follow'}
         </button>
       </div>
+      <div className="px-4 pb-2">
+        <CreatorBadges creator={creator} />
+      </div>
       <dl className="d-ccard-stats">
         {creator.followers != null && (
           <div>
@@ -149,8 +177,8 @@ export const CreatorCard = memo(function CreatorCard({ creator, followed, aiOk, 
           </div>
         )}
         <div>
-          <dt>Evidence</dt>
-          <dd>{creator.evidenceCount ?? creator.mediaCount ?? 0}</dd>
+          <dt>{creator.mediaCount ? 'Posts' : 'Evidence'}</dt>
+          <dd>{creator.mediaCount ?? creator.evidenceCount ?? 0}</dd>
         </div>
         <div>
           <dt>Seen</dt>

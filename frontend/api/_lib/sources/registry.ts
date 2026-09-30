@@ -14,6 +14,7 @@ export type SourceCapability =
   | 'oembed'
   | 'activitypub'
   | 'peertube'
+  | 'linkOnly'
 
 export type SourceCachePolicy = 'cdn-public' | 'private-short' | 'no-store'
 
@@ -88,6 +89,36 @@ const REGISTRY: readonly SourceRegistryEntry[] = [
     attributionFormat: 'video URL + account URL + origin instance host',
     termsUrl: 'https://joinpeertube.org/',
     complianceNote: 'Public federated index only; items link back to the origin instance, media is never rehosted, and playback stays on the source.',
+  },
+  {
+    id: 'peertube-creators',
+    name: 'PeerTube creator search',
+    capabilities: ['metadataOnly', 'peertube'],
+    rateLimit: 'GET /api/v1/search/video-channels (+ /api/v1/accounts/{name@host} for handles); nsfw=both; 4s per instance, 3 in parallel; part of the 7s creator-search budget',
+    cachePolicy: 'no-store',
+    attributionFormat: 'channel/account URL + origin instance host',
+    termsUrl: 'https://joinpeertube.org/',
+    complianceNote: 'Public unauthenticated channel/account search on sepiasearch.org and a documented instance list; returns public counts and the instance avatar URL only; nothing is rehosted.',
+  },
+  {
+    id: 'activitypub',
+    name: 'ActivityPub / Mastodon accounts',
+    capabilities: ['metadataOnly', 'activitypub'],
+    rateLimit: 'WebFinger + /api/v1/accounts/lookup for @user@host queries; GET /api/v2/search?type=accounts on a short instance list; 4s per request, 3 in parallel',
+    cachePolicy: 'no-store',
+    attributionFormat: 'account URL + home instance host',
+    termsUrl: 'https://docs.joinmastodon.org/',
+    complianceNote: 'Unauthenticated public APIs only (instances requiring auth are skipped); locked, suspended and non-discoverable accounts are never returned; no follower lists or other PII.',
+  },
+  {
+    id: 'creator-web-leads',
+    name: 'Creator web leads',
+    capabilities: ['metadataOnly', 'linkOnly'],
+    rateLimit: 'one DuckDuckGo HTML query per creator search; 4s timeout; results cached 10 min',
+    cachePolicy: 'no-store',
+    attributionFormat: 'DuckDuckGo lead (+ "link only" for subscription platforms)',
+    termsUrl: 'https://duckduckgo.com/privacy',
+    complianceNote: 'Only public profile URLs are parsed to (platform, handle). OnlyFans/Fansly/JustFor.Fans leads are link-only: never fetched, ingested or rehosted. Lower confidence than first-party API hits.',
   },
 ]
 
