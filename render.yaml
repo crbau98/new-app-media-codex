@@ -33,6 +33,16 @@ services:
         value: "false"
       - key: ADMIN_TOKEN
         generateValue: true
+      # Persistent creator index crawler (public sources only). The SQLite DB lives on the
+      # persistent disk above, so the index survives deploys.
+      - key: CREATOR_INDEX_ENABLED
+        value: "true"
+      - key: CREATOR_INDEX_INTERVAL_MINUTES
+        value: "45"
+      - key: CREATOR_INDEX_MAX_PAGES
+        value: "40"
+      - key: CREATOR_INDEX_MAX_SECONDS
+        value: "240"
       # Secret-backed public discovery stays on Render. Existing dashboard
       # values are retained; new Blueprint installs prompt for them.
       - key: X_BEARER_TOKEN

@@ -11,21 +11,70 @@
  * creators than `limit`, the cursor stays on the same batch (the surplus is served
  * next, from a deterministic re-scan). Sorting applies within a page's batch only;
  * the directory is an enumeration, not a global ranking.
+ *
+ * Persistent index (additive): when the Render backend's creator index answers
+ * (`_lib/index-client.ts`, 3 s timeout) its creators are merged with the live lanes
+ * (dedupe by lowercase platform + handle, richer record wins), `total` becomes real
+ * and `sources` reports how many creators each half contributed. The opaque cursor
+ * gains an optional `x` field (index keyset cursor; '' = index exhausted) that older
+ * cursors simply lack. If the index is unreachable the endpoint degrades silently to
+ * live-only behaviour.
  */
 export const config = { runtime: 'edge', maxDuration: 30 }
 
-import { aggregateCreators, sortDirectory, type DirectorySort } from './_lib/directory-build.js'
+import { aggregateCreators, sortDirectory, type DirectoryCreator, type DirectorySort } from './_lib/directory-build.js'
 import {
-  DISCOVERY_LANES, MAX_BATCH_UNITS, MAX_DIRECTORY_PAGES, PROVIDER_PAGE_SIZE, batchAt, creatorHash, decodeCursor,
-  encodeCursor, laneForTag, planUnits, runBounded, type LaneUnit,
+  DISCOVERY_LANES, MAX_BATCH_UNITS, MAX_DIRECTORY_PAGES, MAX_SEEN_HASHES, PROVIDER_PAGE_SIZE, batchAt, creatorHash, decodeCursor,
+  laneForTag, planUnits, runBounded, type DirectoryCursor, type LaneUnit,
 } from './_lib/discovery-lanes.js'
-import { REDGIFS_API, fetchWithTimeout, getRedgifsToken, type RedgifsItem } from './_lib/redgifs.js'
+import { fetchIndexPage, mergeCreators, mergeRecords, creatorDedupeKey, type IndexCreator, type IndexPage } from './_lib/index-client.js'
+import { REDGIFS_API, canonicalCreator, fetchWithTimeout, getRedgifsToken, type RedgifsItem } from './_lib/redgifs.js'
 
 const BUDGET_MS = 10_000
 const REQUEST_TIMEOUT_MS = 6_500
 const MAX_BATCHES_PER_REQUEST = 3
 const MAX_CONCURRENCY = 8
 const SORTS = new Set(['smart', 'newest', 'popular'])
+
+type OutCreator = Omit<DirectoryCreator, 'key'> | IndexCreator
+
+/** Hash identity for "already served": Redgifs by canonical handle (shared with live lanes), others by platform. */
+function seenKey(creator: { platform?: string; username?: string; name?: string }): string {
+  const canonical = canonicalCreator(creator.username || creator.name || '')
+  return (creator.platform || 'Redgifs').toLowerCase() === 'redgifs' ? canonical : `${(creator.platform || '').toLowerCase()}:${canonical}`
+}
+
+function sortOut(creators: OutCreator[], sort: DirectorySort): OutCreator[] {
+  const byName = (a: OutCreator, b: OutCreator) => creatorDedupeKey(a).localeCompare(creatorDedupeKey(b))
+  const time = (c: OutCreator) => Date.parse(c.lastSeenAt || '') || 0
+  const sorted = [...creators]
+  if (sort === 'newest') return sorted.sort((a, b) => time(b) - time(a) || byName(a, b))
+  if (sort === 'popular') return sorted.sort((a, b) => b.viewCount - a.viewCount || b.likeCount - a.likeCount || byName(a, b))
+  return sorted.sort((a, b) => b.curationScore - a.curationScore || b.viewCount - a.viewCount || byName(a, b))
+}
+
+function b64url(text: string): string {
+  const bytes = new TextEncoder().encode(text)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+/** Index half of the cursor: undefined = not started, '' = exhausted, otherwise the index keyset cursor. null = malformed. */
+function readIndexCursor(value: string): string | '' | undefined | null {
+  try {
+    const padded = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=')
+    const raw = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(padded), (char) => char.charCodeAt(0)))) as Record<string, unknown>
+    if (raw.x === undefined) return undefined
+    return typeof raw.x === 'string' && raw.x.length <= 600 && /^[A-Za-z0-9_=-]*$/.test(raw.x) ? raw.x : null
+  } catch {
+    return null
+  }
+}
+
+function encodeChainCursor(cursor: DirectoryCursor, indexCursor: string): string {
+  return b64url(JSON.stringify({ v: 1, ...cursor, s: cursor.s.slice(-MAX_SEEN_HASHES), x: indexCursor }))
+}
 
 function headers(ok: boolean): Record<string, string> {
   const cache = ok ? 'public, s-maxage=600, stale-while-revalidate=3600' : 'no-store'
@@ -69,14 +118,27 @@ export default async function handler(req: Request): Promise<Response> {
     const cursor = cursorParam ? decodeCursor(cursorParam) : { i: 0, n: 0, s: [], t: chainTag }
     if (!cursor) return fail(400, 'invalid_cursor', 'cursor is malformed.')
     if (cursor.t !== chainTag) return fail(400, 'invalid_cursor', 'cursor belongs to a different tag.')
+    const indexCursor = cursorParam ? readIndexCursor(cursorParam) : undefined
+    if (indexCursor === null) return fail(400, 'invalid_cursor', 'cursor is malformed.')
 
     const deadline = Date.now() + BUDGET_MS
     const seen = new Set(cursor.s)
-    let token: string
-    try {
-      token = await getRedgifsToken()
-    } catch (error) {
-      return fail(502, 'directory_unavailable', error instanceof Error ? error.message : 'provider auth failed')
+
+    // Persistent index half (soft-fails to null); runs concurrently with the live scan.
+    const indexQuota = Math.max(1, Math.ceil(limit / 2))
+    const indexPromise: Promise<IndexPage | null> = indexCursor === ''
+      ? Promise.resolve(null)
+      : fetchIndexPage({ cursor: indexCursor || undefined, limit: indexQuota, tag: lane?.tag, sort })
+
+    let liveError = ''
+    const liveDone = cursor.i >= units.length
+    let token = ''
+    if (!liveDone) {
+      try {
+        token = await getRedgifsToken()
+      } catch (error) {
+        liveError = error instanceof Error ? error.message : 'provider auth failed'
+      }
     }
 
     const fetchUnit = async (unit: LaneUnit): Promise<RedgifsItem[]> => {
@@ -100,7 +162,7 @@ export default async function handler(req: Request): Promise<Response> {
     let pointer = cursor.i
     let scannedAny = false
 
-    for (let round = 0; round < MAX_BATCHES_PER_REQUEST; round += 1) {
+    for (let round = 0; round < MAX_BATCHES_PER_REQUEST && token; round += 1) {
       const batch = batchAt(units, pointer, Math.min(MAX_BATCH_UNITS, MAX_CONCURRENCY))
       if (!batch.length) break
       if (round > 0 && deadline - Date.now() < 4_000) break
@@ -125,25 +187,57 @@ export default async function handler(req: Request): Promise<Response> {
       if (fresh.length >= limit) break
     }
 
-    if (scannedAny && attempted > 0 && succeeded === 0) {
-      return fail(502, 'directory_unavailable', 'Public provider search is temporarily unavailable.')
-    }
+    if (scannedAny && attempted > 0 && succeeded === 0) liveError = 'Public provider search is temporarily unavailable.'
 
-    const fresh = sortDirectory(aggregateCreators(items, laneTagsById).filter((creator) => !seen.has(creatorHash(creator.key))), sort)
-    const page = fresh.slice(0, limit)
-    const surplus = fresh.length > limit
+    const indexPage = await indexPromise
+    const indexCreators = (indexPage?.creators || []).filter((creator) => !seen.has(creatorHash(seenKey(creator))))
+    if (liveError && !indexCreators.length) return fail(502, 'directory_unavailable', liveError)
+
+    // Live creators that the index also returned are merged into the index record (richer wins).
+    const liveFresh = liveError
+      ? []
+      : sortDirectory(aggregateCreators(items, laneTagsById).filter((creator) => !seen.has(creatorHash(creator.key))), sort)
+    const indexByKey = new Map<string, IndexCreator>(indexCreators.map((creator) => [creatorDedupeKey(creator), creator]))
+    const overlap = new Map<string, DirectoryCreator>()
+    const liveOnly: DirectoryCreator[] = []
+    for (const creator of liveFresh) {
+      const key = creatorDedupeKey(creator)
+      if (indexByKey.has(key)) overlap.set(key, creator)
+      else liveOnly.push(creator)
+    }
+    const mergedIndex = indexCreators.map((creator) => {
+      const live = overlap.get(creatorDedupeKey(creator))
+      if (!live) return creator
+      const { key: _key, ...rest } = live
+      return mergeRecords<OutCreator>(creator, rest) as OutCreator
+    })
+    const liveQuota = Math.max(0, limit - mergedIndex.length)
+    const livePage = liveOnly.slice(0, liveQuota)
+    const surplus = liveOnly.length > liveQuota
+    const page = sortOut(mergeCreators<OutCreator>([mergedIndex, livePage.map(({ key: _key, ...creator }) => creator)]), sort)
+
     const nextPages = cursor.n + 1
-    const nextIndex = surplus ? cursor.i : pointer
-    const nextSeen = [...cursor.s, ...page.map((creator) => creatorHash(creator.key))]
-    const exhausted = !surplus && nextIndex >= units.length
+    const nextIndex = liveError || surplus ? cursor.i : pointer
+    const servedHashes = [
+      ...livePage.map((creator) => creatorHash(creator.key)),
+      ...[...overlap.values()].map((creator) => creatorHash(creator.key)),
+      ...indexCreators.map((creator) => creatorHash(seenKey(creator))),
+    ]
+    const nextSeen = [...cursor.s, ...servedHashes]
+    let nextIndexCursor: string
+    if (indexCursor === '') nextIndexCursor = ''
+    else if (indexPage) nextIndexCursor = indexPage.nextCursor || ''
+    else nextIndexCursor = indexCursor === undefined ? '' : indexCursor // mid-chain outage: retry; never had the index: live-only
+    const exhausted = !liveError && !surplus && nextIndex >= units.length && nextIndexCursor === ''
     const nextCursor = exhausted || nextPages >= MAX_DIRECTORY_PAGES
       ? null
-      : encodeCursor({ i: nextIndex, n: nextPages, s: nextSeen, t: chainTag })
+      : encodeChainCursor({ i: nextIndex, n: nextPages, s: nextSeen, t: chainTag }, nextIndexCursor)
 
     return new Response(JSON.stringify({
-      creators: page.map(({ key: _key, ...creator }) => creator),
+      creators: page,
       nextCursor,
-      total: null,
+      total: indexPage && indexPage.total !== null ? Math.max(indexPage.total, page.length) : null,
+      sources: { index: mergedIndex.length, live: page.length - mergedIndex.length + overlap.size },
       lanes: [...laneStats.entries()].map(([tag, pagesScanned]) => ({ tag, pagesScanned })),
       updatedAt: new Date().toISOString(),
     }), { status: 200, headers: headers(true) })
