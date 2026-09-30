@@ -190,6 +190,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # ingestion must never block app boot
         _main_logger.warning("ingest worker failed to start: %s", exc)
 
+    try:
+        from app.creator_index.runtime import start_creator_index
+
+        start_creator_index(app)  # AsyncIOScheduler must start on the event-loop thread
+    except Exception as exc:  # the creator-index crawler must never block app boot
+        _main_logger.warning("creator index failed to start: %s", exc)
+
     service_start_task = asyncio.create_task(asyncio.to_thread(service.start))
     telegram_start_task: asyncio.Task[None] | None = None
     app.state.telegram_client = None
@@ -208,6 +215,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception:
                 pass
         service.stop()
+        try:
+            from app.creator_index.runtime import stop_creator_index
+
+            stop_creator_index(app)
+        except Exception:
+            pass
         try:
             from app.media_pipeline.runtime import stop_runtime
 
