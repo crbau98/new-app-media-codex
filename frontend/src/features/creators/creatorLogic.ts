@@ -226,7 +226,34 @@ export function candidateToCreator(candidate: CreatorCandidate): Creator {
   }
 }
 
-/** Follow-id source: resolved candidates follow by handle so follows match the media's creator field. */
+/** Drawer-ready Creator for a related-creator card (catalog loads when the drawer opens it). */
+export function relatedToCreator(related: {
+  handle: string; displayName?: string; avatar?: string; platform?: string; reason?: string; sharedTags?: string[]
+}): Creator {
+  const handle = related.handle.replace(/^@/, '')
+  return {
+    id: `resolved-${handle.toLowerCase()}`,
+    name: related.displayName || handle,
+    username: handle,
+    avatar: related.avatar || '',
+    platform: related.platform || 'Redgifs',
+    profileUrl: `https://www.redgifs.com/users/${encodeURIComponent(handle)}`,
+    sourceAttribution: related.platform || 'Redgifs',
+    matchReasons: related.reason ? [related.reason] : undefined,
+    discoveryTags: related.sharedTags,
+    media: [],
+  }
+}
+
+export const DRAWER_STACK_MAX = 8
+
+/** Push onto the drawer history; re-opening the creator already on top is a no-op, depth is bounded. */
+export function pushDrawerStack(stack: Creator[], current: Creator, next: Creator): Creator[] {
+  if (handleKey(creatorHandle(next)) === handleKey(creatorHandle(current))) return stack
+  return [...stack, next].slice(-DRAWER_STACK_MAX)
+}
+
+/** Follow-id source:resolved candidates follow by handle so follows match the media's creator field. */
 export function followName(creator: Pick<Creator, 'id' | 'name' | 'username'>): string {
   return creator.id?.startsWith('resolved-') ? creatorHandle(creator) : creator.name
 }

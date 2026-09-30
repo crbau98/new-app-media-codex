@@ -15,7 +15,7 @@
 export type CreatorRegistryEntry = {
   canonicalName: string
   aliases: string[]
-  handles: { redgifs?: string[]; peertube?: string[]; x?: string[] }
+  handles: { redgifs?: string[]; peertube?: string[]; x?: string[]; bluesky?: string[]; mastodon?: string[] }
   notes?: string
 }
 

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, ExternalLink, Library, Radar, Sparkles, UserPlus, X } from 'lucide-react'
+import { ArrowLeft, Check, ExternalLink, Library, Radar, Sparkles, UserPlus, X } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { Creator, MediaItem } from '@/lib/types'
 import { creatorFollowId, creatorKey, formatMetric, relativeTime } from '@/lib/discovery'
 import { useAppStore } from '@/store'
@@ -9,8 +10,11 @@ import { useFocusTrap } from '@/hooks/useFocusTrap'
 import MediaDetail from './MediaDetail'
 import MediaImage from './MediaImage'
 import MediaGrid from '@/components/discovery/MediaGrid'
-import { useCreatorMedia } from '@/features/creators/useCreatorMedia'
-import { creatorHandle, followName, handleKey, RADAR_CAP } from '@/features/creators/creatorLogic'
+import { prefetchCreatorMedia, useCreatorMedia } from '@/features/creators/useCreatorMedia'
+import { prefetchCreatorRelated, useCreatorRelated } from '@/features/creators/useCreatorRelated'
+import { ElsewhereSection, RelatedCreatorsSection } from '@/features/creators/CreatorRelatedSections'
+import { creatorHandle, followName, handleKey, pushDrawerStack, RADAR_CAP, relatedToCreator } from '@/features/creators/creatorLogic'
+import type { RelatedCreator } from '@/lib/api'
 import { CreatorAvatar } from '@/components/discovery/CreatorParts'
 import { hueFor } from '@/components/discovery/mediaMeta'
 import { cn } from '@/lib/utils'
@@ -23,9 +27,15 @@ interface CreatorDrawerProps {
   onClose: () => void
 }
 
-export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) {
+export default function CreatorDrawer({ creator: rootCreator, onClose }: CreatorDrawerProps) {
   const panelRef = useRef<HTMLElement>(null)
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null)
+  const queryClient = useQueryClient()
+  // History: creators opened from "Related creators" stack on top of the creator the drawer was opened with.
+  const [trail, setTrail] = useState<{ root: Creator | null; stack: Creator[] }>({ root: null, stack: [] })
+  const stack = useMemo(() => (trail.root === rootCreator ? trail.stack : []), [trail, rootCreator])
+  const creator = stack.length ? stack[stack.length - 1] : rootCreator
+  const previous = stack.length > 1 ? stack[stack.length - 2] : rootCreator
   const followCache = useAppStore((state) => state.followCache)
   const toggleFollow = useAppStore((state) => state.toggleFollow)
   const addToast = useAppStore((state) => state.addToast)
@@ -34,6 +44,24 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
   const removeCreatorFromWatchlist = useAppStore((state) => state.removeCreatorFromWatchlist)
 
   const catalog = useCreatorMedia(creator)
+  const related = useCreatorRelated(creator, Boolean(creator))
+  const openRelated = useCallback((entry: RelatedCreator) => {
+    if (!creator || !rootCreator) return
+    setSelectedMedia(null)
+    setTrail({ root: rootCreator, stack: pushDrawerStack(stack, creator, relatedToCreator(entry)) })
+  }, [creator, rootCreator, stack])
+  const warmRelated = useCallback((entry: RelatedCreator) => {
+    prefetchCreatorRelated(queryClient, entry.handle)
+    prefetchCreatorMedia(queryClient, relatedToCreator(entry))
+  }, [queryClient])
+  const goBack = useCallback(() => {
+    setSelectedMedia(null)
+    setTrail({ root: rootCreator, stack: stack.slice(0, -1) })
+  }, [rootCreator, stack])
+  const creatorId = creator?.id
+  useEffect(() => {
+    panelRef.current?.scrollTo({ top: 0 })
+  }, [creatorId])
   const media = catalog.items
   const sentinelRef = useRef<HTMLDivElement>(null)
   const handle = creator ? creatorHandle(creator) : ''
@@ -140,6 +168,18 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
                 />
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/40 to-transparent" aria-hidden="true" />
+              {stack.length > 0 && previous && (
+                <button
+                  type="button"
+                  onClick={goBack}
+                  className="absolute left-3 top-[max(0.75rem,env(safe-area-inset-top))] inline-flex h-11 max-w-[60%] items-center gap-1.5 rounded-full bg-canvas/80 px-4 text-[13px] text-ink transition-colors hover:bg-canvas"
+                  data-testid="drawer-back"
+                  aria-label={`Back to ${previous.name}`}
+                >
+                  <ArrowLeft size={16} strokeWidth={1.75} aria-hidden="true" />
+                  <span className="truncate">Back</span>
+                </button>
+              )}
               <button
                 onClick={onClose}
                 className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] grid h-11 w-11 place-items-center rounded-full bg-canvas/70 text-ink backdrop-blur transition-colors hover:bg-canvas"
@@ -279,6 +319,9 @@ export default function CreatorDrawer({ creator, onClose }: CreatorDrawerProps) 
                   </p>
                 </section>
               )}
+
+              <RelatedCreatorsSection state={related} onOpen={openRelated} onWarm={warmRelated} />
+              <ElsewhereSection state={related} />
 
               {/* Media */}
               {!catalog.catalogAvailable && media.length === 0 ? (

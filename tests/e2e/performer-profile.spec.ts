@@ -80,3 +80,84 @@ test('bulk add resolves names through the resolver and summarises', async ({ pag
   await expect(page.getByTestId('bulk-summary')).toContainText('2 resolved · 1 unresolved')
   await expect(page.getByTestId('radar-count')).toHaveText('2/40')
 })
+
+const relatedCard = (handle: string, tags: string[]) => ({
+  handle, displayName: handle.replace(/_/g, ' '), platform: 'Redgifs', avatar: poster, score: 0.7,
+  reason: `Shares ${tags.map((t) => `#${t}`).join(', ')}`, sharedTags: tags,
+})
+
+async function mockRelated(page: Page, seen: string[], mode: 'ok' | 'empty' | 'error' = 'ok') {
+  await page.route('**/api/creator-related*', (route) => {
+    const creator = new URL(route.request().url()).searchParams.get('creator') || ''
+    seen.push(creator)
+    if (mode === 'error') return route.fulfill({ status: 502, contentType: 'application/json', body: '{"error":"creator_related_unavailable"}' })
+    const body = mode === 'empty' || creator !== hogue.handle
+      ? { creator, related: [], elsewhere: [], updatedAt: new Date().toISOString() }
+      : {
+        creator,
+        related: [relatedCard('bear_cub_one', ['bearded', 'jock']), relatedCard('gym_buddy', ['gym']), relatedCard('third_creator', ['twink'])],
+        elsewhere: [
+          { platform: 'Redgifs', handle: 'hogue_alt', url: 'https://www.redgifs.com/users/hogue_alt', label: 'Redgifs · @hogue_alt', verified: true, source: 'registry', linkOnly: false },
+          { platform: 'X', handle: 'hogue_x', url: 'https://x.com/hogue_x', label: 'X · @hogue_x', verified: false, source: 'bio', linkOnly: true },
+          { platform: 'Linktree', handle: 'hogue', url: 'https://linktr.ee/hogue', label: 'Link in bio (Linktree) · @hogue', verified: false, source: 'bio', linkOnly: true },
+        ],
+        updatedAt: new Date().toISOString(),
+      }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+  })
+}
+
+async function openHogue(page: Page) {
+  await page.goto('/creators')
+  await page.getByRole('combobox', { name: /Find a creator/i }).fill('Christian Hogue')
+  await page.getByRole('option').first().getByRole('button', { name: 'Open profile', exact: true }).click()
+  return page.getByRole('dialog', { name: 'Creator Christian Hogue' })
+}
+
+test('drawer shows related creators and self-published links; related opens in place with Back and Escape closes', async ({ page }) => {
+  const seen: string[] = []
+  await mockCreatorApis(page, [])
+  await mockRelated(page, seen)
+  const dialog = await openHogue(page)
+  await expect(dialog.getByTestId('related-card')).toHaveCount(3)
+  await expect(dialog.getByTestId('related-card').first()).toContainText('bear cub one')
+  await expect(dialog.getByTestId('related-card').first()).toContainText('#bearded')
+
+  const links = dialog.getByTestId('elsewhere-link')
+  await expect(links).toHaveCount(3)
+  await expect(links.first()).toHaveAttribute('rel', 'noopener noreferrer nofollow')
+  await expect(links.first()).toHaveAttribute('target', '_blank')
+  await expect(links.first()).toContainText('Verified')
+  await expect(links.nth(1)).toContainText('link only — opens on the source')
+  await expect(links.first()).not.toContainText('link only')
+
+  await dialog.getByTestId('related-card').first().click()
+  const next = page.getByRole('dialog', { name: 'Creator bear cub one' })
+  await expect(next).toBeVisible()
+  await expect(next.getByTestId('drawer-back')).toBeVisible()
+  expect(seen).toContain('bear_cub_one')
+  await next.getByTestId('drawer-back').click()
+  await expect(page.getByRole('dialog', { name: 'Creator Christian Hogue' })).toBeVisible()
+  await expect(page.getByTestId('drawer-back')).toHaveCount(0)
+
+  await page.getByRole('dialog').getByTestId('related-card').nth(1).click()
+  await expect(page.getByRole('dialog', { name: 'Creator gym buddy' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+})
+
+test('related section has empty and error-with-retry states', async ({ page }) => {
+  await mockCreatorApis(page, [])
+  await mockRelated(page, [], 'empty')
+  let dialog = await openHogue(page)
+  await expect(dialog.getByText('No related creators found yet')).toBeVisible()
+  await expect(dialog.getByTestId('elsewhere-section')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+
+  const failing = await page.context().newPage()
+  await mockCreatorApis(failing, [])
+  await mockRelated(failing, [], 'error')
+  dialog = await openHogue(failing)
+  await expect(dialog.getByRole('alert')).toContainText("Couldn't load related creators")
+  await expect(dialog.getByRole('button', { name: 'Retry' }).first()).toBeVisible()
+})
