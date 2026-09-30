@@ -41,3 +41,40 @@ creator the user asked for is never partially hidden.
 `api/_lib/creator-registry.ts`: `{ canonicalName, aliases[], handles: { redgifs?: string[] } }`.
 Only handles supplied by the product owner or verified against the provider are seeded — never guessed.
 Seed entries: Christian Hogue → redgifs `hoguesdirtylaundry`; Michael Yerger; Jakipz (handles to be resolved live).
+
+---
+
+## Round 2 — wider sources, persistent index, related creators
+
+Legitimate, public, unauthenticated/official APIs only (Bluesky AT Protocol public AppView,
+Mastodon-compatible public timelines, Lemmy public API, PeerTube, Redgifs). No scraping of
+paywalled or leaked-content mirrors, no login bypass, no identification of private individuals.
+Every source is attributed and links back to the original post/profile.
+
+### Stream A — federated public sources (edge)
+`api/_lib/sources/bluesky.ts`, `mastodon-tags.ts`, `lemmy.ts`: each exports
+`collectX(opts) → { media: UnifiedMediaItem[]; leads: CreatorLead[]; status: SourceStatus; attempted; succeeded }`
+(same shape `multi-source.ts` already consumes) and is wired into `collectAdditionalSources`.
+`searchSourceCreators` additionally searches Bluesky actors (`app.bsky.actor.searchActors`).
+`SourceStatus.id` union is extended additively (`'bluesky' | 'mastodon' | 'lemmy'`).
+
+### Stream B — persistent creator index (Render backend + edge reader)
+Backend (FastAPI/SQLite, `app/creator_index/`): a scheduled crawler walks public sources
+(Redgifs lanes deep, Bluesky, Lemmy, Mastodon tags, PeerTube), upserts creators and sample media,
+and serves them:
+`GET /api/v1/creators/index?cursor=&limit=48&tag=&q=&sort=smart|newest|popular|count`
+→ `{ creators: Creator[], nextCursor, total, sources: [{platform,count}], updatedAt }`
+`GET /api/v1/creators/index/stats` → `{ total, byPlatform, lastCrawlAt, crawlRunning }`.
+Admin-only: `POST /api/v1/creators/index/crawl` (run now), `POST .../observe` (bulk upsert).
+Edge: `api/_lib/index-client.ts` reads the index through `api/render-gateway.ts`
+(`/api/render/api/v1/creators/index…`, read-only GET allow-listed) and `api/creator-directory.ts`
+merges index creators with the live lanes (dedupe by platform+handle), degrading silently to
+live-only if the backend is unreachable. `total` becomes real when the index answers.
+
+### Stream C — related creators & elsewhere links
+`GET /api/creator-related?creator=<handle>&platform=redgifs&limit=12`
+→ `{ creator, related: [{ handle, displayName, platform, avatar?, score, reason, sharedTags[] }],
+     elsewhere: [{ platform, handle, url, label, verified, source: 'bio'|'registry' }], updatedAt }`
+`related` = tag co-occurrence over the creator's catalog sample + directory/feed pool.
+`elsewhere` = links the creator PUBLISHED themselves (Bluesky/Mastodon bio & verified fields,
+registry) — never inferred. UI: CreatorDrawer gets "Related creators" and "Elsewhere" sections.
