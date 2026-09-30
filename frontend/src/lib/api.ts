@@ -430,3 +430,74 @@ export async function fetchCreatorDirectory(params: CreatorDirectoryParams = {})
     updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : undefined,
   }
 }
+
+/* ───────────────────────────────────────────────
+   Related creators + "elsewhere" links (`/api/creator-related`)
+   ────────────────────────────────────────────── */
+
+export interface RelatedCreator {
+  handle: string
+  displayName: string
+  platform: string
+  avatar?: string
+  score: number
+  reason: string
+  sharedTags: string[]
+}
+
+export interface ElsewhereLink {
+  platform: string
+  handle: string
+  url: string
+  label: string
+  /** True only for registry entries and Mastodon rel=me verified fields. */
+  verified: boolean
+  source: 'bio' | 'registry'
+  /** Media Codex cannot browse this platform; the link just opens on the source. */
+  linkOnly?: boolean
+}
+
+export interface CreatorRelated {
+  creator: string
+  related: RelatedCreator[]
+  elsewhere: ElsewhereLink[]
+  updatedAt?: string
+  partial?: string[]
+}
+
+const isHttpsUrl = (value: unknown): value is string => {
+  if (typeof value !== 'string') return false
+  try { return new URL(value).protocol === 'https:' } catch { return false }
+}
+
+/** Related creators (tag overlap) and links the creator published themselves. */
+export async function fetchCreatorRelated(handle: string, platform = 'redgifs', limit = 12): Promise<CreatorRelated> {
+  const params = new URLSearchParams({ creator: handle, platform: platform.toLowerCase(), limit: String(limit) })
+  const response = await fetchWithTimeout(`/api/creator-related?${params}`, { method: 'GET' }, 20000)
+  if (!response.ok) throw new Error(`Creator related returned ${response.status}`)
+  const payload = (await response.json()) as Partial<CreatorRelated>
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  return {
+    creator: payload.creator || handle,
+    related: (Array.isArray(payload.related) ? payload.related : [])
+      .filter((r) => r && typeof r.handle === 'string' && r.handle)
+      .map((r) => ({
+        handle: r.handle,
+        displayName: str(r.displayName) || r.handle,
+        platform: str(r.platform) || 'Redgifs',
+        avatar: typeof r.avatar === 'string' && r.avatar.startsWith('/api/') ? r.avatar : undefined,
+        score: Number(r.score) || 0,
+        reason: str(r.reason),
+        sharedTags: Array.isArray(r.sharedTags) ? r.sharedTags.filter((t): t is string => typeof t === 'string').slice(0, 5) : [],
+      })),
+    elsewhere: (Array.isArray(payload.elsewhere) ? payload.elsewhere : [])
+      .filter((l) => l && isHttpsUrl(l.url))
+      .map((l) => ({
+        platform: str(l.platform), handle: str(l.handle), url: l.url, label: str(l.label) || str(l.platform),
+        verified: l.verified === true, source: l.source === 'registry' ? ('registry' as const) : ('bio' as const),
+        linkOnly: l.linkOnly !== false,
+      })),
+    updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : undefined,
+    partial: Array.isArray(payload.partial) ? payload.partial.filter((v): v is string => typeof v === 'string') : undefined,
+  }
+}
