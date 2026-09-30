@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/store'
+import { isLiteGraphics } from '@/lib/lite'
 
 /**
  * True when rich motion (3D, parallax, WebGL) is allowed: the user has not
@@ -18,5 +19,6 @@ export function useMotionOk(): boolean {
   }, [])
   const saveData = typeof navigator !== 'undefined'
     && (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true
-  return !appReduce && !osReduce && !saveData
+  // Lite devices (phones, low memory) skip WebGL/3D/parallax entirely — see lib/lite.ts.
+  return !appReduce && !osReduce && !saveData && !isLiteGraphics()
 }
