@@ -30,7 +30,12 @@ function backendPath(url: URL): string | null {
   return null
 }
 
+/** Persistent creator index: public read paths only. Its write endpoints (crawl/observe) are never exposed here. */
+const CREATOR_INDEX_READ = /^\/api\/v1\/creators\/index(\/stats)?$/
+const CREATOR_INDEX_ANY = /^\/api\/v1\/creators\/index(\/|$)/
+
 function methodAllowed(method: string, path: string): boolean {
+  if (CREATOR_INDEX_ANY.test(path)) return (method === 'GET' || method === 'HEAD') && CREATOR_INDEX_READ.test(path)
   if (method === 'GET' || method === 'HEAD') {
     return ![
       /^\/api\/screenshots\/proxy-media$/,
