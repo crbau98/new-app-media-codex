@@ -39,6 +39,21 @@ async function typePin(page: Page, pin: string) {
 const lockDialog = (page: Page) => page.getByRole('dialog', { name: /Enter your PIN|Locked for a moment/ })
 const tile = (page: Page) => page.locator('[data-testid="video-tile"]').first()
 /** The shortcut chunk loads lazily right after startup; wait until it is live. */
+/**
+ * Two real Escape presses. A heavily loaded CI box can stretch the gap past the 450 ms double-press
+ * window, so retry until the expected screen is showing (data-privacy is set synchronously by the
+ * handler, so reading it right after the presses is race-free).
+ */
+async function doubleEscape(page: Page, reached: (privacy: string | null) => boolean) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    if (reached(await page.evaluate(() => document.documentElement.getAttribute('data-privacy')))) return
+  }
+  throw new Error('double-Escape was never registered')
+}
+const toDecoy = (page: Page) => doubleEscape(page, (v) => v === 'decoy')
+const fromDecoy = (page: Page) => doubleEscape(page, (v) => v !== 'decoy')
 const decoyTitle = (page: Page) => page.getByRole('heading', { name: 'Notes', level: 1 })
 const armed = (page: Page) => expect(page.locator('html')).toHaveAttribute('data-pv-armed', '')
 
@@ -187,6 +202,7 @@ test.describe('device unlock (WebAuthn)', () => {
     await page.getByRole('button', { name: 'Remove', exact: true }).click()
     await page.getByLabel('Current PIN').fill('1357')
     await page.getByRole('button', { name: 'Remove PIN' }).click()
+    await expect(page.getByTestId('vault-summary')).toContainText('No PIN')
     const after = JSON.parse((await page.evaluate((k) => localStorage.getItem(k), PRIVACY_KEY))!)
     expect(after.pin).toBeNull()
     expect(after.biometric).toBeNull()
@@ -202,8 +218,7 @@ test.describe('panic / quick-hide', () => {
     await expect(page).toHaveTitle(/Media Codex/)
     await armed(page)
 
-    await page.keyboard.press('Escape')
-    await page.keyboard.press('Escape')
+    await toDecoy(page)
     await expect(decoyTitle(page)).toBeVisible()
     await expect(page).toHaveTitle('Notes')
     await expect(page.locator('html')).toHaveAttribute('data-privacy', 'decoy')
@@ -216,8 +231,7 @@ test.describe('panic / quick-hide', () => {
     expect(await page.locator('video, img').count()).toBe(0)
     expect(await page.evaluate(() => document.body.innerText)).not.toMatch(/Studio|Library|Codex|18\+/i)
 
-    await page.keyboard.press('Escape')
-    await page.keyboard.press('Escape')
+    await fromDecoy(page)
     await expect(tile(page)).toContainText('Studio signal')
     await expect(page).toHaveTitle(/Library.*Media Codex/)
     expect(new URL(page.url()).pathname).toBe('/media')
@@ -231,8 +245,7 @@ test.describe('panic / quick-hide', () => {
     await expect(page.locator('video').first()).toBeAttached()
     await armed(page)
     await page.evaluate(() => document.documentElement.requestFullscreen().catch(() => undefined))
-    await page.keyboard.press('Escape')
-    await page.keyboard.press('Escape')
+    await toDecoy(page)
     await expect(decoyTitle(page)).toBeVisible()
     expect(await page.locator('video').count()).toBe(0)
     expect(await page.evaluate(() => document.fullscreenElement === null)).toBe(true)
@@ -245,8 +258,7 @@ test.describe('panic / quick-hide', () => {
     await page.goto('/media')
     await expect(tile(page)).toBeVisible()
     await armed(page)
-    await page.keyboard.press('Escape')
-    await page.keyboard.press('Escape')
+    await toDecoy(page)
     await expect(page.getByRole('group', { name: 'Calculator keys' })).toBeVisible()
     await expect(page).toHaveTitle('Calculator')
     // The calculator decoy really calculates.
@@ -256,8 +268,7 @@ test.describe('panic / quick-hide', () => {
     await page.getByRole('button', { name: '=', exact: true }).click()
     await expect(page.getByRole('status').or(page.locator('output'))).toContainText('42')
 
-    await page.keyboard.press('Escape')
-    await page.keyboard.press('Escape')
+    await fromDecoy(page)
     await expect(lockDialog(page)).toBeVisible()
     await expect(page.locator('#main-content')).toHaveCount(0)
     await typePin(page, '7391')
@@ -387,8 +398,12 @@ test.describe('incognito', () => {
 
   async function viewAndSearch(page: Page) {
     await page.goto('/media')
-    await tile(page).click()
-    await page.waitForTimeout(900)
+    const detail = page.getByRole('dialog', { name: /Studio signal/ })
+    await expect(async () => {
+      if (!(await detail.isVisible())) await tile(page).click() // a click can land on a card still animating in
+      await expect(detail).toBeVisible({ timeout: 2_000 })
+    }).toPass({ timeout: 15_000 })
+    await page.waitForTimeout(500)
     await page.goto('/search')
     const search = page.getByPlaceholder('Search — or filter: tag:jock')
     await search.fill('Studio signal')
@@ -397,15 +412,19 @@ test.describe('incognito', () => {
   }
 
   test('control: without incognito, viewing and searching are recorded', async ({ page }) => {
+    test.slow() // several full page loads
     await recordWrites(page)
     await seed(page, null)
     await viewAndSearch(page)
-    const { viewed, keys } = await storeHistory(page)
-    expect(viewed).toContain('rg-signal-studio')
-    expect(keys.some((k) => k === 'media-codex-taste-v1' || k === 'media-codex-ai-recent-v1')).toBe(true)
+    // Recording is asynchronous (debounced writes): poll instead of sleeping.
+    await expect.poll(async () => (await storeHistory(page)).viewed, { timeout: 10_000 }).toContain('rg-signal-studio')
+    await expect
+      .poll(async () => (await storeHistory(page)).keys.some((k) => k === 'media-codex-taste-v1' || k === 'media-codex-ai-recent-v1'), { timeout: 10_000 })
+      .toBe(true)
   })
 
   test('incognito: no history keys are written and recently viewed stays empty; leaving it resumes recording', async ({ page }) => {
+    test.slow() // several full page loads
     await recordWrites(page)
     await seed(page, null)
     await page.goto('/settings')
@@ -422,16 +441,22 @@ test.describe('incognito', () => {
 
     // Turn it off: the app reloads and normal recording resumes.
     await page.goto('/settings')
+    // Incognito must still be on after all those full page loads in the same tab.
+    await expect(page.getByRole('switch', { name: 'Incognito session' })).toHaveAttribute('aria-checked', 'true')
+    expect(await page.evaluate(() => sessionStorage.getItem('media-codex-incognito-v1'))).toBe('1')
+    const reloaded = page.waitForEvent('load') // turning it off reloads the app
     await page.getByRole('switch', { name: 'Incognito session' }).click()
+    await reloaded
     await expect(page.getByRole('switch', { name: 'Incognito session' })).toHaveAttribute('aria-checked', 'false')
     expect(await page.evaluate(() => sessionStorage.getItem('media-codex-incognito-v1'))).toBeNull()
     await viewAndSearch(page)
-    expect((await storeHistory(page)).viewed).toContain('rg-signal-studio')
+    await expect.poll(async () => (await storeHistory(page)).viewed, { timeout: 10_000 }).toContain('rg-signal-studio')
   })
 })
 
 test.describe('clear everything', () => {
   test('wipes media-codex storage, IndexedDB and Cache Storage, then reloads', async ({ page }) => {
+    test.slow() // several full page loads
     await seed(page, { disguise: 'notes' }, { 'media-codex-progress-v1': '{"x":1}', 'media-codex-collections-v1': '[]', 'media-codex-test-marker': '1' })
     await page.goto('/settings')
     await page.evaluate(async () => {
@@ -482,7 +507,7 @@ test.describe('screen guard', () => {
     await expect.poll(filter).toMatch(/blur|\|0\.07/)
 
     if (isMobile) {
-      await tile(page).tap() // first tap reveals, does not open
+      await img.tap() // first tap reveals, does not open
       await expect(img).toHaveAttribute('data-pv-show', '')
       await expect.poll(filter).not.toMatch(/blur/)
     } else {
