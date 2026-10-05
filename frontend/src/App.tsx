@@ -1,9 +1,13 @@
+// Vault boot MUST stay the first import: it installs the storage guard and decides the
+// first screen (lock / decoy / app) before any other module can write storage or render.
+import '@/features/privacy/boot'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigationType } from 'react-router'
 import { AnimatePresence, motion } from 'framer-motion'
 import Layout from '@/components/Layout'
 import Toast from '@/components/Toast'
 import AdultGate from '@/components/AdultGate'
+import PrivacyGate from '@/features/privacy/PrivacyGate'
 import AppErrorBoundary from '@/components/AppErrorBoundary'
 import Home from '@/pages/Home'
 import { useAppStore } from '@/store'
@@ -186,11 +190,13 @@ export default function App() {
   }, [reduceMotion])
 
   return (
-    <AdultGate>
-      <BrowserRouter>
-        <AppShell />
-        <Toast />
-      </BrowserRouter>
-    </AdultGate>
+    <PrivacyGate>
+      <AdultGate>
+        <BrowserRouter>
+          <AppShell />
+          <Toast />
+        </BrowserRouter>
+      </AdultGate>
+    </PrivacyGate>
   )
 }
