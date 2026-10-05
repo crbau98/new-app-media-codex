@@ -13,11 +13,13 @@ can proxy them; other platforms are stored as profile leads without media.
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote, urlencode, urlsplit
 
 from app.creator_index import lanes as L
+from app.creator_index.config import env_int
 from app.creator_index.fetcher import Fetcher, JsonResponse, SourceError
 from app.creator_index.hygiene import (
     MAX_SAMPLE_MEDIA,
@@ -26,11 +28,14 @@ from app.creator_index.hygiene import (
     clean_tag,
     has_contact_info,
     has_excluded_marker,
+    has_male_token,
     redact,
     safe_media_url,
     safe_profile_url,
+    safety_marker,
     to_int,
 )
+from app.creator_index.lanes import plan_redgifs_units as _plan_redgifs_units  # unaffected by test monkeypatching
 from app.creator_index.repository import CreatorObservation, now_iso
 
 REDGIFS_API = "https://api.redgifs.com/v2"
@@ -45,6 +50,8 @@ class UnitResult:
     pages: int = 1
     #: creators worth a catalog crawl (platform-local handles)
     seeds: list[str] = field(default_factory=list)
+    #: lanes found while crawling (Lemmy communities ...): {"lane", "kind", "payload", "score"}; persisted by the crawler
+    discoveries: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _iso_from_epoch(value: Any) -> str:
@@ -80,13 +87,90 @@ def _hashtags(text: str) -> list[str]:
 # ── Redgifs ──────────────────────────────────────────────────────────────────
 
 
+@dataclass(frozen=True)
+class RedgifsNicheUnit:
+    """A provider niche (public niche listing), crawled like a tag lane."""
+
+    niche_id: str
+    name: str
+    order: str
+    page: int
+
+    @property
+    def query(self) -> str:
+        return f"niche:{self.name}"
+
+
 class RedgifsSource:
     name = "redgifs"
 
     def __init__(self, fetcher: Fetcher):
         self.fetcher = fetcher
         self._token: str | None = None
-        self.units = L.plan_redgifs_units()
+        self.units: list[Any] = list(L.plan_redgifs_units())
+
+    @staticmethod
+    def lane_key(unit: Any) -> str:
+        if isinstance(unit, RedgifsNicheUnit):
+            return f"redgifs:niche:{unit.niche_id.lower()}"
+        return f"redgifs:{unit.tag.lower()}"
+
+    async def prepare(self, repo: Any, adaptive: Any, config: Any) -> int:
+        """Append runtime lanes (promoted related tags, discovered niches). Returns provider requests spent."""
+        tag_lanes = tuple(
+            L.RedgifsLane(str(d["payload"].get("tag") or ""), "snowball", L.REDGIFS_ORDERS_LIGHT, 2)
+            for d in adaptive.discovered_lanes("redgifs", "tag", limit=getattr(config, "tag_snowball_max_lanes", 30))
+            if d["payload"].get("tag")
+        )
+        if tag_lanes:
+            self.units += _plan_redgifs_units(tag_lanes)
+        spent = await self._discover_niches(repo, adaptive, config)
+        for d in adaptive.discovered_lanes("redgifs", "niche", limit=getattr(config, "max_niches", 24)):
+            nid, nname = str(d["payload"].get("id") or ""), str(d["payload"].get("name") or "")
+            if nid and nname:
+                for page in (1, 2):
+                    for order in ("trending", "new"):
+                        self.units.append(RedgifsNicheUnit(nid, nname, order, page))
+        return spent
+
+    async def _discover_niches(self, repo: Any, adaptive: Any, config: Any) -> int:
+        """Probe the provider's public niche listing. Unknown / failing endpoints are remembered and skipped."""
+        key, now = "probe:redgifs:niches", time.time()
+        state = repo.get_state(key, None)
+        retry_ok = getattr(config, "niche_refresh_hours", 24.0) * 3600
+        retry_fail = getattr(config, "niche_retry_days", 7.0) * 86400
+        if isinstance(state, dict):
+            wait = retry_ok if state.get("ok") else (6 * 3600 if state.get("transient") else retry_fail)
+            if now - float(state.get("at") or 0) < wait:
+                return 0
+        if adaptive.count_lanes("redgifs", "niche") >= getattr(config, "max_niches", 24) and isinstance(state, dict) and state.get("ok"):
+            return 0
+        try:
+            res = await self._get(f"{REDGIFS_API}/niches?{urlencode({'count': 100, 'page': 1, 'order': 'trending'})}")
+        except SourceError:
+            repo.set_state(key, {"at": now, "ok": False, "transient": True})
+            return 1
+        listing: Any = None
+        if res.ok and isinstance(res.data, dict):
+            listing = res.data.get("niches") or res.data.get("items")
+        if not isinstance(listing, list) or not listing:
+            repo.set_state(key, {"at": now, "ok": False})
+            return 1
+        added = 0
+        for n in listing[:200]:
+            if not isinstance(n, dict):
+                continue
+            name = str(n.get("name") or n.get("id") or "").strip()
+            nid = str(n.get("id") or name).strip()
+            if not name or not nid or not has_male_token(name) or has_excluded_marker([name]) or safety_marker(name):
+                continue
+            if adaptive.count_lanes("redgifs", "niche") >= getattr(config, "max_niches", 24):
+                break
+            if adaptive.upsert_lane("redgifs", f"niche:{nid.lower()}", "niche", {"id": nid, "name": name[:60]},
+                                    score=to_int(n.get("subscribers") or n.get("gifs"))):
+                added += 1
+        repo.set_state(key, {"at": now, "ok": True, "added": added})
+        return 1
 
     async def _auth(self, force: bool = False) -> str:
         if self._token and not force:
@@ -106,15 +190,21 @@ class RedgifsSource:
             res = await self.fetcher.get_json(url, {"Authorization": f"Bearer {token}"})
         return res
 
-    async def crawl_unit(self, unit: L.RedgifsUnit) -> UnitResult:
-        params = urlencode({
-            "type": "g", "tags": unit.tag, "count": PROVIDER_PAGE_SIZE, "page": unit.page, "order": unit.order,
-        })
-        res = await self._get(f"{REDGIFS_API}/gifs/search?{params}")
+    async def crawl_unit(self, unit: Any) -> UnitResult:
+        if isinstance(unit, RedgifsNicheUnit):
+            params = urlencode({"count": PROVIDER_PAGE_SIZE, "page": unit.page, "order": unit.order})
+            res = await self._get(f"{REDGIFS_API}/niches/{quote(unit.niche_id, safe='')}/gifs?{params}")
+            lane_tag = unit.name
+        else:
+            params = urlencode({
+                "type": "g", "tags": unit.tag, "count": PROVIDER_PAGE_SIZE, "page": unit.page, "order": unit.order,
+            })
+            res = await self._get(f"{REDGIFS_API}/gifs/search?{params}")
+            lane_tag = unit.tag
         gifs = res.data.get("gifs") if isinstance(res.data, dict) else None
         if not res.ok or not isinstance(gifs, list):
             return UnitResult(pages=1)
-        obs = aggregate_redgifs(gifs, lane_tag=unit.tag)
+        obs = aggregate_redgifs(gifs, lane_tag=lane_tag)
         return UnitResult(
             observations=obs,
             pages=1,
@@ -232,20 +322,43 @@ def aggregate_redgifs(gifs: list[Any], lane_tag: str | None) -> list[CreatorObse
 _ADULT_LABELS = {"porn", "sexual", "nudity", "graphic-media"}
 
 
+@dataclass(frozen=True)
+class BlueskyTagUnit:
+    """Hashtag search over public posts (``app.bsky.feed.searchPosts``)."""
+
+    tag: str
+
+    @property
+    def query(self) -> str:
+        return f"#{self.tag}"
+
+
 class BlueskySource:
     name = "bluesky"
+    paged = False
 
     def __init__(self, fetcher: Fetcher):
         self.fetcher = fetcher
-        self.units = list(L.BLUESKY_QUERIES)
+        self.units: list[Any] = [*L.BLUESKY_QUERIES, *(BlueskyTagUnit(t) for t in L.BLUESKY_TAGS)]
 
-    async def crawl_unit(self, query: str) -> UnitResult:
-        params = urlencode({"q": query, "limit": 25})
+    @staticmethod
+    def lane_key(unit: Any) -> str:
+        return f"bluesky:tag:{unit.tag}" if isinstance(unit, BlueskyTagUnit) else f"bluesky:q:{unit}"
+
+    async def crawl_unit(self, unit: Any) -> UnitResult:
+        if isinstance(unit, BlueskyTagUnit):
+            params = urlencode({"q": unit.query, "limit": 40, "sort": "latest"})
+            res = await self.fetcher.get_json(f"{L.BLUESKY_APPVIEW}/xrpc/app.bsky.feed.searchPosts?{params}")
+            posts = res.data.get("posts") if isinstance(res.data, dict) else None
+            if not res.ok or not isinstance(posts, list):
+                return UnitResult(pages=1)  # endpoint unavailable without auth / unknown tag: soft skip
+            return UnitResult(observations=self.aggregate_posts(posts, unit.tag), pages=1)
+        params = urlencode({"q": unit, "limit": 25})
         res = await self.fetcher.get_json(f"{L.BLUESKY_APPVIEW}/xrpc/app.bsky.actor.searchActors?{params}")
         actors = res.data.get("actors") if isinstance(res.data, dict) else None
         if not res.ok or not isinstance(actors, list):
             return UnitResult(pages=1)
-        return UnitResult(observations=[o for o in (self.map_actor(a, query) for a in actors) if o], pages=1)
+        return UnitResult(observations=[o for o in (self.map_actor(a, unit) for a in actors) if o], pages=1)
 
     @staticmethod
     def map_actor(actor: Any, query: str) -> CreatorObservation | None:
@@ -277,6 +390,97 @@ class BlueskySource:
             tags=tag_counts, last_seen_at=_iso_from_text(actor.get("indexedAt")), source="bluesky",
         )
 
+    @staticmethod
+    def _self_labels(post: dict[str, Any], author: dict[str, Any]) -> set[str]:
+        did = str(author.get("did") or "")
+        found = {
+            str(lb.get("val")) for lb in [*(post.get("labels") or []), *(author.get("labels") or [])]
+            if isinstance(lb, dict) and lb.get("src") == did
+        }
+        record = post.get("record") if isinstance(post.get("record"), dict) else {}
+        values = (record.get("labels") or {}).get("values") if isinstance(record.get("labels"), dict) else None
+        found |= {str(v.get("val")) for v in (values or []) if isinstance(v, dict)}
+        return found
+
+    @classmethod
+    def aggregate_posts(cls, posts: list[Any], tag: str) -> list[CreatorObservation]:
+        """Authors of self-labelled adult posts that carry the hashtag (the author's own label, never inferred)."""
+        groups: dict[str, CreatorObservation] = {}
+        for post in posts:
+            if not isinstance(post, dict) or not isinstance(post.get("author"), dict):
+                continue
+            author = post["author"]
+            handle = clean_handle(str(author.get("handle") or ""))
+            name = redact(author.get("displayName"))
+            record = post.get("record") if isinstance(post.get("record"), dict) else {}
+            text = str(record.get("text") or "")
+            tags = _hashtags(text) + [t for t in (clean_tag(x) for x in (record.get("tags") or [])) if t]
+            if not canonical(handle) or has_contact_info(author.get("handle")):
+                continue
+            if not (cls._self_labels(post, author) & _ADULT_LABELS):
+                continue
+            if has_excluded_marker([handle, name, *tags]) or safety_marker(text, *tags):
+                continue
+            ob = groups.get(handle)
+            if ob is None:
+                ob = groups[handle] = CreatorObservation(
+                    platform="bluesky", handle=handle, display_name=name or handle,
+                    profile_url=f"https://bsky.app/profile/{quote(handle, safe='.')}", source="bluesky",
+                )
+            ob.media_count += 1
+            ob.like_count += to_int(post.get("likeCount"))
+            for t in [*tags[:10], clean_tag(tag)]:
+                if t:
+                    ob.tags[t] = ob.tags.get(t, 0) + 1
+            ob.last_seen_at = max(ob.last_seen_at, _iso_from_text(record.get("createdAt")))
+        return list(groups.values())
+
+    async def crawl_catalog(self, handle: str) -> UnitResult:
+        """Author-feed sampling for an already-discovered adult-labelled actor: engagement, recency and
+        link-outs to their own recent posts (Bluesky media lives on a CDN the edge does not proxy)."""
+        params = urlencode({"actor": handle, "limit": 30, "filter": "posts_with_media"})
+        res = await self.fetcher.get_json(f"{L.BLUESKY_APPVIEW}/xrpc/app.bsky.feed.getAuthorFeed?{params}")
+        rows = res.data.get("feed") if isinstance(res.data, dict) else None
+        if not res.ok or not isinstance(rows, list):
+            return UnitResult(pages=1)  # private / removed / unavailable: nothing to sample
+        want = canonical(handle)
+        picked: list[tuple[int, str, str]] = []
+        tags: dict[str, int] = {}
+        likes = 0
+        newest = ""
+        display = ""
+        for row in rows:
+            post = row.get("post") if isinstance(row, dict) else None
+            if not isinstance(post, dict) or (isinstance(row, dict) and row.get("reason")):
+                continue  # reposts are not the creator's own work
+            author = post.get("author") if isinstance(post.get("author"), dict) else {}
+            if canonical(str(author.get("handle") or "")) != want:
+                continue
+            record = post.get("record") if isinstance(post.get("record"), dict) else {}
+            text = str(record.get("text") or "")
+            post_tags = _hashtags(text) + [t for t in (clean_tag(x) for x in (record.get("tags") or [])) if t]
+            if has_excluded_marker(post_tags) or safety_marker(text, *post_tags):
+                continue
+            display = display or redact(author.get("displayName"))
+            rkey = str(post.get("uri") or "").rsplit("/", 1)[-1]
+            n = to_int(post.get("likeCount"))
+            likes += n
+            newest = max(newest, _iso_from_text(record.get("createdAt")))
+            for t in post_tags[:10]:
+                tags[t] = tags.get(t, 0) + 1
+            if rkey:
+                picked.append((n, redact(text)[:80] or "Post", f"https://bsky.app/profile/{quote(handle, safe='.')}/post/{quote(rkey, safe='')}"))
+        if not picked:
+            return UnitResult(pages=1)
+        picked.sort(key=lambda p: -p[0])
+        ob = CreatorObservation(
+            platform="bluesky", handle=handle, display_name=display or handle,
+            profile_url=f"https://bsky.app/profile/{quote(handle, safe='.')}", media_count=len(picked), like_count=likes,
+            tags=tags, last_seen_at=newest, source="bluesky",
+            links=[{"label": label, "url": url} for _n, label, url in picked[:5]],
+        )
+        return UnitResult(observations=[ob], pages=1)
+
 
 # ── Mastodon (public hashtag timelines) ──────────────────────────────────────
 
@@ -287,20 +491,51 @@ class MastodonUnit:
     tag: str
 
 
+_LINK_NEXT = re.compile(r'<([^>]+)>\s*;[^,]*?\brel="?next"?', re.I)
+
+
+def next_link(link_header: str | None, instance: str, path_prefix: str) -> str | None:
+    """The ``rel=next`` URL of an RFC 8288 ``Link`` header, only when it stays on the same instance + API path."""
+    for match in _LINK_NEXT.finditer(link_header or ""):
+        url = match.group(1)
+        try:
+            parts = urlsplit(url)
+            if parts.scheme == "https" and (parts.hostname or "").lower() == instance.lower() and parts.path.startswith(path_prefix) \
+                    and not parts.username and not parts.password and parts.port in (None, 443):
+                return url
+        except ValueError:
+            continue
+    return None
+
+
 class MastodonSource:
     name = "mastodon"
+    paged = True
 
     def __init__(self, fetcher: Fetcher):
         self.fetcher = fetcher
-        self.units = [MastodonUnit(i, t) for t in L.MASTODON_TAGS for i in L.MASTODON_INSTANCES]
+        self.page_cap = env_int("MASTODON_TAG_PAGES", 3, minimum=1, maximum=10)
+        self.units = [MastodonUnit(i, t) for t in L.MASTODON_TAGS for i in L.mastodon_instances()]
 
-    async def crawl_unit(self, unit: MastodonUnit) -> UnitResult:
-        res = await self.fetcher.get_json(
-            f"https://{unit.instance}/api/v1/timelines/tag/{quote(unit.tag, safe='')}?limit=40"
-        )
-        if not res.ok or not isinstance(res.data, list):
-            return UnitResult(pages=1)
-        return UnitResult(observations=self.aggregate(res.data, unit), pages=1)
+    @staticmethod
+    def lane_key(unit: MastodonUnit) -> str:
+        return f"mastodon:{unit.instance}/{unit.tag.lower()}"
+
+    async def crawl_unit(self, unit: MastodonUnit, max_pages: int | None = None) -> UnitResult:
+        """Public tag timeline, following ``Link: rel=next`` up to the page cap (and the run's remaining budget)."""
+        prefix = "/api/v1/timelines/tag/"
+        url: str | None = f"https://{unit.instance}{prefix}{quote(unit.tag, safe='')}?limit=40"
+        cap = max(1, min(self.page_cap, max_pages if max_pages else self.page_cap))
+        statuses: list[Any] = []
+        pages = 0
+        while url and pages < cap:
+            res = await self.fetcher.get_json(url)
+            pages += 1
+            if not res.ok or not isinstance(res.data, list):
+                break
+            statuses.extend(res.data)
+            url = next_link(res.headers.get("link"), unit.instance, prefix) if res.data else None
+        return UnitResult(observations=self.aggregate(statuses, unit) if statuses else [], pages=max(1, pages))
 
     @staticmethod
     def aggregate(statuses: list[Any], unit: MastodonUnit) -> list[CreatorObservation]:
@@ -342,24 +577,115 @@ class MastodonSource:
 
 @dataclass(frozen=True)
 class LemmyUnit:
+    """Public post search (existing)."""
+
     instance: str
     query: str
 
 
+@dataclass(frozen=True)
+class LemmyDiscoverUnit:
+    """Public community search: finds NSFW male/gay communities (persisted as discovered lanes)."""
+
+    instance: str
+    query: str
+
+
+@dataclass(frozen=True)
+class LemmyCommunityUnit:
+    """Newest posts of one discovered community."""
+
+    instance: str
+    community: str  # `name` or `name@host`
+
+    @property
+    def query(self) -> str:
+        return self.community.split("@")[0]
+
+
 class LemmySource:
     name = "lemmy"
+    paged = False
 
     def __init__(self, fetcher: Fetcher):
         self.fetcher = fetcher
-        self.units = [LemmyUnit(i, q) for q in L.LEMMY_QUERIES for i in L.LEMMY_INSTANCES]
+        instances = L.lemmy_instances()
+        self.units: list[Any] = [
+            *(LemmyUnit(i, q) for q in L.LEMMY_QUERIES for i in instances),
+            *(LemmyDiscoverUnit(i, q) for q in L.LEMMY_COMMUNITY_QUERIES for i in instances),
+        ]
+        self.max_communities = env_int("LEMMY_MAX_COMMUNITIES", 6, minimum=0, maximum=50)
+        self._communities_run = 0
 
-    async def crawl_unit(self, unit: LemmyUnit) -> UnitResult:
+    @staticmethod
+    def lane_key(unit: Any) -> str:
+        if isinstance(unit, LemmyCommunityUnit):
+            return f"lemmy:c:{unit.instance}/{unit.community.lower()}"
+        if isinstance(unit, LemmyDiscoverUnit):
+            return f"lemmy:discover:{unit.instance}/{unit.query.lower()}"
+        return f"lemmy:q:{unit.instance}/{unit.query.lower()}"
+
+    async def prepare(self, repo: Any, adaptive: Any, config: Any) -> int:
+        self._communities_run = 0
+        self.max_communities = getattr(config, "lemmy_max_communities", self.max_communities)
+        for d in adaptive.discovered_lanes("lemmy", "community", limit=200):
+            payload = d["payload"]
+            if payload.get("instance") and payload.get("community"):
+                self.units.append(LemmyCommunityUnit(str(payload["instance"]), str(payload["community"])))
+        return 0
+
+    def should_run(self, unit: Any) -> bool:
+        """At most ``max_communities`` community crawls per run."""
+        if isinstance(unit, LemmyCommunityUnit):
+            if self._communities_run >= self.max_communities:
+                return False
+            self._communities_run += 1
+        return True
+
+    async def crawl_unit(self, unit: Any) -> UnitResult:
+        if isinstance(unit, LemmyDiscoverUnit):
+            return await self._discover(unit)
+        if isinstance(unit, LemmyCommunityUnit):
+            params = urlencode({"community_name": unit.community, "sort": "New", "limit": 40, "type_": "All"})
+            res = await self.fetcher.get_json(f"https://{unit.instance}/api/v3/post/list?{params}")
+            posts = res.data.get("posts") if isinstance(res.data, dict) else None
+            if not res.ok or not isinstance(posts, list):
+                return UnitResult(pages=1)
+            return UnitResult(observations=self.aggregate(posts, LemmyUnit(unit.instance, unit.query)), pages=1)
         params = urlencode({"q": unit.query, "type_": "Posts", "sort": "TopMonth", "limit": 40, "listing_type": "All"})
         res = await self.fetcher.get_json(f"https://{unit.instance}/api/v3/search?{params}")
         posts = res.data.get("posts") if isinstance(res.data, dict) else None
         if not res.ok or not isinstance(posts, list):
             return UnitResult(pages=1)
         return UnitResult(observations=self.aggregate(posts, unit), pages=1)
+
+    async def _discover(self, unit: LemmyDiscoverUnit) -> UnitResult:
+        params = urlencode({"q": unit.query, "type_": "Communities", "sort": "TopAll", "limit": 20, "listing_type": "All"})
+        res = await self.fetcher.get_json(f"https://{unit.instance}/api/v3/search?{params}")
+        rows = res.data.get("communities") if isinstance(res.data, dict) else None
+        if not res.ok or not isinstance(rows, list):
+            return UnitResult(pages=1)
+        found: list[dict[str, Any]] = []
+        for row in rows:
+            comm = row.get("community") if isinstance(row, dict) else None
+            if not isinstance(comm, dict) or not comm.get("nsfw"):
+                continue  # only communities that flag themselves NSFW
+            if comm.get("removed") or comm.get("deleted") or comm.get("hidden"):
+                continue
+            name = clean_handle(str(comm.get("name") or ""))
+            title = redact(comm.get("title"))
+            if not canonical(name) or not has_male_token(f"{name} {title}") \
+                    or has_excluded_marker([name, title]) or safety_marker(name, title):
+                continue
+            host = (urlsplit(safe_profile_url(comm.get("actor_id"))).hostname or unit.instance).lower()
+            community = name if host == unit.instance else f"{name}@{host}"
+            counts = row.get("counts") if isinstance(row.get("counts"), dict) else {}
+            found.append({
+                "lane": f"{unit.instance}/{community}", "kind": "community", "score": to_int(counts.get("subscribers")),
+                "payload": {"instance": unit.instance, "community": community, "title": title[:80]},
+            })
+        found.sort(key=lambda d: -d["score"])
+        return UnitResult(pages=1, discoveries=found[: max(0, self.max_communities)])
 
     @staticmethod
     def aggregate(posts: list[Any], unit: LemmyUnit) -> list[CreatorObservation]:
@@ -405,18 +731,39 @@ class LemmySource:
 class PeerTubeUnit:
     host: str
     query: str
+    #: sepiasearch ``tagsOneOf`` browse (query is then the tag) and ``categoryOneOf`` browse (category id)
+    tag: str = ""
+    category: int = 0
 
 
 class PeerTubeSource:
     name = "peertube"
+    paged = False
 
     def __init__(self, fetcher: Fetcher):
         self.fetcher = fetcher
-        self.units = [PeerTubeUnit(h, q) for q in L.PEERTUBE_QUERIES for h in L.PEERTUBE_HOSTS]
+        hosts = L.peertube_hosts()
+        self.units = [
+            *(PeerTubeUnit(h, q) for q in L.PEERTUBE_QUERIES for h in hosts),
+            *(PeerTubeUnit(h, t, tag=t) for t in L.PEERTUBE_TAGS for h in hosts),
+            *(PeerTubeUnit(h, q, category=c) for c in L.PEERTUBE_CATEGORIES for q in L.PEERTUBE_CATEGORY_QUERIES for h in hosts),
+        ]
+
+    @staticmethod
+    def lane_key(unit: PeerTubeUnit) -> str:
+        if unit.tag:
+            return f"peertube:{unit.host}/tag:{unit.tag.lower()}"
+        if unit.category:
+            return f"peertube:{unit.host}/cat:{unit.category}:{unit.query.lower()}"
+        return f"peertube:{unit.host}/q:{unit.query.lower()}"
 
     async def crawl_unit(self, unit: PeerTubeUnit) -> UnitResult:
-        params = urlencode({"search": unit.query, "count": 40, "nsfw": "true", "sort": "-trending"})
-        res = await self.fetcher.get_json(f"https://{unit.host}/api/v1/search/videos?{params}")
+        query: dict[str, Any] = {"search": unit.query, "count": 40, "nsfw": "true", "sort": "-trending"}
+        if unit.tag:
+            query["tagsOneOf"] = unit.tag
+        if unit.category:
+            query["categoryOneOf"] = unit.category
+        res = await self.fetcher.get_json(f"https://{unit.host}/api/v1/search/videos?{urlencode(query)}")
         rows = res.data.get("data") if isinstance(res.data, dict) else None
         if not res.ok or not isinstance(rows, list):
             return UnitResult(pages=1)
