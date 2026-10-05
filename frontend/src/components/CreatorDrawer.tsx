@@ -13,6 +13,10 @@ import MediaGrid from '@/components/discovery/MediaGrid'
 import { prefetchCreatorMedia, useCreatorMedia } from '@/features/creators/useCreatorMedia'
 import { prefetchCreatorRelated, useCreatorRelated } from '@/features/creators/useCreatorRelated'
 import { ElsewhereSection, RelatedCreatorsSection } from '@/features/creators/CreatorRelatedSections'
+import { PlatformLinksSection } from '@/features/creators/PlatformLinks'
+import { OUTBOUND_REL, parseProfileInput, safeOutboundUrl } from '@/features/creators/platforms'
+import type { PlatformLink } from '@/features/creators/platformLinks'
+import { saveProfiles, useSavedLinks } from '@/features/creators/useSavedLinks'
 import { creatorHandle, followName, handleKey, pushDrawerStack, RADAR_CAP, relatedToCreator } from '@/features/creators/creatorLogic'
 import type { RelatedCreator } from '@/lib/api'
 import { CreatorAvatar } from '@/components/discovery/CreatorParts'
@@ -68,6 +72,18 @@ export default function CreatorDrawer({ creator: rootCreator, onClose }: Creator
   const followId = creator ? creatorFollowId(followName(creator)) : ''
   const followed = Boolean(followId && followCache[followId])
   const onRadar = creator ? creatorWatchlist.some((entry) => creatorKey(entry) === handleKey(handle)) : false
+  const { links: savedLinks } = useSavedLinks()
+  const savedKeys = useMemo(() => new Set(savedLinks.map((link) => link.id)), [savedLinks])
+  const saveLinks = useCallback((links: PlatformLink[]) => {
+    const profiles = links.flatMap((link) => {
+      const parsed = link.url ? parseProfileInput(link.url) : null
+      return parsed?.ok ? [parsed.profile] : []
+    })
+    const result = saveProfiles(profiles)
+    addToast(result.added.length
+      ? { type: 'success', title: `Saved ${result.added.length} profile link${result.added.length === 1 ? '' : 's'}`, message: 'Find them under "Your saved profiles" on the Creators page. Stored on this device only.' }
+      : { type: 'info', title: result.skippedFull ? 'Saved profiles are full' : 'Already in your saved profiles' })
+  }, [addToast])
 
   const follow = useCallback(() => {
     if (!creator) return
@@ -261,6 +277,9 @@ export default function CreatorDrawer({ creator: rootCreator, onClose }: Creator
                 </button>
               </div>
 
+              {/* Where else they are: public profiles + subscription pages (link-out only) */}
+              <PlatformLinksSection creator={creator} elsewhere={related.data?.elsewhere} onSaveAll={saveLinks} savedKeys={savedKeys} />
+
               {/* AI reason */}
               {creator.aiSuggested && creator.aiReason && (
                 <section className="d-panel mt-5">
@@ -291,12 +310,15 @@ export default function CreatorDrawer({ creator: rootCreator, onClose }: Creator
                     {(creator.profileLinks?.length
                       ? creator.profileLinks
                       : [{ label: creator.platform || 'Source profile', url: creator.profileUrl! }]
-                    ).map((link) => (
+                    ).flatMap((link) => {
+                      const href = safeOutboundUrl(link.url)
+                      return href ? [{ ...link, url: href }] : []
+                    }).map((link) => (
                       <li key={link.url}>
                         <a
                           href={link.url}
                           target="_blank"
-                          rel="noreferrer"
+                          rel={OUTBOUND_REL}
                           className="flex min-h-12 items-center justify-between gap-3 px-4 text-[13px] text-ink transition-colors hover:bg-sunken"
                         >
                           <span className="truncate">{link.label}</span>
@@ -331,8 +353,8 @@ export default function CreatorDrawer({ creator: rootCreator, onClose }: Creator
                     This platform has no public catalog Media Codex can browse. Nothing is embedded or imported —
                     the profile opens on the source site.
                   </p>
-                  {creator.profileUrl && (
-                    <a href={creator.profileUrl} target="_blank" rel="noreferrer" className="btn-secondary mt-3 inline-flex min-h-11">
+                  {safeOutboundUrl(creator.profileUrl) && (
+                    <a href={safeOutboundUrl(creator.profileUrl)!} target="_blank" rel={OUTBOUND_REL} className="btn-secondary mt-3 inline-flex min-h-11">
                       Open on {creator.platform || 'source'} <ExternalLink size={13} strokeWidth={1.75} aria-hidden="true" />
                     </a>
                   )}

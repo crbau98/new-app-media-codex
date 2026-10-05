@@ -1,13 +1,18 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Check, Plus, Radar, RefreshCw, Search, UserRound, X } from 'lucide-react'
+import { Bookmark, BookmarkCheck, Check, ExternalLink, Plus, Radar, RefreshCw, Search, UserRound, X } from 'lucide-react'
 import type { KeyboardEvent } from 'react'
 import { resolveCreators } from '@/lib/api'
 import { creatorFollowId } from '@/lib/discovery'
 import { useAppStore } from '@/store'
 import type { Creator } from '@/lib/types'
-import { CreatorAvatar, CreatorBadges } from '@/components/discovery/CreatorParts'
+import { CreatorAvatar } from '@/components/discovery/CreatorParts'
+import { CreatorBadges } from '@/components/discovery/CreatorCard'
 import { formatMetric } from '@/lib/discovery'
+import { PaywallNote, PlatformMark, SubscribeButton } from './PlatformLinks'
+import { OUTBOUND_REL, PLATFORM_KIND_LABEL, displayHandle, parseProfileInput, platformById } from './platforms'
+import type { PlatformLink } from './platformLinks'
+import { saveProfiles, useSavedLinks } from './useSavedLinks'
 import {
   RADAR_CAP,
   candidateToCreator,
@@ -38,8 +43,19 @@ export default function CreatorFinder({ onOpen }: CreatorFinderProps) {
   const [active, setActive] = useState(0)
   const listId = useId()
   const parsed = useMemo(() => parseCreatorInput(text), [text])
-  const debounced = useDebounced(parsed.query, DEBOUNCE_MS)
-  const enabled = debounced.length >= 2 && debounced === parsed.query
+  // A pasted profile link on a known platform (OnlyFans, Fansly, X, Bluesky, ...). Subscription
+  // links are never sent anywhere: the user can open or save them, and may opt in to a public-source search.
+  const profile = useMemo(() => {
+    const result = parseProfileInput(text)
+    return result.ok && result.profile.platform !== 'generic' ? result.profile : null
+  }, [text])
+  const [forcedFor, setForcedFor] = useState('')
+  const linkOnly = profile?.kind === 'subscription'
+  const held = linkOnly && forcedFor !== text
+  const lookupText = linkOnly && profile ? profile.handle : parsed.query
+  const debounced = useDebounced(lookupText, DEBOUNCE_MS)
+  const enabled = debounced.length >= 2 && debounced === lookupText && !held
+  const { links: savedLinks } = useSavedLinks()
 
   const followCache = useAppStore((s) => s.followCache)
   const toggleFollow = useAppStore((s) => s.toggleFollow)
@@ -55,11 +71,11 @@ export default function CreatorFinder({ onOpen }: CreatorFinderProps) {
     retry: 1,
   })
   const candidates = useMemo(() => (enabled ? query.data?.candidates ?? [] : []), [enabled, query.data])
-  const typing = parsed.query.length >= 2 && !enabled
+  const typing = lookupText.length >= 2 && !enabled && !held
   const loading = typing || (enabled && query.isFetching && !query.data)
   const failed = enabled && query.isError
   const noMatch = enabled && query.isSuccess && candidates.length === 0
-  const showPanel = parsed.kind !== 'empty' && parsed.query.length >= 2
+  const showPanel = parsed.kind !== 'empty' && lookupText.length >= 2
 
 
   const onRadarKey = (handle: string) => radar.some((entry) => handleKey(entry) === handleKey(handle))
@@ -80,6 +96,14 @@ export default function CreatorFinder({ onOpen }: CreatorFinderProps) {
     addToast({ type: 'success', title: `Radar is scanning for @${candidate.handle}` })
   }
   const open = (candidate: CreatorCandidate) => onOpen(candidateToCreator(candidate))
+  const offerSaved = profile ? savedLinks.some((link) => link.id === profile.key) : false
+  const saveOffer = () => {
+    if (!profile) return
+    const result = saveProfiles([profile])
+    addToast(result.added.length
+      ? { type: 'success', title: 'Saved to your profiles', message: `${displayHandle(profile.platform, profile.handle)} · stored on this device only.` }
+      : { type: 'info', title: result.skippedFull ? 'Saved profiles are full' : 'Already in your saved profiles' })
+  }
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Escape') {
@@ -99,12 +123,21 @@ export default function CreatorFinder({ onOpen }: CreatorFinderProps) {
     }
   }
 
-  const hint =
-    parsed.kind === 'url'
+  const profileDef = profile ? platformById(profile.platform) : undefined
+  const hint = held && profileDef
+    ? `${profileDef.label} link recognised — nothing is fetched from ${profileDef.label}. Open it on their page or save it to your profiles.`
+    : parsed.kind === 'url'
       ? `Profile link recognised — looking up @${parsed.handle}${parsed.platform ? ` on ${parsed.platform}` : ''}`
       : parsed.kind === 'handle'
         ? `Looking up @${parsed.handle}`
         : null
+  const offerLink: PlatformLink | null = profile && profileDef
+    ? {
+        key: profile.key, platform: profile.platform, label: profileDef.label, handle: profile.handle,
+        display: displayHandle(profile.platform, profile.handle), url: profile.url, kind: profile.kind,
+        verified: false, source: 'profile', inferred: false,
+      }
+    : null
 
   return (
     <section aria-label="Find a creator" className="d-panel" data-testid="creator-finder">
@@ -144,6 +177,40 @@ export default function CreatorFinder({ onOpen }: CreatorFinderProps) {
 
       {showPanel && (
         <div className="mt-3" aria-live="polite">
+          {offerLink && profile && profile.platform !== 'redgifs' && (
+            <div className="mb-3 rounded-2xl border border-line bg-elevated p-3" data-testid="finder-profile-offer">
+              <div className="flex items-center gap-3">
+                <PlatformMark platform={offerLink.platform} className="pf-mark-lg" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-semibold tracking-[-0.01em] text-ink">{offerLink.display}</span>
+                  <span className="mono-meta block">{offerLink.label} · {PLATFORM_KIND_LABEL[offerLink.kind]} link</span>
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2">
+                {offerLink.kind === 'subscription' ? (
+                  <>
+                    <SubscribeButton link={offerLink} />
+                    <PaywallNote />
+                  </>
+                ) : (
+                  <a href={offerLink.url ?? undefined} target="_blank" rel={OUTBOUND_REL} className="btn-secondary min-h-11 justify-center">
+                    Open on {offerLink.label} <ExternalLink size={13} strokeWidth={1.75} aria-hidden="true" />
+                  </a>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" className="btn-secondary min-h-11" onClick={saveOffer} disabled={offerSaved} data-testid="finder-save-profile">
+                    {offerSaved ? <BookmarkCheck size={13} strokeWidth={1.75} aria-hidden="true" /> : <Bookmark size={13} strokeWidth={1.75} aria-hidden="true" />}
+                    {offerSaved ? 'Saved to your profiles' : 'Save to your profiles'}
+                  </button>
+                  {held && (
+                    <button type="button" className="btn-secondary min-h-11" onClick={() => setForcedFor(text)} data-testid="finder-search-anyway">
+                      <Search size={13} strokeWidth={1.75} aria-hidden="true" /> Search public sources for @{offerLink.handle}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           {loading && (
             <div className="grid gap-2" aria-busy="true" aria-label="Searching public sources">
               {[0, 1].map((n) => (
