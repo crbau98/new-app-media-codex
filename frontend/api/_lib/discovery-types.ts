@@ -50,10 +50,14 @@ export type CreatorLead = {
   sourceAttribution: string
   confidence: number
   exactWatchMatch: boolean
+  /** Public follower count when the provider reports one (X public_metrics); optional. */
+  followers?: number
+  /** Public profile bio with emails/phone numbers already redacted; optional. */
+  description?: string
 }
 
 export type SourceStatus = {
-  id: 'redgifs' | 'x' | 'tumblr' | 'google' | 'duckduckgo' | 'peertube' | 'bluesky' | 'mastodon' | 'lemmy'
+  id: 'redgifs' | 'x' | 'tumblr' | 'google' | 'duckduckgo' | 'peertube' | 'bluesky' | 'mastodon' | 'lemmy' | 'reddit'
   name: string
   mode: 'stream' | 'discovery'
   state: 'connected' | 'not-configured' | 'limited' | 'error'

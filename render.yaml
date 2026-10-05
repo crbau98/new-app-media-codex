@@ -53,6 +53,27 @@ services:
         sync: false
       - key: GOOGLE_CSE_ID
         sync: false
+      # Reddit official OAuth2 app-only credentials (https://www.reddit.com/prefs/apps).
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_CLIENT_SECRET
+        sync: false
+      # Descriptive UA required by Reddit: "web:media-codex-discovery:1.0 (by /u/<operator>)".
+      - key: REDDIT_USER_AGENT
+        sync: false
+      # Optional: REDDIT_SUBREDDITS / X_DISCOVERY_QUERIES can be set in the dashboard to
+      # override the built-in defaults (left out here so a Blueprint sync never resets them).
+      # Per-source quota guards for the credential-backed gateway (cached calls are free).
+      - key: REDDIT_CALLS_PER_REQUEST
+        value: "8"
+      - key: X_SEARCH_CALLS_PER_REQUEST
+        value: "2"
+      - key: X_SEARCH_MAX_CALLS_PER_HOUR
+        value: "30"
+      - key: X_SEARCH_CACHE_TTL_SECONDS
+        value: "900"
+      - key: X_TIMELINE_HANDLES_PER_REQUEST
+        value: "4"
       - key: SKIP_MEDIA_DOWNLOADS
         value: "true"
       # Explicit public UI origins for browser API/WebSocket/SSE access.
