@@ -15,7 +15,12 @@ import {
 import type { Creator, LiveDiscoveryPayload } from '@/lib/types'
 import { fetchLiveDiscovery, type DirectorySort } from '@/lib/api'
 import { creatorFollowId, creatorKey } from '@/lib/discovery'
-import { followName, mergeCreators } from '@/features/creators/creatorLogic'
+import { creatorHandle, followName, handleKey, mergeCreators } from '@/features/creators/creatorLogic'
+import { OTHER_PLATFORM, creatorPlatformIds, platformFilterOptions } from '@/features/creators/platformLinks'
+import { OUTBOUND_REL, platformById, safeOutboundUrl } from '@/features/creators/platforms'
+import { useSavedLinks } from '@/features/creators/useSavedLinks'
+import PlatformFilter from '@/features/creators/PlatformFilter'
+import SavedProfiles from '@/features/creators/SavedProfiles'
 import { useCreatorDirectory } from '@/features/creators/useCreatorDirectory'
 import CreatorFinder from '@/features/creators/CreatorFinder'
 import RadarPanel from '@/features/creators/RadarPanel'
@@ -27,7 +32,8 @@ import Rail from '@/components/discovery/Rail'
 import SectionHeader from '@/components/discovery/SectionHeader'
 import StatePanel from '@/components/discovery/StatePanel'
 import { Segmented } from '@/components/discovery/Controls'
-import { CreatorCard, StoryRing } from '@/components/discovery/CreatorParts'
+import { StoryRing } from '@/components/discovery/CreatorParts'
+import { CreatorCard } from '@/components/discovery/CreatorCard'
 import { cn } from '@/lib/utils'
 import '@/styles/discovery.css'
 
@@ -40,14 +46,6 @@ const sortLabels: Record<CreatorSort, string> = {
   newest: 'Newest',
   engagement: 'Top engagement',
   az: 'A–Z',
-}
-
-function creatorPlatforms(creator: Creator): string[] {
-  const set = new Set<string>()
-  if (creator.platform) set.add(creator.platform.toLowerCase())
-  for (const platform of creator.platforms ?? []) set.add(platform.toLowerCase())
-  if (creator.sourceAttribution) set.add(creator.sourceAttribution.toLowerCase())
-  return [...set]
 }
 
 function scanPhase(elapsedSeconds: number): string {
@@ -144,11 +142,20 @@ export default function Creators() {
     return mergeCreators(feed, directory.creators)
   }, [performers, directory.creators, laneFilter])
 
-  const platforms = useMemo(() => {
-    const set = new Set<string>()
-    for (const creator of allCreators) for (const platform of creatorPlatforms(creator)) set.add(platform)
-    return [...set].sort()
-  }, [allCreators])
+  /* Platform presence: registry ids per directory/feed creator, plus every saved profile link. */
+  const { links: savedLinks } = useSavedLinks()
+  const creatorPlatformSets = useMemo(() => new Map(allCreators.map((creator) => [creator.id, creatorPlatformIds(creator)] as const)), [allCreators])
+  const platformCounts = useMemo(() => {
+    const listed = new Set(allCreators.map((creator) => handleKey(creatorHandle(creator))))
+    const sets: Set<string>[] = [...creatorPlatformSets.values()]
+    // A saved Redgifs handle that is already in the directory is the same creator: count it once.
+    for (const link of savedLinks) {
+      if (link.platform === 'redgifs' && listed.has(handleKey(link.handle))) continue
+      sets.push(new Set([link.platform === 'generic' ? OTHER_PLATFORM : link.platform]))
+    }
+    return { options: platformFilterOptions(sets), total: sets.length }
+  }, [allCreators, creatorPlatformSets, savedLinks])
+  const platformLabel = platformFilter ? (platformById(platformFilter)?.label ?? 'Other') : null
 
   const payloadTags = useMemo(() => {
     const counts = new Map<string, number>()
@@ -160,7 +167,7 @@ export default function Creators() {
 
   const filteredCreators = useMemo(() => {
     let result = [...allCreators]
-    if (platformFilter) result = result.filter((creator) => creatorPlatforms(creator).includes(platformFilter))
+    if (platformFilter) result = result.filter((creator) => creatorPlatformSets.get(creator.id)?.has(platformFilter))
     if (tagFilter) result = result.filter((creator) => (creator.discoveryTags ?? []).includes(tagFilter))
     const needle = searchText.trim().toLowerCase()
     if (needle) {
@@ -187,7 +194,7 @@ export default function Creators() {
         break
     }
     return result
-  }, [allCreators, platformFilter, tagFilter, searchText, sort])
+  }, [allCreators, creatorPlatformSets, platformFilter, tagFilter, searchText, sort])
 
   // Render the directory incrementally: 50+ creator cards (each with a cover and an avatar
   // image) mounted at once is what exhausts memory on phones.
@@ -267,6 +274,14 @@ export default function Creators() {
       {/* Primary action: find a creator by name, @handle or profile link */}
       <CreatorFinder onOpen={openCreator} />
 
+      {/* Personal, on-device profile links (any platform); link-only cards */}
+      <SavedProfiles
+        platformFilter={platformFilter}
+        platformLabel={platformLabel}
+        onClearPlatform={() => setPlatformFilter(null)}
+        onOpenCatalog={openCreator}
+      />
+
       {/* Scan progress */}
       {scanning && (
         <div role="status" className="d-panel flex items-center gap-3">
@@ -325,12 +340,15 @@ export default function Creators() {
       {ddg && ddg.leads.length > 0 && (
         <section aria-label="Web discovery">
           <SectionHeader title="Web discovery" eyebrow="Leads via DuckDuckGo" icon={<Globe size={12} strokeWidth={1.75} aria-hidden="true" />}>
-            <a href={ddg.searchUrl} target="_blank" rel="noreferrer" className="d-link">
+            <a href={safeOutboundUrl(ddg.searchUrl) ?? undefined} target="_blank" rel={OUTBOUND_REL} className="d-link">
               Open this search on DuckDuckGo <ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />
             </a>
           </SectionHeader>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {ddg.leads.map((lead) => {
+            {ddg.leads.flatMap((lead) => {
+              const href = safeOutboundUrl(lead.url)
+              return href ? [{ lead, href }] : []
+            }).map(({ lead, href }) => {
               let domain = 'web'
               try {
                 domain = new URL(lead.url).hostname.replace(/^www\./, '')
@@ -341,9 +359,9 @@ export default function Creators() {
               return (
                 <a
                   key={lead.url}
-                  href={lead.url}
+                  href={href}
                   target="_blank"
-                  rel="noreferrer"
+                  rel={OUTBOUND_REL}
                   className="d-panel group flex items-start gap-3 !p-4 transition-colors hover:border-line-strong"
                 >
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sunken text-ink-2" aria-hidden="true">
@@ -411,18 +429,9 @@ export default function Creators() {
               ))}
             </div>
           )}
-          {(platforms.length > 0 || payloadTags.length > 0) && (
-            <div className="d-chips" style={{ flexBasis: '100%' }}>
-              {platforms.map((platform) => (
-                <button
-                  key={platform}
-                  onClick={() => setPlatformFilter(platformFilter === platform ? null : platform)}
-                  className={cn('chip', platformFilter === platform && 'chip-active')}
-                  aria-pressed={platformFilter === platform}
-                >
-                  {platform}
-                </button>
-              ))}
+          <PlatformFilter options={platformCounts.options} total={platformCounts.total} value={platformFilter} onChange={setPlatformFilter} />
+          {payloadTags.length > 0 && (
+            <div className="d-chips" style={{ flexBasis: '100%' }} role="group" aria-label="Tags">
               {payloadTags.map((tag) => (
                 <button
                   key={tag}

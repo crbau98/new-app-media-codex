@@ -4,6 +4,7 @@ import type { ElsewhereLink, RelatedCreator } from '@/lib/api'
 import type { CreatorRelatedState } from './useCreatorRelated'
 import { CreatorAvatar } from '@/components/discovery/CreatorParts'
 import { cn } from '@/lib/utils'
+import { OUTBOUND_REL, PAYWALL_NOTE, isSubscriptionPlatform, platformIdFromName, safeOutboundUrl } from './platforms'
 
 /** Hard ceiling on avatars mounted in the rail (phones kill tabs that decode many images). */
 export const RELATED_IMAGE_CAP = 12
@@ -87,13 +88,16 @@ export function RelatedCreatorsSection({ state, onOpen, onWarm }: RelatedProps) 
 }
 
 function ElsewhereRow({ link }: { link: ElsewhereLink }) {
+  const href = safeOutboundUrl(link.url)
+  if (!href) return null
+  const subscription = isSubscriptionPlatform(platformIdFromName(link.platform))
   const linkOnly = link.linkOnly !== false && link.platform.toLowerCase() !== 'redgifs'
   return (
     <li>
       <a
-        href={link.url}
+        href={href}
         target="_blank"
-        rel="noopener noreferrer nofollow"
+        rel={OUTBOUND_REL}
         className="flex min-h-12 items-center justify-between gap-3 px-4 py-2 text-[13px] text-ink transition-colors hover:bg-sunken"
         data-testid="elsewhere-link"
       >
@@ -108,7 +112,9 @@ function ElsewhereRow({ link }: { link: ElsewhereLink }) {
               </span>
             )}
           </span>
-          {linkOnly && <span className="mt-0.5 block font-mono text-[10px] text-ink-3">link only — opens on the source</span>}
+          {subscription ? (
+            <span className="mt-0.5 block font-mono text-[10px] text-ink-3">subscription — opens their page. {PAYWALL_NOTE}</span>
+          ) : linkOnly && <span className="mt-0.5 block font-mono text-[10px] text-ink-3">link only — opens on the source</span>}
         </span>
         <ExternalLink size={14} strokeWidth={1.75} className="shrink-0 text-ink-3" aria-hidden="true" />
       </a>
