@@ -120,6 +120,22 @@
   animation: mc-hud 0.9s ease forwards;
 }
 
+/* Overlays that pop in over the frame: Up next, moment saved, smart-start offer. */
+@keyframes mc-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mc-hud-in,
+.mc-upnext {
+  animation: mc-pop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 @keyframes mc-menu-in {
   from {
     opacity: 0;
@@ -159,6 +175,8 @@
 :root[data-reduce-motion='true'] .mc-img-in,
 :root[data-reduce-motion='true'] .mc-ripple,
 :root[data-reduce-motion='true'] .mc-hud,
+:root[data-reduce-motion='true'] .mc-hud-in,
+:root[data-reduce-motion='true'] .mc-upnext,
 :root[data-reduce-motion='true'] .mc-menu {
   animation-duration: 0.01ms;
 }
@@ -173,6 +191,8 @@
   }
   .mc-ripple,
   .mc-hud,
+  .mc-hud-in,
+  .mc-upnext,
   .mc-menu {
     animation-duration: 0.01ms;
   }

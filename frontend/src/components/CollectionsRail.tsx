@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
-import { FolderPlus, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { FolderPlus, ListPlus, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
 import type { MediaItem } from '@/lib/types'
 import { useCollections } from '@/hooks/useCollections'
+import { setStartIntent } from '@/features/queue/startIntent'
+import { useAppStore } from '@/store'
 import MediaCard from '@/components/MediaCard'
 import Rail from '@/components/discovery/Rail'
 import SectionHeader from '@/components/discovery/SectionHeader'
@@ -20,6 +22,7 @@ interface CollectionsRailProps {
  */
 export default function CollectionsRail({ items, onSelect }: CollectionsRailProps) {
   const { collections, create, rename, remove, removeItem } = useCollections()
+  const addToast = useAppStore((state) => state.addToast)
   const [openId, setOpenId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [renaming, setRenaming] = useState(false)
@@ -32,6 +35,32 @@ export default function CollectionsRail({ items, onSelect }: CollectionsRailProp
   const resetOpenState = () => {
     setRenaming(false)
     setConfirmingDelete(false)
+  }
+
+  /** Items of the open collection that are in the current feed, in saved order. */
+  const playable = open ? open.itemIds.map((itemId) => byId.get(itemId)).filter((item): item is MediaItem => Boolean(item)) : []
+
+  // The queue code is loaded on demand so Home's first paint never pays for it.
+  const playAll = async () => {
+    const { queueActions } = await import('@/features/queue/queueStore')
+    const head = queueActions.playFrom(playable)
+    if (!head) {
+      addToast({ type: 'info', title: 'Nothing playable here yet', message: 'Items in this collection are not in the current feed.' })
+      return
+    }
+    setStartIntent({ id: head.id, play: true })
+    onSelect(playable[0])
+    addToast({ type: 'success', title: 'Playing your collection', message: `${playable.length} in the queue · press N for the next one` })
+  }
+
+  const queueAll = async () => {
+    const { queueActions } = await import('@/features/queue/queueStore')
+    let added = 0
+    for (const item of playable) {
+      const outcome = queueActions.enqueue(item, 'last')
+      if (outcome === 'added' || outcome === 'playing') added += 1
+    }
+    addToast({ type: added ? 'success' : 'info', title: added ? `Added ${added} to your queue` : 'Already in your queue' })
   }
 
   const submitCreate = () => {
@@ -133,6 +162,16 @@ export default function CollectionsRail({ items, onSelect }: CollectionsRailProp
                 </button>
               </>
             )}
+            {playable.length > 0 && (
+              <>
+                <button onClick={() => void playAll()} className="btn-secondary ml-auto" data-testid="collection-play-all">
+                  <Play size={13} fill="currentColor" strokeWidth={0} aria-hidden="true" /> Play all
+                </button>
+                <button onClick={() => void queueAll()} className="btn-secondary" data-testid="collection-queue-all">
+                  <ListPlus size={14} strokeWidth={1.75} aria-hidden="true" /> Add to queue
+                </button>
+              </>
+            )}
             <button
               onClick={() => {
                 if (!confirmingDelete) {
@@ -144,7 +183,7 @@ export default function CollectionsRail({ items, onSelect }: CollectionsRailProp
                 resetOpenState()
               }}
               onBlur={() => setConfirmingDelete(false)}
-              className={cn('ml-auto', confirmingDelete ? 'btn-heat' : 'btn-secondary')}
+              className={cn(playable.length === 0 && 'ml-auto', confirmingDelete ? 'btn-heat' : 'btn-secondary')}
             >
               <Trash2 size={14} strokeWidth={1.75} aria-hidden="true" />
               {confirmingDelete ? 'Confirm delete' : 'Delete'}

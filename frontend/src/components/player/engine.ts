@@ -44,6 +44,11 @@ export interface EngineConfig {
   slowNetwork: boolean
   /** Legacy archived-media recovery; resolves alternative sources or null. */
   legacyRecover: () => Promise<PlaybackSource[] | null>
+  /**
+   * Explicit start position in seconds (saved moment, dock hand-off). When set
+   * — even to 0 — it wins over the stored resume position.
+   */
+  startAt?: number
 }
 
 interface Carry {
@@ -66,6 +71,7 @@ export class PlayerEngine {
   private index = 0
   private carry: Carry = { time: 0, play: false }
   private firstLoad = true
+  private explicitStart = false
   private hls: HlsType | null = null
   private generation = 0
   private sameSourceRetries = 0
@@ -136,10 +142,11 @@ export class PlayerEngine {
     this.sources = sources
     this.index = 0
     this.firstLoad = true
+    this.explicitStart = typeof config.startAt === 'number'
     this.legacyTried = false
     this.sameSourceRetries = 0
     this.manualQuality = 'auto'
-    this.carry = { time: 0, play: config.autoplay }
+    this.carry = { time: config.startAt && config.startAt > 0 ? config.startAt : 0, play: config.autoplay }
     this.patch({
       status: sources.length ? 'loading' : 'error',
       errorMessage: sources.length ? '' : 'No playable stream for this item.',
@@ -463,7 +470,7 @@ export class PlayerEngine {
         this.firstLoad = false
         const entry = this.config ? loadProgress()[this.config.item.id] : undefined
         const resume = resumePosition(entry, video.duration)
-        if (resume && !(target > 0)) {
+        if (resume && !(target > 0) && !this.explicitStart) {
           target = resume
           this.patch({ resumedAt: resume })
         }

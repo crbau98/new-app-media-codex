@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import {
+  BookmarkPlus,
   Camera,
+  ListVideo,
   Maximize,
   Minimize,
   Pause,
@@ -8,6 +10,7 @@ import {
   Play,
   RectangleHorizontal,
   Settings2,
+  SkipForward,
   Volume1,
   Volume2,
   VolumeX,
@@ -15,7 +18,7 @@ import {
 import { clamp, formatTime } from '@/lib/player/controls'
 import type { SpriteGrid } from '@/lib/player/intel'
 import { cn } from '@/lib/utils'
-import Scrubber from './Scrubber'
+import Scrubber, { type ScrubMarker } from './Scrubber'
 import type { VideoState } from './hooks'
 
 export interface ControlsProps {
@@ -36,6 +39,15 @@ export interface ControlsProps {
   /** Loop markers painted on the scrubber. */
   abLoop: { a: number | null; b: number | null }
   onScrubChange?: (scrubbing: boolean) => void
+  /** Skip-to-next button (queue or sibling list); omitted when there is nothing next. */
+  onNext?: () => void
+  nextTitle?: string
+  /** Bookmark the current time (or the A–B range as a clip). */
+  onMoment: () => void
+  momentIsClip: boolean
+  /** Saved moments painted as ticks on the scrubber. */
+  markers: ScrubMarker[]
+  queue?: { count: number; onOpen: () => void }
 }
 
 const btn =
@@ -72,6 +84,7 @@ export default function Controls(props: ControlsProps) {
         spriteGrid={spriteGrid}
         loopA={props.abLoop.a}
         loopB={props.abLoop.b}
+        markers={props.markers}
         onScrubStart={() => props.onScrubChange?.(true)}
         onScrubEnd={() => props.onScrubChange?.(false)}
       />
@@ -79,6 +92,12 @@ export default function Controls(props: ControlsProps) {
         <IconButton label={state.paused ? 'Play' : 'Pause'} onClick={props.onTogglePlay}>
           {state.paused ? <Play size={20} strokeWidth={1.75} fill="currentColor" aria-hidden="true" /> : <Pause size={20} strokeWidth={1.75} fill="currentColor" aria-hidden="true" />}
         </IconButton>
+
+        {props.onNext && (
+          <IconButton label={props.nextTitle ? `Next: ${props.nextTitle}` : 'Next'} onClick={props.onNext}>
+            <SkipForward size={19} strokeWidth={1.75} fill="currentColor" aria-hidden="true" />
+          </IconButton>
+        )}
 
         <div className="group/vol flex items-center">
           <IconButton label={state.muted ? 'Unmute' : 'Mute'} onClick={props.onMute}>
@@ -103,6 +122,27 @@ export default function Controls(props: ControlsProps) {
 
         <span className="flex-1" />
 
+        <IconButton label={props.momentIsClip ? 'Save A–B range as a clip (B)' : 'Save moment (B)'} onClick={props.onMoment}>
+          <BookmarkPlus size={19} strokeWidth={1.75} aria-hidden="true" />
+        </IconButton>
+
+        {props.queue && (
+          <button
+            type="button"
+            className={cn(btn, 'relative hidden sm:inline-grid')}
+            aria-label={props.queue.count > 0 ? `Open queue (${props.queue.count} up next)` : 'Open queue'}
+            title="Queue (Q)"
+            onClick={props.queue.onOpen}
+          >
+            <ListVideo size={19} strokeWidth={1.75} aria-hidden="true" />
+            {props.queue.count > 0 && (
+              <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-heat px-1 font-mono text-[9px] font-semibold leading-4 text-canvas" aria-hidden="true">
+                {props.queue.count > 99 ? '99+' : props.queue.count}
+              </span>
+            )}
+          </button>
+        )}
+
         {props.capture.ready && (
           <IconButton label="Capture current frame" onClick={props.capture.onCapture} disabled={props.capture.busy} className="hidden sm:inline-grid">
             <Camera size={18} strokeWidth={1.75} aria-hidden="true" />
@@ -114,7 +154,7 @@ export default function Controls(props: ControlsProps) {
         </IconButton>
 
         {props.pip.supported && (
-          <IconButton label={props.pip.active ? 'Exit picture-in-picture' : 'Picture-in-picture'} pressed={props.pip.active} onClick={props.pip.toggle}>
+          <IconButton label={props.pip.active ? 'Exit picture-in-picture' : 'Picture-in-picture'} pressed={props.pip.active} onClick={props.pip.toggle} className="hidden sm:inline-grid">
             <PictureInPicture2 size={18} strokeWidth={1.75} aria-hidden="true" />
           </IconButton>
         )}
