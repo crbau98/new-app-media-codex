@@ -309,3 +309,134 @@ test('gateway exposes only GET/HEAD of the index read paths', async () => {
     assert.equal((await call('POST', '/api/v1/ingest/jobs')).status, 200)
   } finally { globalThis.fetch = original }
 })
+
+/* ── gateway: public creator forms (feed submission + takedown) ── */
+
+const SUBMIT_PATH = '/api/v1/creators/feeds/submit'
+const TAKEDOWN_PATH = '/api/v1/creators/takedown'
+
+type Seen = { method?: string; url: string; headers: Record<string, string>; body?: string }
+function gatewayBackend(respond: () => Response = () => Response.json({ ok: true })) {
+  const original = globalThis.fetch
+  const seen: Seen[] = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const headers: Record<string, string> = {}
+    new Headers(init?.headers).forEach((value, key) => { headers[key] = value })
+    seen.push({ method: init?.method, url: String(input), headers, body: typeof init?.body === 'string' ? init.body : undefined })
+    return respond()
+  }) as typeof fetch
+  return { seen, restore: () => { globalThis.fetch = original } }
+}
+const viaGateway = (method: string, path: string, init: { body?: BodyInit | null; headers?: Record<string, string> } = {}) =>
+  gateway(new Request(`https://x.test/api/render-gateway?path=${encodeURIComponent(path)}`, { method, headers: init.headers, body: init.body }))
+const JSON_HEADERS = { 'content-type': 'application/json' }
+
+test('gateway forwards ONLY the two public creator POSTs, with visitor address and no admin token', async () => {
+  const { seen, restore } = gatewayBackend(() => Response.json({ id: 1, status: 'pending' }, { status: 429, headers: { 'Retry-After': '120', 'X-Secret': 'nope' } }))
+  try {
+    const feed = await viaGateway('POST', SUBMIT_PATH, {
+      body: JSON.stringify({ url: 'https://bearstudio.example/feed.xml' }),
+      headers: { ...JSON_HEADERS, 'x-real-ip': '198.51.100.7', 'x-admin-token': 'secret', 'idempotency-key': 'k' },
+    })
+    assert.equal(feed.status, 429)
+    assert.equal(feed.headers.get('retry-after'), '120')
+    assert.equal(feed.headers.get('x-secret'), null)
+    assert.equal(seen.length, 1)
+    assert.equal(seen[0].url, `https://codex-research-radar.onrender.com${SUBMIT_PATH}`)
+    assert.equal(seen[0].method, 'POST')
+    assert.equal(seen[0].body, JSON.stringify({ url: 'https://bearstudio.example/feed.xml' }))
+    assert.equal(seen[0].headers['x-client-ip'], '198.51.100.7')
+    assert.equal(seen[0].headers['x-admin-token'], undefined)
+    assert.equal(seen[0].headers['idempotency-key'], undefined)
+
+    await viaGateway('POST', TAKEDOWN_PATH, { body: '{"reason":"mine"}', headers: { ...JSON_HEADERS, 'x-forwarded-for': '10.0.0.1, 198.51.100.8' } })
+    assert.equal(seen[1].url, `https://codex-research-radar.onrender.com${TAKEDOWN_PATH}`)
+    assert.equal(seen[1].headers['x-client-ip'], '198.51.100.8')
+    await viaGateway('POST', TAKEDOWN_PATH, { body: '{}', headers: { ...JSON_HEADERS, 'x-real-ip': 'not an ip' } })
+    assert.equal(seen[2].headers['x-client-ip'], undefined, 'an unusable address is never forwarded')
+  } finally { restore() }
+})
+
+test('gateway caps public form bodies at 8 KB and requires JSON', async () => {
+  const { seen, restore } = gatewayBackend()
+  try {
+    for (const path of [SUBMIT_PATH, TAKEDOWN_PATH]) {
+      assert.equal((await viaGateway('POST', path, { body: 'x'.repeat(8 * 1024 + 1), headers: JSON_HEADERS })).status, 413)
+      assert.equal((await viaGateway('POST', path, { body: 'x'.repeat(8 * 1024), headers: JSON_HEADERS })).status, 200)
+      assert.equal((await viaGateway('POST', path, { body: '{}', headers: { 'content-type': 'text/plain' } })).status, 415)
+      assert.equal((await viaGateway('POST', path, { body: '{}' })).status, 415)
+      const chunked = await gateway(new Request(`https://x.test/api/render-gateway?path=${encodeURIComponent(path)}`, {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: new ReadableStream({ start(controller) { for (let i = 0; i < 10; i += 1) controller.enqueue(new Uint8Array(1024).fill(32)); controller.close() } }),
+        duplex: 'half',
+      } as RequestInit & { duplex: 'half' }))
+      assert.equal(chunked.status, 413, 'chunked bodies are capped as well')
+    }
+    assert.equal(seen.length, 2, 'only the two in-limit JSON bodies were forwarded')
+  } finally { restore() }
+})
+
+test('gateway never exposes creator admin, hidden-list or write routes, for any method', async () => {
+  const { seen, restore } = gatewayBackend()
+  try {
+    const blocked = [
+      '/api/v1/creators/admin/feeds', '/api/v1/creators/admin/feeds/1/approve', '/api/v1/creators/admin/feeds/1/reject',
+      '/api/v1/creators/admin/feeds/1/pause', '/api/v1/creators/admin/feeds/1/fetch', '/api/v1/creators/admin/takedowns',
+      '/api/v1/creators/admin/takedowns/1/restore', '/api/v1/creators/admin/takedowns/1/suppress', '/api/v1/creators/admin/suppressions',
+      '/api/v1/creators/admin/suppress', '/api/v1/creators/admin/hidden', '/api/v1/creators/admin/lanes', '/api/v1/creators/admin/lanes/reset',
+      '/api/v1/creators/admin/tags', '/api/v1/creators/index/hidden', '/api/v1/creators/index/crawl', '/api/v1/creators/index/observe',
+      '/api/v1/creators', '/api/v1/creators/', '/api/v1/creators/feeds', '/api/v1/creators/feeds/submit/', '/api/v1/creators/feeds/submit/x',
+      '/api/v1/creators/feeds/submit?x=1', '/api/v1/creators/takedown/', '/api/v1/creators/takedown/1/restore', '/api/v1/creators/takedown/admin',
+    ]
+    const headers = { ...JSON_HEADERS, 'x-admin-token': 'secret' }
+    for (const path of blocked) {
+      for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+        const res = await viaGateway(method, path, ['GET', 'HEAD'].includes(method) ? { headers } : { body: '{}', headers })
+        assert.equal(res.status, 405, `${method} ${path}`)
+      }
+    }
+    // the public submission paths accept POST only
+    for (const path of [SUBMIT_PATH, TAKEDOWN_PATH]) {
+      for (const method of ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE']) {
+        assert.equal((await viaGateway(method, path, ['GET', 'HEAD'].includes(method) ? {} : { body: '{}', headers: JSON_HEADERS })).status, 405, `${method} ${path}`)
+      }
+    }
+    assert.equal(seen.length, 0, 'blocked requests never reach the backend')
+  } finally { restore() }
+})
+
+test('gateway rejects dot-segment and control-character paths that could dodge the allow-lists', async () => {
+  const { seen, restore } = gatewayBackend()
+  try {
+    for (const path of [
+      '/api/v1/./creators/admin/feeds', '/api/v1/creators/./admin/feeds', '/api/v1/creators/index/../admin/feeds',
+      '/api/v1/creators/take\ndown', '/api/v1/creators/take\tdown', '/api/v1/creators/takedown\u0000/../admin', '/api/./v1/creators/index/crawl',
+    ]) {
+      for (const method of ['GET', 'POST']) {
+        const res = await viaGateway(method, path, method === 'POST' ? { body: '{}', headers: JSON_HEADERS } : {})
+        assert.equal(res.status, 400, `${method} ${JSON.stringify(path)}`)
+      }
+    }
+    assert.equal(seen.length, 0)
+    // legitimate paths keep working and the pre-existing protections are untouched
+    assert.equal((await viaGateway('GET', '/api/v1/creators/index')).status, 200)
+    assert.equal((await viaGateway('GET', '/healthz')).status, 200)
+    assert.equal((await viaGateway('GET', '/api/screenshots/proxy-media')).status, 405)
+    assert.equal((await viaGateway('POST', '/api/v1/ingest/jobs')).status, 200)
+    assert.equal((await viaGateway('POST', '/api/v1/ingest/unknown')).status, 405)
+    assert.equal((await viaGateway('OPTIONS', SUBMIT_PATH)).status, 204)
+  } finally { restore() }
+})
+
+test('gateway reports an unreachable backend for the public forms as 502 without leaking details', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = (async () => { throw new TypeError('connect ECONNREFUSED 10.1.2.3:443') }) as typeof fetch
+  try {
+    const res = await viaGateway('POST', SUBMIT_PATH, { body: '{}', headers: JSON_HEADERS })
+    assert.equal(res.status, 502)
+    const text = await res.text()
+    assert.ok(!text.includes('10.1.2.3'))
+    assert.equal(res.headers.get('cache-control'), 'no-store')
+  } finally { globalThis.fetch = original }
+})
