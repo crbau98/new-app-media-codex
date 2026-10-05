@@ -385,7 +385,7 @@ test('gateway never exposes creator admin, hidden-list or write routes, for any 
       '/api/v1/creators/admin/feeds/1/pause', '/api/v1/creators/admin/feeds/1/fetch', '/api/v1/creators/admin/takedowns',
       '/api/v1/creators/admin/takedowns/1/restore', '/api/v1/creators/admin/takedowns/1/suppress', '/api/v1/creators/admin/suppressions',
       '/api/v1/creators/admin/suppress', '/api/v1/creators/admin/hidden', '/api/v1/creators/admin/lanes', '/api/v1/creators/admin/lanes/reset',
-      '/api/v1/creators/admin/tags', '/api/v1/creators/index/hidden', '/api/v1/creators/index/crawl', '/api/v1/creators/index/observe',
+      '/api/v1/creators/admin/tags', '/api/v1/creators/admin/runs', '/api/v1/creators/index/hidden', '/api/v1/creators/index/crawl', '/api/v1/creators/index/observe',
       '/api/v1/creators', '/api/v1/creators/', '/api/v1/creators/feeds', '/api/v1/creators/feeds/submit/', '/api/v1/creators/feeds/submit/x',
       '/api/v1/creators/feeds/submit?x=1', '/api/v1/creators/takedown/', '/api/v1/creators/takedown/1/restore', '/api/v1/creators/takedown/admin',
     ]

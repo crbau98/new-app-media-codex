@@ -18,6 +18,7 @@ Admin (``X-Admin-Token``; never exposed through the edge gateway)::
     GET  /creators/admin/lanes?source=&backedOff=      adaptive lane yield / back-off
     POST /creators/admin/lanes/reset {lane}
     GET  /creators/admin/tags          related-tag frequency table (snowballing)
+    GET  /creators/admin/runs?limit=   recent crawl runs incl. per-source yield (new creators per request)
 """
 
 from __future__ import annotations
@@ -356,6 +357,11 @@ async def admin_lane_reset(request: Request, payload: dict[str, Any] = Body(...)
     if not lane or not await asyncio.to_thread(runtime_of(request).crawler.adaptive.reset_lane, lane):
         raise _problem(404, "not_found", "No such lane.")
     return {"reset": True, "lane": lane}
+
+
+@admin.get("/runs", operation_id="creatorCrawlRuns")
+async def admin_runs(request: Request, limit: int = Query(default=10, ge=1, le=50)) -> dict[str, Any]:
+    return {"runs": await asyncio.to_thread(runtime_of(request).repo.recent_runs, limit)}
 
 
 @admin.get("/tags", operation_id="creatorTagFrequencies")

@@ -21,7 +21,7 @@ from app.creator_index.fetcher import GuardedFetcher, HttpxFetcher, JsonResponse
 from app.creator_index.repository import CreatorIndexRepository
 from app.creator_index.schema import ensure_creator_index_schema
 from app.creator_index.sources import (
-    BlueskySource, BlueskyTagUnit, LemmyCommunityUnit, LemmyDiscoverUnit, LemmySource, MastodonSource, MastodonUnit,
+    LemmyCommunityUnit, LemmyDiscoverUnit, LemmySource, MastodonSource, MastodonUnit,
     PeerTubeSource, PeerTubeUnit, RedgifsNicheUnit, RedgifsSource, next_link,
 )
 from app.db import Database
@@ -185,6 +185,11 @@ def test_admin_lane_endpoints(tmp_path, monkeypatch):
     assert env.client.get("/api/v1/creators/admin/lanes?backedOff=true", headers=ADMIN).json()["lanes"] == []
     assert env.client.post("/api/v1/creators/admin/lanes/reset", headers=ADMIN, json={"lane": "nope"}).status_code == 404
     assert "tags" in env.client.get("/api/v1/creators/admin/tags", headers=ADMIN).json()
+    env.rt.repo.finish_run(env.rt.repo.start_run("all"), state="ok", pages=5, creators=3, lane="x", errors=[], new_creators=2,
+                           requests=5, yields={"redgifs": {"requests": 5, "new": 2, "upserted": 3}})
+    runs = env.client.get("/api/v1/creators/admin/runs?limit=3", headers=ADMIN).json()["runs"]
+    assert runs[0]["newCreators"] == 2 and runs[0]["requests"] == 5 and runs[0]["yield"]["redgifs"]["new"] == 2
+    assert env.client.get("/api/v1/creators/admin/runs").status_code == 401
 
 
 # ── Redgifs: related-tag snowballing ─────────────────────────────────────────

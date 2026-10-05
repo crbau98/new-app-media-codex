@@ -56,7 +56,6 @@ from app.creator_index.hygiene import (
 )
 from app.creator_index.moderation import ModerationService
 from app.creator_index.repository import CreatorIndexRepository, CreatorObservation, now_iso
-from app.creator_index.suppression import load_suppression_index
 from app.media_pipeline.feeds import FeedItem, parse_json_feed, parse_xml_feed
 from app.media_pipeline.manifests import _local, safe_xml_root
 from app.media_pipeline.netsafe import UnsafeUrlError, _literal_ip, validate_url

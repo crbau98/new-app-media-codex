@@ -7,7 +7,6 @@ import asyncio
 import json
 from urllib.parse import parse_qs, urlsplit
 
-import httpx
 import pytest
 
 from app.creator_index import lanes as L
@@ -220,6 +219,17 @@ def test_hidden_creator_is_never_resurrected_by_crawls(redgifs_net):
     assert "rg-b1" not in [m["id"] for m in beta["media"]]  # the suppressed item stays out of the samples
     seeds = env.rt.repo.next_seeds("redgifs", 10)
     assert "alpha" not in seeds
+
+
+def test_suppressed_creators_are_never_fetched_again_not_even_for_catalog_refreshes(redgifs_net):
+    env = redgifs_net
+    env.rt.repo.enqueue_seeds("redgifs", ["alpha", "beta"], priority=5)       # queued before the takedown arrived
+    post(env, {"platform": "redgifs", "handle": "alpha", "reason": "mine", "email": EMAIL})
+    assert env.rt.repo.next_seeds("redgifs", 10) == ["beta"]
+    env.rt.crawler.config.catalog_share = 0.5
+    run(env.rt.crawler.run_once(only="redgifs"))
+    assert env.net.count("/users/alpha/") == 0 and env.net.count("/users/beta/") >= 1
+    assert visible(env) == {"beta", "gamma"}
 
 
 def test_preemptive_suppression_blocks_creators_not_yet_indexed(redgifs_net):

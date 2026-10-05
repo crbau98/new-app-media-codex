@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from typing import Any, Callable, ContextManager, Iterable
+from typing import Any, Callable, ContextManager
 
 from app.creator_index.repository import now_iso
 

@@ -562,8 +562,11 @@ class CreatorIndexRepository:
 
     def next_seeds(self, platform: str, limit: int) -> list[str]:
         with self._connect() as conn:
+            # a creator removed by a takedown is never fetched again, not even to refresh its catalog
             rows = conn.execute(
-                "SELECT handle FROM creator_seed_queue WHERE platform = ? AND crawled_at IS NULL "
+                "SELECT handle FROM creator_seed_queue q WHERE platform = ? AND crawled_at IS NULL "
+                "AND NOT EXISTS (SELECT 1 FROM creator_suppressions s WHERE s.kind = 'creator' "
+                "AND s.platform = q.platform AND s.handle = q.handle) "
                 "ORDER BY priority DESC, enqueued_at ASC LIMIT ?",
                 (platform_key(platform), max(0, limit)),
             ).fetchall()
