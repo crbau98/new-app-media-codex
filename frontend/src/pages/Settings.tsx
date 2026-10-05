@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   Download,
@@ -26,6 +26,9 @@ import { useHoverPreviewPref } from '@/components/discovery/prefs'
 import { exportTasteProfile, importTasteProfile, isTasteLearningEnabled, resetTasteProfile, setTasteLearningEnabled } from '@/features/ai/taste/storage'
 import { cn } from '@/lib/utils'
 import '@/styles/discovery.css'
+
+// Vault UI is lazy: PIN lock, panic, disguise, incognito and screen guard (src/features/privacy).
+const PrivacyVault = lazy(() => import('@/features/privacy/PrivacySettings'))
 
 function Section({
   icon: Icon,
@@ -431,6 +434,11 @@ export default function Settings() {
           <Toggle checked={pictureInPicture} onChange={setPictureInPicture} label="Picture-in-picture" />
         </Row>
       </Section>
+
+      {/* Privacy & Vault — on-device lock, panic hide, disguise, incognito (lazy) */}
+      <Suspense fallback={<section className="d-set" aria-busy="true" aria-label="Privacy & Vault" style={{ minHeight: 120 }} />}>
+        <PrivacyVault />
+      </Suspense>
 
       {/* Privacy & data */}
       <Section

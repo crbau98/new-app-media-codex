@@ -1,0 +1,66 @@
+/* Vault core (eager, keep tiny): concealment cover, hide button, blur guard.
+ * Lock screen, decoys and the Settings section live in privacy-vault.css (lazy).
+ * Everything here is lite-graphics safe: no backdrop-filter, no will-change. */
+
+/* While the vault is locked or showing the decoy, nothing of the app may be
+ * visible — a belt for the React unmount, applied synchronously before React
+ * re-renders (so even a slow frame cannot show content). */
+html[data-privacy] body > *:not(#root):not([data-pv-screen]) { display: none !important; }
+html[data-privacy] #root > *:not([data-pv-screen]) { display: none !important; }
+html[data-privacy] body { overflow: hidden !important; }
+.pv-blank { position: fixed; inset: 0; z-index: 2147483000; background: rgb(var(--canvas)); }
+
+/* Always-available hide button (settings: Panic > Hide button). */
+.pv-hide {
+  position: fixed;
+  top: calc(50% - 22px);
+  z-index: 1900;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: rgb(var(--ink));
+  background: rgb(var(--elevated) / 0.86);
+  border: 1px solid var(--line-strong);
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.pv-hide[data-side='right'] { right: env(safe-area-inset-right, 0px); border-right: 0; border-radius: 16px 0 0 16px; }
+.pv-hide[data-side='left'] { left: env(safe-area-inset-left, 0px); border-left: 0; border-radius: 0 16px 16px 0; }
+.pv-hide:hover, .pv-hide:focus-visible, .pv-hide:active { opacity: 1; }
+
+/* Blur thumbnails until hovered (mouse) or tapped (touch). Filter is used only
+ * while the setting is on; phones in lite mode get a cheap opacity veil instead. */
+html[data-pv-blur] img:not([data-pv-keep]):not([data-pv-show]),
+html[data-pv-blur] video:not([data-pv-keep]):not([data-pv-show]) {
+  filter: blur(22px) saturate(0.8);
+  transition: filter 0.25s ease;
+}
+@media (hover: hover) {
+  html[data-pv-blur] img:not([data-pv-keep]):hover,
+  html[data-pv-blur] video:not([data-pv-keep]):hover,
+  html[data-pv-blur] :is(a, button, article, figure, [role='button'], [data-testid$='tile'], [data-testid$='card']):hover img:not([data-pv-keep]),
+  html[data-pv-blur] :is(a, button, article, figure, [role='button'], [data-testid$='tile'], [data-testid$='card']):hover video:not([data-pv-keep]) {
+    filter: none;
+  }
+}
+html[data-lite='true'][data-pv-blur] img:not([data-pv-keep]):not([data-pv-show]),
+html[data-lite='true'][data-pv-blur] video:not([data-pv-keep]):not([data-pv-show]) {
+  filter: none;
+  opacity: 0.07;
+}
+
+/* Blur + veil while the window is unfocused / the app is in the background. */
+html[data-pv-away] img,
+html[data-pv-away] video,
+html[data-pv-away] canvas { filter: blur(34px) !important; }
+html[data-pv-away]::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  background: rgb(var(--canvas) / 0.9);
+}
