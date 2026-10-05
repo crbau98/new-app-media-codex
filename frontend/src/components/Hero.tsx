@@ -60,6 +60,8 @@ interface HeroProps {
   coverflow?: boolean
   /** Optional: rotate slides automatically (default true). */
   autoplay?: boolean
+  /** Optional: called once the first slide's artwork has loaded and decoded (the page's LCP element). */
+  onFeaturedLoad?: () => void
 }
 
 /**
@@ -78,6 +80,7 @@ export default function Hero({
   eyebrow = 'Live now',
   coverflow = true,
   autoplay = true,
+  onFeaturedLoad,
 }: HeroProps) {
   const slides = useMemo(() => items.slice(0, SLIDE_COUNT), [items])
   const [index, setIndex] = useState(0)
@@ -135,7 +138,7 @@ export default function Hero({
       className="spotlight spectrum-border relative isolate overflow-hidden rounded-[22px] bg-sunken shadow-soft"
       style={{ '--spot-r': '460px' } as CSSProperties}
     >
-      <div className="relative min-h-[560px] lg:min-h-[500px]">
+      <div className="relative min-h-[640px] lg:min-h-[500px]">
         {/* Backdrop — blurred artwork, parallax-shifted, cross-faded per slide */}
         <div
           className="absolute -inset-10"
@@ -154,6 +157,8 @@ export default function Hero({
                 sources={[slide.thumbnail]}
                 alt=""
                 loading={slideIndex === 0 ? 'eager' : 'lazy'}
+                fetchPriority={slideIndex === 0 ? 'high' : 'auto'}
+                onLoad={slideIndex === 0 ? onFeaturedLoad : undefined}
                 className="h-full w-full scale-110 object-cover blur-2xl saturate-125"
                 skeletonClassName="absolute inset-0"
               />
@@ -171,7 +176,7 @@ export default function Hero({
         {/* Content */}
         <div
           className={cn(
-            'relative z-[2] grid min-h-[560px] items-center gap-6 p-6 md:p-10 lg:min-h-[500px] lg:gap-10',
+            'relative z-[2] grid min-h-[640px] items-center gap-6 p-6 md:p-10 lg:min-h-[500px] lg:gap-10',
             showStage ? 'lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]' : 'lg:grid-cols-1',
           )}
         >
@@ -239,6 +244,18 @@ export default function Hero({
               </div>
             )}
           </div>
+
+          {coverflow && loading && (
+            // Reserve the coverflow's footprint while the feed loads: the hero must not grow when
+            // content arrives (that moved the whole page and scored ~0.5 CLS on phones).
+            <div
+              className="-mx-6 min-w-0 md:-mx-10 lg:mx-0"
+              style={{ containerType: 'inline-size' }}
+              aria-hidden="true"
+            >
+              <div style={{ height: `calc(clamp(148px, 40cqw, 300px) * 1.34 + ${motionOk ? 64 : 36}px)` }} />
+            </div>
+          )}
 
           {showStage && (
             <div

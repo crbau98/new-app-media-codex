@@ -1,12 +1,13 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Dice5, Heart, Library, RefreshCw, Sparkles, UserRound } from 'lucide-react'
 import type { MediaItem } from '@/lib/types'
 import { fetchLiveDiscovery } from '@/lib/api'
 import { creatorKey, discoveryStrength, rankForYou, type DiscoveryMode } from '@/lib/discovery'
+import { discoveryKey } from '@/lib/perf/discovery-keys'
+import { useStagedMount } from '@/lib/perf/useStagedMount'
 import { useAppStore } from '@/store'
-import MediaDetail from '@/components/MediaDetail'
 import UpdatedChip from '@/components/UpdatedChip'
 import MediaBrowser from '@/components/discovery/MediaBrowser'
 import MediaRail from '@/components/discovery/MediaRail'
@@ -17,6 +18,8 @@ import { DensityToggle, FacetToggle, LayoutToggle, Segmented, type MediaFacet } 
 import { useLayoutMode } from '@/components/discovery/prefs'
 import '@/styles/discovery.css'
 
+// The detail sheet (player, ~90 kB) is only fetched once something is opened; it is also warmed on idle.
+const MediaDetail = lazy(() => import('@/components/MediaDetail'))
 const FederatedSearch = lazy(() => import('@/components/FederatedSearch'))
 const ImportUrl = lazy(() => import('@/components/ImportUrl'))
 
@@ -69,9 +72,16 @@ export default function Explore() {
   const addToast = useAppStore((s) => s.addToast)
 
   const discoveryQuery = useQuery({
-    queryKey: ['live-discovery', creatorWatchlist],
+    queryKey: discoveryKey(creatorWatchlist),
     queryFn: () => fetchLiveDiscovery(creatorWatchlist),
+    placeholderData: keepPreviousData,
   })
+
+  // The shelves arrive one idle slot after the header, the full mix one slot after that, so
+  // arriving from Home (data already cached) never renders the whole page in a single task.
+  const stage = useStagedMount(2)
+  // Keep the detail sheet mounted after its first open so its exit animation still plays.
+  const [detailMounted, setDetailMounted] = useState(false)
 
   const strength = discoveryStrength(tagPreferences, creatorPreferences)
   const allItems = useMemo(() => discoveryQuery.data?.items ?? [], [discoveryQuery.data])
@@ -134,11 +144,18 @@ export default function Explore() {
       addToast({ type: 'info', title: 'Nothing to surprise you with yet', message: 'The feed is still loading or fully filtered.' })
       return
     }
+    setDetailMounted(true)
     setSelectedItem(rankedItems[Math.floor(Math.random() * Math.min(rankedItems.length, 40))])
   }
 
-  const selectItem = useCallback((item: MediaItem) => setSelectedItem(item), [])
-  const openById = useCallback((id: string) => setSelectedItem(mix.find((entry) => entry.id === id) ?? null), [mix])
+  const selectItem = useCallback((item: MediaItem) => {
+    setDetailMounted(true)
+    setSelectedItem(item)
+  }, [])
+  const openById = useCallback((id: string) => {
+    setDetailMounted(true)
+    setSelectedItem(mix.find((entry) => entry.id === id) ?? null)
+  }, [mix])
   const openCategory = useCallback((name: string) => navigate(`/media?category=${encodeURIComponent(name)}`), [navigate])
 
   return (
@@ -179,90 +196,103 @@ export default function Explore() {
         </div>
       </div>
 
-      {discoveryQuery.isLoading ? (
-        <MediaBrowser items={[]} layout={layout === 'list' ? 'cinema' : layout} density={gridDensity} onSelect={openById} loading ariaLabel="Loading your mix" />
-      ) : discoveryQuery.error ? (
-        <StatePanel
-          tone="error"
-          icon={RefreshCw}
-          title="For You could not load"
-          description="The live archive could not be reached. Try again in a moment."
-          actionLabel="Retry"
-          onAction={() => discoveryQuery.refetch()}
-        />
-      ) : rankedItems.length === 0 ? (
-        <StatePanel
-          icon={Sparkles}
-          title="Nothing ranked yet"
-          description="Once the live feed arrives, your private mix appears here."
-          actionLabel="Open library"
-          onAction={() => navigate('/media')}
-        />
-      ) : (
-        <>
-          <CategoryShelf items={rankedItems} onOpen={openCategory} />
+      {/* Reserved height while sections arrive in stages, so the footer never sits in view and then jumps down. */}
+      <div style={{ minHeight: stage < 2 ? '100dvh' : undefined }}>
+        {discoveryQuery.isLoading ? (
+          <MediaBrowser items={[]} layout={layout === 'list' ? 'cinema' : layout} density={gridDensity} onSelect={openById} loading ariaLabel="Loading your mix" />
+        ) : discoveryQuery.error ? (
+          <StatePanel
+            tone="error"
+            icon={RefreshCw}
+            title="For You could not load"
+            description="The live archive could not be reached. Try again in a moment."
+            actionLabel="Retry"
+            onAction={() => discoveryQuery.refetch()}
+          />
+        ) : rankedItems.length === 0 ? (
+          <StatePanel
+            icon={Sparkles}
+            title="Nothing ranked yet"
+            description="Once the live feed arrives, your private mix appears here."
+            actionLabel="Open library"
+            onAction={() => navigate('/media')}
+          />
+        ) : (
+          <>
+            {stage >= 1 && <CategoryShelf items={rankedItems} onOpen={openCategory} />}
 
-          {creatorShelf && (
-            <MediaRail
-              title={`More from @${creatorShelf.name}`}
-              eyebrow="Because you follow"
-              icon={<UserRound size={12} strokeWidth={1.75} aria-hidden="true" />}
-              items={creatorShelf.items}
-              onSelect={selectItem}
-            />
-          )}
-          {tagShelves.map((shelf) => (
-            <MediaRail
-              key={shelf.key}
-              title={`Because you like #${shelf.key}`}
-              eyebrow="From your taste profile"
-              icon={<Heart size={12} strokeWidth={1.75} aria-hidden="true" />}
-              items={shelf.items}
-              onSelect={selectItem}
-            />
-          ))}
-          {trending.length >= 4 && (
-            <MediaRail title="Trending now" eyebrow="Rising on public sources" items={trending} onSelect={selectItem} variant="wide" />
-          )}
-
-          <section aria-label="Your mix">
-            <SectionHeader title="The full mix" eyebrow="Ranked for you" />
-            <div className="d-toolbar">
-              <FacetToggle value={facet} onChange={setFacet} counts={facetCounts} />
-              <span className="d-toolbar-spacer" />
-              <LayoutToggle value={layout} onChange={setLayout} />
-              {layout !== 'list' && <DensityToggle value={gridDensity} onChange={setGridDensity} />}
-            </div>
-            {mix.length === 0 ? (
-              <StatePanel icon={Sparkles} title="Nothing in this view" description="Switch the media type to see the rest of your mix." actionLabel="Show everything" onAction={() => setFacet('all')} />
-            ) : (
-              <MediaBrowser items={mix} layout={layout} density={gridDensity} onSelect={openById} resetKey={`${facet}|${discoveryMode}`} ariaLabel="For you" />
+            {stage >= 1 && creatorShelf && (
+              <MediaRail
+                title={`More from @${creatorShelf.name}`}
+                eyebrow="Because you follow"
+                icon={<UserRound size={12} strokeWidth={1.75} aria-hidden="true" />}
+                items={creatorShelf.items}
+                onSelect={selectItem}
+              />
             )}
-          </section>
+            {stage >= 1 && tagShelves.map((shelf) => (
+              <MediaRail
+                key={shelf.key}
+                title={`Because you like #${shelf.key}`}
+                eyebrow="From your taste profile"
+                icon={<Heart size={12} strokeWidth={1.75} aria-hidden="true" />}
+                items={shelf.items}
+                onSelect={selectItem}
+              />
+            ))}
+            {stage >= 1 && trending.length >= 4 && (
+              <MediaRail title="Trending now" eyebrow="Rising on public sources" items={trending} onSelect={selectItem} variant="wide" />
+            )}
 
-          <div className="d-panel flex items-center gap-3">
-            <Library size={15} strokeWidth={1.75} className="shrink-0 text-ink-3" aria-hidden="true" />
-            <p className="text-[13px] leading-5 text-ink-2">
-              Every suggestion carries its reason inside the detail sheet — follows, tags, and freshness.
-              Nothing is inferred from your body or identity.
-            </p>
-          </div>
-        </>
-      )}
+            {stage >= 2 && (
+              <section aria-label="Your mix">
+                <SectionHeader title="The full mix" eyebrow="Ranked for you" />
+                <div className="d-toolbar">
+                  <FacetToggle value={facet} onChange={setFacet} counts={facetCounts} />
+                  <span className="d-toolbar-spacer" />
+                  <LayoutToggle value={layout} onChange={setLayout} />
+                  {layout !== 'list' && <DensityToggle value={gridDensity} onChange={setGridDensity} />}
+                </div>
+                {mix.length === 0 ? (
+                  <StatePanel icon={Sparkles} title="Nothing in this view" description="Switch the media type to see the rest of your mix." actionLabel="Show everything" onAction={() => setFacet('all')} />
+                ) : (
+                  <MediaBrowser items={mix} layout={layout} density={gridDensity} onSelect={openById} resetKey={`${facet}|${discoveryMode}`} ariaLabel="For you" />
+                )}
+              </section>
+            )}
+
+            {stage >= 2 && (
+              <div className="d-panel flex items-center gap-3">
+                <Library size={15} strokeWidth={1.75} className="shrink-0 text-ink-3" aria-hidden="true" />
+                <p className="text-[13px] leading-5 text-ink-2">
+                  Every suggestion carries its reason inside the detail sheet — follows, tags, and freshness.
+                  Nothing is inferred from your body or identity.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
       {/* Federated web: explicit PeerTube/Mastodon instances, metadata-only with attribution */}
-      <Suspense fallback={null}>
-        <ImportUrl />
-        <FederatedSearch />
-      </Suspense>
+      {stage >= 2 && (
+        <Suspense fallback={null}>
+          <ImportUrl />
+          <FederatedSearch />
+        </Suspense>
+      )}
 
-      <MediaDetail
-        item={selectedItem}
-        open={Boolean(selectedItem)}
-        onClose={() => setSelectedItem(null)}
-        items={mix}
-        onNavigate={setSelectedItem}
-      />
+      {detailMounted && (
+        <Suspense fallback={null}>
+          <MediaDetail
+            item={selectedItem}
+            open={Boolean(selectedItem)}
+            onClose={() => setSelectedItem(null)}
+            items={mix}
+            onNavigate={setSelectedItem}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

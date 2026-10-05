@@ -38,6 +38,7 @@ export default function BottomTabBar() {
               <button
                 key={tab.label}
                 onClick={() => navigate(tab.href)}
+                data-prefetch={tab.href}
                 className={cn(
                   'relative flex min-w-[52px] flex-1 flex-col items-center justify-center gap-1 rounded-2xl tap-highlight-none transition-[color,transform] duration-300 active:scale-90',
                   active ? 'text-ink' : 'text-ink-3'

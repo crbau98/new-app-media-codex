@@ -32,6 +32,9 @@ interface MediaGridProps {
   hideCreator?: boolean
 }
 
+/** Hoisted: an inline object literal here defeated React.memo(MediaCard) on every grid render. */
+const FILL_STYLE = { width: '100%', height: '100%' } as const
+
 const SKELETON_ASPECTS = [16 / 9, 2 / 3, 1, 4 / 5, 16 / 9, 9 / 16, 4 / 5, 1, 16 / 9, 2 / 3, 1, 16 / 9]
 
 /** Measures an element's content width; updates through rAF so resize is cheap. */
@@ -212,7 +215,7 @@ function MediaGridImpl({
                 <MediaCard
                   item={items[cell.index]}
                   aspectRatio={`${cell.width} / ${cell.height}`}
-                  style={{ width: '100%', height: '100%' }}
+                  style={FILL_STYLE}
                   onSelect={onSelect}
                   priority={cell.index < priorityCount}
                   tabIndex={cell.index === activeIndex ? 0 : -1}
