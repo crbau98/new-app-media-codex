@@ -39,6 +39,12 @@ const URL_HOSTS: Record<string, string> = {
   'twitch.tv': 'twitch',
   'linktr.ee': 'linktree',
   'bsky.app': 'bluesky',
+  'justfor.fans': 'justforfans',
+  'justforfans.com': 'justforfans',
+  'fanvue.com': 'fanvue',
+  'patreon.com': 'patreon',
+  'beacons.ai': 'beacons',
+  'allmylinks.com': 'allmylinks',
 }
 /** Path prefixes that precede the handle (`/users/x`, `/u/x`). */
 const PREFIX_SEGMENTS = new Set(['users', 'user', 'u', 'creators', 'model', 'models', 'channels', 'c', 'channel', 'profile', 'pornstar', 'pornstars'])
