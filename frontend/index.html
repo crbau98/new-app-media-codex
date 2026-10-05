@@ -26,42 +26,17 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Media Codex — After-hours cinema archive</title>
-    <script>
-      /* Blocking pre-hydration theme: read the persisted preference and set
-         data-theme + canvas color before first paint (no dark flash). */
-      (function () {
-        var theme = 'dark'
-        try {
-          var raw = window.localStorage.getItem('media-codex-store')
-          if (raw) {
-            var parsed = JSON.parse(raw)
-            if (parsed && parsed.state && (parsed.state.theme === 'light' || parsed.state.theme === 'dark' || parsed.state.theme === 'auto')) {
-              theme = parsed.state.theme
-            }
-          }
-        } catch (e) { /* storage unavailable — default dark */ }
-        var resolved = theme === 'auto'
-          ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
-          : theme
-        var root = document.documentElement
-        root.setAttribute('data-theme', resolved)
-        root.style.backgroundColor = resolved === 'light' ? '#f9f5ee' : '#0c0912'
-      })()
-    </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preconnect" href="https://media.redgifs.com" crossorigin />
-    <link rel="preconnect" href="https://thumbs44.redgifs.com" crossorigin />
-    <link rel="preconnect" href="https://pbs.twimg.com" crossorigin />
-    <link rel="preconnect" href="https://video.twimg.com" crossorigin />
-    <link rel="preconnect" href="https://media.tumblr.com" crossorigin />
-    <link rel="dns-prefetch" href="https://api.redgifs.com" />
-    <link rel="dns-prefetch" href="https://api.x.com" />
-    <link rel="dns-prefetch" href="https://api.tumblr.com" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..600&amp;family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap"
-      rel="stylesheet"
-    />
+    <!-- Fonts are self-hosted (src/styles/fonts.css). Preload the two that paint first so they are ready
+         before the first text is laid out (no swap, no layout shift); the mono face loads on demand. -->
+    <link rel="preload" href="/src/assets/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/src/assets/fonts/fraunces-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- Thumbnails and streams are fetched through the same-origin /api/archiver-proxy, so these hosts are only
+         direct fallbacks: a DNS hint is enough. Full preconnects (DNS+TCP+TLS x5) compete with the critical path. -->
+    <link rel="dns-prefetch" href="https://media.redgifs.com" />
+    <link rel="dns-prefetch" href="https://thumbs44.redgifs.com" />
+    <link rel="dns-prefetch" href="https://pbs.twimg.com" />
+    <link rel="dns-prefetch" href="https://video.twimg.com" />
+    <link rel="dns-prefetch" href="https://media.tumblr.com" />
     <style>
       /* Critical paint only: canvas color keyed off the resolved theme. */
       html { background-color: #0c0912; }

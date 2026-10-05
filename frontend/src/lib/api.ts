@@ -8,6 +8,8 @@
  */
 
 import { FETCH_TIMEOUT_MS } from './backendOrigin'
+import { takeBootFeed } from './perf/boot-bridge.ts'
+import { buildDiscoveryRequest, type DiscoveryRequest } from './perf/discovery-request.ts'
 import { normalizeCandidates, type CreatorCandidate } from '../features/creators/creatorLogic'
 import type {
   AiDiscovery,
@@ -146,49 +148,41 @@ export interface LiveDiscoveryOptions {
   sort?: 'smart' | 'newest' | 'views' | 'likes'
 }
 
-export async function fetchLiveDiscovery(
-  watchlist: string[] = [],
-  options: LiveDiscoveryOptions = {}
-): Promise<LiveDiscoveryPayload> {
-  const { forceFresh = false, query = '', sort = 'smart' } = options
-  const hasQuery = query.trim().length > 0
-  const isAnonymousDefault = watchlist.length === 0 && !hasQuery && !forceFresh && sort === 'smart'
+/** Same request issued twice within this window (Home -> Creators, Search -> Explore) reuses one result. */
+const DISCOVERY_REUSE_MS = 20_000
+const discoveryRequests = new Map<string, { promise: Promise<LiveDiscoveryPayload>; settledAt: number | null }>()
 
-  let response: Response
-  if (isAnonymousDefault) {
-    // Anonymous default discovery: GET so the edge/CDN cache can serve repeat paints.
-    response = await fetchWithTimeout(
-      `${LIVE_MEDIA_URL}?count=96&pages=3&sort=smart`,
-      { method: 'GET' },
-      25000
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Live discovery timed out')), timeoutMs)
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (error) => { clearTimeout(timer); reject(error) }
     )
-  } else {
-    // Personalized or force-fresh scan: POST with no-store to bypass CDN cache.
-    response = await fetchWithTimeout(
-      LIVE_MEDIA_URL,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(forceFresh ? { 'Cache-Control': 'no-cache' } : {}),
-        },
-        cache: 'no-store',
-        body: JSON.stringify({
-          count: 96,
-          pages: 3,
-          sort,
-          query,
-          watchlist: watchlist.slice(0, 40),
-          forceFresh,
-          useAI: forceFresh,
-        }),
-      },
-      forceFresh ? 45000 : 25000
-    )
+  })
+}
+
+async function requestDiscoveryJson(request: DiscoveryRequest, allowBoot: boolean): Promise<Partial<LiveDiscoveryPayload>> {
+  // The boot script may already have this exact request in flight (see lib/perf/boot.js).
+  const early = allowBoot ? takeBootFeed(request.sig) : null
+  if (early) {
+    try {
+      return (await withTimeout(early, request.timeoutMs)) as Partial<LiveDiscoveryPayload>
+    } catch {
+      // The early request failed or hung: fall back to a normal request below.
+    }
   }
-
+  const init: RequestInit = { method: request.method }
+  if (request.headers) init.headers = request.headers
+  if (request.cache) init.cache = request.cache
+  if (request.body !== undefined) init.body = request.body
+  const response = await fetchWithTimeout(request.url, init, request.timeoutMs)
   if (!response.ok) throw new Error(`Live discovery returned ${response.status}`)
-  const payload = (await response.json()) as Partial<LiveDiscoveryPayload>
+  return (await response.json()) as Partial<LiveDiscoveryPayload>
+}
+
+async function loadLiveDiscovery(watchlist: string[], request: DiscoveryRequest, options: LiveDiscoveryOptions): Promise<LiveDiscoveryPayload> {
+  const payload = await requestDiscoveryJson(request, !options.forceFresh)
   const items = Array.isArray(payload.items) ? payload.items : []
   const performers = Array.isArray(payload.performers) ? payload.performers : []
   const ddg = normalizeDdg(payload.ddg)
@@ -209,6 +203,30 @@ export async function fetchLiveDiscovery(
     sources: normalizeSources(payload.sources),
     ...(ddg ? { ddg } : {}),
   }
+}
+
+export async function fetchLiveDiscovery(
+  watchlist: string[] = [],
+  options: LiveDiscoveryOptions = {}
+): Promise<LiveDiscoveryPayload> {
+  const request = buildDiscoveryRequest(watchlist, options)
+  // Forced scans are explicit user actions: never coalesced, never replayed.
+  if (options.forceFresh) return loadLiveDiscovery(watchlist, request, options)
+
+  const now = Date.now()
+  const existing = discoveryRequests.get(request.sig)
+  if (existing && (existing.settledAt === null || now - existing.settledAt < DISCOVERY_REUSE_MS)) return existing.promise
+
+  const entry: { promise: Promise<LiveDiscoveryPayload>; settledAt: number | null } = {
+    promise: loadLiveDiscovery(watchlist, request, options),
+    settledAt: null,
+  }
+  discoveryRequests.set(request.sig, entry)
+  entry.promise.then(
+    () => { entry.settledAt = Date.now() },
+    () => { if (discoveryRequests.get(request.sig) === entry) discoveryRequests.delete(request.sig) }
+  )
+  return entry.promise
 }
 
 /* ───────────────────────────────────────────────
