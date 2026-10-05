@@ -8,32 +8,31 @@
  */
 export const config = { runtime: 'edge', maxDuration: 30 }
 
+import { fetchHiddenKeys, isHiddenCreator } from './_lib/index-client.js'
 import { rankSimilarCreatorsWithAI } from './_lib/ai-similarity.js'
 import { collectAdditionalSources } from './_lib/multi-source.js'
 import type { CreatorLead, UnifiedMediaItem } from './_lib/discovery-types.js'
 import { selectQualityDiverse } from './_lib/source-quality.js'
-import { dedupeItems, orderStreamCandidates, pruneUnplayable, withContract } from './_lib/media-normalize.js'
+import { dedupeItems, pruneUnplayable, withContract } from './_lib/media-normalize.js'
+import {
+  REDGIFS_API, canonicalCreator, fetchWithTimeout, getRedgifsToken, hasPlayableUrls,
+  mapRedgifsItem, providerHandle, redactEmails, sanitizeProviderItem, textFor, type RedgifsItem,
+} from './_lib/redgifs.js'
+import { isEligibleCreatorItem, laneForTag, rotateLanes, runBounded } from './_lib/discovery-lanes.js'
 
-const REDGIFS_API = 'https://api.redgifs.com/v2'
-const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
+/** Watchlist ceiling (was 8). Lookups are batched with bounded parallelism. */
+const WATCHLIST_CAP = 40
+const DISCOVERY_CONCURRENCY = 8
+/** Wall-clock budget for provider discovery inside the 30s function limit. */
+const DISCOVERY_BUDGET_MS = 14_000
+/** Non-primary lanes added to each feed request (rotating). */
+const EXTRA_LANES = 4
+/** Creator pool (was 240) and how many of those keep the full media list. */
+const CREATOR_POOL = 480 // creators (items considered: 3x)
+const FULL_MEDIA_CREATORS = 240
+
 const EMAIL_TEST = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
 const GENERIC_SIMILARITY_TAGS = new Set(['gay', 'male', 'men', 'man', 'video', 'verified'])
-// Exclusion-only blocklist: strictly female/straight markers. Trans-related
-// terms were removed — trans men are in scope, and identity terms must never
-// be used as exclusion signals.
-const FEMALE_MARKERS = [
-  'female', 'woman', 'women', 'girl', 'lesbian', 'straight', 'pussy',
-  'vagina', 'hetero',
-  'girlfriend', 'wife', 'b/g', 'm/f', 'boob', 'breast', 'tits',
-  'milf', 'femdom',
-  'girls', 'chick', 'chicks', 'females',
-]
-const PROVIDER_TIMEOUT_MS = 6_500
-
-/* ── Redgifs token cache (module scope, single-flight, ~20min TTL) ── */
-const TOKEN_TTL_MS = 20 * 60 * 1_000
-let redgifsTokenCache: { token: string; expiresAt: number } | null = null
-let redgifsTokenPromise: Promise<string> | null = null
 
 /* ── Best-effort edge rate limiting for expensive scans ──
    In-memory per-IP bucket: 6 AI/forced scans per 5 minutes. Edge isolates are
@@ -63,100 +62,11 @@ function clientIp(req: Request): string {
   return chain[chain.length - 1] || req.headers.get('x-real-ip') || 'unknown'
 }
 
-type RedgifsItem = {
-  id?: string
-  userName?: string
-  description?: string
-  tags?: string[]
-  niches?: Array<string | { name?: string }>
-  duration?: number
-  width?: number
-  height?: number
-  hasAudio?: boolean
-  likes?: number
-  views?: number
-  createDate?: number
-  urls?: {
-    hd?: string
-    sd?: string
-    poster?: string
-    thumbnail?: string
-  }
-}
-
 type LiveMediaItem = UnifiedMediaItem
 
 type CreatorSimilarity = {
   score: number
   reasons: string[]
-}
-
-function redactEmails(value = ''): string {
-  return value
-    .replace(EMAIL_PATTERN, '')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/\s+([,.;:!?])/g, '$1')
-    .trim()
-}
-
-function sanitizeProviderItem(item: RedgifsItem): RedgifsItem {
-  const creator = redactEmails(item.userName || '') || 'Public creator'
-  return {
-    ...item,
-    userName: creator,
-    description: redactEmails(item.description || '') || undefined,
-    tags: (item.tags || []).map(redactEmails).filter(Boolean),
-    niches: (item.niches || []).map((niche) => {
-      if (typeof niche === 'string') return redactEmails(niche)
-      return { ...niche, name: redactEmails(niche.name || '') }
-    }).filter((niche) => typeof niche === 'string' ? Boolean(niche) : Boolean(niche.name)),
-  }
-}
-
-function textFor(item: RedgifsItem): string {
-  const niches = (item.niches || []).map((niche) =>
-    typeof niche === 'string' ? niche : niche.name || ''
-  )
-  return [item.userName || '', ...(item.tags || []), ...niches, item.description || '']
-    .join(' ')
-    .toLowerCase()
-}
-
-function isEligibleScopedItem(item: RedgifsItem): boolean {
-  // Provider tag-scoped searches (tags=Gay) and exact creator-profile lookups
-  // are scope-proofed by the provider query itself; only exclusion markers are
-  // applied here. We never infer identity, body, gender, or orientation.
-  const tokens = new Set(textFor(item).split(/[^a-z0-9/]+/).filter(Boolean))
-  return !FEMALE_MARKERS.some((marker) => tokens.has(marker))
-}
-
-function safeProviderMediaUrl(value?: string): string | undefined {
-  if (!value) return undefined
-  try {
-    const url = new URL(value)
-    if (url.protocol !== 'https:' || url.username || url.password || url.port) return undefined
-    if (!/^(?:media|thumbs\d*)\.redgifs\.com$/i.test(url.hostname)) return undefined
-    return url.href
-  } catch {
-    return undefined
-  }
-}
-
-function durationLabel(seconds = 0): string {
-  const whole = Math.max(0, Math.floor(seconds))
-  const minutes = Math.floor(whole / 60)
-  return `${minutes}:${String(whole % 60).padStart(2, '0')}`
-}
-
-function toIsoDate(value?: number): string {
-  if (!value || !Number.isFinite(value)) return ''
-  const milliseconds = value > 1_000_000_000_000 ? value : value * 1000
-  const date = new Date(milliseconds)
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
-}
-
-function proxiedMediaUrl(url?: string): string | undefined {
-  return url ? `/api/archiver-proxy?url=${encodeURIComponent(url)}` : undefined
 }
 
 function percentile(value: number, cohort: number[]): number {
@@ -197,10 +107,6 @@ function boundedQuery(value: string): string {
   return redactEmails(value).replace(/\s+/g, ' ').slice(0, 80)
 }
 
-function canonicalCreator(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
-}
-
 function hostLabel(value: string): string {
   try {
     return new URL(value).hostname.replace(/^www\./, '')
@@ -217,7 +123,7 @@ function parseWatchlistCandidates(candidates: string[]): string[] {
     const key = canonicalCreator(display)
     if (key.length < 2 || unique.has(key)) continue
     unique.set(key, display)
-    if (unique.size >= 8) break
+    if (unique.size >= WATCHLIST_CAP) break
   }
   return [...unique.values()]
 }
@@ -323,7 +229,7 @@ function buildCreators(items: LiveMediaItem[], similarities: Map<string, Creator
   }
 
   return [...grouped.entries()]
-    .map(([key, creatorItems]) => {
+    .map(([key, creatorItems], poolIndex) => {
       const ranked = sortItems(creatorItems, 'smart')
       const first = ranked[0]
       const views = creatorItems.reduce((sum, item) => sum + item.views, 0)
@@ -363,7 +269,7 @@ function buildCreators(items: LiveMediaItem[], similarities: Map<string, Creator
         aiSuggested: false,
         discoveryConfidence: similarity?.score || 0,
         discoveryTags,
-        media: ranked.slice(0, 12),
+        media: ranked.slice(0, poolIndex < FULL_MEDIA_CREATORS ? 12 : 6),
       }
     })
     .sort((a, b) => Number(b.isWatched) - Number(a.isWatched) || (b.similarityScore - a.similarityScore) || (b.curationScore - a.curationScore) || (b.viewCount - a.viewCount))
@@ -447,37 +353,6 @@ function corsHeaders(noStore = false): Record<string, string> {
   }
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS)
-  try {
-    return await fetch(url, { ...init, signal: controller.signal })
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-async function getRedgifsToken(): Promise<string> {
-  if (redgifsTokenCache && redgifsTokenCache.expiresAt > Date.now() + 60_000) {
-    return redgifsTokenCache.token
-  }
-  if (redgifsTokenPromise) return redgifsTokenPromise
-  redgifsTokenPromise = (async () => {
-    const auth = await fetchWithTimeout(`${REDGIFS_API}/auth/temporary`, {
-      headers: { Accept: 'application/json', 'User-Agent': 'MediaCodex/1.0' },
-      cache: 'no-store',
-    })
-    if (!auth.ok) throw new Error(`Redgifs auth returned ${auth.status}`)
-    const token = String((await auth.json() as { token?: string }).token || '')
-    if (!token) throw new Error('Redgifs did not return a temporary token')
-    redgifsTokenCache = { token, expiresAt: Date.now() + TOKEN_TTL_MS }
-    return token
-  })().finally(() => {
-    redgifsTokenPromise = null
-  })
-  return redgifsTokenPromise
-}
-
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders() })
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -503,6 +378,7 @@ export default async function handler(req: Request): Promise<Response> {
     const suppliedWatchlist = Array.isArray(body.watchlist)
       ? parseWatchlistCandidates(body.watchlist.filter((item): item is string => typeof item === 'string'))
       : parseWatchlist(requestUrl)
+    const laneParam = (value('lane') || '').trim().slice(0, 40)
     const scheduled = requestUrl.searchParams.get('scheduled') === '1'
     // Scheduled (cron) scans warm provider tokens, the edge cache, and the AI
     // result cache. They never substitute a server-side watchlist — radar
@@ -521,7 +397,7 @@ export default async function handler(req: Request): Promise<Response> {
         detail: 'AI and forced scans are limited to 6 per 5 minutes per client. Cached results remain available without these flags.',
       }), { status: 429, headers: { ...corsHeaders(true), 'Retry-After': '60' } })
     }
-    const additionalSourcesPromise = collectAdditionalSources(watchlist, { query })
+    const additionalSourcesPromise = collectAdditionalSources(watchlist.slice(0, 8), { query })
 
     let received: RedgifsItem[] = []
     let eligible: RedgifsItem[] = []
@@ -552,12 +428,12 @@ export default async function handler(req: Request): Promise<Response> {
       // Rotate across the provider's order lanes to deepen the catalog inside
       // the same tag-scoped (scope-proofed) search: 'trending' favors velocity,
       // 'top28' surfaces month-scale proven clips, 'recent' keeps the feed
-      // fresh. An unknown/unsupported order just fails its lane via
-      // Promise.allSettled without affecting the others.
+      // fresh. An unknown/unsupported order just fails its lane without
+      // affecting the others.
       const ORDER_LANES = ['trending', 'top28', 'recent'] as const
       const laneCount = Math.min(ORDER_LANES.length, pages)
       const perLanePages = Math.ceil(pages / laneCount)
-      const discoveryRequests: Array<Promise<RedgifsItem[]>> = []
+      const discoveryRequests: Array<() => Promise<RedgifsItem[]>> = []
       for (let lane = 0; lane < laneCount; lane += 1) {
         for (let pageIndex = 0; pageIndex < perLanePages; pageIndex += 1) {
           const params = new URLSearchParams({
@@ -567,12 +443,32 @@ export default async function handler(req: Request): Promise<Response> {
             page: String(startPage + pageIndex),
             order: ORDER_LANES[lane],
           })
-          discoveryRequests.push(fetchProvider('/gifs/search', params))
+          discoveryRequests.push(() => fetchProvider('/gifs/search', params))
+        }
+      }
+      const primaryRequestCount = discoveryRequests.length
+
+      // Broad coverage: a rotating subset of the curated niche lanes (see
+      // _lib/discovery-lanes.ts). The cron passes different `lane` seeds so each
+      // scheduled run warms different lanes; `lane=<Tag>` pins one lane. Each extra
+      // lane is scanned in two orders on the requested page and fails soft.
+      if (!query) {
+        const numericSeed = laneParam !== '' && Number.isFinite(Number(laneParam)) ? Number(laneParam) : null
+        const pinned = laneParam !== '' && numericSeed === null ? laneForTag(laneParam) : null
+        const seed = numericSeed ?? Math.floor(Date.now() / (6 * 3_600_000))
+        const extra = pinned ? [pinned] : rotateLanes(seed, EXTRA_LANES)
+        for (const lane of extra) {
+          for (const order of ['trending', 'top28'] as const) {
+            const params = new URLSearchParams({
+              type: 'g', tags: lane.tag, count: String(Math.min(80, providerCount)), page: String(startPage), order,
+            })
+            discoveryRequests.push(() => fetchProvider('/gifs/search', params))
+          }
         }
       }
 
       if (query) {
-        discoveryRequests.push(fetchProvider('/gifs/search', new URLSearchParams({
+        discoveryRequests.push(() => fetchProvider('/gifs/search', new URLSearchParams({
         type: 'g',
         tags: query,
         count: String(Math.min(60, providerCount)),
@@ -581,7 +477,8 @@ export default async function handler(req: Request): Promise<Response> {
         })))
         const possibleHandle = canonicalCreator(query)
         if (possibleHandle.length >= 2) {
-          discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(possibleHandle)}/search`, new URLSearchParams({
+          const rawHandle = providerHandle(query) || possibleHandle
+          discoveryRequests.push(() => fetchProvider(`/users/${encodeURIComponent(rawHandle)}/search`, new URLSearchParams({
           count: '40',
           page: '1',
           order: 'recent',
@@ -589,18 +486,21 @@ export default async function handler(req: Request): Promise<Response> {
         }
       }
 
+      // Watchlist expansion: raw provider handle (`_ . -` preserved) for the lookup,
+      // canonical form only for matching. Batched under DISCOVERY_CONCURRENCY.
       for (const creator of expandWatchlist ? watchlist : []) {
         const handle = canonicalCreator(creator)
-        discoveryRequests.push(fetchProvider(`/users/${encodeURIComponent(handle)}/search`, new URLSearchParams({
+        const rawHandle = providerHandle(creator) || handle
+        discoveryRequests.push(() => fetchProvider(`/users/${encodeURIComponent(rawHandle)}/search`, new URLSearchParams({
         count: '30',
         page: '1',
         order: 'recent',
         })).then((items) => items.filter((item) => canonicalCreator(item.userName || '') === handle)))
       }
 
-      const pageResults = await Promise.allSettled(discoveryRequests)
+      const pageResults = await runBounded(discoveryRequests, DISCOVERY_CONCURRENCY, Date.now() + DISCOVERY_BUDGET_MS)
       const successfulPages = pageResults.filter((result): result is PromiseFulfilledResult<RedgifsItem[]> => result.status === 'fulfilled')
-      basePagesScanned = pageResults.slice(0, pages).filter((result) => result.status === 'fulfilled').length
+      basePagesScanned = pageResults.slice(0, Math.min(pages, primaryRequestCount)).filter((result) => result.status === 'fulfilled').length
       redgifsRequestsAttempted = discoveryRequests.length
       redgifsRequestsSucceeded = successfulPages.length
       if (!successfulPages.length) throw new Error('Public provider search is temporarily unavailable')
@@ -610,50 +510,10 @@ export default async function handler(req: Request): Promise<Response> {
         if (sanitized.id) deduplicated.set(sanitized.id, sanitized)
       }
       received = [...deduplicated.values()]
-      eligible = received.filter(isEligibleScopedItem)
+      eligible = received.filter(isEligibleCreatorItem)
       mapped = eligible
-      .filter((item) => item.id && safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail) && (safeProviderMediaUrl(item.urls?.hd) || safeProviderMediaUrl(item.urls?.sd)))
-      .map((item): LiveMediaItem => {
-        const tags = (item.tags || []).filter(Boolean).slice(0, 12)
-        const creator = item.userName || 'Redgifs creator'
-        const isWatchedCreator = creatorIsWatched(creator, watchlist)
-        const createdAt = toIsoDate(item.createDate)
-        const directCandidates = [safeProviderMediaUrl(item.urls?.hd), safeProviderMediaUrl(item.urls?.sd)].filter((url): url is string => Boolean(url))
-        const streamCandidates = orderStreamCandidates(
-          [...directCandidates.map(proxiedMediaUrl), ...directCandidates].filter((url): url is string => Boolean(url)),
-        )
-        const base: LiveMediaItem = {
-          id: `rg-${item.id}`,
-          title: item.description?.trim() || tags.slice(0, 3).join(' · ') || `Video by ${creator}`,
-          thumbnail: proxiedMediaUrl(safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail)),
-          source: 'Redgifs',
-          duration: durationLabel(item.duration),
-          isVideo: true,
-          category: tags[0] || 'gay male',
-          creator,
-          tags,
-          rating: 0,
-          createdAt,
-          views: Math.max(0, item.views || 0),
-          mediaUrl: proxiedMediaUrl(directCandidates[0]),
-          streamCandidates,
-          pageUrl: `https://www.redgifs.com/watch/${item.id}`,
-          profileUrl: `https://www.redgifs.com/users/${encodeURIComponent(creator)}`,
-          description: item.description || undefined,
-          likes: Math.max(0, item.likes || 0),
-          comments: 0,
-          isLiked: false,
-          isNew: Boolean(createdAt) && Date.now() - Date.parse(createdAt) < 86_400_000,
-          isTrending: false,
-          curationScore: 0,
-          curationReasons: [],
-          isWatchedCreator,
-        }
-        return withContract(base, {
-          width: item.width, height: item.height, durationSeconds: item.duration, hasAudio: item.hasAudio,
-          mimeType: 'video/mp4', posterUrl: proxiedMediaUrl(safeProviderMediaUrl(item.urls?.poster || item.urls?.thumbnail)),
-        })
-      })
+      .filter(hasPlayableUrls)
+      .map((item): LiveMediaItem => mapRedgifsItem(item, creatorIsWatched(item.userName || 'Redgifs creator', watchlist)))
       .filter((item) => matchesQuery({
         userName: item.creator,
         description: item.description,
@@ -670,19 +530,20 @@ export default async function handler(req: Request): Promise<Response> {
       .filter((item) => item.views >= minViews && item.likes >= minLikes)
     const normalizedAdditional = additionalFiltered.map((item) => withContract(item))
     const pruned = pruneUnplayable(dedupeItems([...mapped, ...normalizedAdditional]))
-    const combined = pruned.items
+    const hiddenKeys = await fetchHiddenKeys()
+    const combined = pruned.items.filter((item) => !isHiddenCreator(hiddenKeys, { platform: item.source, username: item.creator }))
     if (!combined.length) throw new Error('No connected public source returned playable media')
     const ranked = sortItems(rankCohort(combined).map((item) => ({ ...item, isTrending: item.curationScore >= 65 })), sort)
     const items = selectQualityDiverse(ranked, count)
     const similarities = creatorSimilarities(ranked)
-    const creatorPool = mergeCreatorLeads(buildCreators(ranked.slice(0, 240), similarities), additional.leads)
+    const creatorPool = mergeCreatorLeads(buildCreators(ranked.slice(0, CREATOR_POOL * 3), similarities).slice(0, CREATOR_POOL), additional.leads)
     const gatewayAuthToken = (
       process.env.AI_GATEWAY_API_KEY
       || req.headers.get('x-vercel-oidc-token')
       || process.env.VERCEL_OIDC_TOKEN
       || ''
     ).trim()
-    const aiResult = await rankSimilarCreatorsWithAI(creatorPool.map((creator) => ({
+    const aiResult = await rankSimilarCreatorsWithAI(creatorPool.slice(0, 120).map((creator) => ({
       id: creator.id,
       name: creator.name,
       platform: creator.platform,
@@ -693,6 +554,7 @@ export default async function handler(req: Request): Promise<Response> {
       deterministicScore: creator.similarityScore || creator.discoveryConfidence || 0,
     })), useAI, watchlist, gatewayAuthToken)
     const performers = creatorPool
+      .filter((creator) => !(creator.platforms?.length ? creator.platforms : [creator.platform]).some((platform) => isHiddenCreator(hiddenKeys, { platform, username: creator.username })))
       .map((creator) => {
         const ai = aiResult.suggestions.get(creator.id)
         return ai ? {

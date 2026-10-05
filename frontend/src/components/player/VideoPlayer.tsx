@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { ExternalLink, FastForward, LoaderCircle, Play, Rewind, RotateCcw, TriangleAlert, Volume2, VolumeX, Zap } from 'lucide-react'
 import MediaImage from '@/components/MediaImage'
-import { apiUrl, resolveMediaAssetUrl, resolvePublicUrl } from '@/lib/backendOrigin'
+import { apiUrl, resolvePublicUrl } from '@/lib/backendOrigin'
 import { clamp, formatRate, formatTime, isDoubleTap, resolveKeyAction, stepRate, tapZone, type PlayerAction } from '@/lib/player/controls'
 import { readMediaIntel, safeColor } from '@/lib/player/intel'
 import { loadPlayerPrefs, savePlayerPrefs } from '@/lib/player/prefs'
@@ -9,11 +9,34 @@ import { buildSources, legacyScreenshotId, type PlaybackSource } from '@/lib/pla
 import type { MediaItem } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
+import { useItemMoments } from '@/features/queue/hooks'
+import type { Moment } from '@/features/queue/momentsModel'
+import { momentsActions } from '@/features/queue/momentsStore'
+import {
+  forgetCreatorStart,
+  loadItemRates,
+  loadSmartStart,
+  MAX_SKIP_TARGET,
+  MIN_SKIP_TARGET,
+  rateFor,
+  recordSkip,
+  saveItemRate,
+  saveSmartStart,
+  suggestStart,
+} from '@/features/queue/playerMemory'
+import { inQueueMode } from '@/features/queue/queueModel'
+import { enqueueWithToast } from '@/features/queue/queueUi'
+import { getQueue } from '@/features/queue/queueStore'
+import { clearStartIntent, discardOtherIntents, peekStartIntent, recordPlayback, SEEK_EVENT, type SeekDetail } from '@/features/queue/startIntent'
+import { overlayOpen, surface } from '@/features/queue/surface'
+import type { PlaybackFlow } from '@/features/queue/usePlaybackFlow'
 import Controls from './Controls'
+import MomentChip from './MomentChip'
 import SettingsMenu from './SettingsMenu'
+import SkipStartChip from './SkipStartChip'
+import UpNextCard from './UpNextCard'
 import { PlayerEngine } from './engine'
 import {
-  prefersMobilePlayback,
   readNetwork,
   useAmbientGlow,
   useFullscreen,
@@ -21,6 +44,7 @@ import {
   useMotionOk,
   usePauseWhenHidden,
   usePictureInPicture,
+  usePlaybackSources,
   useVideoState,
   useWakeLock,
 } from './hooks'
@@ -30,6 +54,8 @@ export interface VideoPlayerProps {
   item: MediaItem
   /** Wide "theatre" layout owned by the host; the button only shows when provided. */
   theatre?: { active: boolean; toggle: () => void }
+  /** Queue-aware transport (next/previous, Up next, autoplay). Falls back to onPrev/onNext. */
+  flow?: PlaybackFlow
   onPrev?: () => void
   onNext?: () => void
   className?: string
@@ -49,19 +75,20 @@ interface RippleState {
 
 const CONTROLS_IDLE_MS = 2800
 const LONG_PRESS_MS = 480
+/** The skip-to-usual-start offer only appears during the very start of a video. */
+const SKIP_OFFER_WINDOW = 12
 
 const noopSubscribe = () => () => {}
 
 /**
  * Custom player. Delivery (HLS / progressive fallback chain, retries, resume)
  * lives in PlayerEngine; this component is the presentation: gestures,
- * keyboard, controls, glow, overlays and error UI.
+ * keyboard, controls, glow, overlays, moments, Up next and error UI.
  */
-export default function VideoPlayer({ item, theatre, onPrev, onNext, className }: VideoPlayerProps) {
+export default function VideoPlayer({ item, theatre, flow, onPrev, onNext, className }: VideoPlayerProps) {
   const autoplay = useAppStore((state) => state.autoplayVideos)
   const muteOnStart = useAppStore((state) => state.muteOnStart)
   const pictureInPicture = useAppStore((state) => state.pictureInPicture)
-  const quality = useAppStore((state) => state.defaultQuality)
   const addToast = useAppStore((state) => state.addToast)
   const motionOk = useMotionOk()
 
@@ -72,15 +99,39 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
   const [engine] = useState(() => new PlayerEngine())
   const snap = useSyncExternalStore(engine.subscribe, engine.getSnapshot, engine.getSnapshot)
 
+  const itemId = item.id
+  // A hand-off for this item (saved moment, queue auto-advance, dock → sheet). Pure read; consumed below.
+  const [intent] = useState(() => peekStartIntent(itemId))
+  useEffect(() => {
+    clearStartIntent(intent)
+    discardOtherIntents(itemId)
+  }, [intent, itemId])
+
   const [video, setVideo] = useState<HTMLVideoElement | null>(null)
+  const lastVideo = useRef<HTMLVideoElement | null>(null)
   const bindVideo = useCallback(
     (element: HTMLVideoElement | null) => {
+      if (element) lastVideo.current = element
       setVideo(element)
       engine.bind(element)
     },
     [engine],
   )
   const state = useVideoState(video)
+
+  // While this is the queue's current item, report the live position so that closing the
+  // sheet hands playback to the dock's mini player at the same spot (and playing/paused state).
+  useEffect(() => {
+    if (!video) return undefined
+    const report = () => {
+      if (video.currentTime >= 1 && !video.ended && inQueueMode(getQueue(), itemId)) recordPlayback(itemId, video.currentTime, !video.paused)
+    }
+    for (const type of ['timeupdate', 'pause', 'play', 'seeked']) video.addEventListener(type, report)
+    return () => {
+      for (const type of ['timeupdate', 'pause', 'play', 'seeked']) video.removeEventListener(type, report)
+      report()
+    }
+  }, [itemId, video])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const glowRef = useRef<HTMLDivElement>(null)
@@ -93,29 +144,26 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
   const [hud, setHud] = useState<Hud | null>(null)
   const [ripple, setRipple] = useState<RippleState | null>(null)
   const [ambientOn, setAmbientOn] = useState(true)
-  const [ab, setAb] = useState<{ a: number | null; b: number | null }>({ a: null, b: null })
+  const [ab, setAb] = useState<{ a: number | null; b: number | null }>(() => (intent?.loop ? { a: intent.loop.a, b: intent.loop.b } : { a: null, b: null }))
   const [naturalAspect, setNaturalAspect] = useState<number | null>(null)
+  const [momentChip, setMomentChip] = useState<{ moment: Moment; updated: boolean } | null>(null)
+  const [upNext, setUpNext] = useState<{ cancelled: boolean } | null>(null)
+  const [smartStartOn, setSmartStartOn] = useState(() => loadPlayerPrefs().smartStart)
+  const [rateRemembered, setRateRemembered] = useState(() => rateFor(loadItemRates(), itemId) !== undefined)
+  const [skipDismissed, setSkipDismissed] = useState(false)
+
+  const itemMoments = useItemMoments(itemId)
+  const markers = useMemo(() => itemMoments.map((moment) => ({ id: moment.id, time: moment.t, end: moment.end })), [itemMoments])
+
+  const flowRef = useRef(flow)
+  useEffect(() => {
+    flowRef.current = flow
+  }, [flow])
 
   /* ── source chain ───────────────────────────────────────────── */
 
-  const { mediaUrl, streamCandidates } = item
-  const sources = useMemo(
-    () =>
-      buildSources({
-        mediaUrl,
-        streamCandidates,
-        hlsUrl: intel.hlsUrl,
-        mimeType: intel.mimeType,
-        codec: intel.codec,
-        quality,
-        preferMobile: quality === 'auto' && prefersMobilePlayback(),
-        resolve: resolveMediaAssetUrl,
-        probe: typeof document !== 'undefined' ? document.createElement('video') : null,
-      }),
-    [mediaUrl, streamCandidates, intel.hlsUrl, intel.mimeType, intel.codec, quality],
-  )
+  const sources = usePlaybackSources(item)
 
-  const itemId = item.id
   const legacyRecover = useCallback(async (): Promise<PlaybackSource[] | null> => {
     const shotId = legacyScreenshotId(itemId)
     if (!shotId) return null
@@ -128,43 +176,38 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
   }, [itemId])
 
   // Prefs first (declared before configure so muted/volume are set before autoplay).
+  // Speed: this item's remembered speed, else the last speed the viewer chose.
   useEffect(() => {
     if (!video) return
     const prefs = loadPlayerPrefs()
     video.volume = prefs.volume
     video.muted = muteOnStart
     video.defaultMuted = muteOnStart
-    video.playbackRate = prefs.rate
+    video.playbackRate = rateFor(loadItemRates(), itemId) ?? prefs.rate
     video.loop = prefs.loop
-  }, [video, muteOnStart])
+  }, [video, muteOnStart, itemId])
 
+  const startAutoplay = autoplay || Boolean(intent?.play)
+  const startAt = intent?.at
   useEffect(() => {
-    engine.configure({ item, autoplay, slowNetwork: readNetwork().slow, legacyRecover }, sources)
+    engine.configure({ item, autoplay: startAutoplay, slowNetwork: readNetwork().slow, legacyRecover, startAt }, sources)
     return () => engine.stop()
     // The item object is replaced on feed refresh; identity of its playback inputs (in `sources`) is what matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, sources, autoplay, legacyRecover, itemId])
+  }, [engine, sources, startAutoplay, legacyRecover, itemId])
 
-  const boostRef = useRef<(on: boolean) => void>(() => {})
   useEffect(() => {
     if (!video) return undefined
-    let boosting = false
     const persist = () => {
       if (!video.muted || video.volume > 0) savePlayerPrefs({ volume: video.volume })
-      if (!boosting) savePlayerPrefs({ rate: video.playbackRate })
     }
     const onMeta = () => {
       if (video.videoWidth && video.videoHeight) setNaturalAspect(video.videoWidth / video.videoHeight)
     }
     video.addEventListener('volumechange', persist)
-    video.addEventListener('ratechange', persist)
     video.addEventListener('loadedmetadata', onMeta)
-    boostRef.current = (on) => {
-      boosting = on
-    }
     return () => {
       video.removeEventListener('volumechange', persist)
-      video.removeEventListener('ratechange', persist)
       video.removeEventListener('loadedmetadata', onMeta)
     }
   }, [video])
@@ -185,7 +228,17 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
       return undefined
     }
   }, [intel.posterUrl, item.thumbnail])
-  useMediaSession(video, { title: item.title, artist: `@${item.creator}`, album: item.source, artwork }, { onPrev, onNext })
+
+  const flowNext = flow?.next ?? null
+  const goNextManual = useCallback(() => {
+    flowRef.current?.goNext('manual')
+  }, [])
+  const goPrevManual = useCallback(() => {
+    flowRef.current?.goPrev()
+  }, [])
+  const mediaNext = flow ? (flowNext ? goNextManual : undefined) : onNext
+  const mediaPrev = flow ? (flow.canPrev ? goPrevManual : undefined) : onPrev
+  useMediaSession(video, { title: item.title, artist: `@${item.creator}`, album: item.source, artwork }, { onPrev: mediaPrev, onNext: mediaNext })
 
   const glowActive = motionOk && !dataSaver && ambientOn && !state.paused
   useAmbientGlow(video, glowRef, motionOk && !dataSaver && ambientOn, safeColor(intel.dominantColor))
@@ -228,6 +281,82 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
     [video],
   )
 
+  /* ── moments ────────────────────────────────────────────────── */
+
+  const saveMoment = useCallback(() => {
+    if (!video) return
+    const clip = ab.a !== null && ab.b !== null ? { a: ab.a, b: ab.b } : null
+    const result = momentsActions.save(item, clip ? clip.a : video.currentTime, { end: clip ? clip.b : null })
+    if (result.moment) {
+      setMomentChip({ moment: result.moment, updated: result.outcome === 'updated' })
+    } else if (result.outcome === 'limit') {
+      addToast({ type: 'info', title: 'Moment limit reached', message: 'Remove a moment on this video to save another.' })
+    }
+  }, [ab.a, ab.b, addToast, item, video])
+
+  const saveClip = useCallback(() => {
+    if (ab.a === null || ab.b === null) return
+    saveMoment()
+  }, [ab.a, ab.b, saveMoment])
+
+  const dismissMomentChip = useCallback(() => setMomentChip(null), [])
+
+  // Moment rows in the sheet (and moment cards opened on the same item) ask this player to jump.
+  useEffect(() => {
+    if (!video) return undefined
+    const onSeek = (event: Event) => {
+      const detail = (event as CustomEvent<SeekDetail>).detail
+      if (!detail || detail.id !== itemId) return
+      const max = Number.isFinite(video.duration) ? video.duration : Infinity
+      video.currentTime = clamp(detail.t, 0, max)
+      // A clip loops; a plain moment must not be dragged back by an older loop.
+      setAb(detail.end !== undefined ? { a: detail.t, b: detail.end } : { a: null, b: null })
+      if (detail.play !== false) engine.play()
+    }
+    window.addEventListener(SEEK_EVENT, onSeek)
+    return () => window.removeEventListener(SEEK_EVENT, onSeek)
+  }, [engine, itemId, video])
+
+  /* ── per-creator smart start ────────────────────────────────── */
+
+  const suggestion = useMemo(
+    () => (smartStartOn && !intent?.at ? suggestStart(loadSmartStart(), item.creator) : null),
+    // Learned once per opened video; the stored samples only change while it plays.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [itemId, smartStartOn],
+  )
+
+  // Learn: the first forward jump early in a video the viewer chose to watch from the top.
+  const abRef = useRef(ab)
+  useEffect(() => {
+    abRef.current = ab
+  }, [ab])
+  useEffect(() => {
+    if (!video || !smartStartOn) return undefined
+    let lastTime = 0
+    let learned = false
+    const onTime = () => {
+      if (!video.seeking) lastTime = video.currentTime
+    }
+    const onSeeked = () => {
+      if (learned || abRef.current.a !== null) return
+      const to = video.currentTime
+      if (lastTime > 0.3 && lastTime < SKIP_OFFER_WINDOW && to - lastTime >= MIN_SKIP_TARGET && to <= MAX_SKIP_TARGET) {
+        learned = true
+        saveSmartStart(recordSkip(loadSmartStart(), item.creator, to))
+      }
+    }
+    video.addEventListener('timeupdate', onTime)
+    video.addEventListener('seeked', onSeeked)
+    return () => {
+      video.removeEventListener('timeupdate', onTime)
+      video.removeEventListener('seeked', onSeeked)
+    }
+  }, [item.creator, smartStartOn, video])
+
+  const showSkip =
+    Boolean(suggestion) && !skipDismissed && snap.resumedAt === null && state.currentTime < Math.min(SKIP_OFFER_WINDOW, (suggestion?.seconds ?? 0) - 2) && state.duration > (suggestion?.seconds ?? 0) + 5
+
   /* ── actions ────────────────────────────────────────────────── */
 
   const setVolume = useCallback(
@@ -245,11 +374,16 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
     if (!video.muted && video.volume === 0) video.volume = 0.5
   }, [video])
 
-  const setRate = useCallback(
+  /** A speed the viewer chose: remembered for this video and as the new default. */
+  const chooseRate = useCallback(
     (rate: number) => {
-      if (video) video.playbackRate = rate
+      if (!video) return
+      video.playbackRate = rate
+      savePlayerPrefs({ rate })
+      saveItemRate(itemId, rate)
+      setRateRemembered(true)
     },
-    [video],
+    [itemId, video],
   )
 
   const toggleLoop = useCallback(() => {
@@ -342,14 +476,76 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
           break
         case 'rate': {
           const next = stepRate(video.playbackRate, action.delta)
-          video.playbackRate = next
+          chooseRate(next)
           flash('text', formatRate(next))
           break
         }
+        case 'moment':
+          saveMoment()
+          break
+        case 'nextItem': {
+          const current = flowRef.current
+          if (current?.next) current.goNext('manual')
+          else if (!current && onNext) onNext()
+          else flash('text', 'Nothing up next')
+          break
+        }
+        case 'prevItem': {
+          const current = flowRef.current
+          // Like a music player: past the first seconds, Previous restarts; at the start it goes back.
+          if (video.currentTime > 3 || !(current ? current.canPrev : onPrev)) {
+            video.currentTime = 0
+            flash('text', 'From the start')
+          } else if (current) current.goPrev()
+          else onPrev?.()
+          break
+        }
+        case 'queue':
+          surface.togglePanel()
+          break
+        case 'enqueue':
+          enqueueWithToast(item, 'last', item, addToast)
+          break
+        case 'help':
+          surface.toggleHelp()
+          break
       }
     },
-    [captureFrame, engine, flash, fullscreen, markAb, pip, seekBy, setVolume, theatre, toggleLoop, toggleMute, video],
+    [addToast, captureFrame, chooseRate, engine, flash, fullscreen, item, markAb, onNext, onPrev, pip, saveMoment, seekBy, setVolume, theatre, toggleLoop, toggleMute, video],
   )
+
+  /* ── Up next (end of video) ─────────────────────────────────── */
+
+  useEffect(() => {
+    if (!video) return undefined
+    const onEnded = () => {
+      if (video.loop) return
+      const current = flowRef.current
+      if (current?.mode === 'queue' && current.repeat === 'one') {
+        video.currentTime = 0
+        engine.play()
+        return
+      }
+      if (current?.next) setUpNext({ cancelled: false })
+    }
+    // Replaying or seeking away from the end clears the offer.
+    const onResume = () => setUpNext(null)
+    video.addEventListener('ended', onEnded)
+    video.addEventListener('play', onResume)
+    video.addEventListener('seeking', onResume)
+    return () => {
+      video.removeEventListener('ended', onEnded)
+      video.removeEventListener('play', onResume)
+      video.removeEventListener('seeking', onResume)
+    }
+  }, [engine, video])
+
+  const showUpNext = Boolean(upNext && flowNext && snap.status !== 'error')
+  const upNextCounting = showUpNext && !upNext?.cancelled && Boolean(flow?.autoplay)
+  const upNextCountingRef = useRef(false)
+  useEffect(() => {
+    upNextCountingRef.current = upNextCounting
+  }, [upNextCounting])
 
   /* ── controls visibility ────────────────────────────────────── */
 
@@ -387,8 +583,17 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
       const target = event.target as HTMLElement | null
       if (!target) return
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) return
+      // The queue drawer and shortcut help own the keyboard while open.
+      if (overlayOpen()) return
       // Let real buttons/links/sliders/menus keep Space/Enter/arrow semantics.
       if (target.closest('[role="menu"], [role="dialog"][aria-label="Collections"]')) return
+      // Esc cancels a running Up next countdown before it closes the sheet.
+      if (event.key === 'Escape' && upNextCountingRef.current) {
+        event.preventDefault()
+        event.stopPropagation()
+        setUpNext({ cancelled: true })
+        return
+      }
       const inPlayer = containerRef.current?.contains(target) ?? false
       const activatable = target.tagName === 'BUTTON' || target.tagName === 'A' || target.getAttribute('role') === 'slider'
       if (activatable && (event.key === ' ' || event.key === 'Enter')) return
@@ -430,7 +635,6 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
       longPressTimer.current = window.setTimeout(() => {
         if (!video || video.paused || gesture.current?.moved) return
         restoreRate.current = video.playbackRate
-        boostRef.current(true)
         video.playbackRate = 2
         setBoost(true)
       }, LONG_PRESS_MS)
@@ -451,7 +655,6 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
     if (restoreRate.current !== null && video) {
       video.playbackRate = restoreRate.current
       restoreRate.current = null
-      boostRef.current(false)
     }
     setBoost(false)
   }
@@ -511,8 +714,8 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
   /* ── layout ─────────────────────────────────────────────────── */
 
   const aspect = clamp(naturalAspect ?? intel.aspect ?? 16 / 9, 0.5, 2.4)
-  const spinner = !failed && (snap.status === 'loading' || snap.status === 'buffering' || snap.status === 'recovering') && (!state.paused || autoplay || snap.status !== 'loading')
-  const showBigPlay = state.paused && !spinner && !failed
+  const spinner = !failed && (snap.status === 'loading' || snap.status === 'buffering' || snap.status === 'recovering') && (!state.paused || startAutoplay || snap.status !== 'loading')
+  const showBigPlay = state.paused && !spinner && !failed && !showUpNext
   const posterSources = [intel.posterUrl, item.thumbnail]
 
   if (failed || sources.length === 0) {
@@ -538,6 +741,11 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
                 <RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" /> Try again
               </button>
             )}
+            {flow?.next && (
+              <button type="button" className="btn-secondary" onClick={() => flow.goNext('manual')}>
+                Skip to next
+              </button>
+            )}
             {item.pageUrl && (
               <a href={item.pageUrl} target="_blank" rel="noreferrer" className="btn-primary">
                 Watch on source <ExternalLink size={14} strokeWidth={1.75} />
@@ -548,6 +756,8 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
       </div>
     )
   }
+
+  const pickNext = flow ? (flowNext ? goNextManual : undefined) : onNext
 
   return (
     <div className={cn('relative -mx-3 sm:mx-0', className)}>
@@ -693,6 +903,57 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
           </button>
         )}
 
+        {/* Smart start + moment confirmation, stacked above the control bar. */}
+        <div className="pointer-events-none absolute bottom-[4.5rem] left-3 z-30 flex max-w-[calc(100%-1.5rem)] flex-col items-start gap-2 sm:bottom-[4.75rem]">
+          {showSkip && suggestion && (
+            <SkipStartChip
+              seconds={suggestion.seconds}
+              creator={item.creator}
+              samples={suggestion.samples}
+              onSkip={() => {
+                if (video) video.currentTime = suggestion.seconds
+                setSkipDismissed(true)
+                engine.play()
+              }}
+              onForget={() => {
+                saveSmartStart(forgetCreatorStart(loadSmartStart(), item.creator))
+                setSkipDismissed(true)
+                addToast({ type: 'info', title: `Won't suggest skipping for @${item.creator}`, message: 'Change this any time in the player settings.' })
+              }}
+            />
+          )}
+          {momentChip && (
+            <MomentChip
+              key={momentChip.moment.id}
+              moment={momentChip.moment}
+              updated={momentChip.updated}
+              onLabel={(label) => {
+                momentsActions.rename(momentChip.moment.id, label)
+                setMomentChip({ ...momentChip, moment: { ...momentChip.moment, label } })
+              }}
+              onUndo={() => {
+                momentsActions.remove(momentChip.moment.id)
+                setMomentChip(null)
+              }}
+              onDismiss={dismissMomentChip}
+            />
+          )}
+        </div>
+
+        {showUpNext && flowNext && flow && (
+          <UpNextCard
+            key={flowNext.id}
+            item={flowNext}
+            countdown={upNextCounting}
+            source={flow.mode === 'queue' ? 'queue' : 'list'}
+            onPlay={() => {
+              setUpNext(null)
+              flow.goNext(upNextCounting ? 'auto' : 'upnext')
+            }}
+            onCancel={() => setUpNext({ cancelled: true })}
+          />
+        )}
+
         <div
           onPointerEnter={() => {
             pointerOverControls.current = true
@@ -718,6 +979,12 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
             capture={{ ready: snap.frameReady, busy: capturing, onCapture: () => void captureFrame() }}
             abLoop={ab}
             onScrubChange={setScrubbing}
+            onNext={pickNext}
+            nextTitle={flowNext?.title}
+            onMoment={saveMoment}
+            momentIsClip={ab.a !== null && ab.b !== null}
+            markers={markers}
+            queue={flow ? { count: flow.upcomingCount, onOpen: () => surface.openPanel() } : undefined}
           />
         </div>
 
@@ -725,7 +992,8 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
           <div className="pointer-events-none absolute bottom-[5.25rem] right-2 top-2 z-30 flex items-end justify-end">
             <SettingsMenu
               rate={state.rate}
-              onRate={setRate}
+              onRate={chooseRate}
+              rateRemembered={rateRemembered}
               qualityOptions={snap.qualityOptions}
               activeQuality={snap.activeQuality}
               playingLabel={snap.playingLabel}
@@ -733,7 +1001,29 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
               loop={state.loop}
               onLoop={toggleLoop}
               ambient={{ available: motionOk && !dataSaver, enabled: ambientOn, onToggle: () => setAmbientOn((value) => !value) }}
-              abLoop={{ a: ab.a, b: ab.b, onMark: markAb, onClear: () => setAb({ a: null, b: null }) }}
+              abLoop={{ a: ab.a, b: ab.b, onMark: markAb, onClear: () => setAb({ a: null, b: null }), onSaveClip: saveClip }}
+              autoplayNext={flow && (flow.mode === 'queue' || flow.next) ? { enabled: flow.autoplay, mode: flow.mode === 'queue' ? 'queue' : 'list', onToggle: flow.toggleAutoplay } : undefined}
+              pip={pip}
+              smartStart={{
+                enabled: smartStartOn,
+                onToggle: () => {
+                  const next = !smartStartOn
+                  savePlayerPrefs({ smartStart: next })
+                  setSmartStartOn(next)
+                },
+              }}
+              onShortcuts={() => {
+                setMenuOpen(false)
+                surface.openHelp()
+              }}
+              onMoment={() => {
+                setMenuOpen(false)
+                saveMoment()
+              }}
+              onEnqueue={() => {
+                setMenuOpen(false)
+                enqueueWithToast(item, 'last', item, addToast)
+              }}
               onClose={() => setMenuOpen(false)}
             />
           </div>
@@ -742,3 +1032,4 @@ export default function VideoPlayer({ item, theatre, onPrev, onNext, className }
     </div>
   )
 }
+

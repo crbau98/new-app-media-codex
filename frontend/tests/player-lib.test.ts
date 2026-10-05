@@ -33,6 +33,12 @@ test('keyboard map covers the documented shortcuts and gates frame-step on pause
   assert.deepEqual(resolveKeyAction({ key: '.' }, true), { type: 'frame', direction: 1 })
   assert.equal(resolveKeyAction({ key: 'k', metaKey: true }, false), null)
   assert.equal(resolveKeyAction({ key: 's' }, false), null)
+  // Round 4: queue/moment keys; PiP moved to I and the A-B loop to A so B can bookmark a moment.
+  assert.deepEqual(resolveKeyAction({ key: 'n' }, false), { type: 'nextItem' })
+  assert.deepEqual(resolveKeyAction({ key: 'p' }, false), { type: 'prevItem' })
+  assert.deepEqual(resolveKeyAction({ key: 'b' }, false), { type: 'moment' })
+  assert.deepEqual(resolveKeyAction({ key: 'a' }, false), { type: 'abLoop' })
+  assert.deepEqual(resolveKeyAction({ key: 'i' }, false), { type: 'pip' })
 })
 
 test('stepRate saturates at both ends', () => {

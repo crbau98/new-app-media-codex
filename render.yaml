@@ -33,6 +33,42 @@ services:
         value: "false"
       - key: ADMIN_TOKEN
         generateValue: true
+      # Persistent creator index crawler (public sources only). The SQLite DB lives on the
+      # persistent disk above, so the index survives deploys.
+      - key: CREATOR_INDEX_ENABLED
+        value: "true"
+      - key: CREATOR_INDEX_INTERVAL_MINUTES
+        value: "45"
+      - key: CREATOR_INDEX_MAX_PAGES
+        value: "40"
+      - key: CREATOR_INDEX_MAX_SECONDS
+        value: "240"
+      # Creator-submitted feeds + takedown requests (public forms). Contact e-mails and client IPs are only ever
+      # stored as HMAC digests keyed by this secret: generate it once and keep it stable (rotating it only
+      # resets rate-limit/contact de-duplication history).
+      - key: PRIVACY_HASH_SALT
+        generateValue: true
+      # Set the same value in the Vercel project: the backend then only trusts the visitor address (X-Client-IP)
+      # forwarded by the edge gateway for its per-visitor submission limits.
+      - key: GATEWAY_CLIENT_IP_SECRET
+        sync: false
+      - key: FEED_SUBMIT_PER_HOUR
+        value: "5"
+      - key: FEED_MAX_PENDING
+        value: "200"
+      - key: FEED_REFRESH_MINUTES
+        value: "360"
+      - key: FEED_MAX_PER_RUN
+        value: "6"
+      - key: TAKEDOWN_PER_HOUR
+        value: "6"
+      # Wider public discovery (all optional; unknown/unavailable endpoints soft-fail and back off automatically).
+      - key: MASTODON_TAG_PAGES
+        value: "3"
+      - key: LEMMY_MAX_COMMUNITIES
+        value: "6"
+      - key: LANE_BACKOFF_AFTER
+        value: "3"
       # Secret-backed public discovery stays on Render. Existing dashboard
       # values are retained; new Blueprint installs prompt for them.
       - key: X_BEARER_TOKEN
@@ -43,6 +79,27 @@ services:
         sync: false
       - key: GOOGLE_CSE_ID
         sync: false
+      # Reddit official OAuth2 app-only credentials (https://www.reddit.com/prefs/apps).
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_CLIENT_SECRET
+        sync: false
+      # Descriptive UA required by Reddit: "web:media-codex-discovery:1.0 (by /u/<operator>)".
+      - key: REDDIT_USER_AGENT
+        sync: false
+      # Optional: REDDIT_SUBREDDITS / X_DISCOVERY_QUERIES can be set in the dashboard to
+      # override the built-in defaults (left out here so a Blueprint sync never resets them).
+      # Per-source quota guards for the credential-backed gateway (cached calls are free).
+      - key: REDDIT_CALLS_PER_REQUEST
+        value: "8"
+      - key: X_SEARCH_CALLS_PER_REQUEST
+        value: "2"
+      - key: X_SEARCH_MAX_CALLS_PER_HOUR
+        value: "30"
+      - key: X_SEARCH_CACHE_TTL_SECONDS
+        value: "900"
+      - key: X_TIMELINE_HANDLES_PER_REQUEST
+        value: "4"
       - key: SKIP_MEDIA_DOWNLOADS
         value: "true"
       # Explicit public UI origins for browser API/WebSocket/SSE access.

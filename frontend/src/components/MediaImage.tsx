@@ -2,10 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { resolveMediaAssetUrl } from '@/lib/backendOrigin'
 import { safeColor, safeImageSrc } from '@/lib/player/intel'
 import { backoffDelay } from '@/lib/player/resilience'
+import { observeIntersection } from '@/lib/perf/observe'
+import { SLOT_WATCHDOG_MS, imageGate, imageGateActive } from '@/lib/perf/image-gate'
 import { cn } from '@/lib/utils'
 
 const CANDIDATE_TIMEOUT_MS = 7000
 const DEFAULT_MAX_RETRIES = 2
+// Decoded bitmaps are the dominant memory cost of a media grid (a 1080x1920 poster is
+// ~8 MB decoded) and phone browsers kill the tab long before desktop ones would. Loaded
+// images that scroll this far away are swapped for a 1x1 pixel so their bitmaps can be
+// freed; they reload (from the HTTP cache) when they come back near the viewport.
+const EVICT_MARGIN = '1400px 700px'
+const BLANK_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
 interface MediaImageProps {
   /** Ordered image candidates. The first reachable URL wins; later URLs are fallbacks. */
@@ -66,13 +74,33 @@ function MediaImageInner({
   const [loaded, setLoaded] = useState(false)
   const [exhausted, setExhausted] = useState(false)
   const [waiting, setWaiting] = useState(false)
+  const [evicted, setEvicted] = useState(false)
+  const evictedRef = useRef(false)
   // Lazy images only start their failure timers once near the viewport, so an
   // off-screen tile the browser has deliberately not fetched never "fails".
   const [visible, setVisible] = useState(() => loading === 'eager' || typeof IntersectionObserver === 'undefined')
-  const imgRef = useRef<HTMLImageElement>(null)
+  const imgRef = useRef<HTMLImageElement | null>(null)
+  // The latest <img> element, kept after the ref is cleared on unmount (used to cancel unfinished loads).
+  const lastNodeRef = useRef<HTMLImageElement | null>(null)
+  const attachImg = useCallback((node: HTMLImageElement | null) => {
+    imgRef.current = node
+    if (node) lastNodeRef.current = node
+  }, [])
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const aliveRef = useRef(true)
+
+  // Slow links (3g / Data Saver): lazy images wait for a download slot before they get a src.
+  const [gated] = useState(() => loading !== 'eager' && imageGateActive())
+  const [granted, setGranted] = useState(!gated)
+  const slotRef = useRef<{ release: () => void; watchdog: number } | null>(null)
+  const releaseSlot = useCallback(() => {
+    const slot = slotRef.current
+    if (!slot) return
+    slotRef.current = null
+    window.clearTimeout(slot.watchdog)
+    slot.release()
+  }, [])
 
   const onExhaustedRef = useRef(onExhausted)
   const onLoadRef = useRef(onLoad)
@@ -94,18 +122,42 @@ function MediaImageInner({
     if (visible) return undefined
     const node = imgRef.current
     if (!node) return undefined
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setVisible(true)
-          observer.disconnect()
-        }
-      },
-      { rootMargin: '320px' },
-    )
-    observer.observe(node)
-    return () => observer.disconnect()
+    const stop = observeIntersection(node, '320px', (entry) => {
+      if (entry.isIntersecting) {
+        setVisible(true)
+        stop()
+      }
+    })
+    return stop
   }, [visible, index, cycle])
+
+  useEffect(() => {
+    if (!gated || granted || !visible) return undefined
+    const controller = new AbortController()
+    imageGate()
+      .acquire({ signal: controller.signal })
+      .then(
+        (release) => {
+          // Safety net: a slot is never held longer than the watchdog, whatever the image does.
+          slotRef.current = { release, watchdog: window.setTimeout(releaseSlot, SLOT_WATCHDOG_MS) }
+          setGranted(true)
+        },
+        () => undefined,
+      )
+    return () => controller.abort()
+  }, [gated, granted, visible, releaseSlot])
+
+  useEffect(() => releaseSlot, [releaseSlot])
+
+  // Leaving the page (route change) must not leave its thumbnails downloading: cancel any image
+  // that has not finished so the next screen gets the bandwidth. `isConnected` is false only on a
+  // real unmount (React's dev-only simulated unmount keeps the node attached).
+  useEffect(() => {
+    return () => {
+      const node = lastNodeRef.current
+      if (node && !node.isConnected && !node.complete) node.removeAttribute('src')
+    }
+  }, [])
 
   const clearTimers = useCallback(() => {
     if (timeoutRef.current !== null) {
@@ -116,6 +168,7 @@ function MediaImageInner({
 
   /** Next candidate → next pass (with exponential backoff) → exhausted. */
   const advance = useCallback(() => {
+    if (evictedRef.current) return
     clearTimers()
     setLoaded(false)
     if (index + 1 < candidates.length) {
@@ -133,9 +186,10 @@ function MediaImageInner({
       }, backoffDelay(cycle, 600, 6000))
       return
     }
+    releaseSlot()
     setExhausted(true)
     onExhaustedRef.current?.()
-  }, [candidates.length, clearTimers, cycle, index, maxRetries])
+  }, [candidates.length, clearTimers, cycle, index, maxRetries, releaseSlot])
 
   const advanceRef = useRef(advance)
   useEffect(() => {
@@ -143,15 +197,43 @@ function MediaImageInner({
   }, [advance])
 
   useEffect(() => {
-    if (exhausted || loaded || waiting || !visible) return undefined
+    if (exhausted || loaded || waiting || !visible || evicted || !granted) return undefined
     timeoutRef.current = setTimeout(() => advanceRef.current(), CANDIDATE_TIMEOUT_MS)
     return clearTimers
-  }, [index, cycle, loaded, exhausted, waiting, visible, clearTimers])
+  }, [index, cycle, loaded, exhausted, waiting, visible, evicted, granted, clearTimers])
+
+  // Free decoded bitmaps of far-offscreen tiles (only for tiles whose size does not depend on the image).
+  const evictable = loading !== 'eager' && /(^|\s)absolute(\s|$)/.test(className || '') && /(^|\s)inset-0(\s|$)/.test(className || '')
+  useEffect(() => {
+    if (!evictable || !loaded || typeof IntersectionObserver === 'undefined') return undefined
+    const node = imgRef.current
+    if (!node) return undefined
+    return observeIntersection(node, EVICT_MARGIN, (entry) => {
+      if (entry.isIntersecting) return
+      evictedRef.current = true
+      setEvicted(true)
+      setLoaded(false)
+    })
+  }, [evictable, loaded, index, cycle])
+
+  useEffect(() => {
+    if (!evicted) return undefined
+    const node = imgRef.current
+    if (!node || typeof IntersectionObserver === 'undefined') return undefined
+    return observeIntersection(node, EVICT_MARGIN, (entry) => {
+      if (entry.isIntersecting) {
+        evictedRef.current = false
+        setEvicted(false)
+      }
+    })
+  }, [evicted])
 
   if (exhausted) return null
 
   const handleLoad = () => {
+    if (evictedRef.current) return
     clearTimers()
+    releaseSlot()
     const node = imgRef.current
     const reveal = () => {
       if (!aliveRef.current) return
@@ -172,8 +254,8 @@ function MediaImageInner({
     <>
       <img
         key={`${cycle}:${index}:${candidates[index]}`}
-        ref={imgRef}
-        src={candidates[index]}
+        ref={attachImg}
+        src={!granted ? undefined : evicted ? BLANK_PIXEL : candidates[index]}
         alt={alt}
         className={cn(className, !hasExplicitOpacity && (loaded ? 'opacity-100' : 'opacity-0'), !hasExplicitOpacity && 'transition-opacity duration-300')}
         style={aspect && aspect > 0 ? { aspectRatio: String(aspect) } : undefined}

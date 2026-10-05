@@ -1,0 +1,56 @@
+/* Lite graphics (see src/lib/lite.ts): same design, far fewer GPU layers.
+ * Applied on phones / low-memory devices, where a tab that holds too many
+ * blur, 3D and will-change layers is killed by the browser. */
+html[data-lite='true'] * {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  will-change: auto !important;
+  /* Infinite decorative loops become one pass; spinners are exempted below. */
+  animation-iteration-count: 1 !important;
+}
+html[data-lite='true'] .animate-spin,
+html[data-lite='true'] [role='status'] .animate-spin {
+  animation-iteration-count: infinite !important;
+}
+
+/* Glass without blur needs a more opaque fill to stay legible. */
+html[data-lite='true'] .glass,
+html[data-lite='true'] .glass-strong,
+html[data-lite='true'] .sidebar-shell,
+html[data-lite='true'] .d-toolbar,
+html[data-lite='true'] .d-rail-btn,
+html[data-lite='true'] [class*='backdrop-blur'] {
+  background-color: rgb(var(--elevated) / 0.94);
+}
+
+/* Decorative blurred backdrops/glows: drop the filter (large offscreen buffers). */
+html[data-lite='true'] :where(div, span, section, aside, header):not(.animate-spin) {
+  filter: none !important;
+}
+
+/* Flat 3D: keep the depth-stack/fan/story looks but without perspective contexts. */
+html[data-lite='true'] .d-stack .d-rail-scroller,
+html[data-lite='true'] .d-stack-item,
+html[data-lite='true'] .d-cat-fan,
+html[data-lite='true'] .d-story,
+html[data-lite='true'] .d-story-stage,
+html[data-lite='true'] .d-story-flip,
+html[data-lite='true'] .d-motion-demo,
+html[data-lite='true'] .d-card,
+html[data-lite='true'] .card-3d,
+html[data-lite='true'] .card-3d > * {
+  perspective: none !important;
+  transform-style: flat !important;
+}
+
+/* No mirror reflections (WebKit renders an extra offscreen copy of every card). */
+html[data-lite='true'] * {
+  -webkit-box-reflect: none !important;
+}
+
+/* Fixed/sticky bars sit over scrolling content: without blur they must be near-opaque. */
+html[data-lite='true'] header,
+html[data-lite='true'] .d-toolbar,
+html[data-lite='true'] .glass-strong {
+  background-color: rgb(var(--canvas) / 0.97);
+}

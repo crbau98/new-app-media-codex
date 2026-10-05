@@ -508,6 +508,9 @@ class Database:
             from app.repositories.ingest import ensure_ingest_schema
 
             ensure_ingest_schema(conn)  # additive: ingest_jobs, media_assets, ...
+            from app.creator_index.schema import ensure_creator_index_schema
+
+            ensure_creator_index_schema(conn)  # additive: creator_index, creator_tags, ...
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_review_status ON items(review_status)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_saved ON items(is_saved)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_first_seen ON items(first_seen_at DESC)")

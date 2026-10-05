@@ -50,10 +50,14 @@ export type CreatorLead = {
   sourceAttribution: string
   confidence: number
   exactWatchMatch: boolean
+  /** Public follower count when the provider reports one (X public_metrics); optional. */
+  followers?: number
+  /** Public profile bio with emails/phone numbers already redacted; optional. */
+  description?: string
 }
 
 export type SourceStatus = {
-  id: 'redgifs' | 'x' | 'tumblr' | 'google' | 'duckduckgo' | 'peertube'
+  id: 'redgifs' | 'x' | 'tumblr' | 'google' | 'duckduckgo' | 'peertube' | 'bluesky' | 'mastodon' | 'lemmy' | 'reddit'
   name: string
   mode: 'stream' | 'discovery'
   state: 'connected' | 'not-configured' | 'limited' | 'error'
@@ -85,4 +89,20 @@ export type MultiSourceResult = {
   duckduckgo: DuckDuckGoSection
   requestsAttempted: number
   requestsSucceeded: number
+}
+
+/** A creator/channel/account found by searching a public source by name or handle. */
+export type SourceCreatorHit = {
+  /** Provider-native handle used to address the creator on `platform` (e.g. Redgifs username). */
+  handle: string
+  displayName: string
+  platform: string
+  profileUrl: string
+  avatar?: string
+  followers?: number | null
+  mediaCount?: number | null
+  /** 0..1 — how sure we are this is the creator that was searched for. */
+  confidence: number
+  matchedBy: 'exact' | 'variant' | 'alias' | 'search'
+  sourceAttribution: string
 }

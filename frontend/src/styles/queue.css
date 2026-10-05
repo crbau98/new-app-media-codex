@@ -1,0 +1,108 @@
+/* Queue drawer, dock and shortcut help. Lite-safe: no backdrop-filter, no will-change, no 3D. */
+
+@keyframes q-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes q-rise-in {
+  from {
+    opacity: 0.4;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes q-slide-in {
+  from {
+    opacity: 0.4;
+    transform: translateX(36px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes q-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.q-scrim {
+  animation: q-fade-in 0.18s ease-out;
+}
+.q-drawer {
+  animation: q-rise-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (min-width: 768px) {
+  .q-drawer {
+    animation-name: q-slide-in;
+  }
+}
+
+.q-dock {
+  animation: q-pop-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.q-help {
+  animation: q-pop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* A reorderable row keeps its place under the finger; the grip owns the touch. */
+.q-row {
+  list-style: none;
+  position: relative;
+}
+.q-handle {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Dock progress hairline. */
+.q-dock-progress {
+  height: 2px;
+  background: rgb(255 255 255 / 0.12);
+}
+.q-dock-progress > span {
+  display: block;
+  height: 100%;
+  background: rgb(var(--gold));
+}
+
+kbd.q-key {
+  display: inline-grid;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  place-items: center;
+  padding: 0 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  background: rgb(var(--sunken) / 0.8);
+  font: 500 11px/1 var(--font-mono);
+  color: rgb(var(--ink));
+}
+
+:root[data-reduce-motion='true'] .q-scrim,
+:root[data-reduce-motion='true'] .q-drawer,
+:root[data-reduce-motion='true'] .q-dock,
+:root[data-reduce-motion='true'] .q-help {
+  animation-duration: 0.01ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .q-scrim,
+  .q-drawer,
+  .q-dock,
+  .q-help {
+    animation-duration: 0.01ms;
+  }
+}

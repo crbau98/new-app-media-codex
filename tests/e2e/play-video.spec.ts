@@ -1,15 +1,16 @@
 import { test, expect } from '@playwright/test'
-import { installAppFixture } from './fixtures'
+// VP8/WebM fixture (see queue-fixtures.ts): sandboxed Chromium builds cannot decode the H.264 clip used by the older fixtures.
+import { installQueueFixture } from './queue-fixtures'
 
 test('click video and verify player opens', async ({ page }) => {
-  await installAppFixture(page)
+  await installQueueFixture(page)
   await page.goto('/media')
   const playButton = page.getByRole('button', { name: 'Play', exact: true })
   await expect(playButton).toBeVisible()
   await playButton.click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
-  await expect(dialog.getByRole('heading', { name: 'Studio signal' })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'Alpha clip' })).toBeVisible()
   const video = dialog.locator('video')
   await expect(video).toBeVisible()
   const playVideo = dialog.getByRole('button', { name: 'Play video' })
@@ -37,14 +38,14 @@ test('click video and verify player opens', async ({ page }) => {
 
   if (viewport!.width < 768) {
     expect(dialogBox!.width).toBeGreaterThanOrEqual(viewport!.width * 0.9)
-    await expect(dialog.getByRole('button', { name: 'Save' })).toBeVisible()
-    await expect(dialog.getByRole('button', { name: 'Share' })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Share', exact: true })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   }
 })
 
 test('custom controls: scrubber, settings menu, keyboard seek and mute', async ({ page }) => {
-  await installAppFixture(page)
+  await installQueueFixture(page)
   await page.goto('/media')
   await page.getByRole('button', { name: 'Play', exact: true }).click()
   const dialog = page.getByRole('dialog')

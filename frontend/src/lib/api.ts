@@ -8,6 +8,9 @@
  */
 
 import { FETCH_TIMEOUT_MS } from './backendOrigin'
+import { takeBootFeed } from './perf/boot-bridge.ts'
+import { buildDiscoveryRequest, type DiscoveryRequest } from './perf/discovery-request.ts'
+import { normalizeCandidates, type CreatorCandidate } from '../features/creators/creatorLogic'
 import type {
   AiDiscovery,
   AiDiscoveryState,
@@ -145,49 +148,41 @@ export interface LiveDiscoveryOptions {
   sort?: 'smart' | 'newest' | 'views' | 'likes'
 }
 
-export async function fetchLiveDiscovery(
-  watchlist: string[] = [],
-  options: LiveDiscoveryOptions = {}
-): Promise<LiveDiscoveryPayload> {
-  const { forceFresh = false, query = '', sort = 'smart' } = options
-  const hasQuery = query.trim().length > 0
-  const isAnonymousDefault = watchlist.length === 0 && !hasQuery && !forceFresh && sort === 'smart'
+/** Same request issued twice within this window (Home -> Creators, Search -> Explore) reuses one result. */
+const DISCOVERY_REUSE_MS = 20_000
+const discoveryRequests = new Map<string, { promise: Promise<LiveDiscoveryPayload>; settledAt: number | null }>()
 
-  let response: Response
-  if (isAnonymousDefault) {
-    // Anonymous default discovery: GET so the edge/CDN cache can serve repeat paints.
-    response = await fetchWithTimeout(
-      `${LIVE_MEDIA_URL}?count=96&pages=3&sort=smart`,
-      { method: 'GET' },
-      25000
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Live discovery timed out')), timeoutMs)
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (error) => { clearTimeout(timer); reject(error) }
     )
-  } else {
-    // Personalized or force-fresh scan: POST with no-store to bypass CDN cache.
-    response = await fetchWithTimeout(
-      LIVE_MEDIA_URL,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(forceFresh ? { 'Cache-Control': 'no-cache' } : {}),
-        },
-        cache: 'no-store',
-        body: JSON.stringify({
-          count: 96,
-          pages: 3,
-          sort,
-          query,
-          watchlist: watchlist.slice(0, 8),
-          forceFresh,
-          useAI: forceFresh,
-        }),
-      },
-      forceFresh ? 45000 : 25000
-    )
+  })
+}
+
+async function requestDiscoveryJson(request: DiscoveryRequest, allowBoot: boolean): Promise<Partial<LiveDiscoveryPayload>> {
+  // The boot script may already have this exact request in flight (see lib/perf/boot.js).
+  const early = allowBoot ? takeBootFeed(request.sig) : null
+  if (early) {
+    try {
+      return (await withTimeout(early, request.timeoutMs)) as Partial<LiveDiscoveryPayload>
+    } catch {
+      // The early request failed or hung: fall back to a normal request below.
+    }
   }
-
+  const init: RequestInit = { method: request.method }
+  if (request.headers) init.headers = request.headers
+  if (request.cache) init.cache = request.cache
+  if (request.body !== undefined) init.body = request.body
+  const response = await fetchWithTimeout(request.url, init, request.timeoutMs)
   if (!response.ok) throw new Error(`Live discovery returned ${response.status}`)
-  const payload = (await response.json()) as Partial<LiveDiscoveryPayload>
+  return (await response.json()) as Partial<LiveDiscoveryPayload>
+}
+
+async function loadLiveDiscovery(watchlist: string[], request: DiscoveryRequest, options: LiveDiscoveryOptions): Promise<LiveDiscoveryPayload> {
+  const payload = await requestDiscoveryJson(request, !options.forceFresh)
   const items = Array.isArray(payload.items) ? payload.items : []
   const performers = Array.isArray(payload.performers) ? payload.performers : []
   const ddg = normalizeDdg(payload.ddg)
@@ -208,6 +203,30 @@ export async function fetchLiveDiscovery(
     sources: normalizeSources(payload.sources),
     ...(ddg ? { ddg } : {}),
   }
+}
+
+export async function fetchLiveDiscovery(
+  watchlist: string[] = [],
+  options: LiveDiscoveryOptions = {}
+): Promise<LiveDiscoveryPayload> {
+  const request = buildDiscoveryRequest(watchlist, options)
+  // Forced scans are explicit user actions: never coalesced, never replayed.
+  if (options.forceFresh) return loadLiveDiscovery(watchlist, request, options)
+
+  const now = Date.now()
+  const existing = discoveryRequests.get(request.sig)
+  if (existing && (existing.settledAt === null || now - existing.settledAt < DISCOVERY_REUSE_MS)) return existing.promise
+
+  const entry: { promise: Promise<LiveDiscoveryPayload>; settledAt: number | null } = {
+    promise: loadLiveDiscovery(watchlist, request, options),
+    settledAt: null,
+  }
+  discoveryRequests.set(request.sig, entry)
+  entry.promise.then(
+    () => { entry.settledAt = Date.now() },
+    () => { if (discoveryRequests.get(request.sig) === entry) discoveryRequests.delete(request.sig) }
+  )
+  return entry.promise
 }
 
 /* ───────────────────────────────────────────────
@@ -325,3 +344,178 @@ export async function searchMedia(
 }
 
 export type { Creator, MediaItem }
+
+/* ───────────────────────────────────────────────
+   Per-creator full catalog (`/api/creator-media`)
+   ────────────────────────────────────────────── */
+
+export interface CreatorMediaPage {
+  creator: string
+  items: MediaItem[]
+  page: number
+  pages: number
+  total: number
+  hasMore: boolean
+  /** Present when the endpoint resolved the requested name to a different provider handle. */
+  resolvedHandle?: string
+}
+
+/** One page of a creator's complete public catalog (not just the feed sample). `strict: false` sends `strict=0` for explicit lookups. */
+export async function fetchCreatorMediaPage(
+  creator: string,
+  page = 1,
+  count = 40,
+  options: { strict?: boolean } = {}
+): Promise<CreatorMediaPage> {
+  const params = new URLSearchParams({ creator, page: String(page), count: String(count) })
+  if (options.strict === false) params.set('strict', '0')
+  const response = await fetchWithTimeout(`/api/creator-media?${params}`, { method: 'GET' }, 20000)
+  if (!response.ok) throw new Error(`Creator media returned ${response.status}`)
+  const payload = (await response.json()) as Partial<CreatorMediaPage>
+  return {
+    creator: payload.creator || creator,
+    items: Array.isArray(payload.items) ? payload.items : [],
+    page: payload.page || page,
+    pages: payload.pages || page,
+    total: payload.total ?? 0,
+    hasMore: Boolean(payload.hasMore),
+    resolvedHandle: typeof payload.resolvedHandle === 'string' && payload.resolvedHandle ? payload.resolvedHandle : undefined,
+  }
+}
+
+/* ───────────────────────────────────────────────
+   Creator resolver + directory (see docs/CREATOR_COVERAGE.md)
+   ────────────────────────────────────────────── */
+
+export type { CreatorCandidate }
+
+export interface CreatorResolution {
+  query: string
+  candidates: CreatorCandidate[]
+  tried: string[]
+  updatedAt?: string
+}
+
+/** Resolve a name, @handle or pasted profile URL to public creator profiles. */
+export async function resolveCreators(q: string, limit = 8): Promise<CreatorResolution> {
+  const params = new URLSearchParams({ q: q.trim(), limit: String(limit) })
+  const response = await fetchWithTimeout(`/api/creator-resolve?${params}`, { method: 'GET' }, 20000)
+  if (!response.ok) throw new Error(`Creator resolver returned ${response.status}`)
+  const payload = (await response.json()) as Record<string, unknown>
+  return {
+    query: typeof payload.query === 'string' ? payload.query : q,
+    candidates: normalizeCandidates(payload),
+    tried: Array.isArray(payload.tried) ? payload.tried.filter((v): v is string => typeof v === 'string') : [],
+    updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : undefined,
+  }
+}
+
+export type DirectorySort = 'smart' | 'newest' | 'popular'
+
+export interface CreatorDirectoryLane {
+  tag: string
+  pagesScanned?: number
+}
+
+export interface CreatorDirectoryPage {
+  creators: Creator[]
+  nextCursor: string | null
+  total: number | null
+  lanes: CreatorDirectoryLane[]
+  updatedAt?: string
+}
+
+export interface CreatorDirectoryParams {
+  cursor?: string | null
+  limit?: number
+  tag?: string | null
+  sort?: DirectorySort
+}
+
+/** One page of the cross-lane creator directory. */
+export async function fetchCreatorDirectory(params: CreatorDirectoryParams = {}): Promise<CreatorDirectoryPage> {
+  const search = new URLSearchParams({ limit: String(params.limit ?? 48), sort: params.sort ?? 'smart' })
+  if (params.cursor) search.set('cursor', params.cursor)
+  if (params.tag) search.set('tag', params.tag)
+  const response = await fetchWithTimeout(`/api/creator-directory?${search}`, { method: 'GET' }, 25000)
+  if (!response.ok) throw new Error(`Creator directory returned ${response.status}`)
+  const payload = (await response.json()) as Partial<CreatorDirectoryPage>
+  return {
+    creators: Array.isArray(payload.creators) ? payload.creators : [],
+    nextCursor: typeof payload.nextCursor === 'string' && payload.nextCursor ? payload.nextCursor : null,
+    total: typeof payload.total === 'number' ? payload.total : null,
+    lanes: Array.isArray(payload.lanes) ? payload.lanes.filter((lane) => lane && typeof lane.tag === 'string') : [],
+    updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : undefined,
+  }
+}
+
+/* ───────────────────────────────────────────────
+   Related creators + "elsewhere" links (`/api/creator-related`)
+   ────────────────────────────────────────────── */
+
+export interface RelatedCreator {
+  handle: string
+  displayName: string
+  platform: string
+  avatar?: string
+  score: number
+  reason: string
+  sharedTags: string[]
+}
+
+export interface ElsewhereLink {
+  platform: string
+  handle: string
+  url: string
+  label: string
+  /** True only for registry entries and Mastodon rel=me verified fields. */
+  verified: boolean
+  source: 'bio' | 'registry'
+  /** Media Codex cannot browse this platform; the link just opens on the source. */
+  linkOnly?: boolean
+}
+
+export interface CreatorRelated {
+  creator: string
+  related: RelatedCreator[]
+  elsewhere: ElsewhereLink[]
+  updatedAt?: string
+  partial?: string[]
+}
+
+const isHttpsUrl = (value: unknown): value is string => {
+  if (typeof value !== 'string') return false
+  try { return new URL(value).protocol === 'https:' } catch { return false }
+}
+
+/** Related creators (tag overlap) and links the creator published themselves. */
+export async function fetchCreatorRelated(handle: string, platform = 'redgifs', limit = 12): Promise<CreatorRelated> {
+  const params = new URLSearchParams({ creator: handle, platform: platform.toLowerCase(), limit: String(limit) })
+  const response = await fetchWithTimeout(`/api/creator-related?${params}`, { method: 'GET' }, 20000)
+  if (!response.ok) throw new Error(`Creator related returned ${response.status}`)
+  const payload = (await response.json()) as Partial<CreatorRelated>
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  return {
+    creator: payload.creator || handle,
+    related: (Array.isArray(payload.related) ? payload.related : [])
+      .filter((r) => r && typeof r.handle === 'string' && r.handle)
+      .map((r) => ({
+        handle: r.handle,
+        displayName: str(r.displayName) || r.handle,
+        platform: str(r.platform) || 'Redgifs',
+        avatar: typeof r.avatar === 'string' && r.avatar.startsWith('/api/') ? r.avatar : undefined,
+        score: Number(r.score) || 0,
+        reason: str(r.reason),
+        sharedTags: Array.isArray(r.sharedTags) ? r.sharedTags.filter((t): t is string => typeof t === 'string').slice(0, 5) : [],
+      })),
+    elsewhere: (Array.isArray(payload.elsewhere) ? payload.elsewhere : [])
+      .filter((l) => l && isHttpsUrl(l.url))
+      .map((l) => ({
+        platform: str(l.platform), handle: str(l.handle), url: l.url, label: str(l.label) || str(l.platform),
+        verified: l.verified === true, source: l.source === 'registry' ? ('registry' as const) : ('bio' as const),
+        linkOnly: l.linkOnly !== false,
+      })),
+    updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : undefined,
+    partial: Array.isArray(payload.partial) ? payload.partial.filter((v): v is string => typeof v === 'string') : undefined,
+  }
+}

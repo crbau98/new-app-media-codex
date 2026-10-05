@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { memo, useCallback, useMemo, type ReactNode } from 'react'
 import type { MediaItem } from '@/lib/types'
 import MediaCard from '@/components/MediaCard'
 import Rail from './Rail'
@@ -25,8 +25,11 @@ interface MediaRailProps {
   className?: string
 }
 
-/** Titled rail of MediaCards with consistent snap/drag/arrow behaviour. */
-export default function MediaRail({
+/**
+ * Titled rail of MediaCards with consistent snap/drag/arrow behaviour. Memoised, and every card gets the
+ * same stable `onSelect`, so typing in a sibling filter box no longer re-renders each card of each rail.
+ */
+function MediaRailImpl({
   title,
   eyebrow,
   icon,
@@ -41,6 +44,14 @@ export default function MediaRail({
   label,
   className,
 }: MediaRailProps) {
+  const byId = useMemo(() => new Map(items.map((item) => [item.id, item])), [items])
+  const select = useCallback(
+    (id: string) => {
+      const item = byId.get(id)
+      if (item) onSelect(item)
+    },
+    [byId, onSelect]
+  )
   if (items.length === 0) return null
   return (
     <section aria-label={title} className={className}>
@@ -51,7 +62,7 @@ export default function MediaRail({
             <MediaCard
               item={item}
               aspectRatio={variant === 'wide' ? '16 / 9' : '3 / 4'}
-              onSelect={() => onSelect(item)}
+              onSelect={select}
               priority={index < 3}
               progress={progress?.(item)}
               label={label?.(item)}
@@ -63,3 +74,6 @@ export default function MediaRail({
     </section>
   )
 }
+
+const MediaRail = memo(MediaRailImpl)
+export default MediaRail

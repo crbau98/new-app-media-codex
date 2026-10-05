@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import {
@@ -8,6 +8,10 @@ import {
   Check,
   ExternalLink,
   FolderPlus,
+  ListPlus,
+  ListStart,
+  ListVideo,
+  Plus,
   Share2,
   ThumbsDown,
   ThumbsUp,
@@ -28,6 +32,21 @@ import PhotoViewer, { photoFrames } from '@/components/player/PhotoViewer'
 import VideoPlayer from '@/components/player/VideoPlayer'
 import { readNetwork, useMotionOk } from '@/components/player/hooks'
 import { cn } from '@/lib/utils'
+import { useQueue, useSurface } from '@/features/queue/hooks'
+import { enqueueWithToast } from '@/features/queue/queueUi'
+import { isUpcoming } from '@/features/queue/queueModel'
+import { queueActions } from '@/features/queue/queueStore'
+import { setStartIntent } from '@/features/queue/startIntent'
+import { overlayOpen, surface } from '@/features/queue/surface'
+import { usePlaybackFlow } from '@/features/queue/usePlaybackFlow'
+import { writeRaw } from '@/features/queue/persist'
+import MomentsPanel from '@/features/queue/MomentsPanel'
+import QueueStatusCard from '@/features/queue/QueueStatusCard'
+import CompletionRing from '@/features/queue/CompletionRing'
+
+// The queue drawer and shortcut help are only fetched when first summoned.
+const QueuePanel = lazy(() => import('@/features/queue/QueuePanel'))
+const ShortcutHelp = lazy(() => import('@/features/queue/ShortcutHelp'))
 
 const easeOut = [0.16, 1, 0.3, 1] as [number, number, number, number]
 const THEATRE_KEY = 'media-codex-theatre-v1'
@@ -123,8 +142,16 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
   const frameDirection = frameState.direction
 
   const itemIndex = useMemo(() => (items && item ? items.findIndex((entry) => entry.id === item.id) : -1), [items, item])
-  const canGoBack = itemIndex > 0
-  const canGoForward = items ? itemIndex >= 0 && itemIndex < items.length - 1 : false
+  const queue = useQueue()
+  const surf = useSurface()
+  const overlay = open && (surf.panelOpen || surf.helpOpen)
+  // Next/previous follow the queue when this item is the queue's current one, else the sibling list.
+  const flow = usePlaybackFlow({ item, open, items, onNavigate })
+  const { goNext, goPrev } = flow
+  const canGoBack = flow.canPrev
+  const canGoForward = Boolean(flow.next)
+  const queuedHere = item ? isUpcoming(queue, item.id) : false
+  const playingFromQueue = flow.mode === 'queue'
 
   const related = useMemo(() => {
     if (!items || !item) return []
@@ -137,11 +164,20 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
 
   const navigateBy = useCallback(
     (delta: number) => {
-      if (!items || !onNavigate || itemIndex < 0) return
-      const next = items[itemIndex + delta]
-      if (next) onNavigate(next)
+      if (delta > 0) goNext('manual')
+      else goPrev()
     },
-    [items, itemIndex, onNavigate]
+    [goNext, goPrev]
+  )
+
+  /** Queue drawer "now playing" row: show that item here. */
+  const openFromQueue = useCallback(
+    (target: MediaItem) => {
+      if (target.id === item?.id) return
+      setStartIntent({ id: target.id, play: true })
+      onNavigate?.(target)
+    },
+    [item?.id, onNavigate]
   )
 
   const setFrame = useCallback(
@@ -152,8 +188,8 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
   )
 
   const canLeave = useCallback(
-    (direction: -1 | 1) => (direction < 0 ? canGoBack : canGoForward) && Boolean(onNavigate),
-    [canGoBack, canGoForward, onNavigate]
+    (direction: -1 | 1) => (direction < 0 ? canGoBack : canGoForward),
+    [canGoBack, canGoForward]
   )
   const leave = useCallback((direction: -1 | 1) => navigateBy(direction), [navigateBy])
 
@@ -170,11 +206,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
   const toggleTheatre = useCallback(() => {
     setTheatre((value) => {
       const next = !value
-      try {
-        localStorage.setItem(THEATRE_KEY, next ? '1' : '0')
-      } catch {
-        // best-effort preference
-      }
+      writeRaw(THEATRE_KEY, next ? '1' : '0') // best-effort preference, gated for incognito
       return next
     })
   }, [])
@@ -259,6 +291,26 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
     }
   }, [items, itemIndex, open])
 
+  // Tell the queue layer a sheet is open: the dock steps aside and the drawer/help render inside this dialog.
+  // The registration is released once the exit animation has finished (or on unmount), so the
+  // dock never plays on top of a sheet that is still sliding away.
+  const sheetShown = open && Boolean(item)
+  const releaseSheet = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    if (sheetShown && !releaseSheet.current) releaseSheet.current = surface.registerSheet()
+  }, [sheetShown])
+  useEffect(
+    () => () => {
+      releaseSheet.current?.()
+      releaseSheet.current = null
+    },
+    []
+  )
+  const onSheetExited = useCallback(() => {
+    releaseSheet.current?.()
+    releaseSheet.current = null
+  }, [])
+
   // Scroll lock
   useEffect(() => {
     if (!open) return
@@ -278,10 +330,36 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
       const target = event.target as HTMLElement
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) return
       if (event.ctrlKey || event.metaKey || event.altKey) return
+      // The queue drawer and shortcut help own the keyboard (Esc closes just them).
+      if (overlayOpen()) return
       switch (event.key) {
         case 'Escape':
           event.preventDefault()
           onClose()
+          break
+        // Queue keys. On videos the player handles these first; they reach here for photos
+        // and when the player is unavailable.
+        case 'n':
+        case 'N':
+          event.preventDefault()
+          navigateBy(1)
+          break
+        case 'p':
+        case 'P':
+          event.preventDefault()
+          navigateBy(-1)
+          break
+        case 'q':
+          event.preventDefault()
+          surface.togglePanel()
+          break
+        case 'Q':
+          event.preventDefault()
+          if (item) enqueueWithToast(item, 'last', item, addToast)
+          break
+        case '?':
+          event.preventDefault()
+          surface.toggleHelp()
           break
         case 'ArrowLeft':
           if (isVideo && !event.shiftKey) return
@@ -330,7 +408,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [follow, item?.isVideo, navigateBy, onClose, open, save, stepPhoto])
+  }, [addToast, follow, item, navigateBy, onClose, open, save, stepPhoto])
 
   useFocusTrap(panelRef, open)
 
@@ -342,7 +420,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
   // transformed ancestor becomes the containing block for position:fixed —
   // on phones that pins the sheet to the page content instead of the screen.
   return createPortal(
-    <AnimatePresence>
+    <AnimatePresence onExitComplete={onSheetExited}>
       {open && item && (
         <div className="fixed inset-0 z-[200] flex items-end justify-end md:items-stretch">
           <motion.button
@@ -372,23 +450,33 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
             <VelvetBackdrop item={item} active={motionOk && isDesktop} />
 
             {/* Glass header */}
-            <div className="relative z-10 flex shrink-0 items-center justify-between gap-2 border-b border-white/[0.06] bg-canvas/40 px-3 pb-2.5 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-xl sm:px-5 sm:pt-3">
+            <div
+              className="relative z-10 flex shrink-0 items-center justify-between gap-2 border-b border-white/[0.06] bg-canvas/40 px-3 pb-2.5 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-xl sm:px-5 sm:pt-3"
+              inert={overlay || undefined}
+            >
               <div className="min-w-0">
                 <span className="mono-meta block truncate uppercase">Public source · {item.source}</span>
               </div>
               <div className="flex items-center gap-1">
-                {items && onNavigate && (
+                {onNavigate && (flow.mode !== 'none' || canGoBack || canGoForward) && (
                   <>
-                    {itemIndex >= 0 && (
-                      <span className="mr-1 hidden font-mono text-[11px] tabular-nums text-ink-3 sm:inline" aria-hidden="true">
-                        {itemIndex + 1} / {items.length}
+                    {flow.position ? (
+                      <span className="mr-1 hidden font-mono text-[11px] tabular-nums text-gold-ink sm:inline" aria-hidden="true">
+                        Queue {flow.position.index} / {flow.position.total}
                       </span>
+                    ) : (
+                      itemIndex >= 0 &&
+                      items && (
+                        <span className="mr-1 hidden font-mono text-[11px] tabular-nums text-ink-3 sm:inline" aria-hidden="true">
+                          {itemIndex + 1} / {items.length}
+                        </span>
+                      )
                     )}
                     <button
                       onClick={() => navigateBy(-1)}
                       disabled={!canGoBack}
                       className="grid h-11 w-11 place-items-center rounded-full text-ink-2 outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-heat/70 disabled:opacity-30"
-                      aria-label="Previous item"
+                      aria-label={playingFromQueue ? 'Previous in queue' : 'Previous item'}
                     >
                       <ArrowLeft size={16} strokeWidth={1.75} />
                     </button>
@@ -396,12 +484,27 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                       onClick={() => navigateBy(1)}
                       disabled={!canGoForward}
                       className="grid h-11 w-11 place-items-center rounded-full text-ink-2 outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-heat/70 disabled:opacity-30"
-                      aria-label="Next item"
+                      aria-label={playingFromQueue ? 'Next in queue' : 'Next item'}
                     >
                       <ArrowRight size={16} strokeWidth={1.75} />
                     </button>
                   </>
                 )}
+                <button
+                  onClick={() => surface.togglePanel()}
+                  className="relative grid h-11 w-11 place-items-center rounded-full text-ink-2 outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-heat/70"
+                  aria-label={queue.upcoming.length > 0 ? `Open queue, ${queue.upcoming.length} up next` : 'Open queue'}
+                  aria-expanded={surf.panelOpen}
+                  title="Queue (Q)"
+                  data-testid="sheet-queue-button"
+                >
+                  <ListVideo size={17} strokeWidth={1.75} aria-hidden="true" />
+                  {queue.upcoming.length > 0 && (
+                    <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-heat px-1 font-mono text-[9px] font-semibold leading-4 text-canvas" aria-hidden="true">
+                      {queue.upcoming.length > 99 ? '99+' : queue.upcoming.length}
+                    </span>
+                  )}
+                </button>
                 <button
                   onClick={onClose}
                   className="grid h-11 w-11 place-items-center rounded-full text-ink-2 outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-heat/70"
@@ -417,6 +520,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                 'relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain',
                 !wide && 'lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:overflow-hidden'
               )}
+              inert={overlay || undefined}
             >
               {/* Stage column: media, title, creator, actions */}
               <div
@@ -436,8 +540,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                       key={item.id}
                       item={item}
                       theatre={{ active: theatre, toggle: toggleTheatre }}
-                      onPrev={canGoBack && onNavigate ? () => navigateBy(-1) : undefined}
-                      onNext={canGoForward && onNavigate ? () => navigateBy(1) : undefined}
+                      flow={flow}
                     />
                   ) : (
                     <PhotoViewer
@@ -528,6 +631,22 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                     <Share2 size={14} strokeWidth={1.75} aria-hidden="true" />
                     Share
                   </button>
+                  <button
+                    onClick={() => (queuedHere ? queueActions.remove(item.id) : enqueueWithToast(item, 'last', item, addToast))}
+                    disabled={playingFromQueue}
+                    className={cn('btn-secondary w-full sm:w-auto', playingFromQueue && 'col-span-2 sm:col-span-1')}
+                    aria-pressed={queuedHere || playingFromQueue}
+                    data-testid="add-to-queue"
+                  >
+                    {queuedHere || playingFromQueue ? <Check size={14} strokeWidth={2} aria-hidden="true" /> : <ListPlus size={14} strokeWidth={1.75} aria-hidden="true" />}
+                    {playingFromQueue ? 'In queue' : queuedHere ? 'Queued · remove' : 'Add to queue'}
+                  </button>
+                  {!playingFromQueue && (
+                    <button onClick={() => enqueueWithToast(item, 'next', item, addToast)} className="btn-secondary w-full sm:w-auto" data-testid="play-next">
+                      <ListStart size={14} strokeWidth={1.75} aria-hidden="true" />
+                      Play next
+                    </button>
+                  )}
                   <div className="relative col-span-2 sm:col-span-1">
                     <button
                       onClick={() => setCollectOpen((value) => !value)}
@@ -612,7 +731,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
 
                 {item.isVideo && (
                   <p className="mt-4 hidden font-mono text-[10px] uppercase tracking-[0.1em] text-ink-3 sm:block">
-                    Space play · J/L ±10s · ←/→ ±5s · M mute · F fullscreen · T theatre · P pip · , . frame · Shift+←/→ next item
+                    Space play · J/L ±10s · N/P next/prev · B moment · Q queue · M mute · F fullscreen · T theatre · ? all shortcuts
                   </p>
                 )}
                 </div>
@@ -650,6 +769,8 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                     </div>
                   </div>
                 )}
+
+                <QueueStatusCard item={item} />
 
                 {/* Why this appeared */}
                 <section className="border-b border-white/[0.06] pb-5">
@@ -700,37 +821,59 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                   </div>
                 )}
 
+                {item.isVideo && <MomentsPanel item={item} />}
+
                 {/* Related rail */}
                 {related.length > 0 && onNavigate && (
                   <section className="mt-6">
                     <h3 className="eyebrow">More like this</h3>
                     <div className="hide-scrollbar mt-3 flex gap-3 overflow-x-auto pb-1">
                       {related.map((entry) => (
-                        <button
-                          key={entry.id}
-                          onClick={() => onNavigate(entry)}
-                          className="group/rel w-28 shrink-0 text-left outline-none tap-highlight-none"
-                          aria-label={`Open ${entry.title}`}
-                        >
-                          <span className="relative block aspect-[2/3] overflow-hidden rounded-xl bg-sunken ring-1 ring-white/10 transition-[transform,box-shadow] duration-300 group-hover/rel:-translate-y-0.5 group-hover/rel:shadow-[0_14px_30px_-14px_rgb(0_0_0/0.9)] group-focus-visible/rel:ring-2 group-focus-visible/rel:ring-heat/80">
-                            <MediaImage
-                              sources={entry.isVideo ? [entry.thumbnail] : [entry.thumbnail, entry.mediaUrl]}
-                              alt=""
-                              className="absolute inset-0 h-full w-full object-cover"
-                              skeletonClassName="absolute inset-0"
-                            />
-                            {entry.isVideo && entry.duration && (
-                              <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/65 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-white">{entry.duration}</span>
-                            )}
-                          </span>
-                          <span className="mt-1.5 block truncate font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">{entry.creator}</span>
-                        </button>
+                        <div key={entry.id} className="group/rel relative w-28 shrink-0">
+                          <button
+                            onClick={() => onNavigate(entry)}
+                            className="block w-full text-left outline-none tap-highlight-none"
+                            aria-label={`Open ${entry.title}`}
+                          >
+                            <span className="relative block aspect-[2/3] overflow-hidden rounded-xl bg-sunken ring-1 ring-white/10 transition-[transform,box-shadow] duration-300 group-hover/rel:-translate-y-0.5 group-hover/rel:shadow-[0_14px_30px_-14px_rgb(0_0_0/0.9)] group-focus-within/rel:ring-2 group-focus-within/rel:ring-heat/80">
+                              <MediaImage
+                                sources={entry.isVideo ? [entry.thumbnail] : [entry.thumbnail, entry.mediaUrl]}
+                                alt=""
+                                className="absolute inset-0 h-full w-full object-cover"
+                                skeletonClassName="absolute inset-0"
+                              />
+                              {entry.isVideo && entry.duration && (
+                                <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/65 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-white">{entry.duration}</span>
+                              )}
+                              <CompletionRing itemId={entry.id} size={20} className="left-1.5 right-auto top-1.5" />
+                            </span>
+                            <span className="mt-1.5 block truncate font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">{entry.creator}</span>
+                          </button>
+                          <button
+                            onClick={() => enqueueWithToast(entry, 'last', item, addToast)}
+                            className="absolute right-1 top-1 grid h-11 w-11 place-items-center rounded-full text-white outline-none before:absolute before:h-7 before:w-7 before:rounded-full before:bg-black/65 before:content-[''] focus-visible:ring-2 focus-visible:ring-heat/80"
+                            aria-label={`Add ${entry.title} to queue`}
+                            title="Add to queue"
+                          >
+                            <Plus size={14} strokeWidth={2.25} className="relative" aria-hidden="true" />
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </section>
                 )}
               </aside>
             </div>
+            {surf.panelOpen && (
+              <Suspense fallback={null}>
+                <QueuePanel inside onClose={surface.closePanel} onOpenItem={openFromQueue} />
+              </Suspense>
+            )}
+            {surf.helpOpen && (
+              <Suspense fallback={null}>
+                <ShortcutHelp inside onClose={surface.closeHelp} />
+              </Suspense>
+            )}
           </motion.div>
         </div>
       )}

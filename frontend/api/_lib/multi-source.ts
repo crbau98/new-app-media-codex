@@ -2,11 +2,18 @@ import { collectDuckDuckGo } from './duckduckgo.js'
 import type { CreatorLead, MultiSourceResult, SourceStatus, UnifiedMediaItem } from './discovery-types.js'
 import { isScopedAdultPeerTubeMetadata } from './source-quality.js'
 import { isPrivateHost } from './net-safe.js'
+import { collectBluesky } from './sources/bluesky.js'
+import { collectMastodonTags } from './sources/mastodon-tags.js'
+import { collectLemmy } from './sources/lemmy.js'
+import type { CollectorResult } from './sources/federated-common.js'
 import { peerTubeStreams, withContract, type PeerTubeVideoDetail } from './media-normalize.js'
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 const PROVIDER_TIMEOUT_MS = 6_500
 const OPTIONAL_DISCOVERY_BUDGET_MS = 2_500
+/** Federated collectors: abort in-flight requests (keeping partial results) at this point. */
+const FEDERATED_ABORT_MS = 4_200
+const FEDERATED_BUDGET_MS = 4_800
 function sanitize(value = ''): string {
   return value.replace(EMAIL_PATTERN, '').replace(/\s+/g, ' ').trim()
 }
@@ -306,14 +313,29 @@ export async function collectAdditionalSources(watchlist: string[], opts: { quer
     attempted: 0,
     succeeded: 0,
   }
-  const [credentialed, ddg, peertube] = await Promise.all([
+  const federated = (id: SourceStatus['id'], name: string, run: (signal: AbortSignal) => Promise<CollectorResult>): Promise<CollectorResult> => {
+    const controller = new AbortController()
+    const abortTimer = setTimeout(() => controller.abort(), FEDERATED_ABORT_MS)
+    const fallback: CollectorResult = {
+      media: [], leads: [], attempted: 0, succeeded: 0,
+      status: { id, name, mode: 'stream', state: 'limited', mediaFound: 0, creatorsFound: 0, detail: `${name} discovery was deferred by the optional budget so core sources return first.` },
+    }
+    return withTimeoutFallback(run(controller.signal), fallback, FEDERATED_BUDGET_MS).finally(() => clearTimeout(abortTimer))
+  }
+  const fedOpts = (signal: AbortSignal) => ({ query: query || undefined, watchlist: watchlist.slice(0, 8), signal })
+  const [credentialed, ddg, peertube, bluesky, mastodon, lemmy] = await Promise.all([
     collectCredentialedSources(watchlist, query),
     ddgPromise,
     withTimeoutFallback(collectPeerTube({ query: query || undefined }), peerTubeFallback, OPTIONAL_DISCOVERY_BUDGET_MS + 1500),
+    federated('bluesky', 'Bluesky', (signal) => collectBluesky(fedOpts(signal))),
+    federated('mastodon', 'Mastodon hashtags', (signal) => collectMastodonTags(fedOpts(signal))),
+    federated('lemmy', 'Lemmy', (signal) => collectLemmy(fedOpts(signal))),
   ])
+  const fedResults = [bluesky, mastodon, lemmy]
   const statuses: SourceStatus[] = [
     ...credentialed.statuses,
     peertube.status,
+    ...fedResults.map((r) => r.status),
     ...(shouldRunDdg ? [{
       id: 'duckduckgo', name: 'DuckDuckGo', mode: 'discovery',
       state: ddg.section.state, mediaFound: 0, creatorsFound: ddg.leads.length,
@@ -322,11 +344,11 @@ export async function collectAdditionalSources(watchlist: string[], opts: { quer
     } as SourceStatus] : []),
   ].filter((source) => source.state !== 'not-configured')
   return {
-    media: [...credentialed.media, ...peertube.media],
-    leads: [...credentialed.leads, ...ddg.leads],
+    media: [...credentialed.media, ...peertube.media, ...fedResults.flatMap((r) => r.media)],
+    leads: [...credentialed.leads, ...ddg.leads, ...fedResults.flatMap((r) => r.leads)],
     statuses,
     duckduckgo: ddg.section,
-    requestsAttempted: credentialed.requestsAttempted + ddg.attempted + peertube.attempted,
-    requestsSucceeded: credentialed.requestsSucceeded + ddg.succeeded + peertube.succeeded,
+    requestsAttempted: credentialed.requestsAttempted + ddg.attempted + peertube.attempted + fedResults.reduce((n, r) => n + r.attempted, 0),
+    requestsSucceeded: credentialed.requestsSucceeded + ddg.succeeded + peertube.succeeded + fedResults.reduce((n, r) => n + r.succeeded, 0),
   }
 }

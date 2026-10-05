@@ -668,6 +668,11 @@
   box-shadow: 0 0 10px rgb(var(--heat) / 0.8);
 }
 
+/* The stack shelf deliberately overlaps the section below it (negative margin so the rank numerals
+   hang into the gap). Content that follows must paint above that overlap or its controls (e.g. the
+   Continue watching header buttons) are covered and untappable. */
+.d-stack-section + * { position: relative; z-index: 1; }
+
 /* Depth-stacked Top Picks shelf */
 .d-stack { --w: clamp(190px, 54vw, 250px); }
 .d-stack .d-rail-scroller {

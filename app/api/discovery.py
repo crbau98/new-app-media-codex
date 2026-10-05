@@ -2,14 +2,15 @@
 
 Provider credentials live only in Render. This endpoint returns normalized,
 public metadata and canonical source links; it never returns credentials or
-subscription-only content.
+subscription-only content. X and Reddit are collected through their official
+APIs (see ``app/discovery``); Tumblr and Google keep their existing lanes.
 """
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from datetime import datetime, timezone
-import re
+import time
 from typing import Any
 from urllib.parse import quote, urlparse
 
@@ -18,10 +19,24 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 import requests
 
+from app.discovery.common import (
+    canonical as _canonical,
+    clean_text as _clean,
+    media_item as _media_item,
+    now_iso as _now,
+    safe_https as _safe_https,
+    source_status as _source_status,
+)
+from app.discovery.reddit_api import collect_reddit
+from app.discovery.x_api import collect_x
+
 router = APIRouter(prefix="/api/discovery", tags=["discovery"])
 
-_EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
-_HANDLE = re.compile(r"[^a-zA-Z0-9_]")
+# Wall-clock budget for the whole gateway call. The Vercel edge waits 15s, so every
+# source gets a shared deadline well inside it; a slow source is abandoned, not awaited.
+GATEWAY_DEADLINE_SECONDS = 10.0
+WATCHLIST_CAP = 8
+
 _PROFILE_HOSTS = {
     "x.com": "X",
     "twitter.com": "X",
@@ -35,7 +50,7 @@ _PROFILE_HOSTS = {
 
 
 class DiscoveryRequest(BaseModel):
-    watchlist: list[str] = Field(default_factory=list, max_length=8)
+    watchlist: list[str] = Field(default_factory=list, max_length=WATCHLIST_CAP)
     query: str = Field(default="", max_length=80)
 
     @field_validator("watchlist")
@@ -50,183 +65,17 @@ class DiscoveryRequest(BaseModel):
                 continue
             seen.add(key)
             cleaned.append(display)
-        return cleaned[:8]
+        return cleaned[:WATCHLIST_CAP]
 
 
-def _clean(value: Any) -> str:
-    return _EMAIL.sub("", str(value or "")).replace("\x00", " ").strip()
+def _collect_x(settings: Any, watchlist: list[str], query: str = "", deadline: float | None = None) -> dict[str, Any]:
+    """Official X API v2: exact-handle timelines, typed search, or the rotating default feed."""
+    return collect_x(settings, watchlist, query, deadline=deadline)
 
 
-def _canonical(value: str) -> str:
-    return _HANDLE.sub("", value.lstrip("@")).lower()
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _safe_https(value: Any, host_suffix: str) -> str:
-    candidate = _clean(value)
-    try:
-        parsed = urlparse(candidate)
-    except ValueError:
-        return ""
-    host = (parsed.hostname or "").lower()
-    if parsed.scheme != "https" or parsed.username or parsed.password:
-        return ""
-    if host != host_suffix and not host.endswith(f".{host_suffix}"):
-        return ""
-    return candidate
-
-
-def _source_status(
-    source_id: str,
-    name: str,
-    mode: str,
-    state: str,
-    detail: str,
-    *,
-    media: int = 0,
-    creators: int = 0,
-    search_url: str = "",
-) -> dict[str, Any]:
-    result: dict[str, Any] = {
-        "id": source_id,
-        "name": name,
-        "mode": mode,
-        "state": state,
-        "mediaFound": media,
-        "creatorsFound": creators,
-        "detail": detail,
-    }
-    if search_url:
-        result["searchUrl"] = search_url
-    return result
-
-
-def _media_item(
-    *,
-    item_id: str,
-    title: str,
-    thumbnail: str,
-    source: str,
-    creator: str,
-    page_url: str,
-    profile_url: str,
-    created_at: str,
-    tags: list[str],
-    description: str,
-    media_url: str = "",
-    is_video: bool = False,
-    views: int = 0,
-    likes: int = 0,
-    comments: int = 0,
-    watched: bool = False,
-) -> dict[str, Any]:
-    candidates = [media_url] if media_url else []
-    return {
-        "id": item_id,
-        "title": _clean(title)[:96] or f"Public post by {creator}",
-        "thumbnail": thumbnail or None,
-        "source": source,
-        "duration": "",
-        "isVideo": is_video,
-        "category": f"{source} public posts",
-        "creator": _clean(creator) or "Public creator",
-        "tags": [_clean(tag)[:40] for tag in tags if _clean(tag)][:12],
-        "rating": 0,
-        "createdAt": created_at or _now(),
-        "views": max(0, views),
-        "mediaUrl": media_url or None,
-        "streamCandidates": candidates,
-        "pageUrl": page_url,
-        "profileUrl": profile_url,
-        "description": _clean(description)[:1000],
-        "likes": max(0, likes),
-        "comments": max(0, comments),
-        "isLiked": False,
-        "isNew": True,
-        "isTrending": False,
-        "curationScore": 0,
-        "curationReasons": ["creator is on your watchlist"] if watched else [],
-        "isWatchedCreator": watched,
-    }
-
-
-def _collect_x(settings: Any, targets: list[str]) -> dict[str, Any]:
-    base_url = "https://x.com/search?q=gay%20creator&src=typed_query&f=live"
-    if not settings.x_bearer_token:
-        return {"media": [], "leads": [], "status": _source_status("x", "X", "stream", "not-configured", "Official X API is not configured on Render.", search_url=base_url), "attempted": 0, "succeeded": 0}
-    if not targets:
-        return {"media": [], "leads": [], "status": _source_status("x", "X", "stream", "limited", "Official X API is connected on Render and activates for a search or watchlist.", search_url=base_url), "attempted": 0, "succeeded": 0}
-
-    media: list[dict[str, Any]] = []
-    leads: dict[str, dict[str, Any]] = {}
-    attempted = succeeded = 0
-    session = requests.Session()
-    for display in targets[:4]:
-        handle = _canonical(display)
-        if not handle:
-            continue
-        attempted += 1
-        try:
-            response = session.get(
-                "https://api.x.com/2/tweets/search/recent",
-                params={
-                    "query": f"from:{handle} has:media -is:retweet",
-                    "max_results": 10,
-                    "expansions": "author_id,attachments.media_keys",
-                    "tweet.fields": "created_at,text,public_metrics",
-                    "user.fields": "username,name,profile_image_url",
-                    "media.fields": "url,preview_image_url,type,variants",
-                },
-                headers={"Authorization": f"Bearer {settings.x_bearer_token}", "User-Agent": settings.user_agent},
-                timeout=min(settings.request_timeout_seconds, 6),
-            )
-            response.raise_for_status()
-            body = response.json()
-            succeeded += 1
-        except (requests.RequestException, ValueError):
-            continue
-
-        users = {user.get("id"): user for user in body.get("includes", {}).get("users", [])}
-        assets = {asset.get("media_key"): asset for asset in body.get("includes", {}).get("media", [])}
-        for tweet in body.get("data", []):
-            user = users.get(tweet.get("author_id"), {})
-            username = _clean(user.get("username") or handle)
-            profile_url = f"https://x.com/{quote(username)}"
-            key = _canonical(username)
-            leads[f"x-{key}"] = {
-                "id": f"x-{key}", "name": _clean(user.get("name") or username), "username": username,
-                "platform": "X", "profileUrl": profile_url, "avatar": _safe_https(user.get("profile_image_url"), "twimg.com") or None,
-                "tags": ["official api", "public post"], "observedAt": tweet.get("created_at") or _now(),
-                "sourceAttribution": "Official X API public post metadata; media remains on X",
-                "confidence": 88, "exactWatchMatch": True,
-            }
-            metrics = tweet.get("public_metrics") or {}
-            for media_key in tweet.get("attachments", {}).get("media_keys", []):
-                asset = assets.get(media_key, {})
-                variants = sorted(
-                    [item for item in asset.get("variants", []) if item.get("content_type") == "video/mp4" and item.get("url")],
-                    key=lambda item: item.get("bit_rate", 0), reverse=True,
-                )
-                direct = _safe_https(variants[0].get("url", "") if variants else asset.get("url", ""), "twimg.com")
-                thumb = _safe_https(asset.get("preview_image_url") or asset.get("url", ""), "twimg.com")
-                if not direct and not thumb:
-                    continue
-                media.append(_media_item(
-                    item_id=f"x-{tweet.get('id')}-{media_key}", title=tweet.get("text", ""), thumbnail=thumb,
-                    source="X", creator=username, page_url=f"{profile_url}/status/{tweet.get('id')}",
-                    profile_url=profile_url, created_at=tweet.get("created_at", ""), tags=["x", "public post"],
-                    description=tweet.get("text", ""), media_url=direct,
-                    is_video=asset.get("type") in {"video", "animated_gif"},
-                    views=int(metrics.get("impression_count", 0) or 0), likes=int(metrics.get("like_count", 0) or 0),
-                    comments=int(metrics.get("reply_count", 0) or 0), watched=True,
-                ))
-
-    state = "connected" if succeeded else "error"
-    detail = "Official X API public-post discovery from Render." if succeeded else "X is configured on Render, but its API request failed."
-    return {"media": media, "leads": list(leads.values()), "status": _source_status("x", "X", "stream", state, detail, media=len(media), creators=len(leads), search_url=base_url), "attempted": attempted, "succeeded": succeeded}
+def _collect_reddit(settings: Any, watchlist: list[str], query: str = "", deadline: float | None = None) -> dict[str, Any]:
+    """Official Reddit OAuth2 API: subreddit listings, name search and exact-user submissions."""
+    return collect_reddit(settings, watchlist, query, deadline=deadline)
 
 
 def _collect_tumblr(settings: Any, targets: list[str]) -> dict[str, Any]:
@@ -335,19 +184,40 @@ def _collect_google(settings: Any, targets: list[str]) -> dict[str, Any]:
     return {"media": [], "leads": list(leads.values()), "status": _source_status("google", "Google profile leads", "discovery", state, detail, creators=len(leads), search_url=search_url), "attempted": attempted, "succeeded": succeeded}
 
 
+def _deferred(source_id: str, name: str, mode: str, reason: str) -> dict[str, Any]:
+    return {
+        "media": [], "leads": [], "attempted": 0, "succeeded": 0,
+        "status": _source_status(source_id, name, mode, "limited", reason),
+    }
+
+
 @router.post("/providers")
 def discover_providers(payload: DiscoveryRequest, request: Request) -> JSONResponse:
     settings = request.app.state.settings
     query = _clean(payload.query)[:80]
-    targets = payload.watchlist or ([query] if len(_canonical(query)) >= 2 else [])
+    typed = query if len(_canonical(query)) >= 2 else ""
+    watchlist = payload.watchlist[:WATCHLIST_CAP]
+    targets = watchlist or ([typed] if typed else [])
+    deadline = time.monotonic() + GATEWAY_DEADLINE_SECONDS
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = [
-            executor.submit(_collect_x, settings, targets),
-            executor.submit(_collect_tumblr, settings, targets),
-            executor.submit(_collect_google, settings, targets),
-        ]
-        results = [future.result() for future in futures]
+    lanes: list[tuple[str, str, str, Any]] = [
+        ("x", "X", "stream", lambda: _collect_x(settings, watchlist, typed, deadline)),
+        ("reddit", "Reddit", "stream", lambda: _collect_reddit(settings, watchlist, typed, deadline)),
+        ("tumblr", "Tumblr", "stream", lambda: _collect_tumblr(settings, targets)),
+        ("google", "Google profile leads", "discovery", lambda: _collect_google(settings, targets)),
+    ]
+    executor = ThreadPoolExecutor(max_workers=len(lanes), thread_name_prefix="provider-gateway")
+    futures = [(lane, executor.submit(lane[3])) for lane in lanes]
+    results: list[dict[str, Any]] = []
+    for (source_id, name, mode, _), future in futures:
+        try:
+            results.append(future.result(timeout=max(0.05, deadline - time.monotonic())))
+        except FutureTimeout:
+            results.append(_deferred(source_id, name, mode, f"{name} discovery was deferred by the gateway time budget; try again shortly."))
+        except Exception:  # noqa: BLE001 - one provider must never fail the whole gateway
+            results.append(_deferred(source_id, name, mode, f"{name} discovery hit an unexpected error and was skipped."))
+    # Slow provider threads are abandoned rather than awaited so the response stays inside the edge budget.
+    executor.shutdown(wait=False, cancel_futures=True)
 
     response = {
         "media": [item for result in results for item in result["media"]],

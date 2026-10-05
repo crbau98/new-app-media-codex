@@ -5,7 +5,6 @@ import {
   FileText,
   Globe,
   Play,
-  Plus,
   Radar,
   RefreshCw,
   Search,
@@ -14,34 +13,39 @@ import {
   X,
 } from 'lucide-react'
 import type { Creator, LiveDiscoveryPayload } from '@/lib/types'
-import { fetchLiveDiscovery } from '@/lib/api'
+import { fetchLiveDiscovery, type DirectorySort } from '@/lib/api'
 import { creatorFollowId, creatorKey } from '@/lib/discovery'
+import { creatorHandle, followName, handleKey, mergeCreators } from '@/features/creators/creatorLogic'
+import { OTHER_PLATFORM, creatorPlatformIds, platformFilterOptions } from '@/features/creators/platformLinks'
+import { OUTBOUND_REL, platformById, safeOutboundUrl } from '@/features/creators/platforms'
+import { useSavedLinks } from '@/features/creators/useSavedLinks'
+import PlatformFilter from '@/features/creators/PlatformFilter'
+import SavedProfiles from '@/features/creators/SavedProfiles'
+import { useCreatorDirectory } from '@/features/creators/useCreatorDirectory'
+import CreatorFinder from '@/features/creators/CreatorFinder'
+import RadarPanel from '@/features/creators/RadarPanel'
 import { useAppStore } from '@/store'
 import CreatorDrawer from '@/components/CreatorDrawer'
+import { prefetchCreatorMedia } from '@/features/creators/useCreatorMedia'
 import UpdatedChip from '@/components/UpdatedChip'
 import Rail from '@/components/discovery/Rail'
 import SectionHeader from '@/components/discovery/SectionHeader'
 import StatePanel from '@/components/discovery/StatePanel'
 import { Segmented } from '@/components/discovery/Controls'
-import { CreatorCard, StoryRing } from '@/components/discovery/CreatorParts'
+import { StoryRing } from '@/components/discovery/CreatorParts'
+import { CreatorCard } from '@/components/discovery/CreatorCard'
 import { cn } from '@/lib/utils'
 import '@/styles/discovery.css'
 
 type CreatorSort = 'smart' | 'newest' | 'engagement' | 'az'
+
+const directorySort: Record<CreatorSort, DirectorySort> = { smart: 'smart', newest: 'newest', engagement: 'popular', az: 'smart' }
 
 const sortLabels: Record<CreatorSort, string> = {
   smart: 'Smart',
   newest: 'Newest',
   engagement: 'Top engagement',
   az: 'A–Z',
-}
-
-function creatorPlatforms(creator: Creator): string[] {
-  const set = new Set<string>()
-  if (creator.platform) set.add(creator.platform.toLowerCase())
-  for (const platform of creator.platforms ?? []) set.add(platform.toLowerCase())
-  if (creator.sourceAttribution) set.add(creator.sourceAttribution.toLowerCase())
-  return [...set]
 }
 
 function scanPhase(elapsedSeconds: number): string {
@@ -52,15 +56,12 @@ function scanPhase(elapsedSeconds: number): string {
 
 export default function Creators() {
   const creatorWatchlist = useAppStore((s) => s.creatorWatchlist)
-  const addCreatorToWatchlist = useAppStore((s) => s.addCreatorToWatchlist)
-  const removeCreatorFromWatchlist = useAppStore((s) => s.removeCreatorFromWatchlist)
   const followCache = useAppStore((s) => s.followCache)
   const toggleFollow = useAppStore((s) => s.toggleFollow)
   const addToast = useAppStore((s) => s.addToast)
 
-  const [handleDraft, setHandleDraft] = useState('')
   const [searchText, setSearchText] = useState('')
-  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [laneFilter, setLaneFilter] = useState<string | null>(null)
   const [platformFilter, setPlatformFilter] = useState<string | null>(null)
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [sort, setSort] = useState<CreatorSort>('smart')
@@ -69,22 +70,17 @@ export default function Creators() {
 
   const queryClient = useQueryClient()
 
-  // Debounce the backend query term (400ms)
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedQuery(searchText.trim()), 400)
-    return () => window.clearTimeout(timer)
-  }, [searchText])
-
   const queryKey = useMemo(
-    () => ['live-discovery', 'creators', creatorWatchlist, debouncedQuery] as const,
-    [creatorWatchlist, debouncedQuery]
+    () => ['live-discovery', 'creators', creatorWatchlist] as const,
+    [creatorWatchlist]
   )
 
   const discoveryQuery = useQuery({
     queryKey,
-    queryFn: () => fetchLiveDiscovery(creatorWatchlist, { query: debouncedQuery }),
+    queryFn: () => fetchLiveDiscovery(creatorWatchlist),
   })
   const discovery = discoveryQuery.data
+  const directory = useCreatorDirectory(laneFilter, directorySort[sort])
 
   /* ── Scan flow with elapsed-time progress ── */
   const [scanning, setScanning] = useState(false)
@@ -104,7 +100,6 @@ export default function Creators() {
     try {
       const payload: LiveDiscoveryPayload = await fetchLiveDiscovery(creatorWatchlist, {
         forceFresh: true,
-        query: debouncedQuery,
       })
       queryClient.setQueryData(queryKey, payload)
       const newCount = payload.performers.filter((creator) => !beforeKeys.has(creatorKey(creator.name))).length
@@ -128,7 +123,7 @@ export default function Creators() {
       if (scanTimerRef.current) window.clearInterval(scanTimerRef.current)
       setScanning(false)
     }
-  }, [addToast, creatorWatchlist, debouncedQuery, discovery, queryClient, queryKey, scanning])
+  }, [addToast, creatorWatchlist, discovery, queryClient, queryKey, scanning])
 
   useEffect(() => {
     return () => {
@@ -138,26 +133,43 @@ export default function Creators() {
 
   /* ── Derived filter data ── */
   const performers = useMemo(() => discovery?.performers ?? [], [discovery])
+  // Feed creators first, then the paged directory — one card per lowercase handle. With a lane
+  // selected only lane-matching feed creators are kept alongside the server-filtered directory.
+  const allCreators = useMemo(() => {
+    const feed = laneFilter
+      ? performers.filter((creator) => (creator.discoveryTags ?? []).some((tag) => tag.toLowerCase() === laneFilter.toLowerCase()))
+      : performers
+    return mergeCreators(feed, directory.creators)
+  }, [performers, directory.creators, laneFilter])
 
-  const platforms = useMemo(() => {
-    const set = new Set<string>()
-    for (const creator of performers) for (const platform of creatorPlatforms(creator)) set.add(platform)
-    return [...set].sort()
-  }, [performers])
+  /* Platform presence: registry ids per directory/feed creator, plus every saved profile link. */
+  const { links: savedLinks } = useSavedLinks()
+  const creatorPlatformSets = useMemo(() => new Map(allCreators.map((creator) => [creator.id, creatorPlatformIds(creator)] as const)), [allCreators])
+  const platformCounts = useMemo(() => {
+    const listed = new Set(allCreators.map((creator) => handleKey(creatorHandle(creator))))
+    const sets: Set<string>[] = [...creatorPlatformSets.values()]
+    // A saved Redgifs handle that is already in the directory is the same creator: count it once.
+    for (const link of savedLinks) {
+      if (link.platform === 'redgifs' && listed.has(handleKey(link.handle))) continue
+      sets.push(new Set([link.platform === 'generic' ? OTHER_PLATFORM : link.platform]))
+    }
+    return { options: platformFilterOptions(sets), total: sets.length }
+  }, [allCreators, creatorPlatformSets, savedLinks])
+  const platformLabel = platformFilter ? (platformById(platformFilter)?.label ?? 'Other') : null
 
   const payloadTags = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const creator of performers) {
+    for (const creator of allCreators) {
       for (const tag of creator.discoveryTags ?? []) counts.set(tag, (counts.get(tag) || 0) + 1)
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([tag]) => tag)
-  }, [performers])
+  }, [allCreators])
 
   const filteredCreators = useMemo(() => {
-    let result = [...performers]
-    if (platformFilter) result = result.filter((creator) => creatorPlatforms(creator).includes(platformFilter))
+    let result = [...allCreators]
+    if (platformFilter) result = result.filter((creator) => creatorPlatformSets.get(creator.id)?.has(platformFilter))
     if (tagFilter) result = result.filter((creator) => (creator.discoveryTags ?? []).includes(tagFilter))
-    const needle = debouncedQuery.toLowerCase()
+    const needle = searchText.trim().toLowerCase()
     if (needle) {
       result = result.filter(
         (creator) =>
@@ -182,23 +194,41 @@ export default function Creators() {
         break
     }
     return result
-  }, [performers, platformFilter, tagFilter, debouncedQuery, sort])
+  }, [allCreators, creatorPlatformSets, platformFilter, tagFilter, searchText, sort])
+
+  // Render the directory incrementally: 50+ creator cards (each with a cover and an avatar
+  // image) mounted at once is what exhausts memory on phones.
+  const PAGE = 12
+  const COVER_LIMIT = 36 // covers beyond this render avatar-only to bound mounted images
+  const [visibleCount, setVisibleCount] = useState(PAGE)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const filterSignature = `${platformFilter}|${tagFilter}|${laneFilter}|${searchText}|${sort}`
+  useEffect(() => setVisibleCount(PAGE), [filterSignature])
+  const hasMoreLocal = filteredCreators.length > visibleCount
+  const hasMoreCreators = hasMoreLocal || directory.hasMore
+  const { fetchMore: fetchMoreDirectory } = directory
+  const showMoreCreators = useCallback(() => {
+    if (hasMoreLocal) setVisibleCount((count) => count + PAGE)
+    else fetchMoreDirectory()
+  }, [fetchMoreDirectory, hasMoreLocal])
+  useEffect(() => {
+    const node = sentinelRef.current
+    if (!node || !hasMoreCreators || typeof IntersectionObserver === 'undefined') return undefined
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) showMoreCreators()
+    }, { rootMargin: '500px 0px' })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [hasMoreCreators, showMoreCreators, visibleCount, filteredCreators.length])
 
   const activeSources = useMemo(
     () => (discovery?.sources ?? []).filter((source) => source.state === 'connected'),
     [discovery]
   )
 
-  const addHandle = useCallback(() => {
-    const value = handleDraft.trim()
-    if (!value) return
-    addCreatorToWatchlist(value)
-    setHandleDraft('')
-  }, [addCreatorToWatchlist, handleDraft])
-
   const follow = useCallback(
     (creator: Creator) => {
-      const id = creatorFollowId(creator.name)
+      const id = creatorFollowId(followName(creator))
       const next = !followCache[id]
       toggleFollow(id)
       addToast({
@@ -209,11 +239,14 @@ export default function Creators() {
     [addToast, followCache, toggleFollow]
   )
 
-  const openCreator = useCallback((creator: Creator) => setActiveCreator(creator), [])
+  const openCreator = useCallback((creator: Creator) => {
+    prefetchCreatorMedia(queryClient, creator)
+    setActiveCreator(creator)
+  }, [queryClient])
 
   const ddg = discovery?.ddg
   const aiOk = discovery?.aiDiscovery.state === 'ok'
-  const followedFor = (creator: Creator) => Boolean(followCache[creatorFollowId(creator.name)])
+  const followedFor = (creator: Creator) => Boolean(followCache[creatorFollowId(followName(creator))])
 
   return (
     <div className="animate-page-enter d-page">
@@ -237,6 +270,17 @@ export default function Creators() {
           </div>
         </div>
       </div>
+
+      {/* Primary action: find a creator by name, @handle or profile link */}
+      <CreatorFinder onOpen={openCreator} />
+
+      {/* Personal, on-device profile links (any platform); link-only cards */}
+      <SavedProfiles
+        platformFilter={platformFilter}
+        platformLabel={platformLabel}
+        onClearPlatform={() => setPlatformFilter(null)}
+        onOpenCatalog={openCreator}
+      />
 
       {/* Scan progress */}
       {scanning && (
@@ -274,81 +318,7 @@ export default function Creators() {
         </section>
       )}
 
-      {/* Radar watchlist */}
-      {creatorWatchlist.length === 0 ? (
-        <section className="d-state" style={{ alignItems: 'center' }}>
-          <span className="d-state-halo" aria-hidden="true">
-            <Radar size={22} strokeWidth={1.5} />
-          </span>
-          <h2 className="d-state-title">Your radar is empty</h2>
-          <p className="d-state-desc">
-            Add up to 8 creator handles or names and the radar will scan active public sources for
-            matching posts — with evidence for every match. Nothing is pre-seeded:
-            this list is yours alone.
-          </p>
-          <div className="flex w-full max-w-sm items-center gap-2">
-            <input
-              value={handleDraft}
-              onChange={(event) => setHandleDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') addHandle()
-              }}
-              placeholder="Add a handle to scan for"
-              aria-label="Creator handle to add to the radar"
-              className="d-input"
-              style={{ paddingLeft: 18, paddingRight: 18 }}
-            />
-            <button onClick={addHandle} className="btn-secondary" aria-label="Add handle">
-              <Plus size={14} strokeWidth={1.75} />
-            </button>
-          </div>
-          <button onClick={runScan} disabled={scanning} className="btn-primary mt-1">
-            Run a starter scan
-          </button>
-          <p className="font-mono text-[10px] text-ink-3">
-            Without watchlist entries the scan returns the general public feed.
-          </p>
-        </section>
-      ) : (
-        <section className="d-panel">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="d-eyebrow">
-              <Radar size={12} strokeWidth={1.75} aria-hidden="true" />
-              Radar watchlist · {creatorWatchlist.length}/8
-            </h2>
-            <div className="flex items-center gap-2">
-              <input
-                value={handleDraft}
-                onChange={(event) => setHandleDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') addHandle()
-                }}
-                placeholder="Add handle"
-                aria-label="Creator handle to add to the radar"
-                className="d-input"
-                style={{ width: 180, paddingLeft: 16, paddingRight: 16 }}
-              />
-              <button onClick={addHandle} className="btn-secondary" aria-label="Add handle">
-                <Plus size={14} strokeWidth={1.75} />
-              </button>
-            </div>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {creatorWatchlist.map((handle) => (
-              <span key={handle} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-line bg-sunken/50 pl-4 pr-1 font-mono text-[11px] text-ink">
-                {handle}
-                <button
-                  onClick={() => removeCreatorFromWatchlist(handle)}
-                  className="grid h-9 w-9 place-items-center rounded-full text-ink-3 transition-colors hover:bg-sunken hover:text-ink"
-                  aria-label={`Remove ${handle} from the radar`}
-                >
-                  <X size={12} strokeWidth={1.75} />
-                </button>
-              </span>
-            ))}
-          </div>
-        </section>
-      )}
+      <RadarPanel onRunScan={runScan} scanning={scanning} />
 
       {activeSources.length > 0 && (
         <section aria-label="Live source coverage">
@@ -370,12 +340,15 @@ export default function Creators() {
       {ddg && ddg.leads.length > 0 && (
         <section aria-label="Web discovery">
           <SectionHeader title="Web discovery" eyebrow="Leads via DuckDuckGo" icon={<Globe size={12} strokeWidth={1.75} aria-hidden="true" />}>
-            <a href={ddg.searchUrl} target="_blank" rel="noreferrer" className="d-link">
+            <a href={safeOutboundUrl(ddg.searchUrl) ?? undefined} target="_blank" rel={OUTBOUND_REL} className="d-link">
               Open this search on DuckDuckGo <ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />
             </a>
           </SectionHeader>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {ddg.leads.map((lead) => {
+            {ddg.leads.flatMap((lead) => {
+              const href = safeOutboundUrl(lead.url)
+              return href ? [{ lead, href }] : []
+            }).map(({ lead, href }) => {
               let domain = 'web'
               try {
                 domain = new URL(lead.url).hostname.replace(/^www\./, '')
@@ -386,9 +359,9 @@ export default function Creators() {
               return (
                 <a
                   key={lead.url}
-                  href={lead.url}
+                  href={href}
                   target="_blank"
-                  rel="noreferrer"
+                  rel={OUTBOUND_REL}
                   className="d-panel group flex items-start gap-3 !p-4 transition-colors hover:border-line-strong"
                 >
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sunken text-ink-2" aria-hidden="true">
@@ -410,20 +383,25 @@ export default function Creators() {
         </section>
       )}
 
-      {/* Directory */}
-      <section aria-label="Creator directory">
+      {/* Browse all creators */}
+      <section aria-label="Browse all creators">
+        <SectionHeader
+          title="Browse all creators"
+          eyebrow={directory.total != null ? `${directory.total.toLocaleString()} creators indexed` : 'Feed + directory'}
+          icon={<Users size={12} strokeWidth={1.75} aria-hidden="true" />}
+        />
         <div className="d-toolbar" role="search" aria-label="Creator filters">
           <div className="d-field">
             <Search size={16} strokeWidth={1.75} aria-hidden="true" />
             <input
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search creators (queries the sources)"
-              aria-label="Search creators"
+              placeholder="Filter loaded creators"
+              aria-label="Filter loaded creators"
               className="d-input"
             />
             {searchText && (
-              <button onClick={() => setSearchText('')} className="d-field-clear" aria-label="Clear creator search">
+              <button onClick={() => setSearchText('')} className="d-field-clear" aria-label="Clear creator filter">
                 <X size={14} strokeWidth={1.75} />
               </button>
             )}
@@ -434,18 +412,26 @@ export default function Creators() {
             onChange={setSort}
             options={(Object.keys(sortLabels) as CreatorSort[]).map((value) => ({ value, label: sortLabels[value] }))}
           />
-          {(platforms.length > 0 || payloadTags.length > 0) && (
-            <div className="d-chips" style={{ flexBasis: '100%' }}>
-              {platforms.map((platform) => (
+          {(directory.lanes.length > 0 || laneFilter) && (
+            <div className="d-chips" style={{ flexBasis: '100%' }} role="group" aria-label="Lanes">
+              <button onClick={() => setLaneFilter(null)} className={cn('chip', !laneFilter && 'chip-active')} aria-pressed={!laneFilter}>
+                All lanes
+              </button>
+              {(laneFilter && !directory.lanes.some((lane) => lane.tag === laneFilter) ? [{ tag: laneFilter }, ...directory.lanes] : directory.lanes).map((lane) => (
                 <button
-                  key={platform}
-                  onClick={() => setPlatformFilter(platformFilter === platform ? null : platform)}
-                  className={cn('chip', platformFilter === platform && 'chip-active')}
-                  aria-pressed={platformFilter === platform}
+                  key={lane.tag}
+                  onClick={() => setLaneFilter(laneFilter === lane.tag ? null : lane.tag)}
+                  className={cn('chip', laneFilter === lane.tag && 'chip-active')}
+                  aria-pressed={laneFilter === lane.tag}
                 >
-                  {platform}
+                  {lane.tag}
                 </button>
               ))}
+            </div>
+          )}
+          <PlatformFilter options={platformCounts.options} total={platformCounts.total} value={platformFilter} onChange={setPlatformFilter} />
+          {payloadTags.length > 0 && (
+            <div className="d-chips" style={{ flexBasis: '100%' }} role="group" aria-label="Tags">
               {payloadTags.map((tag) => (
                 <button
                   key={tag}
@@ -460,41 +446,78 @@ export default function Creators() {
           )}
         </div>
 
-        {discoveryQuery.isLoading ? (
+        {(discoveryQuery.isLoading || directory.isLoading) && allCreators.length === 0 ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
             {Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className="d-skel d-skel-block" style={{ height: 260 }} />
             ))}
           </div>
-        ) : discoveryQuery.error ? (
+        ) : discoveryQuery.error && directory.error && allCreators.length === 0 ? (
           <StatePanel
             tone="error"
             icon={RefreshCw}
             title="Creator scan failed"
             description="The discovery service could not be reached. Try again."
             actionLabel="Retry"
-            onAction={() => discoveryQuery.refetch()}
+            onAction={() => {
+              void discoveryQuery.refetch()
+              directory.retry()
+            }}
           />
-        ) : filteredCreators.length === 0 ? (
+        ) : filteredCreators.length === 0 && !directory.hasMore ? (
           <StatePanel
             icon={Users}
             title="No creators match"
-            description="Loosen the platform or tag filters, or run a fresh scan for new matches."
+            description="Loosen the lane, platform or tag filters, or use Find a creator to look someone up by name."
             actionLabel="Clear filters"
             onAction={() => {
               setPlatformFilter(null)
               setTagFilter(null)
+              setLaneFilter(null)
               setSearchText('')
             }}
           />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredCreators.map((creator, index) => (
-              <div key={creator.id} className="d-reveal" style={{ ['--d' as string]: Math.min(index, 8) }}>
-                <CreatorCard creator={creator} followed={followedFor(creator)} aiOk={aiOk} onOpen={openCreator} onFollow={follow} />
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="creator-grid">
+              {filteredCreators.slice(0, visibleCount).map((creator, index) => (
+                <div key={creator.id} className="d-reveal" style={{ ['--d' as string]: Math.min(index % PAGE, 8) }}>
+                  <CreatorCard
+                    creator={creator}
+                    followed={followedFor(creator)}
+                    aiOk={aiOk}
+                    onOpen={openCreator}
+                    onFollow={follow}
+                    showCover={index < COVER_LIMIT}
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="mono-meta mt-4 text-center" aria-live="polite">
+              Showing {Math.min(visibleCount, filteredCreators.length)} of {directory.total != null ? Math.max(directory.total, filteredCreators.length).toLocaleString() : filteredCreators.length.toLocaleString()}
+              {directory.hasMore ? '+' : ''} creators
+            </p>
+            {directory.isFetchingMore && (
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="d-skel d-skel-block" style={{ height: 200 }} />
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+            {directory.error && (
+              <p role="alert" className="mt-4 text-center font-mono text-[11px] text-ink-3">
+                Couldn&apos;t load more of the directory.{' '}
+                <button type="button" onClick={directory.retry} className="underline">Retry</button>
+              </p>
+            )}
+            {hasMoreCreators && !directory.error && (
+              <div ref={sentinelRef} className="mt-4 flex justify-center">
+                <button type="button" onClick={showMoreCreators} disabled={directory.isFetchingMore} className="btn-secondary min-h-11">
+                  {directory.isFetchingMore ? 'Loading…' : hasMoreLocal ? `Show more creators · ${filteredCreators.length - visibleCount} left` : 'Load more creators'}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
 
