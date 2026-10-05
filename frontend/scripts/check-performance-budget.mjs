@@ -29,15 +29,17 @@ const bySize = new Map(assets.map((asset) => [asset.file, asset]))
 const limits = {
   /** Largest single chunk: today the lazy hls.js engine (~118 kB). */
   maxJavaScriptChunkGzip: 125_000,
-  totalJavaScriptGzip: 440_000,
-  totalCssGzip: 26_000,
+  // Re-baselined after the vault, queue/moments and platform-link features landed (all lazy; the
+  // first-paint budget below is what protects load time). Total includes the lazy ~118 kB hls.js engine.
+  totalJavaScriptGzip: 500_000,
+  totalCssGzip: 31_000,
   /** Everything the first paint needs: entry + static imports (+ boot script) — doc hard stop 200 kB, target 180 kB. */
   initialJavaScriptGzip: 200_000,
   initialCssGzip: 24_000,
   /** Initial + the route's own lazy chunks (what a cold landing on that route downloads for JS/CSS). */
   routeJavaScriptGzip: 225_000,
   /** Creators statically imports the player sheet (MediaDetail + CreatorDrawer): follow-up is to lazy-load them there. */
-  routeJavaScriptGzipOverrides: { '/creators': 245_000 },
+  routeJavaScriptGzipOverrides: { '/creators': 290_000 },
   routeCssGzip: 26_000,
 }
 const targets = { initialJavaScriptGzip: 180_000, initialCssGzip: 25_000 }
@@ -97,7 +99,11 @@ if (!existsSync(manifestPath)) {
       '/settings': ['src/pages/Settings.tsx'],
     }
     for (const [route, keys] of Object.entries(routes)) {
-      const present = keys.filter((key) => manifest[key])
+      // Vite keys a page by its source path, or by a `_Name-hash.js` shared-chunk key when another
+      // module also imports it: fall back to the dynamic entry whose `name` matches the file name.
+      const present = keys
+        .map((key) => manifest[key] ? key : Object.keys(manifest).find((candidate) => manifest[candidate].isDynamicEntry && manifest[candidate].name === key.split('/').pop().replace(/\.tsx?$/, '')))
+        .filter(Boolean)
       if (!present.length) {
         failures.push(`Route ${route}: ${keys.join(', ')} not found in the manifest (budget script needs updating)`)
         continue

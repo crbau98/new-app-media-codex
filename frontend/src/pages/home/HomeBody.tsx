@@ -6,6 +6,7 @@ import { creatorFollowId } from '@/lib/discovery'
 import { useAppStore } from '@/store'
 import ForYouRail from '@/components/ForYouRail'
 import ContinueWatchingRail from '@/components/ContinueWatchingRail'
+import MomentsRail from '@/features/queue/MomentsRail'
 import CollectionsRail from '@/components/CollectionsRail'
 import MediaBrowser from '@/components/discovery/MediaBrowser'
 import MediaRail from '@/components/discovery/MediaRail'
@@ -183,6 +184,7 @@ export default function HomeBody({ items, ranked, creators, loading, failed, onR
 
           {/* Private rails: resume + on-device recommendations. Render nothing without local signals. */}
           <ContinueWatchingRail items={items} onSelect={onSelectItem} />
+          <MomentsRail items={items} onSelect={onSelectItem} />
           <ForYouRail items={items} onSelect={onSelectItem} />
           {trending.length >= 4 && (
             <MediaRail
