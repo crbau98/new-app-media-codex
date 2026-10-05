@@ -331,6 +331,7 @@ async def apply_response_headers(request: Request, call_next):
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; "
+        "manifest-src 'self' blob:; "
         "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: blob: https://*.redgifs.com https://*.twimg.com https://*.media.tumblr.com https://codex-research-radar.onrender.com; "
