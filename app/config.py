@@ -65,6 +65,25 @@ class Settings:
     openai_base_url: str = field(default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"))
     openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip())
     x_bearer_token: str = field(default_factory=lambda: os.getenv("X_BEARER_TOKEN", "").strip())
+    # X official API v2 discovery (timelines + rotating recent-search queries).
+    # Queries are separated by "||". Search calls are budgeted per backend
+    # request and per hour, and cached in memory (never below 10 minutes).
+    x_discovery_queries: str = field(default_factory=lambda: os.getenv("X_DISCOVERY_QUERIES", "").strip())
+    x_search_calls_per_request: int = field(default_factory=lambda: _int_env("X_SEARCH_CALLS_PER_REQUEST", 2))
+    x_search_max_calls_per_hour: int = field(default_factory=lambda: _int_env("X_SEARCH_MAX_CALLS_PER_HOUR", 30))
+    x_search_cache_ttl_seconds: int = field(default_factory=lambda: _int_env("X_SEARCH_CACHE_TTL_SECONDS", 900))
+    x_timeline_handles_per_request: int = field(default_factory=lambda: _int_env("X_TIMELINE_HANDLES_PER_REQUEST", 4))
+    x_timeline_cache_ttl_seconds: int = field(default_factory=lambda: _int_env("X_TIMELINE_CACHE_TTL_SECONDS", 600))
+    # Reddit official OAuth2 app-only discovery (client_credentials grant).
+    reddit_client_id: str = field(default_factory=lambda: os.getenv("REDDIT_CLIENT_ID", "").strip())
+    reddit_client_secret: str = field(default_factory=lambda: os.getenv("REDDIT_CLIENT_SECRET", "").strip())
+    reddit_user_agent: str = field(
+        default_factory=lambda: os.getenv("REDDIT_USER_AGENT", "").strip()
+        or "web:media-codex-discovery:1.0 (official API client; operator contact via Reddit app profile)"
+    )
+    reddit_subreddits: str = field(default_factory=lambda: os.getenv("REDDIT_SUBREDDITS", "").strip())
+    reddit_calls_per_request: int = field(default_factory=lambda: _int_env("REDDIT_CALLS_PER_REQUEST", 8))
+    reddit_cache_ttl_seconds: int = field(default_factory=lambda: _int_env("REDDIT_CACHE_TTL_SECONDS", 600))
     tumblr_api_key: str = field(default_factory=lambda: os.getenv("TUMBLR_API_KEY", "").strip())
     google_cse_api_key: str = field(default_factory=lambda: os.getenv("GOOGLE_CSE_API_KEY", "").strip())
     google_cse_id: str = field(default_factory=lambda: os.getenv("GOOGLE_CSE_ID", "").strip())
