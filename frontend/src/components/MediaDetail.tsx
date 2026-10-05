@@ -292,11 +292,24 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
   }, [items, itemIndex, open])
 
   // Tell the queue layer a sheet is open: the dock steps aside and the drawer/help render inside this dialog.
+  // The registration is released once the exit animation has finished (or on unmount), so the
+  // dock never plays on top of a sheet that is still sliding away.
   const sheetShown = open && Boolean(item)
+  const releaseSheet = useRef<(() => void) | null>(null)
   useEffect(() => {
-    if (!sheetShown) return undefined
-    return surface.registerSheet()
+    if (sheetShown && !releaseSheet.current) releaseSheet.current = surface.registerSheet()
   }, [sheetShown])
+  useEffect(
+    () => () => {
+      releaseSheet.current?.()
+      releaseSheet.current = null
+    },
+    []
+  )
+  const onSheetExited = useCallback(() => {
+    releaseSheet.current?.()
+    releaseSheet.current = null
+  }, [])
 
   // Scroll lock
   useEffect(() => {
@@ -407,7 +420,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
   // transformed ancestor becomes the containing block for position:fixed —
   // on phones that pins the sheet to the page content instead of the screen.
   return createPortal(
-    <AnimatePresence>
+    <AnimatePresence onExitComplete={onSheetExited}>
       {open && item && (
         <div className="fixed inset-0 z-[200] flex items-end justify-end md:items-stretch">
           <motion.button
@@ -445,21 +458,6 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                 <span className="mono-meta block truncate uppercase">Public source · {item.source}</span>
               </div>
               <div className="flex items-center gap-1">
-                <button
-                  onClick={() => surface.togglePanel()}
-                  className="relative grid h-11 w-11 place-items-center rounded-full text-ink-2 outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-heat/70"
-                  aria-label={queue.upcoming.length > 0 ? `Open queue, ${queue.upcoming.length} up next` : 'Open queue'}
-                  aria-expanded={surf.panelOpen}
-                  title="Queue (Q)"
-                  data-testid="sheet-queue-button"
-                >
-                  <ListVideo size={17} strokeWidth={1.75} aria-hidden="true" />
-                  {queue.upcoming.length > 0 && (
-                    <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-heat px-1 font-mono text-[9px] font-semibold leading-4 text-canvas" aria-hidden="true">
-                      {queue.upcoming.length > 99 ? '99+' : queue.upcoming.length}
-                    </span>
-                  )}
-                </button>
                 {onNavigate && (flow.mode !== 'none' || canGoBack || canGoForward) && (
                   <>
                     {flow.position ? (
@@ -492,6 +490,21 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                     </button>
                   </>
                 )}
+                <button
+                  onClick={() => surface.togglePanel()}
+                  className="relative grid h-11 w-11 place-items-center rounded-full text-ink-2 outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-heat/70"
+                  aria-label={queue.upcoming.length > 0 ? `Open queue, ${queue.upcoming.length} up next` : 'Open queue'}
+                  aria-expanded={surf.panelOpen}
+                  title="Queue (Q)"
+                  data-testid="sheet-queue-button"
+                >
+                  <ListVideo size={17} strokeWidth={1.75} aria-hidden="true" />
+                  {queue.upcoming.length > 0 && (
+                    <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-heat px-1 font-mono text-[9px] font-semibold leading-4 text-canvas" aria-hidden="true">
+                      {queue.upcoming.length > 99 ? '99+' : queue.upcoming.length}
+                    </span>
+                  )}
+                </button>
                 <button
                   onClick={onClose}
                   className="grid h-11 w-11 place-items-center rounded-full text-ink-2 outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-heat/70"
@@ -621,7 +634,7 @@ export default function MediaDetail({ item, open, onClose, onShare, items, onNav
                   <button
                     onClick={() => (queuedHere ? queueActions.remove(item.id) : enqueueWithToast(item, 'last', item, addToast))}
                     disabled={playingFromQueue}
-                    className="btn-secondary w-full sm:w-auto"
+                    className={cn('btn-secondary w-full sm:w-auto', playingFromQueue && 'col-span-2 sm:col-span-1')}
                     aria-pressed={queuedHere || playingFromQueue}
                     data-testid="add-to-queue"
                   >

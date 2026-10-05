@@ -44,7 +44,7 @@ export default function MomentChip({ moment, updated, onLabel, onUndo, onDismiss
 
   return (
     <div
-      className="mc-hud-in pointer-events-auto relative flex max-w-full items-center gap-1.5 rounded-full border border-white/12 bg-[rgb(12_9_18/0.88)] py-1 pl-3 pr-1 text-white shadow-xl"
+      className="mc-hud-in pointer-events-auto relative flex max-w-full items-center gap-1.5 rounded-full border border-white/10 bg-[rgb(12_9_18/0.88)] py-1 pl-3 pr-1 text-white shadow-xl"
       data-testid="moment-chip"
       role="status"
       onPointerDown={(event) => event.stopPropagation()}
@@ -91,7 +91,7 @@ export default function MomentChip({ moment, updated, onLabel, onUndo, onDismiss
               setDraft(moment.label)
               setEditing(true)
             }}
-            className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium text-white/85 outline-none transition-colors hover:bg-white/12 focus-visible:ring-2 focus-visible:ring-white/70"
+            className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium text-white/85 outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70"
           >
             <Pencil size={12} aria-hidden="true" /> {moment.label ? 'Edit' : 'Add label'}
           </button>
@@ -99,7 +99,7 @@ export default function MomentChip({ moment, updated, onLabel, onUndo, onDismiss
             <button
               type="button"
               onClick={onUndo}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/70 outline-none transition-colors hover:bg-white/12 hover:text-white focus-visible:ring-2 focus-visible:ring-white/70"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/70 outline-none transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-white/70"
               aria-label="Undo save moment"
               title="Undo"
             >

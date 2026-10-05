@@ -68,7 +68,7 @@ export default function ShortcutHelp({ inside, onClose }: ShortcutHelpProps) {
       data-testid="shortcut-help"
       onKeyDown={onKeyDown}
     >
-      <button type="button" className="q-scrim absolute inset-0 h-full w-full cursor-default bg-scrim" aria-label="Close keyboard shortcuts" tabIndex={-1} onClick={onClose} />
+      <button type="button" className="q-scrim absolute inset-0 h-full w-full cursor-default bg-scrim" aria-hidden="true" tabIndex={-1} onClick={onClose} />
       <div className="q-help relative flex max-h-[90dvh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-elevated shadow-overlay">
         <header className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-5 py-4">
           <span className="grid h-9 w-9 place-items-center rounded-full bg-gold-dim text-gold-ink ring-1 ring-gold-line">
@@ -89,9 +89,9 @@ export default function ShortcutHelp({ inside, onClose }: ShortcutHelpProps) {
           </button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-2">
-          <div className="grid gap-x-10 sm:grid-cols-2">
+          <div className="gap-x-10 sm:columns-2">
             {shortcutsByGroup().map(({ group, entries }) => (
-              <section key={group} className="mt-4" aria-label={group}>
+              <section key={group} className="mt-4 break-inside-avoid" aria-label={group}>
                 <h3 className="eyebrow">{group}</h3>
                 <dl className="mt-1">
                   {entries.map((entry) => (

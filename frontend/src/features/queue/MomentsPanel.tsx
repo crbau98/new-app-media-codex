@@ -59,7 +59,7 @@ function MomentRow({ moment, itemId }: { moment: Moment; itemId: string }) {
             aria-label={`${clip ? 'Play clip' : 'Jump to'} ${defaultLabel(moment)} at ${when}`}
           >
             <span className="shrink-0 rounded-md bg-gold-dim px-1.5 py-1 font-mono text-[11px] tabular-nums text-gold-ink">{when}</span>
-            <span className={cn('min-w-0 flex-1 truncate text-[13px]', moment.label ? 'text-ink' : 'text-ink-3')}>{defaultLabel(moment)}</span>
+            <span className={cn('min-w-0 flex-1 truncate text-[13px]', moment.label ? 'text-ink' : 'text-ink-3')}>{moment.label || (clip ? 'Saved clip' : 'Saved moment')}</span>
             {clip && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-ink-2">
                 <Repeat size={10} aria-hidden="true" /> Loop

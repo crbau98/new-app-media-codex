@@ -52,7 +52,7 @@ export default function UpNextCard({ item, countdown, source, onPlay, onCancel }
 
   return (
     <div
-      className="mc-upnext absolute inset-x-2 bottom-[4.25rem] z-30 flex items-stretch gap-3 rounded-2xl border border-white/12 bg-[rgb(12_9_18/0.9)] p-2.5 shadow-2xl sm:inset-x-auto sm:bottom-[4.75rem] sm:right-4 sm:w-[360px]"
+      className="mc-upnext absolute inset-x-2 bottom-[4.25rem] z-30 flex items-stretch gap-3 rounded-2xl border border-white/10 bg-[rgb(12_9_18/0.9)] p-2.5 shadow-2xl sm:inset-x-auto sm:bottom-[4.75rem] sm:right-4 sm:w-[360px]"
       data-testid="up-next"
       role="group"
       aria-label={`Up next: ${item.title}`}
@@ -116,14 +116,14 @@ export default function UpNextCard({ item, countdown, source, onPlay, onCancel }
           <button
             type="button"
             onClick={onPlay}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-full bg-heat px-3.5 text-xs font-semibold text-canvas outline-none transition-colors hover:bg-heat-hover focus-visible:ring-2 focus-visible:ring-white/80"
+            className="inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full bg-heat px-3.5 text-xs font-semibold text-canvas outline-none transition-colors hover:bg-heat-hover focus-visible:ring-2 focus-visible:ring-white/80"
           >
             <Play size={12} fill="currentColor" strokeWidth={0} aria-hidden="true" /> Play now
           </button>
           <button
             type="button"
             onClick={onCancel}
-            className="inline-flex min-h-9 items-center gap-1 rounded-full px-3 text-xs font-medium text-white/80 outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70"
+            className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-full px-3 text-xs font-medium text-white/80 outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70"
           >
             <X size={12} aria-hidden="true" /> {countdown ? 'Cancel' : 'Dismiss'}
           </button>

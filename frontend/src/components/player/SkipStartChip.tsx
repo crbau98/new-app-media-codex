@@ -18,7 +18,7 @@ interface SkipStartChipProps {
 export default function SkipStartChip({ seconds, creator, samples, onSkip, onForget }: SkipStartChipProps) {
   return (
     <div
-      className="mc-hud-in pointer-events-auto relative flex max-w-full items-center rounded-full border border-white/12 bg-[rgb(12_9_18/0.88)] text-white shadow-xl"
+      className="mc-hud-in pointer-events-auto relative flex max-w-full items-center rounded-full border border-white/10 bg-[rgb(12_9_18/0.88)] text-white shadow-xl"
       data-testid="skip-start"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
@@ -39,7 +39,7 @@ export default function SkipStartChip({ seconds, creator, samples, onSkip, onFor
       <button
         type="button"
         onClick={onForget}
-        className="mr-1 inline-grid h-9 w-9 shrink-0 place-items-center rounded-full text-white/60 outline-none transition-colors hover:bg-white/12 hover:text-white focus-visible:ring-2 focus-visible:ring-white/70"
+        className="mr-1 inline-grid h-9 w-9 shrink-0 place-items-center rounded-full text-white/60 outline-none transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-white/70"
         aria-label={`Don't suggest skipping for @${creator} again`}
         title="Don't suggest this again"
       >

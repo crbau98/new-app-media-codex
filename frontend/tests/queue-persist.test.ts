@@ -36,9 +36,12 @@ import {
 import { loadPlayerPrefs, savePlayerPrefs } from '../src/lib/player/prefs.ts'
 import {
   START_INTENT_TTL_MS,
+  clearHandoff,
   clearStartIntent,
   discardOtherIntents,
+  peekHandoff,
   peekStartIntent,
+  recordPlayback,
   resetStartIntent,
   setStartIntent,
 } from '../src/features/queue/startIntent.ts'
@@ -233,6 +236,24 @@ test('start intents expire, are item-specific, and can be cleared', () => {
   setStartIntent({ id: 'c', loop: { a: 3, b: 9 } }, 5000)
   clearStartIntent(peekStartIntent('c', 5001))
   assert.equal(peekStartIntent('c', 5001), null)
+})
+
+test('live playback hand-off: the dock reads the sheet\'s freshest position without the player\'s help', () => {
+  resetStartIntent()
+  recordPlayback('a', 2.5, true, 1000)
+  recordPlayback('a', 3.1, true, 1250)
+  assert.deepEqual(peekHandoff('a', 1300), { id: 'a', at: 3.1, play: true, stamp: 1250 })
+  assert.equal(peekHandoff('b', 1300), null, 'only for the same item')
+  assert.equal(peekHandoff('a', 1250 + START_INTENT_TTL_MS + 1), null, 'stale snapshots are ignored')
+  recordPlayback('a', 3.4, false, 2000)
+  assert.equal(peekHandoff('a', 2100)?.play, false, 'a paused sheet hands over paused')
+  recordPlayback('a', 0.4, true, 3000)
+  assert.equal(peekHandoff('a', 3001), null, 'nothing worth handing over in the first second')
+  recordPlayback('a', 5, true, 4000)
+  clearHandoff('zzz')
+  assert.ok(peekHandoff('a', 4001))
+  clearHandoff('a')
+  assert.equal(peekHandoff('a', 4001), null)
 })
 
 test('surface registry: sheets, overlays and dock dismissal', () => {

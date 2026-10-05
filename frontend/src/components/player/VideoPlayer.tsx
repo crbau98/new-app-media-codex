@@ -27,7 +27,7 @@ import {
 import { inQueueMode } from '@/features/queue/queueModel'
 import { enqueueWithToast } from '@/features/queue/queueUi'
 import { getQueue } from '@/features/queue/queueStore'
-import { clearStartIntent, discardOtherIntents, peekStartIntent, SEEK_EVENT, setStartIntent, type SeekDetail } from '@/features/queue/startIntent'
+import { clearStartIntent, discardOtherIntents, peekStartIntent, recordPlayback, SEEK_EVENT, type SeekDetail } from '@/features/queue/startIntent'
 import { overlayOpen, surface } from '@/features/queue/surface'
 import type { PlaybackFlow } from '@/features/queue/usePlaybackFlow'
 import Controls from './Controls'
@@ -119,16 +119,19 @@ export default function VideoPlayer({ item, theatre, flow, onPrev, onNext, class
   )
   const state = useVideoState(video)
 
-  // Closing the sheet mid-queue hands the position to the dock's mini player.
-  // Declared before the engine effect so it reads the element before teardown.
-  useEffect(
-    () => () => {
-      const element = lastVideo.current
-      if (!element || !inQueueMode(getQueue(), itemId) || element.ended || element.currentTime < 1) return
-      setStartIntent({ id: itemId, at: element.currentTime, play: !element.paused })
-    },
-    [itemId],
-  )
+  // While this is the queue's current item, report the live position so that closing the
+  // sheet hands playback to the dock's mini player at the same spot (and playing/paused state).
+  useEffect(() => {
+    if (!video) return undefined
+    const report = () => {
+      if (video.currentTime >= 1 && !video.ended && inQueueMode(getQueue(), itemId)) recordPlayback(itemId, video.currentTime, !video.paused)
+    }
+    for (const type of ['timeupdate', 'pause', 'play', 'seeked']) video.addEventListener(type, report)
+    return () => {
+      for (const type of ['timeupdate', 'pause', 'play', 'seeked']) video.removeEventListener(type, report)
+      report()
+    }
+  }, [itemId, video])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const glowRef = useRef<HTMLDivElement>(null)
@@ -1016,6 +1019,10 @@ export default function VideoPlayer({ item, theatre, flow, onPrev, onNext, class
               onMoment={() => {
                 setMenuOpen(false)
                 saveMoment()
+              }}
+              onEnqueue={() => {
+                setMenuOpen(false)
+                enqueueWithToast(item, 'last', item, addToast)
               }}
               onClose={() => setMenuOpen(false)}
             />

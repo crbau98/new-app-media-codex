@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Reorder, useDragControls } from 'framer-motion'
 import {
+  AudioLines,
   FolderPlus,
   GripVertical,
   History,
   ListVideo,
-  Play,
   Repeat,
   Repeat1,
   Shuffle,
@@ -107,10 +107,7 @@ function UpcomingRow({ item, index, total, onPlay, onCommit, onKeyMove, progress
         </span>
         <span className="min-w-0">
           <span className="line-clamp-2 text-[13px] font-medium leading-snug text-ink">{item.title}</span>
-          <span className="mt-0.5 block truncate font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">
-            @{item.creator}
-            {item.source ? ` · ${item.source}` : ''}
-          </span>
+          <span className="mt-0.5 block truncate font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">@{item.creator}</span>
         </span>
       </button>
       <button type="button" onClick={() => queueActions.remove(item.id)} className={iconBtn} aria-label={`Remove ${item.title} from queue`}>
@@ -248,7 +245,7 @@ export default function QueuePanel({ inside, onClose, onOpenItem }: QueuePanelPr
       data-testid="queue-panel"
       onKeyDown={onKeyDown}
     >
-      <button type="button" className="q-scrim absolute inset-0 h-full w-full cursor-default bg-scrim" aria-label="Close queue" tabIndex={-1} onClick={onClose} />
+      <button type="button" className="q-scrim absolute inset-0 h-full w-full cursor-default bg-scrim" aria-hidden="true" tabIndex={-1} onClick={onClose} />
       <aside className="q-drawer relative flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-b-0 border-white/10 bg-elevated shadow-overlay md:h-full md:max-h-none md:w-[420px] md:rounded-none md:border-y-0 md:border-r-0">
         <header className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-4 pb-3 pt-4 sm:px-5">
           <span className="absolute left-1/2 top-1.5 h-1 w-9 -translate-x-1/2 rounded-full bg-white/15 md:hidden" aria-hidden="true" />
@@ -293,9 +290,10 @@ export default function QueuePanel({ inside, onClose, onOpenItem }: QueuePanelPr
             role="switch"
             aria-checked={autoplayOn}
             onClick={() => queueActions.toggleAutoplay(nowPlaying?.id)}
+            aria-label="Autoplay next"
             data-testid="queue-autoplay"
           >
-            <SkipForward size={13} strokeWidth={1.75} aria-hidden="true" /> Autoplay next
+            <SkipForward size={13} strokeWidth={1.75} aria-hidden="true" /> Autoplay
             <span className="font-mono text-[10px] opacity-70">{autoplayOn ? 'On' : 'Off'}</span>
           </button>
         </div>
@@ -338,7 +336,7 @@ export default function QueuePanel({ inside, onClose, onOpenItem }: QueuePanelPr
                       )}
                     </span>
                     <span className="mr-1 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-black/35 text-gold-ink" aria-hidden="true">
-                      <Play size={13} fill="currentColor" strokeWidth={0} className="ml-0.5" />
+                      <AudioLines size={15} strokeWidth={2} />
                     </span>
                   </button>
                 </section>

@@ -68,7 +68,7 @@ export default function ContinueWatchingRail({ items, onSelect }: ContinueWatchi
       </SectionHeader>
       <Rail ariaLabel="Continue watching">
         {entries.map(({ entry, item }, index) => (
-          <div key={item.id} className="d-rail-item group relative" data-variant="wide">
+          <div key={item.id} className="d-rail-item" data-variant="wide">
             <MediaCard
               item={item}
               aspectRatio="16 / 9"
@@ -77,11 +77,19 @@ export default function ContinueWatchingRail({ items, onSelect }: ContinueWatchi
               progress={percentOf(entry)}
               label={`Resume ${item.title} at ${formatClock(entry.seconds)}`}
             />
-            <button type="button" onClick={() => removeProgress(item.id)} className="d-remove" aria-label={`Remove ${item.title} from Continue watching`}>
-              <X size={14} strokeWidth={2} />
-            </button>
-            <div className="d-rail-caption">
-              {formatClock(entry.seconds)} / {formatClock(entry.duration)} · {percentOf(entry)}% watched
+            <div className="flex items-center gap-1">
+              <div className="d-rail-caption min-w-0 flex-1">
+                {formatClock(entry.seconds)} / {formatClock(entry.duration)} · {percentOf(entry)}% watched
+              </div>
+              <button
+                type="button"
+                onClick={() => removeProgress(item.id)}
+                className="-my-2 grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-3 outline-none transition-colors hover:bg-sunken hover:text-ink focus-visible:ring-2 focus-visible:ring-heat/70"
+                aria-label={`Remove ${item.title} from Continue watching`}
+                title="Remove from Continue watching"
+              >
+                <X size={14} strokeWidth={2} aria-hidden="true" />
+              </button>
             </div>
           </div>
         ))}

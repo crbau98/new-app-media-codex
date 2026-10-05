@@ -40,6 +40,36 @@ export function clearStartIntent(intent: StartIntent | null): void {
   if (intent && pending === intent) pending = null
 }
 
+/* ── live playback hand-off (sheet <-> dock) ───────────────────── */
+
+export interface PlaybackSnapshot {
+  id: string
+  at: number
+  playing: boolean
+  stamp: number
+}
+
+let lastPlayback: PlaybackSnapshot | null = null
+
+/**
+ * The sheet's player reports where it is (on timeupdate/pause/seek) while it plays
+ * a queue item. Closing the sheet then needs no cooperation from the unmounting
+ * player: the dock simply reads the freshest snapshot when it mounts.
+ */
+export function recordPlayback(id: string, at: number, playing: boolean, now = Date.now()): void {
+  lastPlayback = { id, at, playing, stamp: now }
+}
+
+/** The freshest snapshot for `id`, as a start intent, when recent enough to still describe what the viewer was doing. */
+export function peekHandoff(id: string, now = Date.now()): StartIntent | null {
+  if (!lastPlayback || lastPlayback.id !== id || now - lastPlayback.stamp > START_INTENT_TTL_MS || lastPlayback.at < 1) return null
+  return { id, at: lastPlayback.at, play: lastPlayback.playing, stamp: lastPlayback.stamp }
+}
+
+export function clearHandoff(id: string): void {
+  if (lastPlayback?.id === id) lastPlayback = null
+}
+
 /** A player mounting for `id` drops any pending intent meant for a different item so it cannot linger. */
 export function discardOtherIntents(id: string): void {
   if (pending && pending.id !== id) pending = null
@@ -48,6 +78,7 @@ export function discardOtherIntents(id: string): void {
 /** Drop whatever is pending (tests, wipes). */
 export function resetStartIntent(): void {
   pending = null
+  lastPlayback = null
 }
 
 export const SEEK_EVENT = 'media-codex:player-seek'
