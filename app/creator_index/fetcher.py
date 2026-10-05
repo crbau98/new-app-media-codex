@@ -16,9 +16,9 @@ import asyncio
 import json
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 from app.media_pipeline.netsafe import FetchError, UnsafeUrlError, safe_fetch, validate_url
 from app.utils.circuit_breaker import CircuitBreaker
@@ -40,25 +40,68 @@ class SourceError(RuntimeError):
 class JsonResponse:
     status: int
     data: Any
+    #: lower-cased response headers (``Link`` pagination for Mastodon); empty for fetchers that do not supply them
+    headers: dict[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
         return 200 <= self.status < 300 and self.data is not None
 
 
+@dataclass
+class TextResponse:
+    """A text body (RSS/Atom/HTML). ``url`` is the final URL after redirects."""
+
+    status: int
+    text: str
+    content_type: str = ""
+    url: str = ""
+    headers: dict[str, str] = field(default_factory=dict)
+    truncated: bool = False
+
+    @property
+    def ok(self) -> bool:
+        return 200 <= self.status < 300 and not self.truncated
+
+
 class Fetcher(Protocol):
     async def get_json(self, url: str, headers: dict[str, str] | None = None) -> JsonResponse: ...
 
 
-def _parse(status: int, body: bytes) -> JsonResponse:
+FEED_ACCEPT = (
+    "application/rss+xml, application/atom+xml, application/feed+json, application/json;q=0.9, "
+    "application/xml;q=0.8, text/xml;q=0.8, text/html;q=0.4"
+)
+MAX_REDIRECTS = 5
+
+
+def _lower(headers: Any) -> dict[str, str]:
+    try:
+        return {str(k).lower(): str(v) for k, v in dict(headers or {}).items()}
+    except (TypeError, ValueError):
+        return {}
+
+
+def _parse(status: int, body: bytes, headers: Any = None) -> JsonResponse:
     if status == 429 or status >= 500:
         raise SourceError("http_%d" % status, f"HTTP {status}", status)
     if not (200 <= status < 300):
         return JsonResponse(status, None)
     try:
-        return JsonResponse(status, json.loads(body.decode("utf-8", "replace")))
+        return JsonResponse(status, json.loads(body.decode("utf-8", "replace")), _lower(headers))
     except ValueError:
         return JsonResponse(status, None)
+
+
+def _text(status: int, body: bytes, headers: Any, url: str, truncated: bool = False) -> TextResponse:
+    if status == 429 or status >= 500:
+        raise SourceError("http_%d" % status, f"HTTP {status}", status)
+    lowered = _lower(headers)
+    return TextResponse(
+        status=status, text=body.decode("utf-8", "replace"),
+        content_type=(lowered.get("content-type") or "").split(";", 1)[0].strip().lower(),
+        url=url, headers=lowered, truncated=truncated,
+    )
 
 
 class SafeFetcher:
@@ -81,7 +124,20 @@ class SafeFetcher:
             raise SourceError(exc.code, str(exc)) from exc
         if res.truncated:
             return JsonResponse(res.status, None)
-        return _parse(res.status, res.body)
+        return _parse(res.status, res.body, getattr(res, "headers", None))
+
+    async def get_text(self, url: str, headers: dict[str, str] | None = None) -> TextResponse:
+        hdrs = {"Accept": FEED_ACCEPT, "User-Agent": USER_AGENT, **(headers or {})}
+        try:
+            res = await asyncio.to_thread(
+                safe_fetch, url, headers=hdrs, max_bytes=MAX_BODY_BYTES,
+                timeout=self.timeout, total_timeout=self.total_timeout,
+            )
+        except UnsafeUrlError as exc:
+            raise SourceError("unsafe_url", str(exc)) from exc
+        except FetchError as exc:
+            raise SourceError(exc.code, str(exc)) from exc
+        return _text(res.status, res.body, getattr(res, "headers", None), getattr(res, "url", url) or url, bool(res.truncated))
 
 
 class HttpxFetcher:
@@ -99,7 +155,24 @@ class HttpxFetcher:
             res = await self.client.get(url, headers={"Accept": "application/json", **(headers or {})})
         except Exception as exc:  # timeouts, connect errors
             raise SourceError(type(exc).__name__.lower(), str(exc)) from exc
-        return _parse(res.status_code, res.content)
+        return _parse(res.status_code, res.content, res.headers)
+
+    async def get_text(self, url: str, headers: dict[str, str] | None = None) -> TextResponse:
+        current = url
+        for _hop in range(MAX_REDIRECTS + 1):
+            try:
+                validate_url(current)
+            except UnsafeUrlError as exc:
+                raise SourceError("unsafe_url", str(exc)) from exc
+            try:
+                res = await self.client.get(current, headers={"Accept": FEED_ACCEPT, **(headers or {})})
+            except Exception as exc:
+                raise SourceError(type(exc).__name__.lower(), str(exc)) from exc
+            if res.status_code in (301, 302, 303, 307, 308) and res.headers.get("location"):
+                current = urljoin(current, res.headers["location"])
+                continue
+            return _text(res.status_code, res.content, res.headers, current)
+        raise SourceError("too_many_redirects")
 
 
 class GuardedFetcher:
@@ -143,6 +216,14 @@ class GuardedFetcher:
         return bool(br and br._state.value == "open" and not _recovered(br))  # noqa: SLF001
 
     async def get_json(self, url: str, headers: dict[str, str] | None = None) -> JsonResponse:
+        return await self._guarded(url, "get_json", headers)
+
+    async def get_text(self, url: str, headers: dict[str, str] | None = None) -> TextResponse:
+        if not hasattr(self.inner, "get_text"):
+            raise SourceError("unsupported", "fetcher cannot read text bodies")
+        return await self._guarded(url, "get_text", headers)
+
+    async def _guarded(self, url: str, method: str, headers: dict[str, str] | None) -> Any:
         host = (urlsplit(url).hostname or "").lower()
         lock = self._locks.setdefault(host, asyncio.Lock())
         async with lock:  # serialises requests per host so the interval is honoured
@@ -152,7 +233,7 @@ class GuardedFetcher:
             self._last[host] = self._clock()
             self.requests += 1
             try:
-                return await self.breaker(host).async_call(self.inner.get_json, url, headers)
+                return await self.breaker(host).async_call(getattr(self.inner, method), url, headers)
             except SourceError:
                 raise
             except RuntimeError as exc:  # breaker OPEN

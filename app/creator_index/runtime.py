@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.creator_index.crawler import CrawlConfig, CreatorCrawler
+from app.creator_index.moderation import ModerationService
 from app.creator_index.repository import CreatorIndexRepository
 from app.creator_index.schema import ensure_creator_index_schema
 
@@ -25,8 +26,14 @@ JOB_ID = "creator-index-crawl"
 class CreatorIndexRuntime:
     repo: CreatorIndexRepository
     crawler: CreatorCrawler
+    moderation: ModerationService
     scheduler: Any | None = None
     task: asyncio.Task | None = None
+
+    @property
+    def feeds(self):
+        """Submitted-feed service (owned by the crawler so both share one fetcher / breaker / budget)."""
+        return self.crawler.feeds
 
 
 def get_runtime(app: Any) -> CreatorIndexRuntime:
@@ -41,7 +48,9 @@ def get_runtime(app: Any) -> CreatorIndexRuntime:
         with db.connect() as conn:
             ensure_creator_index_schema(conn)
         repo = CreatorIndexRepository(db.connect)
-        rt = CreatorIndexRuntime(repo=repo, crawler=CreatorCrawler(repo, config=CrawlConfig.from_env()))
+        rt = CreatorIndexRuntime(
+            repo=repo, crawler=CreatorCrawler(repo, config=CrawlConfig.from_env()), moderation=ModerationService(repo.connect),
+        )
         app.state.creator_index = rt
         return rt
 

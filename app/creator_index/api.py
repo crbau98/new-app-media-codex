@@ -1,7 +1,10 @@
 """Creator index API (mounted under /api/v1).
 
 Public, CDN-friendly reads:  GET /creators/index, GET /creators/index/stats
+Public hidden-key list:      GET /creators/index/hidden  (platform:handle keys the directory must not show)
 Admin-only writes:           POST /creators/index/crawl, POST /creators/index/observe
+
+Feed submission, takedown and their admin endpoints live in ``submissions_api.py``.
 """
 
 from __future__ import annotations
@@ -63,6 +66,15 @@ async def index_stats(request: Request) -> JSONResponse:
     return JSONResponse(stats, headers=PUBLIC_CACHE)
 
 
+@router.get("/hidden", operation_id="creatorIndexHidden")
+async def hidden_keys(request: Request) -> JSONResponse:
+    """Keys (``platform:canonical-handle``) of hidden / suppressed creators, so live-lane results can be filtered
+    the same way index reads are. No reasons, contacts or timestamps are exposed."""
+    rt = runtime_of(request)
+    keys = await asyncio.to_thread(rt.repo.hidden_keys)
+    return JSONResponse({"keys": keys}, headers={"Cache-Control": "public, max-age=30, s-maxage=60"})
+
+
 @router.post("/crawl", status_code=202, dependencies=[Depends(require_admin)], operation_id="creatorIndexCrawl")
 async def crawl_now(
     request: Request,
@@ -70,7 +82,7 @@ async def crawl_now(
     source: str | None = Query(default=None, max_length=20),
 ) -> JSONResponse:
     rt = runtime_of(request)
-    if source and source not in {"all", "redgifs", "bluesky", "mastodon", "lemmy", "peertube"}:
+    if source and source not in {"all", "redgifs", "bluesky", "mastodon", "lemmy", "peertube", "feeds"}:
         raise _problem(422, "invalid_source", "Unknown source.")
     if rt.crawler.running:
         return JSONResponse({"started": False, "running": True}, status_code=202)

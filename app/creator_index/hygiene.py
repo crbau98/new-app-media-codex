@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Iterable
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
 PHONE_RE = re.compile(r"(?<![\w])(?:\+?\d[\d\s().-]{7,}\d)(?![\w])")
@@ -19,6 +19,29 @@ EXCLUDED_MARKERS = frozenset({
     "female", "woman", "women", "girl", "lesbian", "straight", "pussy", "vagina", "hetero",
     "girlfriend", "wife", "b/g", "m/f", "boob", "breast", "tits", "milf", "femdom",
     "girls", "chick", "chicks", "females",
+})
+
+# Hard safety markers: minor-related and non-consent / voyeur / stolen-content terms. Unlike the
+# exclusion markers above these are matched on titles as well as structured fields: a false
+# positive only drops one item, a false negative is unacceptable.
+_SAFETY_RE = re.compile(
+    r"\b(?:under-?age|minors?|jail-?bait|lolita?s?|loli-?con|shota(?:con)?|pre-?teens?|pedo\w*|paedo\w*|"
+    r"child(?:ren)?|kiddie|kids?|school-?boys?|non-?consen\w*|rap(?:e|ed|es|ing)|drugged|roofie\w*|"
+    r"revenge-?porn|hidden-?cams?|spy-?cams?|voyeur\w*|upskirts?|creep-?shots?)\b",
+    re.I,
+)
+# Leak / mirror / rip markers (used on URL path segments and feed titles at submission time).
+_LEAK_RE = re.compile(
+    r"\b(?:leaks?|leaked|leakers?|stolen|hacked|doxx?(?:ed|ing)?|mega-?links?|piracy|pirated|"
+    r"onlyfans-?rips?|nudes-?leak)\b",
+    re.I,
+)
+# Male/gay allow tokens: a *provider-supplied* tag, niche or community name must contain one of these
+# before it is promoted into a crawl lane (keeps tag snowballing inside the product's scope).
+MALE_TOKENS = frozenset({
+    "gay", "male", "men", "man", "guy", "guys", "bear", "bears", "twink", "twinks", "jock", "jocks",
+    "daddy", "daddies", "hunk", "hunks", "otter", "otters", "muscle", "muscles", "dilf", "stud", "studs",
+    "bi", "bisexual", "msm", "mlm", "twunk", "cub", "cubs", "lads", "boys",
 })
 
 # Same allow-list the edge uses for proxied media URLs (`safeProviderMediaUrl`).
@@ -70,6 +93,53 @@ def clean_tag(value: Any) -> str:
 def has_excluded_marker(fields: Iterable[str]) -> bool:
     tokens = {t for t in re.split(r"[^a-z0-9/]+", " ".join(f for f in fields if f).lower()) if t}
     return not EXCLUDED_MARKERS.isdisjoint(tokens)
+
+
+def safety_marker(*fields: Any) -> str:
+    """First minor-related / non-consent marker found in the given text, else ''."""
+    text = " ".join(str(f) for f in fields if f)
+    match = _SAFETY_RE.search(re.sub(r"[_/.]+", "-", text))
+    return match.group(0).lower() if match else ""
+
+
+def leak_marker(*fields: Any) -> str:
+    """First leak / mirror / rip marker in the given text (URL path words, titles), else ''."""
+    text = " ".join(str(f) for f in fields if f)
+    match = _LEAK_RE.search(re.sub(r"[_/.]+", "-", text))
+    return match.group(0).lower() if match else ""
+
+
+def has_male_token(value: Any) -> bool:
+    tokens = {t for t in re.split(r"[^a-z0-9]+", str(value or "").lower()) if t}
+    return not MALE_TOKENS.isdisjoint(tokens)
+
+
+_TRACKING_PARAMS = ("utm_", "fbclid", "gclid", "mc_", "ref", "igshid")
+
+
+def canonical_url(value: Any, *, keep_query: bool = True) -> str:
+    """Stable identity for a URL: https scheme, lowercase host without ``www.``, default port, fragment,
+    tracking params and trailing slash removed. Returns '' for anything that is not an http(s) URL."""
+    try:
+        parts = urlsplit(str(value or "").strip())
+        port = parts.port
+    except ValueError:
+        return ""
+    if parts.scheme.lower() not in {"http", "https"} or not parts.hostname:
+        return ""
+    host = parts.hostname.lower().rstrip(".").removeprefix("www.")
+    netloc = host if port in (None, 80, 443) else f"{host}:{port}"
+    path = re.sub(r"/{2,}", "/", parts.path or "/")
+    if len(path) > 1:
+        path = path.rstrip("/")
+    query = ""
+    if keep_query and parts.query:
+        pairs = sorted(
+            (k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if not k.lower().startswith(_TRACKING_PARAMS)
+        )
+        query = urlencode(pairs)
+    return f"https://{netloc}{path}" + (f"?{query}" if query else "")
 
 
 def safe_media_url(value: Any) -> str | None:

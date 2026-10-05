@@ -62,6 +62,20 @@ export const DISCOVERY_LANES: readonly DiscoveryLane[] = [
   best('Asian Gay'),
   best('Black Gay'),
   best('Gay Solo'),
+  // Round 3: wider niches. Mirrored in app/creator_index/lanes.py (a backend test keeps both lists in sync);
+  // names are best-effort provider tags: an unknown tag soft-fails and, in the backend crawler, backs off.
+  best('Gay Bear'),
+  best('Gay Muscle'),
+  best('Gay Twink'),
+  best('Gay Daddy'),
+  best('Gay Jock'),
+  best('Gay Hunk'),
+  best('Chub'),
+  best('Silver Fox'),
+  best('Gay Feet'),
+  best('Gay Kink'),
+  best('Gay Leather'),
+  best('Gay Cam'),
 ]
 
 export const PROVIDER_PAGE_SIZE = 80
