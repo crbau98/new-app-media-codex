@@ -230,6 +230,8 @@ async function post<T>(path: string, body: unknown, options: CallOptions): Promi
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }
     if (options.clientIp) headers['X-Client-IP'] = options.clientIp
+    const secret = (process.env.GATEWAY_CLIENT_IP_SECRET || '').trim()
+    if (options.clientIp && secret) headers['X-Gateway-Secret'] = secret
     const res = await fetch(`${indexBackendOrigin()}${path}`, {
       method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal, cache: 'no-store', redirect: 'manual',
     })

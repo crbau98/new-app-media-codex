@@ -68,7 +68,7 @@ def make_env(tmp_path, monkeypatch, net: Net | None = None, env: dict[str, str] 
     """FastAPI app with the v1 router, an admin-token stub and (optionally) a mock-network crawler fetcher."""
     for name in ("FEED_DENYLIST", "FEED_MAX_PENDING", "FEED_SUBMIT_PER_HOUR", "FEED_SUBMIT_GLOBAL_PER_HOUR",
                  "TAKEDOWN_PER_HOUR", "TAKEDOWN_GLOBAL_PER_HOUR", "PRIVACY_HASH_SALT", "TRUST_GATEWAY_CLIENT_IP",
-                 "FEED_REFRESH_MINUTES", "FEED_MAX_PER_RUN", "FEED_MAX_FAILURES"):
+                 "FEED_REFRESH_MINUTES", "FEED_MAX_PER_RUN", "FEED_MAX_FAILURES", "GATEWAY_CLIENT_IP_SECRET"):
         monkeypatch.delenv(name, raising=False)
     for key, value in (env or {}).items():
         monkeypatch.setenv(key, value)

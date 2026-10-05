@@ -56,19 +56,32 @@ def get_salt(get_state: Callable[[str, Any], Any], set_state: Callable[[str, Any
         return fresh
 
 
-def client_ip(request: Request) -> str:
-    """Best-effort client address.
+def _valid_ip(value: str) -> str:
+    try:
+        return str(ipaddress.ip_address((value or "").strip()))
+    except ValueError:
+        return ""
 
-    The Vercel gateway forwards the visitor address as ``X-Client-IP`` (the backend only ever sees
-    the gateway otherwise). Direct callers can spoof it, which is why every limiter also has a
-    global ceiling; set ``TRUST_GATEWAY_CLIENT_IP=0`` to ignore the header entirely.
+
+def client_ip(request: Request) -> str:
+    """Best-effort client address for the per-client limits.
+
+    1. ``X-Client-IP`` set by our Vercel gateway / feed-submit endpoint (the backend would otherwise only see the
+       gateway). When ``GATEWAY_CLIENT_IP_SECRET`` is configured (on Vercel and Render) the header is only honoured
+       together with a matching ``X-Gateway-Secret``; without a secret it is trusted as sent, which direct callers
+       can spoof, so every limiter also has a global ceiling. ``TRUST_GATEWAY_CLIENT_IP=0`` ignores the header.
+    2. The right-most ``X-Forwarded-For`` entry (the peer Render's proxy saw: not client-controlled).
+    3. The socket peer.
     """
     if env_flag("TRUST_GATEWAY_CLIENT_IP", True):
-        forwarded = (request.headers.get("x-client-ip") or "").strip()
-        try:
-            return str(ipaddress.ip_address(forwarded))
-        except ValueError:
-            pass
+        forwarded = _valid_ip(request.headers.get("x-client-ip", ""))
+        secret = os.environ.get("GATEWAY_CLIENT_IP_SECRET", "").strip()
+        if forwarded and (not secret or hmac.compare_digest(request.headers.get("x-gateway-secret", ""), secret)):
+            return forwarded
+    chain = (request.headers.get("x-forwarded-for") or "").split(",")
+    hop = _valid_ip(chain[-1]) if chain else ""
+    if hop:
+        return hop
     return request.client.host if request.client else "unknown"
 
 

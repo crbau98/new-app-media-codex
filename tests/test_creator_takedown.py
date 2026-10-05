@@ -334,9 +334,11 @@ def test_hidden_keys_endpoint_is_public_and_minimal(feed_env):
     seed(env, "bsky", platform="bluesky", profile_url="https://bsky.app/profile/bsky")
     post(env, {"platform": "redgifs", "handle": "Alpha", "reason": "mine", "email": EMAIL})
     post(env, {"platform": "bluesky", "handle": "ghost.example.com", "reason": "mine", "email": EMAIL})
+    post(env, {"platform": "Creator feed", "handle": "Slug-One@site.example", "reason": "mine", "email": EMAIL})
     res = env.client.get("/api/v1/creators/index/hidden")
     assert res.status_code == 200 and "max-age" in res.headers["cache-control"]
-    assert res.json() == {"keys": ["bluesky:ghostexamplecom", "redgifs:alpha"]}
+    # keys are the edge's creator dedupe identity: lower-case platform label + alphanumeric handle
+    assert res.json() == {"keys": ["bluesky:ghostexamplecom", "creator feed:slugonesiteexample", "redgifs:alpha"]}
     assert "reason" not in res.text and "owner" not in res.text.lower()
 
 

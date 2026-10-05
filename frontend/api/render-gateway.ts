@@ -147,6 +147,9 @@ export default async function handler(request: Request): Promise<Response> {
     headers.delete('idempotency-key')
     const ip = visitorIp(request)
     if (ip) headers.set('x-client-ip', ip)
+    // Optional shared secret: with it configured on both sides the backend only trusts X-Client-IP from this gateway.
+    const secret = (process.env.GATEWAY_CLIENT_IP_SECRET || '').trim()
+    if (secret) headers.set('x-gateway-secret', secret)
   }
 
   try {

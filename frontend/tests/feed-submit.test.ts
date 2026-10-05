@@ -286,3 +286,21 @@ test('feed-submit has its own per-visitor bucket in front of the backend', async
     assert.equal((await post({ url: 'https://bearstudio.example/other.xml' }, { 'x-real-ip': '198.51.100.100' })).status, 201)
   } finally { restore() }
 })
+
+test('feed-submit sends the shared secret with the visitor address when configured', async () => {
+  const previous = process.env.GATEWAY_CLIENT_IP_SECRET
+  const { calls, restore } = mockBackend()
+  try {
+    process.env.GATEWAY_CLIENT_IP_SECRET = 's3cret'
+    await post({ url: 'https://bearstudio.example/feed.xml' }, { 'x-real-ip': '198.51.100.55' })
+    assert.equal(calls[0].headers['x-gateway-secret'], 's3cret')
+    assert.equal(calls[0].headers['x-client-ip'], '198.51.100.55')
+    delete process.env.GATEWAY_CLIENT_IP_SECRET
+    await post({ url: 'https://bearstudio.example/feed2.xml' }, { 'x-real-ip': '198.51.100.56' })
+    assert.equal(calls[1].headers['x-gateway-secret'], undefined)
+  } finally {
+    restore()
+    if (previous === undefined) delete process.env.GATEWAY_CLIENT_IP_SECRET
+    else process.env.GATEWAY_CLIENT_IP_SECRET = previous
+  }
+})

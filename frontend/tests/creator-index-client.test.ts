@@ -440,3 +440,26 @@ test('gateway reports an unreachable backend for the public forms as 502 without
     assert.equal(res.headers.get('cache-control'), 'no-store')
   } finally { globalThis.fetch = original }
 })
+
+test('gateway adds the optional shared secret to public form POSTs only, and never to other routes', async () => {
+  const previous = process.env.GATEWAY_CLIENT_IP_SECRET
+  const { seen, restore } = gatewayBackend()
+  try {
+    delete process.env.GATEWAY_CLIENT_IP_SECRET
+    await viaGateway('POST', SUBMIT_PATH, { body: '{}', headers: { ...JSON_HEADERS, 'x-real-ip': '198.51.100.7' } })
+    assert.equal(seen[0].headers['x-gateway-secret'], undefined)
+    process.env.GATEWAY_CLIENT_IP_SECRET = 's3cret'
+    const res = await viaGateway('POST', TAKEDOWN_PATH, { body: '{}', headers: { ...JSON_HEADERS, 'x-real-ip': '198.51.100.7', 'x-gateway-secret': 'from-browser' } })
+    assert.equal(seen[1].headers['x-gateway-secret'], 's3cret', 'the configured secret replaces anything the browser sent')
+    assert.equal(res.headers.get('x-gateway-secret'), null)
+    assert.ok(!(await res.text()).includes('s3cret'))
+    await viaGateway('GET', '/api/v1/creators/index')
+    await viaGateway('POST', '/api/v1/ingest/jobs')
+    assert.equal(seen[2].headers['x-gateway-secret'], undefined)
+    assert.equal(seen[3].headers['x-gateway-secret'], undefined)
+  } finally {
+    restore()
+    if (previous === undefined) delete process.env.GATEWAY_CLIENT_IP_SECRET
+    else process.env.GATEWAY_CLIENT_IP_SECRET = previous
+  }
+})

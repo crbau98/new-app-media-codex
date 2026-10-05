@@ -329,13 +329,14 @@ class CreatorIndexRepository:
             return cur.rowcount > 0
 
     def hidden_keys(self) -> list[str]:
-        """``platform:canonical-handle`` for every hidden or suppressed creator (no reasons, no contacts)."""
+        """``label:canonical-handle`` (lower-case platform label, alphanumeric handle) for every hidden or suppressed
+        creator: the same identity the edge uses to de-duplicate creators (`creatorDedupeKey`). No reasons or contacts."""
         keys: set[str] = set()
         with self._connect() as conn:
             for row in conn.execute("SELECT platform, handle FROM creator_index WHERE hidden = 1"):
-                keys.add(f"{row[0]}:{canonical(row[1])}")
+                keys.add(f"{platform_label(row[0]).lower()}:{canonical(row[1])}")
             for row in conn.execute("SELECT platform, handle FROM creator_suppressions WHERE kind = 'creator'"):
-                keys.add(f"{row[0]}:{canonical(row[1])}")
+                keys.add(f"{platform_label(row[0]).lower()}:{canonical(row[1])}")
         return sorted(keys)
 
     # ── reads ───────────────────────────────────────────────────────────────

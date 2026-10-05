@@ -628,7 +628,19 @@ async def read_mastodon(fetcher: Fetcher, handle: str) -> ParsedFeed:
     return parsed
 
 
+def policy_code(kind: str, url: str, handle: str) -> str:
+    """Denylist / paywall / forum / leak-marker verdict for a stored feed, re-evaluated on every fetch."""
+    if kind in DOCUMENT_KINDS:
+        parts = urlsplit(url)
+        return host_policy(parts.hostname or "") or path_policy(parts.path)
+    host = handle if kind == "bluesky" else handle.partition("@")[2]
+    return host_policy(host)
+
+
 async def read_feed(kind: str, url: str, handle: str, fetcher: Fetcher) -> ParsedFeed:
+    code = policy_code(kind, url, handle)
+    if code:
+        raise FeedError(code, MESSAGES[code])
     if kind in DOCUMENT_KINDS:
         return await read_document_feed(fetcher, url)
     if kind == "peertube-channel":
@@ -856,6 +868,20 @@ class FeedService:
         with self._connect() as conn:
             return conn.execute("SELECT 1 FROM submitted_feeds WHERE creator_handle = ?", (handle,)).fetchone() is not None
 
+    def _insert(self, kind: str, sub: Submission, display: str, creator_handle: str, site_url: str, email_hash: str,
+                items: int, ip_hash: str) -> int:
+        stamp = self._stamp()
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO submitted_feeds (kind, url, canonical_key, handle, display_name, creator_handle, site_url, "
+                "contact_email_hash, status, created_at, updated_at, last_status, item_count, submitted_ip_hash) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (kind, sub.url, sub.canonical_key, sub.handle, display, creator_handle, site_url, email_hash,
+                 "pending", stamp, stamp, "probe_ok", items, ip_hash),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
     # ── submission ──
 
     def check_rate(self, client_key: str) -> None:
@@ -877,15 +903,15 @@ class FeedService:
             normalised = abuse.normalize_email(email)
             if not normalised:
                 raise FeedError("invalid_email", "That e-mail address is not valid.")
-            email_hash = abuse.hash_value(normalised, self.salt)
+            email_hash = abuse.hash_value(normalised, await asyncio.to_thread(lambda: self.salt))
         sub = normalize_submission(url, handle, kind, name)
-        if self.moderation.is_feed_suppressed(sub.canonical_key):
+        if await asyncio.to_thread(self.moderation.is_feed_suppressed, sub.canonical_key):
             raise FeedError("not_accepted", "This feed cannot be accepted.")
-        existing = self._by_key(sub.canonical_key)
+        existing = await asyncio.to_thread(self._by_key, sub.canonical_key)
         if existing is not None:
             return 200, {"id": existing["id"], "status": existing["status"], "duplicate": True, "kind": existing["kind"],
                          "displayName": existing["display_name"]}
-        if self.count("pending") >= self.config.max_pending:
+        if await asyncio.to_thread(self.count, "pending") >= self.config.max_pending:
             raise FeedError("queue_full", "The review queue is full; please try again later.")
 
         try:
@@ -896,25 +922,17 @@ class FeedService:
             raise FeedError("fetch_failed", "The feed could not be fetched right now.") from exc
         display = choose_display_name(parsed, sub.hint_name)
         site_host = (urlsplit(parsed.site_url).hostname or urlsplit(sub.url).hostname or "feed.invalid").lower().removeprefix("www.")
-        creator_handle = derive_handle(sub.kind, display, sub.handle, site_host, sub.canonical_key, self._handle_taken)
+        creator_handle = await asyncio.to_thread(
+            derive_handle, sub.kind, display, sub.handle, site_host, sub.canonical_key, self._handle_taken)
         if not creator_handle:
             raise FeedError("no_name", "The feed has no usable author or title.")
         entries = vet_feed(parsed, display_name=display, handle=creator_handle)
         kind = parsed.format if sub.kind in DOCUMENT_KINDS and parsed.format in DOCUMENT_KINDS else sub.kind
-        stamp = self._stamp()
         try:
-            with self._connect() as conn:
-                cur = conn.execute(
-                    "INSERT INTO submitted_feeds (kind, url, canonical_key, handle, display_name, creator_handle, site_url, "
-                    "contact_email_hash, status, created_at, updated_at, last_status, item_count, submitted_ip_hash) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (kind, sub.url, sub.canonical_key, sub.handle, display, creator_handle, parsed.site_url, email_hash,
-                     "pending", stamp, stamp, "probe_ok", len(entries), ip_hash),
-                )
-                conn.commit()
-                feed_id = int(cur.lastrowid)
+            feed_id = await asyncio.to_thread(
+                self._insert, kind, sub, display, creator_handle, parsed.site_url, email_hash, len(entries), ip_hash)
         except sqlite3.IntegrityError:
-            row = self._by_key(sub.canonical_key)
+            row = await asyncio.to_thread(self._by_key, sub.canonical_key)
             return 200, {"id": row["id"] if row else None, "status": row["status"] if row else "pending", "duplicate": True}
         return 201, {"id": feed_id, "status": "pending", "kind": kind, "displayName": display, "itemCount": len(entries),
                      "duplicate": False}
@@ -974,13 +992,13 @@ class FeedService:
         except FeedError as exc:
             outcome["code"] = exc.code
             if ingest:
-                self._record_failure(feed, exc.code, exc.message, pause=exc.code in PAUSE_CODES)
+                await asyncio.to_thread(self._record_failure, feed, exc.code, exc.message, pause=exc.code in PAUSE_CODES)
             return outcome
         except SourceError as exc:
             outcome["code"] = exc.code
             outcome["requests"] = 0 if exc.code == "circuit_open" else 1
             if ingest:
-                self._record_failure(feed, exc.code, str(exc), transient=exc.code == "circuit_open")
+                await asyncio.to_thread(self._record_failure, feed, exc.code, str(exc), transient=exc.code == "circuit_open")
             return outcome
         outcome.update(ok=True, items=len(entries), name=display, handle=handle)
         if not ingest:
@@ -988,17 +1006,19 @@ class FeedService:
         observation = to_observation(feed, parsed, entries, display, handle)
         result = await asyncio.to_thread(self.repo.upsert_detailed, [observation])
         outcome["upserted"], outcome["new"] = result.written, len(result.new)
-        status = "suppressed" if result.suppressed else "ok"
+        await asyncio.to_thread(self._record_success, feed["id"], "suppressed" if result.suppressed else "ok",
+                                len(entries), display, handle, parsed.site_url)
+        return outcome
+
+    def _record_success(self, feed_id: int, status: str, items: int, display: str, handle: str, site_url: str) -> None:
         stamp = self._stamp()
         with self._connect() as conn:
             conn.execute(
                 "UPDATE submitted_feeds SET last_fetched_at = ?, next_fetch_at = ?, last_status = ?, item_count = ?, failures = 0, "
                 "display_name = ?, creator_handle = ?, site_url = ?, error_json = '[]', updated_at = ? WHERE id = ?",
-                (stamp, self._stamp(self.config.refresh_minutes * 60), status, len(entries), display, handle, parsed.site_url,
-                 stamp, feed["id"]),
+                (stamp, self._stamp(self.config.refresh_minutes * 60), status, items, display, handle, site_url, stamp, feed_id),
             )
             conn.commit()
-        return outcome
 
     def _record_failure(self, feed: dict[str, Any], code: str, message: str, *, pause: bool = False, transient: bool = False) -> None:
         stamp = self._stamp()

@@ -68,8 +68,9 @@ async def index_stats(request: Request) -> JSONResponse:
 
 @router.get("/hidden", operation_id="creatorIndexHidden")
 async def hidden_keys(request: Request) -> JSONResponse:
-    """Keys (``platform:canonical-handle``) of hidden / suppressed creators, so live-lane results can be filtered
-    the same way index reads are. No reasons, contacts or timestamps are exposed."""
+    """Keys (``platform label lower-cased : alphanumeric handle``, i.e. the edge's creator dedupe key) of hidden /
+    suppressed creators, so live-lane results can be filtered the same way index reads are. No reasons, contacts
+    or timestamps are exposed."""
     rt = runtime_of(request)
     keys = await asyncio.to_thread(rt.repo.hidden_keys)
     return JSONResponse({"keys": keys}, headers={"Cache-Control": "public, max-age=30, s-maxage=60"})

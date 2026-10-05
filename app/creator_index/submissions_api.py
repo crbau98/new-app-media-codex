@@ -122,7 +122,7 @@ async def submit_feed(request: Request) -> JSONResponse:
     if body.website:  # bot: pretend it worked, store and fetch nothing
         return JSONResponse({"accepted": True, "status": "pending", "duplicate": False}, status_code=202, headers=NO_STORE)
     feeds = rt.feeds
-    ip_hash = abuse.hash_value(abuse.client_ip(request), feeds.salt)
+    ip_hash = abuse.hash_value(abuse.client_ip(request), await asyncio.to_thread(lambda: feeds.salt))
     try:
         status, payload = await feeds.submit(
             url=body.url, handle=body.handle, kind=body.kind, name=body.name, email=body.email,
@@ -145,7 +145,7 @@ async def request_takedown(request: Request) -> JSONResponse:
     if body.website:
         return JSONResponse({"accepted": True, "status": "hidden"}, status_code=202, headers=NO_STORE)
     mod = rt.moderation
-    salt = rt.feeds.salt
+    salt = await asyncio.to_thread(lambda: rt.feeds.salt)
     ip_hash = abuse.hash_value(abuse.client_ip(request), salt)
     try:
         mod.check_rate(ip_hash)

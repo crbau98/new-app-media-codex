@@ -210,8 +210,9 @@ class CreatorCrawler:
     # ── feeds ────────────────────────────────────────────────────────────────
 
     async def _crawl_feeds(self, report: RunReport, budget: Budget) -> None:
+        feed_deadline = self._clock() + self.config.max_seconds * 0.3   # feeds may use at most ~30% of the run's time
         try:
-            outcome = await self.feeds.crawl_due(budget.time_up)
+            outcome = await self.feeds.crawl_due(lambda: budget.time_up() or self._clock() >= feed_deadline)
         except Exception as exc:  # a broken feed must not take the provider crawl down
             logger.warning("feed crawl failed: %s", exc)
             report.errors.append(f"feeds: {type(exc).__name__}"[:120])
