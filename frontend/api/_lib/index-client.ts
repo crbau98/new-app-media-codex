@@ -272,3 +272,52 @@ export function mergeCreators<T extends Mergeable>(lists: ReadonlyArray<Readonly
   }
   return [...byKey.values()]
 }
+
+/* ── Takedown / suppression list ── */
+
+const HIDDEN_TTL_MS = 60_000
+let hiddenCache: { keys: Set<string>; at: number } | null = null
+
+/**
+ * Keys (`platform:canonicalHandle`, same identity as `creatorDedupeKey`) of creators removed by
+ * takedown or operator action. Cached ~60 s per isolate; any failure yields the last known set
+ * (or empty) so a backend outage never blocks a feed.
+ */
+export async function fetchHiddenKeys(timeoutMs = 1_500): Promise<Set<string>> {
+  const now = Date.now()
+  if (hiddenCache && now - hiddenCache.at < HIDDEN_TTL_MS) return hiddenCache.keys
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`${indexBackendOrigin()}${INDEX_PATH}/hidden`, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+      cache: 'no-store',
+      redirect: 'manual',
+    })
+    if (!res.ok) throw new Error(String(res.status))
+    const body = await res.json() as { keys?: unknown }
+    const keys = new Set(
+      (Array.isArray(body.keys) ? body.keys : [])
+        .filter((key): key is string => typeof key === 'string' && key.length < 200)
+        .slice(0, 20_000),
+    )
+    hiddenCache = { keys, at: now }
+    return keys
+  } catch {
+    // Keep serving the last known list; retry soon rather than every request.
+    hiddenCache = { keys: hiddenCache?.keys || new Set(), at: now - HIDDEN_TTL_MS + 10_000 }
+    return hiddenCache.keys
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export function isHiddenCreator(keys: ReadonlySet<string>, creator: { platform?: string; username?: string; name?: string }): boolean {
+  return keys.size > 0 && keys.has(creatorDedupeKey(creator))
+}
+
+/** Test hook. */
+export function resetHiddenCache() {
+  hiddenCache = null
+}

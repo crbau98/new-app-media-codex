@@ -11,6 +11,7 @@
  */
 export const config = { runtime: 'edge', maxDuration: 20 }
 
+import { fetchHiddenKeys, isHiddenCreator } from './_lib/index-client.js'
 import {
   backgroundFrequency, buildTagProfile, dedupeLinks, fetchBlueskyLinks, fetchMastodonLinks, pickQueryTags,
   rankRelated, registryLinks, type ElsewhereLink, type RelatedCreator,
@@ -129,9 +130,14 @@ export default async function handler(req: Request): Promise<Response> {
     const limit = Number.isFinite(requested) && requested >= 1 ? Math.min(MAX_LIMIT, Math.floor(requested)) : DEFAULT_LIMIT
     if (!consumeBudget(clientIp(req))) return json({ error: 'rate_limited' }, 429, { 'Retry-After': '60' })
 
+    const hiddenKeys = await fetchHiddenKeys()
+    if (isHiddenCreator(hiddenKeys, { platform, username: handle })) {
+      return json({ creator: handle, related: [], elsewhere: [], updatedAt: new Date().toISOString() }, 200)
+    }
     const [related, elsewhere] = await Promise.allSettled([computeRelated(handle, limit), computeElsewhere(handle)])
     const links = elsewhere.status === 'fulfilled' ? elsewhere.value.links : []
-    const rel = related.status === 'fulfilled' ? related.value.related : []
+    const rel = (related.status === 'fulfilled' ? related.value.related : [])
+      .filter((entry) => !isHiddenCreator(hiddenKeys, { platform: 'redgifs', username: entry.handle }))
     const partial: string[] = []
     if (related.status === 'rejected' || (related.status === 'fulfilled' && related.value.degraded)) partial.push('related')
     if (elsewhere.status === 'rejected' || (elsewhere.status === 'fulfilled' && elsewhere.value.failed)) partial.push('elsewhere')

@@ -11,6 +11,7 @@
  */
 export const config = { runtime: 'edge', maxDuration: 20 }
 
+import { fetchHiddenKeys, isHiddenCreator } from './_lib/index-client.js'
 import type { SourceCreatorHit } from './_lib/discovery-types.js'
 import { findRegistryEntries, registryRedgifsHandles } from './_lib/creator-registry.js'
 import {
@@ -196,7 +197,8 @@ export default async function handler(req: Request): Promise<Response> {
     if (!consumeBudget(clientIp(req))) {
       return json({ error: 'rate_limited', detail: 'Too many lookups; retry shortly.' }, 429, false, { 'Retry-After': '30' })
     }
-    const result = await resolveCreators(sanitized.text, limit)
+    const [result, hiddenKeys] = await Promise.all([resolveCreators(sanitized.text, limit), fetchHiddenKeys()])
+    result.candidates = result.candidates.filter((c) => !isHiddenCreator(hiddenKeys, { platform: c.platform, username: c.handle }))
     if (!result.candidates.length && result.providerCalls > 0 && result.providerFailures >= result.providerCalls) {
       return json({ error: 'providers_unavailable', query: sanitized.text, tried: result.tried }, 502)
     }

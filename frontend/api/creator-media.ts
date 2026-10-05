@@ -16,6 +16,7 @@ import {
   canonicalCreator, fetchCreatorCatalogPage, hasPlayableUrls, isEligibleScopedItem,
   mapRedgifsItem, providerHandle, sanitizeProviderItem, type CreatorCatalogPage,
 } from './_lib/redgifs.js'
+import { fetchHiddenKeys } from './_lib/index-client.js'
 
 const MAX_COUNT = 60
 const MAX_PAGE = 200
@@ -98,7 +99,9 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
     const wanted = canonicalCreator(handle)
-    const mapped = catalog.gifs
+    // Removed by takedown/operator: serve an empty catalog rather than the provider's copy.
+    const removed = (await fetchHiddenKeys()).has(`redgifs:${wanted}`)
+    const mapped = (removed ? [] : catalog.gifs)
       .map(sanitizeProviderItem)
       // The provider path is already creator-scoped; keep it exact anyway.
       .filter((item) => canonicalCreator(item.userName || '') === wanted)

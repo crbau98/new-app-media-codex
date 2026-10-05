@@ -8,6 +8,7 @@
  */
 export const config = { runtime: 'edge', maxDuration: 30 }
 
+import { fetchHiddenKeys, isHiddenCreator } from './_lib/index-client.js'
 import { rankSimilarCreatorsWithAI } from './_lib/ai-similarity.js'
 import { collectAdditionalSources } from './_lib/multi-source.js'
 import type { CreatorLead, UnifiedMediaItem } from './_lib/discovery-types.js'
@@ -529,7 +530,8 @@ export default async function handler(req: Request): Promise<Response> {
       .filter((item) => item.views >= minViews && item.likes >= minLikes)
     const normalizedAdditional = additionalFiltered.map((item) => withContract(item))
     const pruned = pruneUnplayable(dedupeItems([...mapped, ...normalizedAdditional]))
-    const combined = pruned.items
+    const hiddenKeys = await fetchHiddenKeys()
+    const combined = pruned.items.filter((item) => !isHiddenCreator(hiddenKeys, { platform: item.source, username: item.creator }))
     if (!combined.length) throw new Error('No connected public source returned playable media')
     const ranked = sortItems(rankCohort(combined).map((item) => ({ ...item, isTrending: item.curationScore >= 65 })), sort)
     const items = selectQualityDiverse(ranked, count)
@@ -552,6 +554,7 @@ export default async function handler(req: Request): Promise<Response> {
       deterministicScore: creator.similarityScore || creator.discoveryConfidence || 0,
     })), useAI, watchlist, gatewayAuthToken)
     const performers = creatorPool
+      .filter((creator) => !(creator.platforms?.length ? creator.platforms : [creator.platform]).some((platform) => isHiddenCreator(hiddenKeys, { platform, username: creator.username })))
       .map((creator) => {
         const ai = aiResult.suggestions.get(creator.id)
         return ai ? {

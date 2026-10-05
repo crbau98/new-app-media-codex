@@ -27,7 +27,7 @@ import {
   DISCOVERY_LANES, MAX_BATCH_UNITS, MAX_DIRECTORY_PAGES, MAX_SEEN_HASHES, PROVIDER_PAGE_SIZE, batchAt, creatorHash, decodeCursor,
   laneForTag, planUnits, runBounded, type DirectoryCursor, type LaneUnit,
 } from './_lib/discovery-lanes.js'
-import { fetchIndexPage, mergeCreators, mergeRecords, creatorDedupeKey, type IndexCreator, type IndexPage } from './_lib/index-client.js'
+import { fetchHiddenKeys, isHiddenCreator, fetchIndexPage, mergeCreators, mergeRecords, creatorDedupeKey, type IndexCreator, type IndexPage } from './_lib/index-client.js'
 import { REDGIFS_API, canonicalCreator, fetchWithTimeout, getRedgifsToken, type RedgifsItem } from './_lib/redgifs.js'
 
 const BUDGET_MS = 10_000
@@ -130,6 +130,7 @@ export default async function handler(req: Request): Promise<Response> {
       ? Promise.resolve(null)
       : fetchIndexPage({ cursor: indexCursor || undefined, limit: indexQuota, tag: lane?.tag, sort })
 
+    const hiddenKeys = await fetchHiddenKeys()
     let liveError = ''
     const liveDone = cursor.i >= units.length
     let token = ''
@@ -176,6 +177,7 @@ export default async function handler(req: Request): Promise<Response> {
         laneStats.set(unit.tag, (laneStats.get(unit.tag) || 0) + 1)
         for (const item of result.value) {
           if (!item.id) continue
+          if (hiddenKeys.has(`redgifs:${canonicalCreator(item.userName || '')}`)) continue
           items.push(item)
           const tags = laneTagsById.get(item.id) || new Set<string>()
           tags.add(unit.tag)
@@ -190,7 +192,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (scannedAny && attempted > 0 && succeeded === 0) liveError = 'Public provider search is temporarily unavailable.'
 
     const indexPage = await indexPromise
-    const indexCreators = (indexPage?.creators || []).filter((creator) => !seen.has(creatorHash(seenKey(creator))))
+    const indexCreators = (indexPage?.creators || []).filter((creator) => !seen.has(creatorHash(seenKey(creator))) && !isHiddenCreator(hiddenKeys, creator))
     if (liveError && !indexCreators.length) return fail(502, 'directory_unavailable', liveError)
 
     // Live creators that the index also returned are merged into the index record (richer wins).
