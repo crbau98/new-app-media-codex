@@ -4,11 +4,14 @@
  *   1. storage write-guard (incognito)        2. first screen decided (lock/decoy/app)
  *   3. neutral tab title + blur attributes (everything heavier loads lazily)
  */
-import { installStorageGuard } from './incognito.ts'
+import { installStorageGuard, isIncognito } from './incognito.ts'
+import { setWriteGate } from '../queue/persist.ts'
 import { startVault } from './vault.ts'
 import { getPrefs, subscribePrefs } from './prefs.ts'
 
 installStorageGuard()
+// Queue / moments / progress writes honour incognito mode too (in-memory state keeps working).
+setWriteGate(() => !isIncognito())
 startVault()
 
 // Blur guard: the attribute is set synchronously (no unblurred first paint); the
