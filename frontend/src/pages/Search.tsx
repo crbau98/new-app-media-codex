@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Clock3, RefreshCw, Search as SearchIcon, SlidersHorizontal, TrendingUp, Wand2, X } from 'lucide-react'
 import type { MediaItem } from '@/lib/types'
 import { fetchLiveDiscovery, searchMedia } from '@/lib/api'
 import { filterMedia, parseProQuery } from '@/lib/proSearch'
+import { discoveryKey } from '@/lib/perf/discovery-keys'
 import { useAppStore } from '@/store'
-import MediaDetail from '@/components/MediaDetail'
 import UpdatedChip from '@/components/UpdatedChip'
 import MediaBrowser from '@/components/discovery/MediaBrowser'
 import StatePanel from '@/components/discovery/StatePanel'
@@ -14,6 +14,9 @@ import { DensityToggle, FacetToggle, LayoutToggle, type MediaFacet } from '@/com
 import { useLayoutMode } from '@/components/discovery/prefs'
 import { cn } from '@/lib/utils'
 import '@/styles/discovery.css'
+
+// The detail sheet (player, ~90 kB) is only fetched once a result is opened; it is also warmed on idle.
+const MediaDetail = lazy(() => import('@/components/MediaDetail'))
 
 const MAX_HISTORY = 8
 
@@ -67,6 +70,8 @@ export default function Search() {
   const [panelOpen, setPanelOpen] = useState(false)
   const [history, setHistory] = useState<string[]>([])
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null)
+  // Keep the sheet mounted after its first open so its exit animation still plays.
+  const [detailMounted, setDetailMounted] = useState(false)
   const [layout, setLayout] = useLayoutMode()
 
   const creatorWatchlist = useAppStore((s) => s.creatorWatchlist)
@@ -133,8 +138,9 @@ export default function Search() {
 
   // Trending tags from the live feed for the idle state.
   const discoveryQuery = useQuery({
-    queryKey: ['live-discovery', creatorWatchlist],
+    queryKey: discoveryKey(creatorWatchlist),
     queryFn: () => fetchLiveDiscovery(creatorWatchlist),
+    placeholderData: keepPreviousData,
   })
 
   const trendingTags = useMemo(() => {
@@ -233,7 +239,10 @@ export default function Search() {
   const searching = urlQuery.trim().length > 1
   const searchingServer = serverTerm.length > 1
   const loading = searchingServer ? searchQuery.isLoading : discoveryQuery.isLoading && hasOperators
-  const openById = useCallback((id: string) => setSelectedItem(results.find((entry) => entry.id === id) ?? null), [results])
+  const openById = useCallback((id: string) => {
+    setDetailMounted(true)
+    setSelectedItem(results.find((entry) => entry.id === id) ?? null)
+  }, [results])
   const resetKey = `${urlQuery}|${facet}|${sourceFilter}|${sort}|${duration}|${minViews}`
 
   const submit = () => setQuery(draft)
@@ -505,13 +514,17 @@ export default function Search() {
         </div>
       )}
 
-      <MediaDetail
-        item={selectedItem}
-        open={Boolean(selectedItem)}
-        onClose={() => setSelectedItem(null)}
-        items={results}
-        onNavigate={setSelectedItem}
-      />
+      {detailMounted && (
+        <Suspense fallback={null}>
+          <MediaDetail
+            item={selectedItem}
+            open={Boolean(selectedItem)}
+            onClose={() => setSelectedItem(null)}
+            items={results}
+            onNavigate={setSelectedItem}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

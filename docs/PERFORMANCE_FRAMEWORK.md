@@ -44,6 +44,28 @@ Use GLB + Meshopt, KTX2/Basis textures, LODs, baked lighting, instancing, and sa
 - Prefer opaque gradients over viewport-sized backdrop blur.
 - Keep explicit media and personalized API responses out of automatic service-worker caches.
 
+## Delivery pipeline
+
+How a visit is kept fast. Everything below lives in `frontend/src/lib/perf/` unless noted, has unit tests in `frontend/tests/perf-*.test.ts`, and degrades to the plain behaviour when storage, the service worker or the Network Information API is missing.
+
+**Boot script** (`boot.js`, emitted as a fingerprinted `/assets/boot-*.js` by `vite.config.ts`, injected first in `<head>`). The production CSP is `script-src 'self'`, so it is an external file, not inline (the previous inline theme script was blocked there). It applies the saved theme before first paint and, for returning visitors who already passed the 18+ gate (never before), preloads the last hero poster and starts the live-feed request while the bundle is still downloading. `fetchLiveDiscovery` takes over that in-flight request via `takeBootFeed(sig)` only when the request signature matches exactly (`discovery-request.ts` is the single definition; `tests/perf-boot.test.ts` keeps both in lockstep).
+
+**Persisted feed metadata** (`cache.ts`, `persist.ts`). The last feed paints synchronously on a repeat visit and revalidates in the background. Metadata only (titles, thumbnail URLs, creator handles from public sources): never media bytes, history, likes or search text. localStorage, TTL 6 h, versioned (`CACHE_VERSION`: bump it when the payload shape changes), at most two entries, 600 kB cap, key stored as a hash, the radar blanked, creator media trimmed. Settings: call `clearQueryCache()` from `@/lib/perf` (optionally `{ memory: true }`); it also clears the service worker's API cache.
+
+**Service worker** (`public/sw.js`, registered after load + idle, production only, skipped under browser automation, `?nosw=1` unregisters). Caches the app shell, hashed assets (type-checked, bounded), app icons, and two allowlisted API metadata GETs: `/api/live-media` default feed (network-first, 6 s budget, cache only as offline/slow-network fallback) and the first page of `/api/creator-directory` (stale-while-revalidate); entries expire after 6 h. It never caches video/audio, ranges, HLS, anything under `/api/archiver-proxy` (explicit media, thumbnails included), POSTs, other `/api/` routes or `no-store`/`private` responses.
+
+**Prefetch and progressive mount.** After load + idle the scheduler warms the likely next route chunks and the detail sheet one at a time (skipped on Data Saver/2g, capped on cellular, paused while hidden); hover/focus/touch on anything with `data-prefetch="/route"` loads that chunk immediately. Long pages mount in stages (`useStagedMount`): Home paints the hero first and holds the shelves until the hero artwork (the LCP element) has been revealed; the reserved height keeps the footer from jumping.
+
+**Images.** The first hero image is `fetchpriority=high` and preloaded; unfinished thumbnails are cancelled when their page unmounts; on 3g / Data Saver lazy thumbnails wait for one of 3-6 download slots; intersection observers are shared per margin instead of one per image.
+
+**Fonts** are self-hosted (`src/styles/fonts.css`, latin subset, immutable fingerprinted files, Inter and Fraunces preloaded), so there is no third-party stylesheet in the critical path and no swap-induced layout shift.
+
+**Reporting** (`lib/vitals.ts`). One sample per page view for LCP (final candidate), CLS (worst session window), INP (slowest interaction, 1-in-50 outlier rule) plus FCP and TTFB, sent when the page is hidden, with device tier, Data Saver/network tier and lite-graphics flag, route path only (never the query string).
+
+## Budgets enforced in CI
+
+`npm run build:budget` fails the build when any of these is exceeded (gzip bytes): largest chunk 125 kB, all JS 440 kB, all CSS 26 kB, initial JS 200 kB (target 180 kB), initial CSS 24 kB, and a cold landing on any route 225 kB JS / 26 kB CSS (initial plus that route's lazy chunks; computed from the Vite manifest).
+
 ## Accessibility and SEO
 
 The experience never relies on motion, depth, color, hover, or canvas input. Reduced motion produces a complete static composition. Focus order, status, reasons, and actions stay in HTML with WCAG AA contrast.

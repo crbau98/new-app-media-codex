@@ -53,7 +53,7 @@ export default function Coverflow3D({
   const theme = useAppStore((s) => s.theme)
   const lightTheme = theme === 'light' || (theme === 'auto' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: light)').matches)
   const rootRef = useRef<HTMLDivElement>(null)
-  const stageRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<HTMLDivElement | null>(null)
   const inView = useInViewport(rootRef)
   const [active, setActive] = useState(() => Math.min(Math.max(0, initialIndex), Math.max(0, count - 1)))
   const [drag, setDrag] = useState(0) // in slots, positive = dragged right
@@ -61,6 +61,12 @@ export default function Coverflow3D({
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
   const [width, setWidth] = useState(720)
+  // Measure at attach time (commit, before paint). The 720px default made the stage - and the whole hero - ~180px
+  // taller for a frame on phones until the ResizeObserver fired, which registered as a layout shift.
+  const attachStage = useCallback((node: HTMLDivElement | null) => {
+    stageRef.current = node
+    if (node) setWidth(node.getBoundingClientRect().width || 720)
+  }, [])
   const [visible, setVisible] = useState(true)
   const dragState = useRef({ id: -1, startX: 0, startIdx: 0, moved: 0 })
 
@@ -198,7 +204,7 @@ export default function Coverflow3D({
       className={cn('relative select-none rounded-xl outline-offset-4', className)}
     >
       <div
-        ref={stageRef}
+        ref={attachStage}
         className="relative mx-auto w-full overflow-hidden"
         style={{ height: cardH + (reflection && motionOk && !lightTheme ? 64 : 36), perspective: 1100, touchAction: 'pan-y', cursor: dragging ? 'grabbing' : 'grab' }}
         onPointerDown={onPointerDown}

@@ -114,6 +114,7 @@ export default function Navbar({ onClose, forceCollapsed = false }: NavbarProps)
                     <button
                       key={item.label}
                       onClick={() => handleNav(item.href)}
+                      data-prefetch={item.href}
                       className={cn('nav-item tap-highlight-none', collapsed && 'justify-center px-0', active && 'active')}
                       aria-current={active ? 'page' : undefined}
                       title={collapsed ? item.label : undefined}
