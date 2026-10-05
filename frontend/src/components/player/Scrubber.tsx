@@ -4,6 +4,13 @@ import type { SpriteGrid } from '@/lib/player/intel'
 import type { VideoState } from './hooks'
 import './player.css'
 
+export interface ScrubMarker {
+  id: string
+  time: number
+  /** Clip end; the span is painted as a band. */
+  end?: number
+}
+
 interface ScrubberProps {
   video: HTMLVideoElement | null
   state: VideoState
@@ -12,6 +19,8 @@ interface ScrubberProps {
   /** A–B loop markers in seconds. */
   loopA: number | null
   loopB: number | null
+  /** Saved moments for this item, painted as gold ticks. */
+  markers?: ScrubMarker[]
   onScrubStart?: () => void
   onScrubEnd?: () => void
 }
@@ -29,7 +38,7 @@ const PREVIEW_H = 90
  * and a hover/drag preview (storyboard sprite tile when supplied, else a time
  * tooltip). The visual track is thin but the hit area is 44px tall.
  */
-export default function Scrubber({ video, state, spriteUrl, spriteGrid, loopA, loopB, onScrubStart, onScrubEnd }: ScrubberProps) {
+export default function Scrubber({ video, state, spriteUrl, spriteGrid, loopA, loopB, markers, onScrubStart, onScrubEnd }: ScrubberProps) {
   const trackRef = useRef<HTMLDivElement>(null)
   const [hoverRatio, setHoverRatio] = useState<number | null>(null)
   const [dragRatio, setDragRatio] = useState<number | null>(null)
@@ -139,6 +148,16 @@ export default function Scrubber({ video, state, spriteUrl, spriteGrid, loopA, l
         {segments.map((segment, index) => (
           <div key={index} className="absolute inset-y-0 bg-white/30" style={{ left: `${segment.left * 100}%`, width: `${segment.width * 100}%` }} />
         ))}
+        {duration > 0 &&
+          markers?.map((marker) =>
+            marker.end !== undefined ? (
+              <div
+                key={`band-${marker.id}`}
+                className="absolute inset-y-0 bg-gold/45"
+                style={{ left: `${(marker.time / duration) * 100}%`, width: `${((marker.end - marker.time) / duration) * 100}%` }}
+              />
+            ) : null,
+          )}
         {loopA !== null && duration > 0 && (
           <div
             className="absolute inset-y-0 bg-heat/30"
@@ -152,6 +171,16 @@ export default function Scrubber({ video, state, spriteUrl, spriteGrid, loopA, l
         style={{ left: `${shownRatio * 100}%` }}
         aria-hidden="true"
       />
+      {duration > 0 &&
+        markers?.map((marker) => (
+          <div
+            key={`tick-${marker.id}`}
+            className="pointer-events-none absolute top-1/2 h-3 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gold-ink shadow-[0_0_0_1px_rgb(0_0_0/0.55)]"
+            style={{ left: `${Math.min(100, (marker.time / duration) * 100)}%` }}
+            data-testid="moment-tick"
+            aria-hidden="true"
+          />
+        ))}
       {previewRatio !== null && duration > 0 && (
         <div
           className="pointer-events-none absolute bottom-full mb-1 flex flex-col items-center gap-1"

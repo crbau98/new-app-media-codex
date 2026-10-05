@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type RefObject } from 'react'
+import { resolveMediaAssetUrl } from '@/lib/backendOrigin'
 import { averageRgb, parseHexColor, rgbCss, type BufferedRange } from '@/lib/player/controls'
+import { readMediaIntel } from '@/lib/player/intel'
 import { readNetworkProfile, type NetworkProfile } from '@/lib/player/resilience'
+import { buildSources, type PlaybackSource } from '@/lib/player/sources'
+import type { MediaItem } from '@/lib/types'
+import { useAppStore } from '@/store'
 
 /* ── environment ───────────────────────────────────────────────── */
 
@@ -19,6 +24,32 @@ export function prefersMobilePlayback(): boolean {
 }
 
 export { useMotionOk } from '@/hooks/useMotionOk'
+
+/**
+ * The ordered playback source chain for an item (HLS / progressive fallbacks,
+ * filtered by what this device can decode and the viewer's quality choice).
+ * Shared by the full player and the dock's mini player.
+ */
+export function usePlaybackSources(item: MediaItem): PlaybackSource[] {
+  const quality = useAppStore((state) => state.defaultQuality)
+  const intel = useMemo(() => readMediaIntel(item), [item])
+  const { mediaUrl, streamCandidates } = item
+  return useMemo(
+    () =>
+      buildSources({
+        mediaUrl,
+        streamCandidates,
+        hlsUrl: intel.hlsUrl,
+        mimeType: intel.mimeType,
+        codec: intel.codec,
+        quality,
+        preferMobile: quality === 'auto' && prefersMobilePlayback(),
+        resolve: resolveMediaAssetUrl,
+        probe: typeof document !== 'undefined' ? document.createElement('video') : null,
+      }),
+    [mediaUrl, streamCandidates, intel.hlsUrl, intel.mimeType, intel.codec, quality],
+  )
+}
 
 /* ── <video> state as an external store ────────────────────────── */
 

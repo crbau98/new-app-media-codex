@@ -33,6 +33,12 @@ export type PlayerAction =
   | { type: 'abLoop' }
   | { type: 'frame'; direction: 1 | -1 }
   | { type: 'rate'; delta: number }
+  | { type: 'nextItem' }
+  | { type: 'prevItem' }
+  | { type: 'moment' }
+  | { type: 'queue' }
+  | { type: 'enqueue' }
+  | { type: 'help' }
 
 export interface KeyLike {
   key: string
@@ -46,6 +52,10 @@ export interface KeyLike {
  * Keyboard map for the player. Returns null for keys it does not own so the
  * host (sheet navigation, follow/save) can still handle them.
  * Frame-step (`,` `.`) only applies while paused.
+ *
+ * Queue / moments keys: N next, P previous, Q open the queue (Shift+Q adds the
+ * current item to it), B bookmark a moment (or the A–B range as a clip),
+ * A set the A–B loop point, ? shortcut help. Picture-in-picture moved to I.
  */
 export function resolveKeyAction(event: KeyLike, paused: boolean): PlayerAction | null {
   if (event.ctrlKey || event.metaKey || event.altKey) return null
@@ -77,9 +87,20 @@ export function resolveKeyAction(event: KeyLike, paused: boolean): PlayerAction 
     case 't':
     case 'T':
       return { type: 'theatre' }
+    case 'i':
+    case 'I':
+      return { type: 'pip' }
+    case 'n':
+    case 'N':
+      return { type: 'nextItem' }
     case 'p':
     case 'P':
-      return { type: 'pip' }
+      return { type: 'prevItem' }
+    case 'q':
+    case 'Q':
+      return event.shiftKey || event.key === 'Q' ? { type: 'enqueue' } : { type: 'queue' }
+    case '?':
+      return { type: 'help' }
     case 'c':
     case 'C':
       return { type: 'capture' }
@@ -88,6 +109,9 @@ export function resolveKeyAction(event: KeyLike, paused: boolean): PlayerAction 
       return { type: 'loop' }
     case 'b':
     case 'B':
+      return { type: 'moment' }
+    case 'a':
+    case 'A':
       return { type: 'abLoop' }
     case ',':
       return paused ? { type: 'frame', direction: -1 } : null

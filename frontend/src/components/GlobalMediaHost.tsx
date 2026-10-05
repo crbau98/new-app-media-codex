@@ -1,42 +1,67 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { CURRENT_MEDIA_EVENT, OPEN_MEDIA_EVENT } from '@/features/ai/events'
 import { useLibrary } from '@/features/ai/hooks/useLibrary'
+import { useQueue, useSurface } from '@/features/queue/hooks'
+import { findInQueue } from '@/features/queue/queueModel'
 import type { MediaItem } from '@/lib/types'
 
 const MediaDetail = lazy(() => import('@/components/MediaDetail'))
+// The dock / drawer / shortcut help chunk loads only once there is a queue (or one is summoned).
+const QueueLayer = lazy(() => import('@/features/queue/QueueLayer'))
 
 /**
- * App-level host for `codex:open-media` (dispatched by the command bar and the
- * concierge). Resolves the id against the shared live-discovery query and opens
- * the standard detail sheet, so AI results are never a dead end on any route.
+ * App-level host, mounted once for every route. It:
+ *
+ *  - opens the standard detail sheet for `codex:open-media` (command bar and
+ *    concierge), resolving the id against the live feed first and then the
+ *    watch queue, so AI results are never a dead end;
+ *  - owns the queue's persistent surfaces — the mini-player dock that keeps the
+ *    queue playing while you browse, the queue drawer and the shortcut help —
+ *    so they survive navigation and a reload (restored paused).
  */
 export default function GlobalMediaHost() {
   const { items, byId } = useLibrary(true)
-  const [activeId, setActiveId] = useState<string | null>(null)
+  const queue = useQueue()
+  const surf = useSurface()
+  const [active, setActive] = useState<MediaItem | null>(null)
 
   useEffect(() => {
     const onOpen = (event: Event) => {
       const id = (event as CustomEvent<{ id?: string }>).detail?.id
-      if (!id || !byId.has(id)) return // unresolved: let the AI surface fall back to search
+      if (!id) return
+      const found = byId.get(id) ?? findInQueue(queue, id)
+      if (!found) return // unresolved: let the AI surface fall back to search
       event.preventDefault()
-      setActiveId(id)
+      setActive(found)
     }
     window.addEventListener(OPEN_MEDIA_EVENT, onOpen)
     return () => window.removeEventListener(OPEN_MEDIA_EVENT, onOpen)
-  }, [byId])
+  }, [byId, queue])
 
-  const close = useCallback(() => setActiveId(null), [])
-  const navigate = useCallback((next: MediaItem) => setActiveId(next.id), [])
+  const close = useCallback(() => setActive(null), [])
+  const open = useCallback((next: MediaItem) => setActive(byId.get(next.id) ?? next), [byId])
 
+  const activeId = active?.id ?? null
   useEffect(() => {
     window.dispatchEvent(new CustomEvent(CURRENT_MEDIA_EVENT, { detail: { id: activeId } }))
   }, [activeId])
 
-  const item = activeId ? byId.get(activeId) ?? null : null
-  if (!item) return null
+  // Keep the open sheet's copy fresh when the live feed refreshes; queue-only items keep their snapshot.
+  const item = useMemo(() => (active ? byId.get(active.id) ?? active : null), [active, byId])
+  const needsLayer = Boolean(queue.nowPlaying) || surf.panelOpen || surf.helpOpen
+
   return (
-    <Suspense fallback={null}>
-      <MediaDetail item={item} open onClose={close} items={items} onNavigate={navigate} />
-    </Suspense>
+    <>
+      {item && (
+        <Suspense fallback={null}>
+          <MediaDetail item={item} open onClose={close} items={items} onNavigate={open} />
+        </Suspense>
+      )}
+      {needsLayer && (
+        <Suspense fallback={null}>
+          <QueueLayer onOpenItem={open} />
+        </Suspense>
+      )}
+    </>
   )
 }
